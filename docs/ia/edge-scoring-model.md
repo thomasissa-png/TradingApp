@@ -5,7 +5,7 @@
 > Auteur : @ia — Date : 2026-05-01
 > Mission : modèle de scoring multi-dimension du signal turbo (1.0-10.0), hybride Claude + sanity checks déterministes.
 > **Lecture obligatoire amont** : `project-context.md`, `docs/ia/ai-architecture.md` (modèles + 9 règles anti-hallucination + tool use), `docs/ia/prompt-library.md` (PROMPT_VERSION signal-scoring-v1.0, prompts H-A à H-G), `docs/analytics/edge-rnd-brief.md` (7 hypothèses + seuils GO Phase 2), `docs/product/functional-specs.md` (US-01 schéma 15 champs, US-05 timeout 45 s).
-> **Version modèle** : `scoring-model-v1.0` (couplé `prompt-version=signal-scoring-v1.0`).
+> **Version modèle** : `scoring-model-v1.1` (Phase 1b, couplé `prompt-version=signal-scoring-v1.1`). Voir §7.1bis pour le changelog.
 
 ---
 
@@ -539,19 +539,25 @@ Sans cache : ~0,03 $/signal (cohérent ai-architecture §7.1 — 0,66 $/mois ÷ 
 
 ### 8.1 Mission de l'audit
 
-Audit du modèle de scoring `scoring-model-v1.0` avant Phase 2 implémentation.
+Audit du modèle de scoring `scoring-model-v1.1` (Phase 1b corrections @reviewer + @qa intégrées) avant Phase 2 implémentation.
 
-### 8.2 Points d'audit (4)
+### 8.2 Points d'audit résolus en v1.1
 
-1. **Cohérence poids D1-D6 vs littérature edges intraday** : la pondération 30/20/15/15/10/10 est-elle alignée avec les références académiques sur scoring multi-facteur intraday ? D1 force du signal à 30 % est-il justifié, ou doit-il être renforcé/affaibli ?
-2. **Suffisance sanity checks anti-overfitting** : les 5 SC couvrent-ils les 7 patterns d'overfitting O1-O7 documentés dans `.claude/agents/testeur-backtest-edge.md` ? Y a-t-il des angles morts (ex: pas de check sur la concentration des signaux sur 1 sous-jacent) ?
-3. **Calibration `CONFIDENCE_THRESHOLD = 6.5` a priori conservatrice ?** : le seuil par défaut est-il trop laxiste (risque sur-trading) ou trop strict (risque silence permanent) ? Recommandation à valider après calibration R&D Phase 1.
-4. **Scoring déterministe / reproductible ?** : avec température 0.1 + tool use forcé + sanity checks déterministes, le même input produit-il le même output à ±0,2 ? Comment tester cette propriété sur les 5 TC ?
+- ✅ **Pondérations D1-D6 rééquilibrées** (D2 20→15, D6 10→15) — verdict @qa intégré.
+- ✅ **Angle mort overfitting O5 runtime couvert** par SC6 (diversité sous-jacents 30j).
+- ✅ **CONFIDENCE_THRESHOLD split paper/live** — résout conflit persona (7.0) vs méthodologue (6.5 calibrable).
+
+### 8.2bis Points d'audit restants pour @testeur-backtest-edge
+
+1. **Validité statistique du nouveau split 30/15/15/15/10/15** sur 5 ans backtest walk-forward — produire histogrammes de scores par hypothèse pour vérifier qu'aucune dimension ne sature systématiquement.
+2. **Calibration `CONFIDENCE_THRESHOLD_LIVE`** : exécuter §4.2 sur les 7 hypothèses H-A à H-G + walk-forward 3 fenêtres → confirmer 6.5 ou recommander valeur optimale.
+3. **Reproductibilité scoring** : avec température 0.1 + tool use forcé + sanity checks déterministes, le même input produit-il le même output à ±0,2 ? Tester sur les 5 TC.
+4. **Validation SC6 seuil 1/13** : faut-il un seuil plus fin (ex: 2/13 → ALERT, 1/13 → NO-TRADE) ? Validation empirique sur 5 ans.
 
 ### 8.3 Verdict attendu
 
-- **GO modèle** : `scoring-model-v1.0` validé, Phase 2 peut démarrer (intégration `src/lib/ai/` par @fullstack).
-- **RETRAVAILLER §X** : ajustements ciblés (poids dimensions, seuils SC, calibration). @ia bump v1.1 et re-soumet.
+- **GO modèle v1.1** : `scoring-model-v1.1` validé, Phase 2 peut démarrer (intégration `src/lib/ai/` par @fullstack).
+- **RETRAVAILLER §X** : ajustements ciblés (poids dimensions, seuils SC, calibration). @ia bump v1.2 et re-soumet.
 - **NO-GO modèle** : repenser l'approche (ex: scoring déterministe pur sans LLM, ou inverse). @orchestrator escalade.
 
 ---
@@ -562,13 +568,14 @@ Audit du modèle de scoring `scoring-model-v1.0` avant Phase 2 implémentation.
 |---|---|---|---|
 | G1 | Toutes sections présentes | PASS | §1 à §8 + auto-éval §9 remplies |
 | G3 | Bloc Handoff structuré présent | PASS | §8 + bloc Handoff final |
-| G5 | Persona Thomas identique project-context.md | PASS | TC-01 à TC-05 cohérents fenêtre 8h45-8h55, capital 1500 €, turbos Bourse Direct, journée type Thomas |
-| G6 | Cohérence brand-platform | PASS | SC5 conditionnel chiffré obligatoire, SC4 % no-trade vertu, mots proscrits intégrés via R-AI-7 (ai-architecture §3) |
-| G7 | 0 contradiction livrables amont | PASS | Référence explicite ai-architecture §1.1 (modèles), §3 (R-AI-1..9), §7 (coûts), prompt-library.md §1 (system prompt), §2 (prompts H-A..G), §4.2 (prompt dégradé), edge-rnd-brief §5 (seuils GO Phase 2), functional-specs US-01 (15 champs) + US-05 (timeout) |
-| G12 | Implémentable sans question | PASS | Formules explicites D1-D6 + pseudo-code 5 SC + fonction objectif calibration + 5 TC complets décomposés |
-| G13 | 0 donnée inventée | PASS | Tarifs sourcés ai-architecture §1.1 ; tokens sourcés §2.1 + §5 ; HYPOTHÈSE 6.5 marquée explicitement §4.1 |
-| G14 | 5 test cases complets | PASS | §5 — 5 TC avec input JSON + décomposition D1-D6 + Claude résumé + sanity checks + score final |
-| G15 | 0 placeholder résiduel | PASS | Aucun `[À REMPLIR]`/`[TODO]` ; `[HYPOTHÈSE]` n'apparaît qu'au §4.1 (CONFIDENCE_THRESHOLD), volontaire et marqué |
+| G5 | Persona Thomas identique project-context.md | PASS | TC-01 à TC-05 cohérents fenêtre 8h45-8h55, capital 1500 €, turbos Bourse Direct, journée type Thomas. **v1.1 : `CONFIDENCE_THRESHOLD_PAPER = 7.0` ancré sur verbatim Thomas "j'engage à partir de 7"** (cohérence persona renforcée). |
+| G6 | Cohérence brand-platform | PASS | SC5 conditionnel chiffré obligatoire, SC4 % no-trade vertu, mots proscrits intégrés via R-AI-7 (ai-architecture §3). SC6 anti-overfitting cohérent Pilier 3 "Backtesté". |
+| G7 | 0 contradiction livrables amont + cohérence persona/méthodologue | PASS | Référence explicite ai-architecture §1.1 (modèles), §3 (R-AI-1..9), §7 (coûts), prompt-library.md §1 (system prompt), §2 (prompts H-A..G), §4.2 (prompt dégradé), edge-rnd-brief §5 (seuils GO Phase 2), functional-specs US-01 (15 champs) + US-05 (timeout), US-11 (`STRATEGY_ACTIVE`). **v1.1 résout le conflit verdicts @reviewer (persona 7.0) vs @qa (calibrable 6.5) via split d'env var** = cohérence persona + méthodologue PASS. |
+| G12 | Implémentable @fullstack sans question | PASS | Formules explicites D1-D6 + pseudo-code 6 SC + fonction objectif calibration + 5 TC complets décomposés + **pseudo-code TS de sélection threshold runtime §4.1** + lookup SQL SC6 §3.6 + critères transition paper→live §4.1bis. |
+| G13 | 0 donnée inventée | PASS | Tarifs sourcés ai-architecture §1.1 ; tokens sourcés §2.1 + §5 ; HYPOTHÈSE 6.5 marquée explicitement §4.1 ; valeur 7.0 sourcée verbatim Thomas (personas.md). |
+| G14 | 5 test cases complets | PASS | §5 — 5 TC avec input JSON + décomposition D1-D6 (pondérations v1.1) + Claude résumé + sanity checks (incl. SC6 v1.1) + score final. TC-03 Σ recalculé 3.73 → **4.23** (NO-TRADE inchangé sous les 2 seuils). |
+| G15 | 0 placeholder résiduel | PASS | Aucun `[À REMPLIR]`/`[TODO]` ; `[HYPOTHÈSE]` n'apparaît qu'au §4.1 (`CONFIDENCE_THRESHOLD_LIVE`), volontaire et marqué. La valeur paper 7.0 n'est pas hypothèse (verbatim persona). |
+| **G17** | **Pas copiable pour concurrent** | **PASS** | Spécifique TradingApp : Thomas (verbatim "à partir de 7"), turbos BD, fenêtre 8h45-8h55, 7 hypothèses H-A..G nommées, 13 sous-jacents BD nommés (SC6), `STRATEGY_ACTIVE` SQLite US-11, brand-platform §6, calibration walk-forward 3 fenêtres edge-rnd-brief. |
 | G17 | Pas copiable pour concurrent | PASS | Spécifique TradingApp : Thomas, turbos, fenêtre 8h45-8h55, 7 hypothèses H-A..G nommées, calendrier fériés FR (TC-05), sous-jacents BD (DAX/CAC/EuroStoxx/LVMH), brand-platform §6 cité |
 
 ---
@@ -579,14 +586,14 @@ Audit du modèle de scoring `scoring-model-v1.0` avant Phase 2 implémentation.
 **Handoff → @orchestrator (relai vers @testeur-backtest-edge pour audit, puis @fullstack Phase 2)**
 
 - **Fichiers produits** :
-  - `/home/user/TradingApp/docs/ia/edge-scoring-model.md` (ce fichier, scoring-model-v1.0)
+  - `/home/user/TradingApp/docs/ia/edge-scoring-model.md` (ce fichier, **scoring-model-v1.1** Phase 1b)
 - **Décisions prises** :
-  - Approche **hybride** Claude (score brut + raison) + 5 sanity checks déterministes ex-post.
-  - **6 dimensions** pondérées : D1 force signal 30 %, D2 confluence 20 %, D3 news 15 %, D4 volatilité 15 %, D5 régime VIX 10 %, D6 backtest 10 %.
-  - **5 sanity checks** : SC1 cohérence direction (bloquant), SC2 R/R ≥ 1.5 (bloquant si <1.0), SC3 score > 9 → ALERT, SC4 % no-trade 7j < 20 % → -1.0, SC5 spéculatif sans chiffre → plafond 6.0.
-  - **CONFIDENCE_THRESHOLD = 6.5** [HYPOTHÈSE] — calibration R&D obligatoire via fonction objectif `f(seuil) = (PF × WR × proximité 50 % no-trade) / DD`.
+  - Approche **hybride** Claude (score brut + raison) + **6 sanity checks déterministes** (v1.1) ex-post.
+  - **6 dimensions** pondérées (v1.1) : D1 force signal 30 %, D2 confluence **15 %**, D3 news 15 %, D4 volatilité 15 %, D5 régime VIX 10 %, D6 backtest **15 %**.
+  - **6 sanity checks** (v1.1) : SC1 cohérence direction (bloquant), SC2 R/R ≥ 1.5 (bloquant si <1.0), SC3 score > 9 → ALERT, SC4 % no-trade 7j < 20 % → -1.0, SC5 spéculatif sans chiffre → plafond 6.0, **SC6 diversité sous-jacents 30j (1/13) → plafond 7.0 + ALERT**.
+  - **CONFIDENCE_THRESHOLD split paper/live** (v1.1) : `_PAPER = 7.0` (verbatim Thomas, bootstrap conservateur 4-8 sem.), `_LIVE = 6.5` [HYPOTHÈSE — calibration R&D]. Sélection runtime via `STRATEGY_ACTIVE` SQLite (US-11). Procédure transition paper → live §4.1bis.
   - **Coût/signal** : ~0,02-0,03 $ avec cache (verdict H4 PASS confortable).
-  - **Versioning** : `scoring-model-v1.0` couplé à `prompt-version=signal-scoring-v1.0` + `model_used`.
+  - **Versioning** : `scoring-model-v1.1` couplé à `prompt-version=signal-scoring-v1.1` + `model_used=claude-sonnet-4-5-20250929` (tag exact L002).
 - **Points d'attention** :
   - **Prérequis bloquant Phase 2** : audit @testeur-backtest-edge (4 points §8.2) avant que @fullstack code l'intégration.
   - **Calibration `CONFIDENCE_THRESHOLD`** : Phase 1 R&D obligatoire — valeur 6.5 a priori conservatrice mais à valider sur 5 ans backtest avec walk-forward 3 fenêtres.
@@ -595,8 +602,10 @@ Audit du modèle de scoring `scoring-model-v1.0` avant Phase 2 implémentation.
   - **Migration future Sonnet 4.6+** : suivre protocole §7.3 — régression test sur les 5 TC, Grep tag exact dans tous les builders.
   - **Coordination @qa** : tests E2E doivent inclure les 5 TC + propriété de reproductibilité (même input → même output ±0.2).
 - **Actions Replit requises** :
-  - [x] Aucune nouvelle env var au-delà de celles déjà listées dans ai-architecture §Handoff (`CONFIDENCE_THRESHOLD`, `RND_DAILY_CALL_CAP`, `MONTHLY_AI_BUDGET_EUR`, `ANTHROPIC_MODEL_LIVE`, `ANTHROPIC_MODEL_RND`).
-  - [x] Aucune migration DB nouvelle — la table `signals` doit inclure les colonnes `scoring_model_version`, `prompt_version`, `model_used`, `sanity_check_failed` (ajouter à la spec @data-analyst si manquantes).
+  - [x] **Nouvelles env vars v1.1** : `CONFIDENCE_THRESHOLD_PAPER=7.0` et `CONFIDENCE_THRESHOLD_LIVE=6.5` (remplacent l'ancienne `CONFIDENCE_THRESHOLD` unique). `RND_DAILY_CALL_CAP`, `MONTHLY_AI_BUDGET_EUR`, `ANTHROPIC_MODEL_LIVE`, `ANTHROPIC_MODEL_RND` inchangées.
+  - [x] **Coordination @data-analyst** : la table `strategy_state` (mode `paper`/`live`) doit exister AVANT que `src/lib/ai/scoring.ts` puisse sélectionner le seuil actif (cf. US-11 `/stop`/`/start`). Bootstrap : `mode = 'paper'` par défaut à l'init.
+  - [x] **SC6 lookup SQLite** : la table `signals` doit avoir ≥ 30 jours d'historique avant que SC6 puisse s'activer. Bootstrap : SC6 désactivé les 30 premiers jours (en plus du bootstrap SC4 7 jours déjà documenté).
+  - [x] Aucune migration DB nouvelle au-delà des colonnes `scoring_model_version`, `prompt_version`, `model_used`, `sanity_check_failed` déjà spécifiées (à vérifier `data-analyst kpi-framework`).
   - [x] Aucune modification `.replit`/`replit.nix` requise.
 
 ---

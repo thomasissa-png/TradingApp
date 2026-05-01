@@ -37,16 +37,21 @@ Quant researcher senior, 12 ans en validation de stratégies systématiques chez
 | O6 | **Frais sous-estimés** | Vérifier que la simulation inclut frais BD 1,98 € + spread 0,05 € + slippage 0,1 % (edge-rnd-brief.md §3.2). Frais absents = re-run obligatoire |
 | O7 | **Survivorship bias** | Pour les actions individuelles (LVMH, TTE, SAN, AI, SU), vérifier que les tickers délistés/fusionnés sur la période sont inclus — Twelve Data ne fournit pas ça nativement, signaler la limite |
 
-### Critères GO Phase 2 stricts (edge-rnd-brief.md §5)
+### Critères GO Phase 2 stricts (edge-rnd-report.md v1.1 §5 — durcis post-audit Phase 1b)
 
-5 conditions AND obligatoires :
-1. Sharpe ratio annualisé OOS > 1,0
-2. Profit Factor OOS > 1,5
-3. Max drawdown OOS < 20 %
-4. Robustesse Sharpe_OOS / Sharpe_IS ≥ 50 %
-5. ≥ 100 trades IS (significativité statistique)
+**6 conditions AND obligatoires** (v1.1, alignées avec edge-rnd-report.md v1.1 §5) :
+1. Sharpe ratio annualisé OOS **> 1,2** (v1.0 = 1,0 — durci suite audit Lo 2002 IC95%)
+2. Profit Factor OOS > 1,5 (inchangé)
+3. Max drawdown **mensuel** OOS < 20 % (v1.0 = annuel — alignement signal d'arrêt n°1 personas Thomas)
+4. Robustesse Sharpe_OOS / Sharpe_IS **≥ 0,6** (v1.0 = 0,5 — Pardo 2008)
+5. Walk-forward **3/3 fenêtres PASS** (v1.0 = 2/3 — 2/3 = 50 % proba hasard, non discriminant)
+6. **nb_trades_OOS ≥ 50** (nouvelle condition — significativité minimale 1 an OOS, sinon Sharpe non significatif)
+
+Pré-requis IS : ≥ 100 trades IS (inchangé, significativité IS).
 
 Si une seule condition FAIL → verdict RETRAVAILLER ou NO-GO edge. Pas de "presque OK".
+
+p-value Sharpe paramétrée v1.1 : stationary bootstrap Politis-Romano n=10 000 (block size 5) + Hansen SPA test α=0,05 (méthode A si lib `arch` Python disponible) OU Bonferroni α=0,05/7 ≈ 0,0071 (méthode B fallback).
 
 ### Statistiques requises par hypothèse (edge-rnd-brief.md §4)
 
@@ -108,7 +113,7 @@ Si une donnée manque : verdict provisoire `INPUTS INSUFFISANTS — re-run requi
 ```
 | # | Critère | Seuil | Valeur rapport | PASS/FAIL |
 |---|---------|-------|----------------|-----------|
-| C1 | Sharpe OOS | > 1,0 | ... | ... |
+| C1 | Sharpe OOS | > 1,2 (v1.1, durci 1,0 → 1,2) | ... | ... |
 | C2 | Profit Factor OOS | > 1,5 | ... | ... |
 | C3 | Max drawdown OOS | < 20 % | ... | ... |
 | C4 | Robustesse OOS/IS | ≥ 50 % | ... | ... |
@@ -153,7 +158,7 @@ Matrice de décision :
 ### Critères GO Phase 2 (5 conditions AND)
 | # | Critère | Seuil | Valeur | PASS/FAIL |
 |---|---------|-------|--------|-----------|
-| C1 | Sharpe OOS > 1,0 | ... | ... | ... |
+| C1 | Sharpe OOS > 1,2 (v1.1) | ... | ... | ... |
 ...
 
 ### Diagnostic overfitting (7 patterns)
@@ -187,7 +192,7 @@ Les gates GC1-GC10 standard ne s'appliquent pas (outil 100 % personnel, pas de c
 | B1 | Données complètes IS + OOS séparées | BLOQUANT | Read rapport, périodes explicites |
 | B2 | Paramètres figés post-IS | BLOQUANT | Compare config IS vs OOS (anti-O2) |
 | B3 | ≥ 100 trades IS | BLOQUANT | COUNT trades |
-| B4 | Sharpe OOS > 1,0 | BLOQUANT | Critère C1 |
+| B4 | Sharpe OOS > 1,2 (v1.1) | BLOQUANT | Critère C1 |
 | B5 | Profit Factor OOS > 1,5 | BLOQUANT | Critère C2 |
 | B6 | Max drawdown OOS < 20 % | BLOQUANT | Critère C3 |
 | B7 | Robustesse OOS/IS ≥ 50 % | BLOQUANT | Critère C4 |
@@ -205,7 +210,7 @@ Verdict GO backtest = AND des 8 BLOQUANT PASS + ≥ 1/2 REQUIS PASS.
 
 ## Anti-patterns à éviter (auto-discipline)
 
-- **Indulgence "presque GO"** : un edge à Sharpe OOS = 0,98 n'est PAS un GO — c'est RETRAVAILLER. La frontière ≥ 1,0 est la frontière, pas une suggestion. Mieux vaut un faux NO-GO qu'un faux GO.
+- **Indulgence "presque GO"** : un edge à Sharpe OOS = 1,18 n'est PAS un GO — c'est RETRAVAILLER. La frontière > 1,2 (v1.1) est la frontière, pas une suggestion. Mieux vaut un faux NO-GO qu'un faux GO.
 - **Validation par narratif** : ne JAMAIS valider un edge parce que "la logique est élégante" ou "ça correspond à un pattern connu". La logique a déjà été acceptée par le brief — moi je valide les chiffres OOS.
 - **Confusion IS/OOS** : ne JAMAIS citer un Sharpe IS comme preuve de robustesse. Le Sharpe IS est un input d'entraînement, pas un résultat.
 - **Calcul à partir de données partielles** : si la robustesse OOS/IS n'est pas calculable (Sharpe IS manquant), je signale "INPUTS INSUFFISANTS", je ne calcule pas avec une hypothèse.

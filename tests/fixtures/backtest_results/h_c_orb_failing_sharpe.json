@@ -1,0 +1,15 @@
+{
+  "edge_id": "H-C-ORB",
+  "description": "Stats fictives échouant C1 (Sharpe OOS 1.10 < 1.20)",
+  "sharpe_oos": 1.10,
+  "profit_factor_oos": 1.55,
+  "drawdown_monthly_oos": 0.15,
+  "sharpe_is": 1.60,
+  "walk_forward_pass_count": 3,
+  "nb_trades_oos": 65,
+  "nb_trades_is": 280,
+  "pvalue": 0.015,
+  "pvalue_method": "hansen_spa",
+  "best_params_is": {"orb_minutes": 15, "tp_multiple": 1.5},
+  "params_used_oos": {"orb_minutes": 15, "tp_multiple": 1.5}
+}

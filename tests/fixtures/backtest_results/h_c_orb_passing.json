@@ -1,0 +1,15 @@
+{
+  "edge_id": "H-C-ORB",
+  "description": "Stats fictives passant les 6 conditions AND v1.1",
+  "sharpe_oos": 1.45,
+  "profit_factor_oos": 1.85,
+  "drawdown_monthly_oos": 0.12,
+  "sharpe_is": 1.80,
+  "walk_forward_pass_count": 3,
+  "nb_trades_oos": 78,
+  "nb_trades_is": 320,
+  "pvalue": 0.012,
+  "pvalue_method": "hansen_spa",
+  "best_params_is": {"orb_minutes": 15, "tp_multiple": 1.5},
+  "params_used_oos": {"orb_minutes": 15, "tp_multiple": 1.5}
+}

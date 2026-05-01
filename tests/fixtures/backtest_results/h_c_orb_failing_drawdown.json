@@ -1,0 +1,15 @@
+{
+  "edge_id": "H-C-ORB",
+  "description": "Stats fictives échouant C3 (drawdown 25% >= 20%) ET autres conditions → NO_GO",
+  "sharpe_oos": 0.80,
+  "profit_factor_oos": 1.20,
+  "drawdown_monthly_oos": 0.25,
+  "sharpe_is": 1.60,
+  "walk_forward_pass_count": 1,
+  "nb_trades_oos": 45,
+  "nb_trades_is": 180,
+  "pvalue": 0.08,
+  "pvalue_method": "hansen_spa",
+  "best_params_is": {"orb_minutes": 15, "tp_multiple": 1.5},
+  "params_used_oos": {"orb_minutes": 15, "tp_multiple": 1.5}
+}

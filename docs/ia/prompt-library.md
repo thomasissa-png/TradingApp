@@ -1,10 +1,11 @@
 <!-- Version: 2026-05-01T00:00 — @ia — Création initiale prompt-library TradingApp (PROMPT_VERSION signal-scoring-v1.0) -->
+<!-- Version: 2026-05-01T01:30 — @ia — v1.1 corrections post-audit self-critical (TC-06/07/08, cache fix system→user message, H-D/H-G seuils numériques explicites) -->
 
 # Prompt Library — TradingApp
 
 > Auteur : @ia — Date : 2026-05-01
 > **Statut** : PRÉREQUIS BLOQUANT pour @fullstack Phase 2.
-> **PROMPT_VERSION courante** : `signal-scoring-v1.0`
+> **PROMPT_VERSION courante** : `signal-scoring-v1.1` (post-audit @ia self-critical — voir §6.5 changelog)
 > **Modèle live cible** : `claude-sonnet-4-5-20250929`
 > **Modèle R&D cible** : `claude-haiku-4-5`
 > **Lecture amont** : `docs/ia/ai-architecture.md` (architecture + schemas), `docs/strategy/brand-platform.md` (Voice & Tone, mots proscrits), `docs/product/functional-specs.md` (US-01 15 champs, US-05 timeout 45 s), `docs/analytics/edge-rnd-brief.md` (7 hypothèses).
@@ -25,12 +26,13 @@
 
 ---
 
-## 1. Prompt système — `signal-scoring-v1.0`
+## 1. Prompt système — `signal-scoring-v1.1`
 
-> **ID** : `signal-scoring-v1.0`
+> **ID** : `signal-scoring-v1.1` (v1.1 = correction cache stability — la phrase `model_used` variable a été déplacée du system prompt vers le user message runtime)
 > **Modèle cible** : `claude-sonnet-4-5-20250929` (live), `claude-haiku-4-5` (R&D)
-> **Type** : system prompt (mis dans le champ `system` du SDK Anthropic, **avec `cache_control: { type: "ephemeral" }` pour bénéficier du prompt caching -90 %**)
+> **Type** : system prompt (mis dans le champ `system` du SDK Anthropic, **`cache_control: { type: "ephemeral" }` activé en mode R&D batch uniquement** — désactivé en live car cache hit rate = 0 % avec 1 call/jour, cf. ai-architecture.md §7.1 v1.1)
 > **Taille estimée** : ~1100 mots / ~1450 tokens
+> **Stabilité v1.1** : 100 % stable entre live et R&D (aucune variable runtime dans le system prompt) → permet cache hit ~95 % en R&D batch sans invalidation entre appels.
 
 ### 1.1 Texte exact du prompt système
 
@@ -105,8 +107,11 @@ L'utilisateur (le pipeline TradingApp) te fournit :
 # Champs output exacts (15)
 id, date, hour_calc, asset, direction, entry, sl, tp, score, raison, edge_id, backtest_ref, ALERT_flag, no_trade_reason, model_used.
 
-Pour `model_used`, retourne exactement la valeur "claude-sonnet-4-5-20250929" en live, "claude-haiku-4-5" en R&D (te sera précisé dans le user message).
+Pour `model_used`, recopie exactement la valeur fournie dans le champ `model_used_to_echo` du user message (ne décide jamais cette valeur toi-même — elle est passée runtime par le pipeline).
 Pour `id`, génère un UUID v4 ou utilise celui fourni si présent en input.
+
+# Note v1.1 (cache stability)
+Ce system prompt est 100 % stable. Toute variable runtime (model_used, mode live/R&D, fallback Haiku) est passée dans le user message via les champs `model_used_to_echo` et `runtime_mode`. Cela permet le cache hit en mode R&D batch.
 
 Rappel : tu es un système de signaux pour un trader particulier. Sa confiance dans tes outputs dépend de la qualité chiffrée de ta justification. Une seule mauvaise justification = perte de confiance définitive. Sois précis, sobre, factuel. Si tu hésites, NO-TRADE.
 ```
@@ -114,22 +119,36 @@ Rappel : tu es un système de signaux pour un trader particulier. Sa confiance d
 ### 1.2 Configuration SDK Anthropic associée
 
 ```typescript
+// v1.1 — config SDK Anthropic (live OU R&D)
+const isLive = mode === "live";
+const modelUsed = isLive ? "claude-sonnet-4-5-20250929" : "claude-haiku-4-5";
+
+const systemBlock = {
+  type: "text" as const,
+  text: SIGNAL_SCORING_V1_1_SYSTEM_PROMPT,
+  // v1.1 : cache_control activé UNIQUEMENT en R&D batch (cache hit rate ~95 %)
+  // En live (1 call/jour), fenêtre 5 min expire toujours → cache_control retiré pour économiser le cache write penalty
+  ...(isLive ? {} : { cache_control: { type: "ephemeral" as const } })
+};
+
+const userPayload = {
+  ...signalScoringInput,
+  model_used_to_echo: modelUsed,    // v1.1 : runtime, pas dans system prompt
+  runtime_mode: isLive ? "live" : "rnd"
+};
+
 {
-  model: process.env.ANTHROPIC_MODEL_LIVE,  // "claude-sonnet-4-5-20250929"
+  model: modelUsed,
   max_tokens: 1024,
   temperature: 0.1,
-  system: [
-    {
-      type: "text",
-      text: SIGNAL_SCORING_V1_0_SYSTEM_PROMPT,
-      cache_control: { type: "ephemeral" }   // -90 % sur input cacheable
-    }
-  ],
+  system: [systemBlock],
   tools: [emitSignalScoringTool],            // cf. §3.2
   tool_choice: { type: "tool", name: "emit_signal_scoring" },
-  messages: [{ role: "user", content: JSON.stringify(signalScoringInput) }]
+  messages: [{ role: "user", content: JSON.stringify(userPayload) }]
 }
 ```
+
+**Fallback Haiku** (cf. ai-architecture §4.3 v1.1) : si appel Sonnet timeout 25 s → relancer config identique avec `mode = "rnd-fallback-live"` + `modelUsed = "claude-haiku-4-5"` + `cache_control` activé (Haiku peut utiliser le cache même si live, le system prompt reste identique). `model_used_to_echo` reflète le modèle réellement utilisé (Haiku) → traçabilité SQLite.
 
 ---
 
@@ -216,7 +235,7 @@ ALERT si :
 - News contradictoire au breakout détectée dans le contexte.
 ```
 
-### 2.4 `edge-H-D-v1.0` — Momentum Overnight US → EU
+### 2.4 `edge-H-D-v1.1` — Momentum Overnight US → EU (v1.1 — seuils explicites)
 
 **Placeholders typés** :
 - `{SP_OVERNIGHT_PCT}` : ex 0.6
@@ -226,20 +245,23 @@ ALERT si :
 **Bloc à injecter** :
 
 ```
-EDGE: H-D — Momentum Overnight US → EU
+EDGE: H-D — Momentum Overnight US → EU (v1.1)
 
 Hypothèse à scorer : la performance des futures S&P 500 sur la fenêtre {CORRELATION_WINDOW} ({SP_OVERNIGHT_PCT}%) prédit le sens d'ouverture EU sur {ASSET_NAME}.
 
 Direction attendue : ACHAT si S&P overnight > +0,5 %, VENTE si < -0,5 %, sinon NO-TRADE.
 
-Confirmations pour score ≥ 7 :
-- Mouvement S&P > 0,5 % en absolu sur fenêtre overnight retenue.
+Seuils numériques explicites (v1.1) pour score ≥ 7 :
+- |S&P futures overnight| > 0,4 σ (écart-type historique 30 jours sur fenêtre overnight 22h00-7h00 CET).
+- Corrélation rolling 30 jours S&P futures ↔ {ASSET_NAME} ≥ 0,5 (corrélation suffisante pour transposer le signal).
+- Mouvement absolu overnight > 0,6 % (delta_overnight > 0,6 % en valeur absolue, en plus du critère σ — protège contre micro-mouvements en période de faible vol historique).
 - Pas de divergence Asie / Europe (pas de Nikkei contraire — voir H-G en complément).
 - RSI 14 EU compatible avec la direction.
 
 ALERT si :
 - News macro EU contraire au signe overnight US (exemple : BCE hawkish surprise alors que S&P bullish overnight).
-- Écart historique inhabituel (+/- 2 σ vs distribution backtest).
+- Écart historique inhabituel (delta_overnight > +/- 2 σ vs distribution backtest 30j) — sur-extension probable, candidat au fade plutôt qu'au follow.
+- Corrélation rolling 30j < 0,5 (signal non transposable, prendre NO-TRADE plutôt qu'ACHAT/VENTE faible).
 ```
 
 ### 2.5 `edge-H-E-v1.0` — News Pré-marché (scoring sentiment)
@@ -308,7 +330,7 @@ ALERT si :
 - Liquidité futures dégradée (spread bid/ask > moyenne).
 ```
 
-### 2.7 `edge-H-G-v1.0` — Sentiment Overnight Asie
+### 2.7 `edge-H-G-v1.1` — Sentiment Overnight Asie (v1.1 — seuils explicites)
 
 **Placeholders typés** :
 - `{NIKKEI_CLOSE_PCT}` : ex 1.2
@@ -318,7 +340,7 @@ ALERT si :
 **Bloc à injecter** :
 
 ```
-EDGE: H-G — Sentiment Overnight Asie
+EDGE: H-G — Sentiment Overnight Asie (v1.1)
 
 Hypothèse à scorer : Nikkei 225 a clôturé à {NIKKEI_CLOSE_PCT}% et Hang Seng à {HSI_CLOSE_PCT}%. La corrélation historique avec {ASSET_NAME} prédit le sens d'ouverture EU.
 
@@ -327,13 +349,17 @@ Direction attendue :
 - VENTE si Nikkei + HSI tous deux < -0,5 %.
 - NO-TRADE si signaux Asie contradictoires entre eux.
 
-Confirmations pour score ≥ 7 :
-- Nikkei et HSI alignés (pas l'un haussier, l'autre baissier).
+Seuils numériques explicites (v1.1) pour score ≥ 7 :
+- |Nikkei close − {ASSET_NAME} open prévu| > 1,0 % (delta minimum pour qu'un transfert de momentum soit informationnel).
+- Corrélation rolling 60 jours Nikkei ↔ {ASSET_NAME} ≥ 0,4 (corrélation suffisante — Asie/EU sont moins corrélés que US/EU, seuil plus bas).
+- Nikkei et HSI alignés (même signe — pas l'un haussier, l'autre baissier).
 - S&P futures overnight non contraire (cf. H-D en confluence).
 - Pas de news EU ouvrant contre la direction Asie.
 
 ALERT si :
-- Asie bullish + S&P bearish (signaux globaux contradictoires) → préférer NO-TRADE.
+- Asie bullish (Nikkei+HSI > +0,5 %) + S&P bearish (S&P futures overnight < -0,3 %) → signaux globaux contradictoires, préférer NO-TRADE.
+- Corrélation rolling 60j < 0,4 (signal non transposable, NO-TRADE plutôt qu'ACHAT/VENTE faible).
+- Delta Nikkei vs {ASSET_NAME} historique > 2 σ (sur-extension macro, possible fade plutôt que follow).
 
 Note : edge macro, signal moins granulaire — utiliser en complément d'un edge technique (H-C ou H-A) plutôt qu'en autonome.
 ```

@@ -1,4 +1,5 @@
 <!-- Version: 2026-05-01T00:00 — @ia — Création initiale ai-architecture TradingApp -->
+<!-- Version: 2026-05-01T01:30 — @ia — v1.1 corrections post-audit self-critical (cache hit rate live 0%, fallback Haiku 4.5 si Sonnet timeout, coût annuel réaliste) -->
 
 # AI Architecture — TradingApp
 
@@ -260,17 +261,22 @@ Aucun signal émis aujourd'hui (règle : pas de signal sans justification).
 
 **Justification brand** : la promesse interne brand-platform §3 est "Je n'envoie un signal que si j'ai une raison chiffrée de le faire. Sinon je me tais." → DEGRADED MODE = silence assumé, pas d'envoi forcé.
 
-### 4.3 Timeouts détaillés
+### 4.3 Timeouts détaillés (v1.1 — fallback Haiku ajouté)
 
-| Étape | Timeout | Action si timeout |
-|---|---|---|
-| Préparation contexte (cache SQLite) | 5 s | DEGRADED MODE |
-| Appel Claude (1ère tentative) | 45 s (US-05 contrainte) | Retry 1 |
-| Appel Claude (retry 1, après 10 s) | 30 s (budget restant) | Retry 2 |
-| Appel Claude (retry 2, après 5 s) | 15 s | DEGRADED MODE |
-| Validation schema + envoi Telegram | < 2 s | log + retry une fois |
+| Étape | Timeout | Modèle | Action si timeout |
+|---|---|---|---|
+| Préparation contexte (cache SQLite) | 5 s | — | DEGRADED MODE |
+| **Appel Claude (1ère tentative)** | **25 s** (v1.1, ex-45 s) | Sonnet 4.5 | **Fallback Haiku** (v1.1) |
+| **Appel Claude (fallback Haiku)** | **10 s** (v1.1) | Haiku 4.5 | DEGRADED MODE |
+| Validation schema + envoi Telegram | < 2 s | — | log + retry une fois |
 
-**Budget total pipeline** : ≤ 110 s entre 8h40 (cron démarre) et 8h55 (cutoff strict). Marge suffisante.
+**Justification fallback Haiku (v1.1, audit @ia self-critical)** : Sonnet P50 3-6 s mais **P95 matinal peut atteindre 15-20 s en charge mondiale 8h45-8h55 CET** (heure de pointe EU — pic d'usage API simultané sur tous les utilisateurs européens). Fallback Haiku 4.5 : P95 ~3 s, qualité 3.5/5 sur scoring (cf. §1.1) — **acceptable pour un signal exceptionnel**, supérieur à un DEGRADED MODE forcé pour cause de latence (silence) qui frustre Thomas.
+
+**Logique** : `Sonnet (timeout 25s) → fallback Haiku (timeout 10s) → DEGRADED MODE`. Le pipeline log `model_used` réel (`claude-haiku-4-5` si fallback déclenché) + flag `fallback_haiku=true` en SQLite + ALERT_flag forcé "ALERT" sur le signal Haiku (Thomas voit "ALERT — fallback modèle Haiku, qualité justification dégradée").
+
+**Pourquoi PAS retry Sonnet** : si Sonnet timeout à 25s en heure de pointe, retry Sonnet va probablement re-timeout (charge globale Anthropic) — perte de temps avant cutoff 8h55. Préfère Haiku qui répond rapidement qu'un DEGRADED forcé. Coût additionnel d'un fallback Haiku : ~0,003 $/appel (négligeable, max ~0,07 $/mois si 22/22 appels en fallback).
+
+**Budget total pipeline (v1.1)** : 5 s (contexte) + 25 s (Sonnet) + 10 s (Haiku fallback) + 2 s (validation) ≈ **42 s max**. Cron démarre 8h45 → cutoff 8h55 = **600 s budget**. Marge largement suffisante (>10× le budget consommé).
 
 ---
 
@@ -401,13 +407,19 @@ Aucun signal émis aujourd'hui (règle : pas de signal sans justification).
 
 ## 7. Coût détaillé — verdict H4 confirmé
 
-### 7.1 Calculs live (Sonnet 4.5)
+### 7.1 Calculs live (Sonnet 4.5) — v1.1 cache hit rate corrigé
 
-| Élément | Calcul | Coût |
+**Correction post-audit @ia self-critical** : la fenêtre du cache `ephemeral` Anthropic est de **5 minutes**. En live, 22 calls/mois = **1 call/jour ouvré** à 8h45-8h55 CET. Chaque appel matinal arrive avec un cache **expiré depuis ~24h** → **cache hit rate live = 0 %**. Le calcul v1.0 qui estimait 0,66 $/mois supposait à tort un bénéfice cache — corrigé ci-dessous.
+
+| Élément | Calcul (v1.1, sans cache hit live) | Coût |
 |---|---|---|
-| Input live | 22 jours × 5 000 tokens × 3 $/M | 0,33 $ |
+| Input live (sans cache hit) | 22 jours × 5 000 tokens × 3 $/M | 0,33 $ |
+| **Cache write penalty** (1.25× input cacheable au 1er call de chaque session) | 22 × 4 000 tokens × (3,75 $ − 3,00 $)/M | 0,066 $ |
 | Output live | 22 jours × 1 000 tokens × 15 $/M | 0,33 $ |
-| **Total live mensuel** | | **0,66 $/mois ≈ 0,60 €/mois** |
+| Fallback Haiku (estimation 5 % des appels en fallback) | 22 × 5 % × 0,003 $ | 0,003 $ |
+| **Total live mensuel (v1.1)** | | **~0,73 $/mois ≈ 0,67 €/mois** (ex-0,66 v1.0) |
+
+**Note** : si l'on désactive le `cache_control: ephemeral` en live (puisqu'aucun cache hit ne se produira), on économise les ~0,066 $ de cache write penalty → **~0,66 $/mois** (chiffre v1.0 valide dans ce cas). **Recommandation v1.1** : désactiver `cache_control` sur le system prompt en mode live, le garder en mode R&D (où 100 calls/jour = cache hit ~95 %). Logique simple : `if (mode === "live") { /* no cache_control */ } else { cache_control: { type: "ephemeral" } }`.
 
 ### 7.2 Calculs R&D Haiku (avec optim batch + cache)
 
@@ -418,12 +430,25 @@ Hypothèses : 80 % du prompt système est cacheable (immutable entre appels), 20
 | **R&D 100 ap/j × 30j (recommandé)** | 100×30×4000×0,10 $/M = 1,20 $ | 100×30×1000×1$/M = 3 $ → batch 1,5 $ | 100×30×1000×5$/M = 15 $ → batch 7,5 $ | **~10 $/mois** |
 | **R&D 500 ap/j × 30j (NEEDS-DECISION)** | 500×30×4000×0,10 $/M = 6 $ | 500×30×1000×1$/M = 15 $ → batch 7,5 $ | 500×30×1000×5$/M = 75 $ → batch 37,5 $ | **~51 $/mois** |
 
-### 7.3 Verdict H4 final
+### 7.3 Verdict H4 final (v1.1)
 
-✅ **PASS** — confirmé.
-- Live : 0,66 $/mois (cf. infra-audit §3.3 — chiffre identique).
-- R&D 100 ap/j : 10 $/mois (cf. infra-audit §3.3).
+✅ **PASS** — confirmé avec correction.
+- Live : **~0,66-0,73 $/mois** (v1.1 — selon décision cache_control on/off ; recommandation = off en live, soit 0,66 $).
+- R&D 100 ap/j : 10 $/mois (inchangé — cache hit ~95 % en R&D batch).
 - **Recommandation ferme** : env var `RND_DAILY_CALL_CAP=100` pour forcer le cap par défaut.
+
+### 7.3bis Coût annuel réaliste (v1.1)
+
+Audit @ia self-critical : le coût mensuel ne capture pas les périodes R&D ni les marges dev/migration. Vue annuelle réaliste :
+
+| Poste | Calcul | Coût annuel |
+|---|---|---|
+| Live Sonnet (12 mois × 0,66 $) | 22 calls/mois × 12 | ~8 $ |
+| R&D Haiku (3 mois Phase 1 × 10 $) | 100 calls/jour × 30 × 3 | ~30 $ |
+| Buffer dev/migration (tests TC-01 à TC-08, retry, debug) | ~$20 réserve sur 12 mois | ~20 $ |
+| **Total annuel TradingApp (v1.1)** | | **≈ $58/an ≈ 53 €/an** |
+
+Très large marge sous le budget initial 10 €/mois × 12 = 120 €/an (consommation 44 % du budget annuel).
 
 ### 7.4 Optimisations actives (rappel)
 
@@ -500,7 +525,7 @@ export type SignalOutput = z.infer<typeof SignalOutputSchema>;
 | G1 | Toutes sections présentes | PASS | §1 à §10 remplies, 0 TODO résiduel |
 | G3 | Bloc Handoff structuré présent | PASS | §Handoff en fin de fichier |
 | G5 | Persona Thomas identique project-context.md | PASS | "Thomas" cité ≥ 5× ; capital 20-30 k€, Bourse Direct, fenêtre 8h45-8h55 cohérents |
-| G7 | 0 contradiction livrables amont | PASS | Référence explicite infra-audit §3 (verdict H4 PASS), legal-audit §6 (ZDR), functional-specs US-01 (15 champs), US-05 (timeout 45 s), brand-platform (mots proscrits, conditionnel) |
+| G7 | 0 contradiction livrables amont | PASS | Référence explicite infra-audit §3 (verdict H4 PASS), legal-audit §6 (ZDR), functional-specs US-01 (15 champs), US-05 (timeout 45 s — décomposé v1.1 en 25s Sonnet + 10s Haiku fallback, total 35s ≤ 45s contrainte US-05), brand-platform (mots proscrits, conditionnel) |
 | G12 | Implémentable sans question | PASS | Schemas TS exhaustifs, pseudo-code validation, env vars nommées (`CONFIDENCE_THRESHOLD`, `RND_DAILY_CALL_CAP`, `MONTHLY_AI_BUDGET_EUR`) |
 | G13 | 0 donnée inventée | PASS | Tarifs 2026 sourcés infra-audit §3.1 ; rétention 7j Anthropic sourcée legal-audit §6.2 ; PFU 31,4 % cohérent L001 |
 | G14 | Livrables absents signalés | PASS | `prompt-library.md` référencé comme prérequis bloquant — production simultanée |
@@ -523,9 +548,10 @@ export type SignalOutput = z.infer<typeof SignalOutputSchema>;
   - Tool use natif Anthropic pour forcer le JSON 15 champs strict.
   - ZDR Anthropic recommandé (action persona : email support).
   - Circuit breaker : 3 erreurs consécutives → 24h pause + alerte Telegram.
-  - Timeout : 45 s (1ère) + 30 s (retry 1) + 15 s (retry 2), puis DEGRADED MODE.
+  - **Timeout v1.1** : 25 s (Sonnet) + 10 s (fallback Haiku 4.5) puis DEGRADED MODE — abandon des retries Sonnet (charge mondiale 8h45-8h55 = pic API EU).
   - Budget tokens : 5 000 input cap, 1 000 output cap.
-  - Verdict H4 confirmé PASS : 0,66 $/mois live + ~10 $/mois R&D 100 ap/j.
+  - **Cache hit rate live = 0 %** (v1.1) : fenêtre cache ephemeral 5 min, 1 call/jour ouvré → cache toujours expiré. Recommandation : désactiver `cache_control` en live, le garder en R&D (95 % hit rate batch).
+  - Verdict H4 confirmé PASS (v1.1) : ~0,66-0,73 $/mois live + ~10 $/mois R&D 100 ap/j. Coût annuel réaliste ≈ **$58** (live $8 + R&D 3 mois $30 + buffer dev/migration $20).
 - **Points d'attention** :
   - **Prérequis bloquant Phase 2** : `prompt-library.md` validé par @testeur-persona-thomas avant que @fullstack code l'intégration.
   - **Action persona** : signer addendum ZDR Anthropic (email support).

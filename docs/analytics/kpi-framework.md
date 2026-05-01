@@ -310,6 +310,9 @@ Implémenter en **triggers SQLite + alerte Telegram P0** (infra-audit.md section
 | 3 | Win rate live < win rate backtest − 15 pts sur 3 mois | Calculé en batch mensuel (comparaison journal vs `backtest_ref`) | "ALERTE — win rate live [X%] vs backtest [Y%]. Écart > 15 pts sur 3 mois. Revue edge." |
 | 4 | Score confiance moyen en live > score moyen backtest (euphorie) | `AVG(score) WHERE direction='BUY'` dernier mois > `backtest_avg_score` | "ALERTE euphorie — scores signaux récents supérieurs backtest. Forcer walk-forward OOS." |
 | 5 | Position turbo non clôturée en fin de journée (overnight) | Trade sans `exit_date` après 18h00 CET le jour J | P0 — "INCIDENT — position ouverte non clôturée. Vérifier immédiatement sur Bourse Direct." |
+| **6** | **J+45 R&D sans hypothèse wave 1 validée (PRE-backtest)** | `days_elapsed ≥ 45` depuis `strategy_state.rnd_start_date` ET `COUNT(rnd_results WHERE pre_backtest_passed=1 AND edge_id IN ('H-C','H-A')) = 0` → `strategy_state.stop_loss_rnd_triggered = 1` + blocage envoi signaux | P0 — "ESCALADE FONDATEUR — R&D wave 1 J+45 sans signal robuste. Décision continue/stop requise." (Thomas répond via `/continue` ou `/stop` — double confirmation F20 user-flows.md). Justification : anti-biais coût irrécupérable (H-STOPLOSS project-context.md). |
+
+> **Champs SQLite requis pour signal n°6** (à ajouter dans `strategy_state` par @fullstack) : `rnd_start_date DATE`, `stop_loss_rnd_triggered INTEGER DEFAULT 0`, `stop_loss_rnd_triggered_at TIMESTAMP`, `rnd_results` table avec colonnes `edge_id TEXT`, `pre_backtest_passed INTEGER`, `tested_at TIMESTAMP`. Cf. `docs/analytics/score-distribution-simulation.md` §5.2 pour le pseudo-code Python complet.
 
 ---
 

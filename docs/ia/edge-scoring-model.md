@@ -12,9 +12,9 @@
 ## Résumé exécutif
 
 - **Approche hybride** : Claude (Sonnet 4.5 live, Haiku 4.5 R&D) génère un score brut 1.0-10.0 + raison structurée → 5 sanity checks déterministes ex-post → score final + flag (ALERT / SAFE / NO-TRADE).
-- **6 dimensions pondérées** : D1 force signal (30 %), D2 confluence indicateurs (20 %), D3 contexte news (15 %), D4 volatilité (15 %), D5 régime VIX/V2X (10 %), D6 référence backtest (10 %).
-- **5 sanity checks anti-overfitting / anti-euphorie** : SC1 cohérence direction, SC2 R/R ≥ 1.5, SC3 score > 9 → ALERT, SC4 % no-trade < 20 % → pénalité, SC5 langage spéculatif → plafond 6.0.
-- **CONFIDENCE_THRESHOLD initial = 6.5** [HYPOTHÈSE — calibration R&D requise sur 5 ans backtest].
+- **6 dimensions pondérées** (v1.1) : D1 force signal (30 %), D2 confluence indicateurs (15 %), D3 contexte news (15 %), D4 volatilité (15 %), D5 régime VIX/V2X (10 %), D6 référence backtest (15 %).
+- **6 sanity checks anti-overfitting / anti-euphorie** (v1.1) : SC1 cohérence direction, SC2 R/R ≥ 1.5, SC3 score > 9 → ALERT, SC4 % no-trade < 20 % → pénalité, SC5 langage spéculatif → plafond 6.0, **SC6 diversité sous-jacents 30j → plafond 7.0 + ALERT**.
+- **CONFIDENCE_THRESHOLD split paper/live** (v1.1) : `CONFIDENCE_THRESHOLD_PAPER = 7.0` (bootstrap conservateur 4-8 sem.), `CONFIDENCE_THRESHOLD_LIVE = 6.5` [HYPOTHÈSE — calibrable R&D]. Sélection runtime via `STRATEGY_ACTIVE` SQLite (US-11).
 - **Coût/signal Sonnet 4.5** : ~0,03 $ (cohérent ai-architecture §7 — verdict H4 PASS confortable).
 - **Verdict modèle** : à valider par @testeur-backtest-edge avant Phase 2.
 
@@ -27,7 +27,7 @@
 Ni LLM seul (risque hallucination + sur-confiance), ni calcul déterministe seul (perd la capacité d'agréger contexte qualitatif news + régime). **Hybride obligatoire** :
 
 1. **Claude génère le score brut** (1.0-10.0) à partir de l'input typé `SignalScoringInput` (cf. ai-architecture §2.1) et produit la `raison` (1-3 lignes).
-2. **5 sanity checks déterministes ex-post** corrigent le score si nécessaire (plafonnage, flag ALERT, NO-TRADE forcé).
+2. **6 sanity checks déterministes ex-post** (v1.1) corrigent le score si nécessaire (plafonnage, flag ALERT, NO-TRADE forcé).
 3. **Score final + flag** émis dans le JSON 15 champs (US-01).
 
 ### 1.2 Diagramme de flux
@@ -57,12 +57,14 @@ Ni LLM seul (risque hallucination + sur-confiance), ni calcul déterministe seul
                                  │
                                  ▼
                   ┌─────────────────────────────┐
-                  │ 5 sanity checks déterministes│
+                  │ 6 sanity checks déterministes│
                   │ SC1 cohérence direction     │
                   │ SC2 R/R ≥ 1.5               │
                   │ SC3 score > 9 → ALERT       │
                   │ SC4 % no-trade < 20 % → -1  │
                   │ SC5 langage futur → ≤ 6.0   │
+                  │ SC6 div. sous-jacents 30j   │
+                  │     → ≤ 7.0 + ALERT          │
                   └──────────────┬──────────────┘
                                  │
                                  ▼
@@ -83,11 +85,13 @@ Ni LLM seul (risque hallucination + sur-confiance), ni calcul déterministe seul
 | # | Dimension | Poids | Source | Formule | Range |
 |---|---|---|---|---|---|
 | **D1** | Force du signal d'edge | **30 %** | `edge_features` (variable selon H-A..G) | amplitude normalisée par σ historique 30j | 0-10 |
-| **D2** | Confluence indicateurs techniques | **20 %** | `indicators` (RSI/MACD/Bollinger) | % des 3 indicateurs alignés avec la direction signal | 0-10 |
+| **D2** | Confluence indicateurs techniques | **15 %** (v1.1, ex-20 %) | `indicators` (RSI/MACD/Bollinger) | % des 3 indicateurs alignés avec la direction signal | 0-10 |
 | **D3** | Contexte news pré-marché | **15 %** | `edge_features.news_titles` + `sentiment_score` | sentiment ×10 (signe aligné direction) — **plafond 7.0 si news indispo** | 0-10 |
 | **D4** | Volatilité réalisée vs implicite | **15 %** | `indicators.atr_14` + VIX/V2X (si disponible) | ratio σ_realisée / σ_implicite ; > 1 = sur-volatilité | 0-10 |
 | **D5** | Régime de marché VIX/V2X | **10 %** | VIX (ou V2X pour EU) + classification trend/range/panic | VIX < 15 trend = 8, 15-25 range = 6, > 25 panic = 3 | 0-10 |
-| **D6** | Référence backtest | **10 %** | `backtest_stats` (Sharpe + win_rate + nb_trades + fraicheur) | Sharpe×3 + win_rate/10 + min(nb_trades/20, 5) ; pénalité si backtest > 90j | 0-10 |
+| **D6** | Référence backtest | **15 %** (v1.1, ex-10 %) | `backtest_stats` (Sharpe + win_rate + nb_trades + fraicheur) | Sharpe×3 + win_rate/10 + min(nb_trades/20, 5) ; pénalité si backtest > 90j | 0-10 |
+
+**Justification rééquilibrage v1.1** (verdict @qa) : D2 confluence techniques baissée car les 3 indicateurs (RSI/MACD/BB) sont fortement corrélés intra-classe (signal redondant) — 20 % surévaluait leur poids informationnel réel. D6 backtest remontée car la qualité statistique de l'edge (Sharpe, win_rate, nb_trades) est le signal le plus robuste anti-overfitting — 10 % sous-pondérait la référence empirique. Total reste 100 % (30 + 15 + 15 + 15 + 10 + 15).
 
 ### 2.2 Formule globale
 
@@ -107,7 +111,7 @@ score_brut = clip( Σ(D_i × poids_i × normalisation_i), 1.0, 10.0 )
 - H-E News : `D1 = clip(|sentiment_score| × 10, 0, 10)`.
 - (Détail par hypothèse dans `prompt-library.md` §2.)
 
-**D2 — Confluence indicateurs (20 %)** : alignement des 3 indicateurs avec direction signal.
+**D2 — Confluence indicateurs (15 %, v1.1)** : alignement des 3 indicateurs avec direction signal.
 - 3/3 alignés = 10, 2/3 = 6, 1/3 = 3, 0/3 = 0.
 - ACHAT aligné : RSI > 50, MACD histogram > 0, prix > Bollinger middle.
 - VENTE aligné : RSI < 50, MACD histogram < 0, prix < Bollinger middle.
@@ -128,7 +132,7 @@ score_brut = clip( Σ(D_i × poids_i × normalisation_i), 1.0, 10.0 )
 - VIX > 25 → régime "panic" → D5 = 3 (défavorable, levier risqué).
 - Si VIX indisponible → D5 = 5 par défaut (neutre, pas de pénalité).
 
-**D6 — Référence backtest (10 %)** : qualité statistique.
+**D6 — Référence backtest (15 %, v1.1)** : qualité statistique.
 - `D6 = clip(Sharpe×3 + win_rate/10 + min(nb_trades/20, 5), 0, 10)`.
 - **Pénalité fraicheur** : si backtest > 90 jours → `D6 -= 1.5` (les régimes de marché bougent).
 - Pénalité `nb_trades < 30` (cf. edge-rnd-brief seuils) → `D6 -= 2`.
@@ -181,7 +185,23 @@ score_brut = clip( Σ(D_i × poids_i × normalisation_i), 1.0, 10.0 )
 
 **Pourquoi** : cohérent brand-platform §6 Voice & Tone — Do #4 "conditionnel d'incertitude" mais Don't "vague sans chiffres". "Le marché pourrait monter" = no-go. "Cible potentielle 18450 (cohérent backtest #B-031 win rate 61 %)" = OK. Le conditionnel doit être quantifié.
 
-### 3.6 Tableau de synthèse SC1-SC5
+### 3.6 SC6 — Diversité sous-jacents 30 jours (v1.1)
+
+**Règle** : si dans la fenêtre 30 jours glissants, l'edge `edge_id` du signal a triggé sur **1 seul sous-jacent / 13** (univers Bourse Direct DAX/CAC/EuroStoxx + 10 actions BD), alors :
+- `score = min(score_brut, 7.0)` (plafond)
+- `ALERT_flag = "ALERT"` (signal de courbure trop spécifique).
+- Lookup SQLite `signals` :
+  ```sql
+  SELECT COUNT(DISTINCT asset_ticker) FROM signals
+  WHERE edge_id = :edge_id
+    AND date >= date('now', '-30 days')
+    AND direction != 'NO-TRADE';
+  ```
+- Si résultat = 1 → SC6 déclenché.
+
+**Pourquoi** : angle mort d'overfitting **O5 runtime** (cf. testeur-backtest-edge — overfitting au sous-jacent sur lequel l'edge a "appris"). Si l'edge H-A trigge **uniquement** sur DAX et jamais sur CAC ni EuroStoxx ni les 10 actions BD pendant 30 jours, c'est un signal qu'il est sur-spécifié au régime DAX (ex: liquidité, gap-pattern Xetra). La pondération vers 7.0 + ALERT force Thomas à valider manuellement avant trade. **Bootstrap** : SC6 désactivé les 30 premiers jours (besoin d'historique signaux).
+
+### 3.7 Tableau de synthèse SC1-SC6 (v1.1)
 
 | SC | Test | Action si échec | Sévérité |
 |---|---|---|---|
@@ -190,6 +210,7 @@ score_brut = clip( Σ(D_i × poids_i × normalisation_i), 1.0, 10.0 )
 | SC3 | score brut ≤ 9.0 | Flag ALERT (revue manuelle) | Avertissement |
 | SC4 | % no-trade 7j ≥ 20 % | Score -1.0 | Pénalité |
 | SC5 | conditionnel chiffré dans raison | Score plafonné 6.0 | Pénalité |
+| **SC6** (v1.1) | **diversité sous-jacents 30j ≥ 2** | **Score plafonné 7.0 + flag ALERT** | **Avertissement** |
 
 ---
 

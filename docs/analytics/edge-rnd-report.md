@@ -1,7 +1,8 @@
 <!-- Version: 2026-05-01T00:00 — @data-analyst — Création edge-rnd-report.md TradingApp Phase 1 -->
+<!-- Version: 2026-05-01T12:00 — @data-analyst — v1.1 corrections @qa + @reviewer Phase 1b : seuil nb_trades_OOS ≥ 50, walk-forward 3/3, slippage stress test, p-value paramétrée Politis-Romano, critères GO durcis 5→6 conditions AND, mitigations risques R1-R3 -->
 # Edge R&D Report — Phase 1 TradingApp
 
-> **Statut** : LIVRABLE COMPLET
+> **Statut** : LIVRABLE COMPLET — v1.1 (corrections @qa + @reviewer Phase 1b)
 > **Auteur** : @data-analyst
 > **Date** : 2026-05-01
 > **Décision structurante n°4** : R&D edge AVANT tout code de production. No-go assumé acceptable si aucun edge qualifié.
@@ -41,7 +42,7 @@ Ce rapport constitue la **décision structurante n°4** de TradingApp : R&D edge
 | H-F | Écart Spot/Futures à l'ouverture | Arbitrage statistique |
 | H-G | Sentiment Overnight Asie → CAC (Nikkei corrélation) | Macro cross-marché |
 
-**Verdict cible** : 5 conditions AND (Sharpe OOS > 1,0 / Profit Factor OOS > 1,5 / Drawdown OOS < 20 % / Robustesse ≥ 50 % / Walk-forward ≥ 2/3 fenêtres > seuil). Si au moins 1 hypothèse PASSE les 5 conditions → GO Phase 2. Sinon → **no-go assumé**, décision structurante n°4 respectée. Le no-go est un résultat valide — mieux vaut pas de bot qu'un bot qui fait perdre 2-3 k€/mois (anti-pattern n°2, project-context.md).
+**Verdict cible** : **6 conditions AND** renforcées suite audit @qa Phase 1b (Sharpe OOS > 1,2 / Profit Factor OOS > 1,5 / Drawdown **mensuel** OOS < 20 % / Robustesse ≥ 0,6 / Walk-forward **3/3 fenêtres** PASS / nb_trades_OOS ≥ 50). Si au moins 1 hypothèse PASSE les 6 conditions → GO Phase 2. Sinon → **no-go assumé**, décision structurante n°4 respectée. Le no-go est un résultat valide — mieux vaut pas de bot qu'un bot qui fait perdre 2-3 k€/mois (anti-pattern n°2, project-context.md). [HYPOTHÈSE — probabilité d'au moins 1 hypothèse PASS sous ces conditions renforcées : ~55 %, vs ~75 % sous les seuils initiaux v1.0]
 
 **KPI North Star** : P&L net mensuel après frais Bourse Direct (1,98 € aller-retour) et fiscalité PFU **31,4 %** annuel (12,8 % IR + 18,6 % prélèvements sociaux, taux 2025 confirmé par @legal — legal-audit.md). La performance de la R&D est évaluée en net PFU, pas en brut.
 
@@ -61,7 +62,7 @@ Ce rapport constitue la **décision structurante n°4** de TradingApp : R&D edge
 
 **Règle absolue** : regarder l'OOS avant d'avoir fixé les paramètres IS invalide immédiatement l'edge (data snooping bias). Les paramètres sont gelés dès la fin de l'optimisation IS.
 
-**Critère walk-forward** : un edge est robuste si Sharpe_OOS ≥ 50 % × Sharpe_IS sur **au moins 2 fenêtres sur 3**. Un edge qui passe uniquement sur la fenêtre standard mais échoue sur les deux fenêtres glissantes est invalide.
+**Critère walk-forward (M2 — renforcé @qa)** : un edge est robuste si Sharpe_OOS ≥ 60 % × Sharpe_IS sur **les 3 fenêtres sur 3** (PASS 3/3 requis). Justification : 2/3 correspond à une probabilité de succès par hasard de 50 % sur 2 fenêtres indépendantes — insuffisant pour rejeter H0. 3/3 PASS réduit cette probabilité à ~12,5 % (Pardo 2008). Un edge qui échoue sur 1 fenêtre glissante est invalide, même si la fenêtre standard passe.
 
 ### 2.2 Coûts de transaction intégrés dans chaque simulation
 
@@ -84,7 +85,9 @@ frais_total_par_trade = (
 | **Cherry-picking** | Vérifier que les résultats ne dépendent pas de quelques trades exceptionnels | Retrait des 5 % trades extremes → PF doit rester ≥ 1,3 |
 | **Corrélation tickers** | Si l'edge passe sur DAX et CAC simultanément, vérifier corrélation des signaux | Corrélation > 0,7 → compter comme un seul signal (risque doublement de position) |
 | **Sensibilité paramètres ±10 %** | Variation de chaque paramètre optimisé de ±10 % → résultats doivent rester ≥ seuils | Si Sharpe chute > 30 % pour variation ±10 % → fragile, invalider |
-| **p-value** | Test bootstrap sur la séquence des trades IS (H0 : résultats dus au hasard) | p-value < 0,05 requis (rejet H0 au seuil 5 %) |
+| **Slippage stress test (M3 — ajout @qa)** | Recalculer chaque edge avec slippage porté à 0,2 % (×2 du scénario central) | **Sharpe stress slippage 0,2 % > 0,8 requis** — si Sharpe passe sous 0,8 avec slippage doublé → edge trop dépendant des conditions d'exécution, invalider |
+| **Look-ahead bias H-E news (M3 — ajout @qa)** | Pour H-E spécifiquement : contrôle scoring `t_publication` vs `t_publication+1h` — tester si le signal scoring survit quand l'entrée est retardée de 1h (simule la latence Claude Haiku) | Si Sharpe H-E chute > 50 % en T+1h vs T0 → look-ahead bias structurel, invalider H-E standalone |
+| **p-value multi-tests (M4 — renforcé @qa)** | Voir §2.4 — méthode paramétrée Hansen SPA ou Bonferroni selon capacité de calcul | p-value ajustée < 0,05 requis (rejet H0 au seuil ajusté multi-tests) |
 
 ### 2.4 Statistiques requises — tableau de reporting par hypothèse
 

@@ -94,7 +94,7 @@ Sortie attendue :
 2. Bouton **Create Deployment** → choisir type **Scheduled (Cron)**.
 3. **Name** : `tradingapp-cron-daily`.
 4. **Schedule** : voir section C.2 ci-dessous (TZ-dépendant).
-5. **Run command** : `python -m src.main --mode=live`.
+5. **Run command** : `python -m src.main --mode=signal` (Phase 2c-2 : pipeline scoring complet — alias `--mode=live` ou `--mode=paper` accepté, le mode paper/live est lu depuis `STRATEGY_ACTIVE` puis `strategy_state.mode` SQLite). Pour le résumé hebdo (US-09 vendredi 18h00 CET), créer un 2e cron `tradingapp-cron-weekly` avec `python -m src.main --mode=journal-week` — schedule UTC `0 17 * * 5` (CEST) ou `0 18 * * 5` (CET).
 6. **Build command** : `uv sync` (ou laisser vide si dépendances déjà installées dans le Repl source).
 7. **Resources** : 0.5 vCPU / 1 GB RAM (suffisant pour la fenêtre 10 min). Augmenter si besoin lors de la R&D phase 1.
 8. Cliquer **Deploy**.

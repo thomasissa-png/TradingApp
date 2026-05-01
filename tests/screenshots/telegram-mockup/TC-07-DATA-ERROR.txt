@@ -1,0 +1,4 @@
+⚠️ ERREUR DATA  DAX
+Twelve Data : données partielles reçues à 8h44 (champ manquant : volume 1m Xetra)
+Signal non calculable avec fiabilité suffisante — NO-TRADE par précaution
+Statut API : https://status.twelvedata.com

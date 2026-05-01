@@ -1,0 +1,5 @@
+⚠️ CRON MANQUÉ  Signal du 2026-05-04
+Pipeline non exécuté à 8h40 CET (alerte healthchecks.io)
+Signal du jour non calculé — fenêtre d'exécution 8h45-8h55 expirée
+Cause probable : démarrage Replit > 60 s
+Action : vérifier logs Replit. Signal reprendra demain matin automatiquement.

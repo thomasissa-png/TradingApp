@@ -1,0 +1,68 @@
+[project]
+name = "tradingapp"
+version = "0.1.0"
+description = "Bot Telegram TradingApp — signal turbo justifie + backteste, mini-jalon J+7"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary - Personal use only" }
+authors = [{ name = "Thomas" }]
+
+dependencies = [
+    "anthropic>=0.39.0",
+    "twelvedata>=1.2.0",
+    "python-telegram-bot>=21.0",
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    "vectorbt>=0.27.0",
+    "arch>=7.0.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+    "python-dotenv>=1.0.0",
+    "workalendar>=17.0.0",
+    "requests>=2.31.0",
+    "pytz>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-mock>=3.12",
+    "mypy>=1.8",
+    "ruff>=0.3",
+]
+
+[project.scripts]
+tradingapp = "src.main:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["data", "build", "dist", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]  # line-length already enforced via line-length=100, allow long strings
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+warn_return_any = true
+disallow_untyped_defs = true
+ignore_missing_imports = true  # vectorbt, workalendar, twelvedata pas tous typed
+exclude = ["data/", "build/", "dist/"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["."]
+addopts = "-v --tb=short"

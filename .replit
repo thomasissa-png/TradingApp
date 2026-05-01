@@ -1,0 +1,90 @@
+# .replit — TradingApp Phase 2a
+# Configuration Replit Core (Cron Deployment, stack Python pur)
+# Auteur : @infrastructure — Date : 2026-05-01
+#
+# Documentation associée : REPLIT_ACTIONS.md (guide Thomas)
+# Stack : Python 3.12 + uv + SQLite + Anthropic SDK + python-telegram-bot
+
+# ============================================================================
+# Run command — exécuté par défaut au "Run" du Repl
+# Pour le Cron Deployment, le run command est défini séparément dans
+# Deployments → Scheduled Cron → Run command (cf. REPLIT_ACTIONS.md §C.1)
+# ============================================================================
+run = "python -m src.main"
+entrypoint = "src/main.py"
+
+# ============================================================================
+# Modules Replit Nix — versions runtime
+# python-3.12 = Python 3.12+ (requis pour ZoneInfo, type hints modernes)
+# ============================================================================
+modules = ["python-3.12"]
+
+# ============================================================================
+# Hidden — fichiers/dossiers masqués dans l'IDE Replit (pas dans .gitignore)
+# ============================================================================
+hidden = [".pythonlibs", ".cache", ".venv", "__pycache__", "venv"]
+
+# ============================================================================
+# Nix configuration — dépendances système
+# ============================================================================
+[nix]
+channel = "stable-24_05"
+
+# ============================================================================
+# Package manager — uv (rapide, lock file déterministe)
+# Si pyproject.toml absent au premier run, fallback pip
+# ============================================================================
+[packager]
+language = "python3"
+ignoredPackages = ["unit_tests"]
+
+[packager.features]
+enabledForHosting = false
+packageSearch = true
+guessImports = true
+
+# ============================================================================
+# Language Server Protocol — Pyright pour autocomplete + type checking
+# ============================================================================
+[languages]
+
+[languages.python3]
+pattern = "**/*.py"
+
+[languages.python3.languageServer]
+start = "pyright-langserver --stdio"
+
+# ============================================================================
+# Environment variables — référencent les Replit Secrets
+# Les valeurs sont injectées au runtime depuis Tools → Secrets
+# JAMAIS de valeur en clair ici. Voir REPLIT_ACTIONS.md §B.1
+# ============================================================================
+[env]
+PYTHONUNBUFFERED = "1"
+PYTHONDONTWRITEBYTECODE = "1"
+PYTHONPATH = "${REPL_HOME}"
+TZ = "Europe/Paris"
+
+# ============================================================================
+# Deployment — config par défaut pour Scheduled (Cron) Deployment
+# Le schedule cron est défini dans le dashboard Deployments, pas ici.
+# Cf. REPLIT_ACTIONS.md §C pour le setup Cron complet.
+# ============================================================================
+[deployment]
+run = ["python", "-m", "src.main", "--mode=live"]
+deploymentTarget = "cloudrun"
+build = ["uv", "sync"]
+
+# ============================================================================
+# Ports — N/A pour TradingApp (pas de serveur HTTP, push Telegram sortant uniquement)
+# Si besoin futur d'un endpoint /health, décommenter :
+# [[ports]]
+# localPort = 5000
+# externalPort = 80
+# ============================================================================
+
+# ============================================================================
+# Disable Replit DB (pas utilisé — TradingApp utilise SQLite local sur volume persistant)
+# ============================================================================
+disableGuessImports = false
+disableInstallBeforeRun = false

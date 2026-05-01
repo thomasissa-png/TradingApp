@@ -5,7 +5,7 @@
 
 > Auteur : @ia — Date : 2026-05-01
 > Mission : modèle de scoring multi-dimension du signal turbo (1.0-10.0), hybride Claude + sanity checks déterministes.
-> **Lecture obligatoire amont** : `project-context.md`, `docs/ia/ai-architecture.md` (modèles + 9 règles anti-hallucination + tool use), `docs/ia/prompt-library.md` (PROMPT_VERSION signal-scoring-v1.0, prompts H-A à H-G), `docs/analytics/edge-rnd-brief.md` (7 hypothèses + seuils GO Phase 2), `docs/product/functional-specs.md` (US-01 schéma 15 champs, US-05 timeout 45 s).
+> **Lecture obligatoire amont** : `project-context.md`, `docs/ia/ai-architecture.md` v1.1 (modèles + 9 règles anti-hallucination + tool use + fallback Haiku), `docs/ia/prompt-library.md` v1.1 (PROMPT_VERSION `signal-scoring-v1.1`, prompts H-A à H-G dont H-D/H-G v1.1), `docs/analytics/edge-rnd-brief.md` (7 hypothèses + seuils GO Phase 2), `docs/product/functional-specs.md` (US-01 schéma 15 champs, US-05 timeout 45 s).
 > **Version modèle** : `scoring-model-v1.2` (Phase 1b post-audit @ia self-critical, couplé `prompt-version=signal-scoring-v1.1`). Voir §7.1bis pour le changelog.
 
 ---
@@ -681,7 +681,7 @@ Sans cache : ~0,03 $/signal (cohérent ai-architecture §7.1 — 0,66 $/mois ÷ 
 
 ### 8.1 Mission de l'audit
 
-Audit du modèle de scoring `scoring-model-v1.1` (Phase 1b corrections @reviewer + @qa intégrées) avant Phase 2 implémentation.
+Audit du modèle de scoring `scoring-model-v1.2` (Phase 1b corrections @reviewer + @qa + audit @ia self-critical intégrés) avant Phase 2 implémentation.
 
 ### 8.2 Points d'audit résolus en v1.1
 
@@ -698,8 +698,8 @@ Audit du modèle de scoring `scoring-model-v1.1` (Phase 1b corrections @reviewer
 
 ### 8.3 Verdict attendu
 
-- **GO modèle v1.1** : `scoring-model-v1.1` validé, Phase 2 peut démarrer (intégration `src/lib/ai/` par @fullstack).
-- **RETRAVAILLER §X** : ajustements ciblés (poids dimensions, seuils SC, calibration). @ia bump v1.2 et re-soumet.
+- **GO modèle v1.2** : `scoring-model-v1.2` validé, Phase 2 peut démarrer (intégration `src/lib/ai/` par @fullstack — incluant `applySC7` et calcul déterministe parallèle).
+- **RETRAVAILLER §X** : ajustements ciblés (poids dimensions, seuils SC, calibration SC7). @ia bump v1.3 et re-soumet.
 - **NO-GO modèle** : repenser l'approche (ex: scoring déterministe pur sans LLM, ou inverse). @orchestrator escalade.
 
 ---

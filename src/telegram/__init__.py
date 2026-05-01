@@ -1,0 +1,1 @@
+"""Client Telegram + templates messages."""

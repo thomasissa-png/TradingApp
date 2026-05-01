@@ -1,0 +1,178 @@
+# .gitignore — TradingApp
+# Auteur : @infrastructure — Date : 2026-05-01
+#
+# RÈGLE ABSOLUE : aucun secret, aucune base de données, aucun fichier de
+# données personnelles ne doit être commité. Repo PRIVÉ obligatoire.
+
+# ============================================================================
+# Secrets et variables d'environnement
+# Source de vérité runtime : Replit Secrets (Tools → Secrets)
+# Cf. REPLIT_ACTIONS.md §B.1 pour la liste exhaustive
+# ============================================================================
+.env
+.env.*
+!.env.example
+*.env.local
+secrets.json
+credentials.json
+
+# ============================================================================
+# Bases de données et données runtime (volume persistant Replit)
+# - market_cache.sqlite : cache 5 ans bougies 1m Twelve Data (peut atteindre 200-400 MB)
+# - journal.sqlite : journal trades + signaux (données financières personnelles)
+# - score_distribution_observed.json : distribution scores observés
+# - last_run.timestamp : healthcheck local
+# ============================================================================
+data/*.sqlite
+data/*.sqlite-journal
+data/*.sqlite-wal
+data/*.sqlite-shm
+data/*.db
+data/*.bak
+data/*.json
+data/last_run.timestamp
+data/backup/
+
+# Mais on garde le dossier data/ dans git (placeholder)
+!data/.gitkeep
+
+# ============================================================================
+# Python
+# ============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+develop-eggs/
+downloads/
+parts/
+sdist/
+var/
+wheels/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ============================================================================
+# Environnements virtuels Python
+# ============================================================================
+.venv/
+venv/
+ENV/
+env/
+.python-version
+
+# ============================================================================
+# uv (package manager) — on garde uv.lock dans git pour reproductibilité
+# mais on ignore le cache local
+# ============================================================================
+.uv-cache/
+# uv.lock : COMMITÉ (déterministe, requis pour reproduction Replit)
+
+# ============================================================================
+# Tests et coverage
+# ============================================================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+nosetests.xml
+
+# Screenshots de tests : on garde les baselines, on ignore les diffs
+tests/screenshots/diff/
+tests/screenshots/actual/
+# tests/screenshots/baselines/ : COMMITÉ (référence pour tests visuels @qa)
+
+# ============================================================================
+# Logs
+# ============================================================================
+*.log
+logs/
+log/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ============================================================================
+# Caches API locaux (Twelve Data, Anthropic)
+# ============================================================================
+.twelvedata-cache/
+.anthropic-cache/
+.cache/
+
+# ============================================================================
+# IDE et OS
+# ============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# ============================================================================
+# Node.js (par sécurité, même si stack Python pur)
+# ============================================================================
+node_modules/
+package-lock.json
+yarn.lock
+.npm/
+.yarn/
+
+# ============================================================================
+# Replit — fichiers temporaires de l'IDE
+# Note : .replit et replit.nix sont COMMITÉS (config infra)
+# ============================================================================
+.replit.local
+.upm/
+.config/
+.breakpoints
+.replit-deployment-cache/
+
+# ============================================================================
+# Jupyter / R&D notebooks (si utilisés en Phase 1 R&D edge)
+# ============================================================================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ============================================================================
+# Documents et exports temporaires
+# ============================================================================
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+~$*
+
+# ============================================================================
+# Données financières personnelles (sécurité défense en profondeur)
+# Ne jamais commiter de capture d'écran de relevé Bourse Direct
+# ============================================================================
+*bourse-direct*.png
+*bourse-direct*.pdf
+*releve*.pdf
+*statement*.pdf
+journal-trades-*.csv
+journal-trades-*.xlsx

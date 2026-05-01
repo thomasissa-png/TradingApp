@@ -120,7 +120,7 @@ Score : 6,8/10
 ```
 🟢 ACHAT  **DAX Turbo Call**
 Entrée : 4,05  |  SL : 3,84  |  Cible potentielle : 4,56
-Risque : 147 € max  |  Capital engagé : 607 €  |  Avant 9h00 CET
+Risque : 147 € max  |  Capital engagé : 607 €  |  Avant 9h00 CET — au-delà, ne pas exécuter
 Raison : breakout range 8h-8h15 Xetra à 17 342 — retest validé 8h22, volume breakout +41% vs range, configuration ORB15 en top 18% amplitude sur 5 ans
 Backtest : 65% sur 112 trades | DD max −15% | Réf. #B-009
 Score : 7,8/10
@@ -133,7 +133,7 @@ Score : 7,8/10
 ```
 🔴 VENTE  **LVMH Turbo Put**
 Entrée : 5,21  |  SL : 5,44  |  Cible potentielle : 4,72
-Risque : 161 € max  |  Capital engagé : 703 €  |  Avant 9h00 CET
+Risque : 161 € max  |  Capital engagé : 703 €  |  Avant 9h00 CET — au-delà, ne pas exécuter
 Raison : breakout baissier range 8h-8h05 LVMH à 644,80 € — volume +52% vs moyenne range, pas de retest depuis 8h09, momentum −0,8% depuis ouverture
 Backtest : 62% sur 88 trades | DD max −18% | Réf. #B-023
 Score : 7,5/10

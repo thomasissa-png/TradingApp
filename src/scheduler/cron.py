@@ -33,9 +33,8 @@ def is_market_day_fr(d: datetime | None = None) -> bool:
 def is_in_signal_window(now: datetime | None = None) -> bool:
     """True si l'heure courante est dans [8h40, 8h55] CET (bornes incluses)."""
     target = now if now is not None else _now_paris()
-    if target.tzinfo is None:
-        target = PARIS_TZ.localize(target)
-    else:
-        target = target.astimezone(PARIS_TZ)
+    target = (
+        PARIS_TZ.localize(target) if target.tzinfo is None else target.astimezone(PARIS_TZ)
+    )
     t = target.time()
     return SIGNAL_WINDOW_START <= t <= SIGNAL_WINDOW_END

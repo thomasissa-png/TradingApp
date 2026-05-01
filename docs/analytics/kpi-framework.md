@@ -200,6 +200,10 @@ CREATE TABLE signals (
     sl              REAL,                                   -- stop-loss turbo (NULL si NO_TRADE)
     tp              REAL,                                   -- take-profit turbo (NULL si NO_TRADE)
     score           REAL,                                   -- score de confiance Claude (1.0-10.0)
+    scoring_model_version TEXT NOT NULL,                    -- ex : 'scoring-model-v1.0' (cf edge-scoring-model.md §7)
+    prompt_version  TEXT NOT NULL,                          -- ex : 'signal-scoring-v1.0' (cf prompt-library.md §6)
+    model_used      TEXT NOT NULL,                          -- ex : 'claude-sonnet-4-5-20250929' (cf L002 — tag exact obligatoire, pas '-latest')
+    sanity_check_failed TEXT NULL,                          -- liste des SC qui ont déclenché un plafonnage/NO-TRADE forcé, ex : 'SC2,SC4'. NULL si tous PASS.
     backtest_ref    TEXT,                                   -- ex : "B-031"
     no_trade_reason TEXT,                                   -- raison si NO_TRADE (ex : "score 5.1 < seuil 6.5")
     sent_to_telegram BOOLEAN NOT NULL DEFAULT 0,
@@ -209,6 +213,8 @@ CREATE TABLE signals (
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
+
+> **Traçabilité scoring (4 colonnes obligatoires)** : `scoring_model_version`, `prompt_version`, `model_used`, `sanity_check_failed` sont obligatoires pour la traçabilité du scoring (cf. edge-scoring-model.md §7 versioning + L002 lessons-learned règle alias modèle exact). Permet de re-jouer un signal historique avec la même version de modèle/prompt et de détecter des dérives quand on upgrade.
 
 ### Table `trades`
 
@@ -330,7 +336,7 @@ Implémenter en **triggers SQLite + alerte Telegram P0** (infra-audit.md section
   - 5 signaux d'arrêt codifiés en triggers SQLite + alertes Telegram P0
 - Points d'attention :
   - **@fullstack** : implémenter le schéma SQLite `journal.sqlite` (tables `signals` + `trades` + index) — prêt à copier tel quel
-  - **@ia** : le champ `score` dans `signals` est la sortie directe du scoring Claude (1.0-10.0) — aligner avec le prompt de scoring
+  - **@ia** : le champ `score` dans `signals` est la sortie directe du scoring Claude (1.0-10.0) — aligner avec le prompt de scoring. Les 4 colonnes de traçabilité (`scoring_model_version`, `prompt_version`, `model_used`, `sanity_check_failed`) doivent être renseignées par le pipeline de scoring à chaque appel (cf. edge-scoring-model.md §7.1)
   - **@fullstack** : calculer `pfu_year_estimate` dans `trades` = MAX(0, pnl_net_avant_pfu) × 31,4 % en Python/SQL
   - **Signal d'arrêt n°5** (position overnight) : vérifier l'heure avec `TZ=Europe/Paris` — **18h00 CET = cutoff turbo Bourse Direct** (✅ confirmé persona 2026-05-01).
   - Rétention journal SQLite 10 ans obligatoire (legal-audit.md section 7.4)

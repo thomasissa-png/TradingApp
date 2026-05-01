@@ -225,18 +225,73 @@ Source : `docs/analytics/kpi-framework.md` §7 + `personas.md` signaux d'arrêt 
 
 ## 5. Protocole décision GO/NO-GO mensuelle (détail)
 
-<!-- Section 5 — détaillée par Edit -->
+> Cette section approfondit §3 — protocole pas-à-pas pour la décision binaire `/continue` ou `/stop` du 1er du mois.
+
+### Étape 1 — Réception rapport mensuel (1er du mois 9h00 CET)
+
+Format Telegram (cf. message-templates §6 et `docs/growth/rapport-mensuel-auto.md` §2) :
+
+```
+📈 Rapport mensuel — {Mois Année}
+
+K1 P&L net          : {pl_net_eur} € ({sign}%)
+K2 Drawdown max     : {dd_max} % (seuil 20 %)
+K3 WR live vs BT    : {wr_live} % vs {wr_bt} % (écart {delta_pts} pts)
+K4 Profit Factor    : {pf}
+K5 % no-trade       : {pct_no_trade} %
+
+Signaux d'arrêt actifs : {0-6}/6
+Mode actuel : {paper|live}
+
+→ Décision attendue avant J+7 : /continue ou /stop
+```
+
+### Étape 2 — Lecture critères chiffrés (5 KPIs cf. §3 tableau)
+
+Thomas confronte les 5 KPIs aux seuils GO/ALERT/NO-GO. Compte le nombre de PASS sur 5.
+
+### Étape 3 — Décision binaire selon matrice §3
+
+- **5/5 ou 4/5 PASS** → `/continue`
+- **3/5 PASS + 2 ALERT** → `/stop` (= bascule paper-trading 1 mois, pas arrêt définitif — US-11)
+- **≥ 1 NO-GO** OU **drawdown > 20 %** → `/stop` définitif (live arrêté, paper conservé pour analyse)
+
+### Étape 4 — Communication post-décision (interne uniquement)
+
+| Décision | Action interne | Délai |
+|---|---|---|
+| `/continue` | Ajouter ligne dans `lessons-learned.md` : "Mois M : 5/5 PASS, continue live" | Le jour même |
+| `/stop` (pause 1 mois paper) | Idem + planifier audit hebdo renforcé S+1 (Q1+Q2 watchlist) | Le jour même |
+| `/stop` définitif | **Dump SQLite obligatoire** (`sqlite3 data/journal.sqlite ".dump" > backup-stop-$(date +%F).sql`) + post-mortem dans `lessons-learned.md` (entrée P0) + tag git annotated `git tag -a stop-{YYYY-MM-DD} -m "Stop live — cause : {cause}"` | Avant `/stop` |
+
+### Étape 5 — Confirmation bot (US-10 / US-11)
+
+- `/continue` → bot répond : "✅ Continue confirmé pour {Mois+1}. Mode actuel : {live|paper}".
+- `/stop` → bot demande **double confirmation** si nb_criteres_KO ≥ 2 (cf. F20 user-flows + handle_continue Phase 2c-2) : "⚠️ Confirmer stop ? (oui/non)". Réponse `oui` → bascule effective.
+
+### Étape 6 — Si pause 1 mois paper-trading
+
+- Pendant le mois : Thomas continue de **recevoir les signaux** (préfixés `[PAPER TRADING]` cf. functional-specs US-11).
+- Thomas **ne passe pas d'ordre réel** mais peut "shadow-tracker" mentalement la performance.
+- Fin du mois paper : nouveau rapport mensuel auto. Si 5/5 PASS sur le mois paper → re-bascule live possible (`/continue` re-active live).
+- Si 3 mois paper consécutifs avec encore < 5/5 → **stop définitif assumé** (cf. décision structurante #4 project-context.md "no-go assumé légitime").
+
+### Étape 7 — Stop définitif assumé (cas extrême)
+
+- Décision philosophique alignée avec `personas.md` Frustration 5 + brand-platform pilier 2 (Concis = pas de bullshit) : **mieux vaut un no-go assumé qu'un sur-fitting prolongé**.
+- Pas de dette émotionnelle — l'outil a fait son travail (révéler que l'edge n'est pas robuste). Le capital dédié 20-30 k€ retourne sur d'autres allocations (livret A, ETF passifs, etc. — hors scope TradingApp).
+- Repo GitHub `TradingApp` reste privé, archivé pour future réactivation si conditions de marché changent.
 
 ---
 
 ## Auto-évaluation gates
 
-- [ ] G1 — cohérent personas.md (journée 8h40-9h05, RER, smartphone, 5 JTBD)
-- [ ] G3 — zéro données inventées non marquées
-- [ ] G7 — cohérent functional-specs US-08 à US-12 + REPLIT_ACTIONS J+7
-- [ ] G12 — immédiatement actionnable par Thomas (pas de "TODO @fullstack")
-- [ ] G15 — zéro placeholder non résolu
-- [ ] G17 — zéro bullshit (pas de "buy now" sans chiffres)
+- [x] G1 — cohérent personas.md : journée 8h40-9h05 reproduite ligne par ligne (table §1), RER + smartphone cités, 5 JTBD couverts (décision rapide, confiance chiffres, no-trade honnête, audit hebdo, drawdown contrôlé)
+- [x] G3 — zéro données inventées : tous les chiffres sourcés (PFU 31,4 % via legal-audit, sizing 150 € via personas, schedule UTC `40 6,7` via REPLIT_ACTIONS C.2, seuils Sharpe via backtest-audit, signaux d'arrêt via kpi-framework §7)
+- [x] G7 — cohérent functional-specs US-08 (`/trade`) §1 ligne 12h-14h ; US-09 (`/journal-week`) §2 trigger ; US-10 (`/continue`) §3+§5 ; US-11 (`/stop`) §3+§5 ; US-12 (`/pause`) cité §1 fallback ; REPLIT_ACTIONS J+7 cité §4.1 (healthchecks)
+- [x] G12 — immédiatement actionnable : 0 occurrence "TODO", 0 "à définir". Thomas peut ouvrir ce fichier ce matin et l'utiliser sans dépendance externe non livrée
+- [x] G15 — zéro placeholder non résolu (tous les `{...}` sont **dans** des templates Telegram cités, marqués comme tels)
+- [x] G17 — zéro bullshit : tons factuel, conditionnel sur l'incertitude (ex. "dans le doute, NO-TRADE"), aucun "buy now" / "strong signal" / "edge garanti"
 
 ---
 

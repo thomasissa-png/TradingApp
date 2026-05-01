@@ -135,6 +135,7 @@
 | Agent | Date | Livrable produit | Décisions clés | Pourquoi / Alternatives écartées |
 |-------|------|-----------------|----------------|----------------------------------|
 | @orchestrator (cadrage) | 2026-05-01 | `project-context.md` rempli via 5 vagues de questions au persona | Bot Telegram, alerte simple, signal 8h45-8h55, scalp 5-20 min, Twelve Data, Bourse Direct, 20-30 k€, edge à trouver | Écarté : exécution auto via API broker (sécu MVP perso), dashboard web (n'a pas résolu friction Finance), réutilisation pleine du Finance (dette technique) |
+| @orchestrator (plan) | 2026-05-01 | `docs/orchestration-plan.md` (plan Phases 0→5 + 6 prompts pré-rédigés Phase 0) | Phase 1 R&D edge structurante (Phase 2 conditionnelle), Phase 2d testeur-client N/A justifié (perso 100%), boucle visuelle adaptée messages Telegram, @sales-enablement transposé en runbook usage perso, @growth en rapport mensuel auto, SEO N/A justifié | Écarté : ordre standard Phase 3 contenu web (pas de site), invocation Tasks directement (sub-agent sans accès Task → prompts pré-rédigés relayés au top-level) |
 
 ---
 
@@ -146,6 +147,7 @@
 | Agent | Date | Livrable | Complétude | Cohérence | Actionnabilité | Messages | Spécificité | Notes |
 |-------|------|----------|------------|-----------|----------------|----------|-------------|-------|
 | @orchestrator | 2026-05-01 | project-context.md | 5 | 5 | 5 | 5 | 5 | Cadrage initial via 5 vagues de questions ciblées au persona, hypothèses H1-H4 explicites |
+| @orchestrator | 2026-05-01 | docs/orchestration-plan.md | 5 | 5 | 5 | 5 | 5 | Plan Phases 0→5 adapté TradingApp (Telegram pur, perso 100%), 6 prompts Phase 0 pré-rédigés, checkpoint persona explicite après Phase 0 |
 
 **Légende (échelle 1-5 alignée avec CLAUDE.md) :**
 - **Complétude** : 1 (sections manquantes) → 3 (sections principales couvertes) → 5 (tout rempli, rien à ajouter)

@@ -872,6 +872,124 @@ En tant que Thomas, je veux répondre `/stop` au rapport mensuel afin de suspend
 
 ---
 
+### US-12 : Mettre le bot en pause via `/pause [YYYY-MM-DD YYYY-MM-DD]`
+
+**Persona** : Thomas
+**Epic** : Journal et audit
+**Dépendances** : US-03 (calendrier jours ouvrés), US-07 (cron pipeline)
+**Priorité RICE** : R=22 I=8 C=9 E=1 → Score=158
+
+#### Job-to-be-done
+En tant que Thomas, je veux envoyer une commande `/pause 2026-07-15 2026-07-29` afin de suspendre tous les signaux pendant mes vacances et ne pas dégrader la saillance du bot à mon retour (bruit de 10+ signaux ignorés).
+
+#### Contexte de navigation
+- **Page/écran d'origine** : Telegram — Thomas envoie la commande depuis la conversation TradingApp, n'importe quel moment
+- **Déclencheur** : Thomas envoie `/pause YYYY-MM-DD YYYY-MM-DD` (2 dates ISO 8601, intervalle inclusif)
+- **Page/écran de destination (succès)** : Telegram — confirmation de la pause avec les dates reformatées en JJ/MM
+- **Page/écran de destination (échec)** : Telegram — message d'erreur avec format requis
+
+#### Données et champs
+| Champ | Type | Obligatoire | Validation | Limites | Exemple |
+|---|---|---|---|---|---|
+| start_date | date | Oui | Format ISO 8601 YYYY-MM-DD, ≤ end_date, ≥ aujourd'hui | date valide | 2026-07-15 |
+| end_date | date | Oui | Format ISO 8601 YYYY-MM-DD, ≥ start_date, ≤ start_date + 30 jours | date valide | 2026-07-29 |
+| requested_at | datetime | Oui | ISO 8601 UTC, auto-généré au moment de la commande | | 2026-07-10T18:32:00Z |
+| status | enum | Oui | "active", "expired", "cancelled" | | active |
+
+#### 5 états UI (Gate G21)
+| État | Comportement | Message/Affichage |
+|---|---|---|
+| Défaut | Aucune pause active — bot envoie les signaux normalement | N/A |
+| Loading | Écriture SQLite table `strategy_pauses` | N/A — immédiat |
+| Vide | N/A | N/A |
+| Erreur | Format invalide, dates incohérentes, ou plage > 30 jours | Message d'erreur explicite (voir critères d'erreur) |
+| Succès | Pause enregistrée en SQLite, pipeline la vérifiera chaque matin | "Bot en pause du {start_date_FR} au {end_date_FR}. Aucun signal envoyé pendant cette période." |
+
+#### Critères d'acceptance (Given/When/Then)
+
+**Happy path :**
+- [ ] GIVEN Thomas envoie `/pause 2026-07-15 2026-07-29` depuis THOMAS_CHAT_ID, WHEN le bot reçoit la commande, THEN le bot répond "Bot en pause du 15/07 au 29/07. Aucun signal envoyé pendant cette période." et la table `strategy_pauses` enregistre `{ start_date: "2026-07-15", end_date: "2026-07-29", requested_at: "...", status: "active" }`.
+- [ ] GIVEN une pause active en SQLite (`status = "active"`, date du jour ≥ start_date ET ≤ end_date), WHEN le cron 8h40 s'exécute, THEN le pipeline ne calcule aucun signal et n'envoie aucun message Telegram pour cette journée.
+- [ ] GIVEN date du jour = end_date − 1 jour (veille de fin de pause), WHEN le cron 8h40 vérifie la table `strategy_pauses`, THEN le bot envoie à Thomas le message "Bot reprend demain 8h45 CET." (rappel de fin de pause — envoyé une seule fois).
+- [ ] GIVEN date du jour > end_date, WHEN le cron 8h40 vérifie la table `strategy_pauses`, THEN la pause est marquée `status = "expired"` et le pipeline reprend normalement.
+
+**Cas d'erreur :**
+- [ ] GIVEN Thomas envoie `/pause` sans arguments, WHEN le bot reçoit la commande, THEN "Format requis : /pause YYYY-MM-DD YYYY-MM-DD (ex : /pause 2026-07-15 2026-07-29)".
+- [ ] GIVEN Thomas envoie `/pause 2026-07-29 2026-07-15` (start > end), WHEN le bot reçoit la commande, THEN "Dates invalides : la date de début doit être antérieure ou égale à la date de fin."
+- [ ] GIVEN Thomas envoie `/pause 2026-07-01 2026-08-15` (plage > 30 jours), WHEN le bot reçoit la commande, THEN "Pause limitée à 30 jours maximum."
+- [ ] GIVEN Thomas envoie `/pause abc 2026-07-29` (format de date invalide), WHEN le bot reçoit la commande, THEN "Format requis : /pause YYYY-MM-DD YYYY-MM-DD (ex : /pause 2026-07-15 2026-07-29)".
+
+**Cas limites :**
+- [ ] GIVEN une pause active déjà en SQLite, WHEN Thomas envoie une nouvelle commande `/pause` avec de nouvelles dates, THEN le bot met à jour la pause existante (status = "active", nouvelles dates) et répond "Pause mise à jour : bot en pause du {nouvelle_start_FR} au {nouvelle_end_FR}."
+- [ ] GIVEN Thomas envoie `/cancel-pause` pendant une pause active, WHEN le bot reçoit la commande, THEN la pause passe à `status = "cancelled"`, le bot répond "Pause annulée. Le bot reprend normalement dès demain 8h45."
+- [ ] GIVEN Thomas envoie `/cancel-pause` sans pause active, WHEN le bot reçoit la commande, THEN "Aucune pause active en cours."
+- [ ] GIVEN date start_date = aujourd'hui (pause immédiate), WHEN le pipeline cron 8h40 s'exécute le même matin, THEN si la commande /pause a été enregistrée avant 8h40, le pipeline respecte la pause ; si enregistrée après 8h40, le signal du jour est déjà envoyé — pas de rétroactivité, la pause s'applique à partir du lendemain.
+
+**Permissions :**
+- [ ] GIVEN commande `/pause` depuis chat_id différent de THOMAS_CHAT_ID, WHEN le bot reçoit la commande, THEN ignorée silencieusement.
+
+**Données existantes :**
+- [ ] GIVEN une pause `status = "expired"` en SQLite, WHEN Thomas envoie une nouvelle commande `/pause`, THEN un nouvel enregistrement est créé (pas d'overwrite de l'historique).
+
+#### Payload API (pipeline interne)
+- **Endpoint** : Telegram Bot API `POST /bot{TOKEN}/sendMessage`
+- **Authentification** : Token Bearer (`TELEGRAM_BOT_TOKEN`)
+- **Rate limit** : N/A (commande manuelle)
+- **Request body** : `{ "chat_id": "{THOMAS_CHAT_ID}", "text": "[message confirmation pause]", "parse_mode": "Markdown" }`
+- **Response succès** : HTTP 200 → écriture SQLite `strategy_pauses`
+- **Response erreur** : HTTP 4xx/5xx → logguer erreur, réessayer une fois après 5 s
+
+#### Schéma SQLite — table `strategy_pauses`
+| Colonne | Type | Description |
+|---|---|---|
+| id | INTEGER PRIMARY KEY | Auto-increment |
+| start_date | TEXT | Format "YYYY-MM-DD" |
+| end_date | TEXT | Format "YYYY-MM-DD" |
+| requested_at | DATETIME | ISO 8601 UTC |
+| status | TEXT | "active", "expired", "cancelled" |
+
+Logique pipeline : `SELECT * FROM strategy_pauses WHERE status = "active" AND date("now") BETWEEN start_date AND end_date` — si résultat non vide, pipeline s'arrête avant tout calcul de signal.
+
+#### Events analytics
+| Event | Trigger | Propriétés | Funnel |
+|---|---|---|---|
+| `pause_command_invoked` | Thomas envoie `/pause` et confirmation enregistrée | start_date, end_date, duration_days, requested_at | retention |
+| `pause_active` | Cron 8h40 détecte une pause active et n'envoie pas de signal | start_date, end_date, current_date | retention |
+| `pause_ended` | Cron 8h40 détecte fin de pause (status → "expired") | end_date, total_days_paused | retention |
+
+#### Scénarios persona concrets
+1. Thomas part en vacances le 15 juillet. Le 10 juillet au soir, il envoie `/pause 2026-07-15 2026-07-29` depuis son canapé. Bot répond "Bot en pause du 15/07 au 29/07. Aucun signal envoyé pendant cette période." Thomas part l'esprit tranquille. Résultat attendu : 0 signal envoyé du 15 au 29 juillet.
+2. Thomas est en pause du 15 au 29 juillet. Le 28 juillet (veille de fin), le cron 8h40 envoie "Bot reprend demain 8h45 CET." Thomas, qui revient de vacances, sait qu'il doit se repositionner mentalement. Résultat attendu : rappel reçu une seule fois la veille.
+3. Thomas avait prévu une pause du 15 au 22 juillet, mais ses vacances sont prolongées. Le 20 juillet, il renvoie `/pause 2026-07-15 2026-07-29`. Bot répond "Pause mise à jour : bot en pause du 15/07 au 29/07." Résultat attendu : mise à jour propre sans doublon SQLite.
+4. Thomas est en pause, mais un flash macro important tombe et il veut reprendre. Il envoie `/cancel-pause`. Bot répond "Pause annulée. Le bot reprend normalement dès demain 8h45." Résultat attendu : reprise le lendemain, pas rétroactive.
+5. Thomas envoie `/pause` sans dates (il teste). Bot répond "Format requis : /pause YYYY-MM-DD YYYY-MM-DD (ex : /pause 2026-07-15 2026-07-29)". Résultat attendu : erreur explicite, pas de crash.
+
+#### Definition of Done (checklist @fullstack)
+- [ ] Commandes `/pause`, `/cancel-pause` reconnues par le bot handler
+- [ ] Table `strategy_pauses` créée avec colonnes `id, start_date, end_date, requested_at, status`
+- [ ] Logique pipeline : vérification table `strategy_pauses` avant tout calcul de signal à 8h40
+- [ ] Rappel veille de fin de pause implémenté (envoi unique J-1)
+- [ ] Expiration automatique au retour : status → "expired" le jour J > end_date
+- [ ] Idempotence : `/cancel-pause` sans pause active → message "Aucune pause active"
+- [ ] Test E2E : /pause → vérifier 0 signal pendant la fenêtre → expiration → signal reprend
+
+#### Notes pour @qa
+- Tester que le signal du lendemain de fin de pause reprend normalement (status "expired" → pipeline actif).
+- Tester le rappel veille de fin : envoyé une seule fois même si le cron tourne plusieurs fois (idempotence du rappel).
+- Tester `/pause` avec start_date = hier (date passée) → erreur ou acceptation ? Décision : refuser si start_date < aujourd'hui (pas de rétroactivité).
+- Tester conflit pause + signal d'arrêt (drawdown > 20 %) : les deux peuvent coexister — la pause prime côté signal, l'alerte drawdown reste loguée.
+
+#### Notes pour @ux
+- Le message de confirmation doit reformater les dates ISO 8601 en JJ/MM lisible (15/07 et non 2026-07-15).
+- Le rappel de veille de fin doit être sobre — pas alarmiste. Formulation : "Bot reprend demain 8h45 CET." (pas de "Attention !" ou emoji).
+
+#### Notes pour @fullstack
+- Vérification de pause : première instruction du pipeline avant tout appel Twelve Data ou Claude. Si pause active → log SQLite `statut = "pause"` pour la journée + arrêt. Pas de message Telegram (silence total pendant la pause).
+- Le rappel veille est envoyé par le cron 8h40 J-1 uniquement si `reminder_sent` est null dans `strategy_pauses` — ajouter colonne `reminder_sent DATETIME NULL` pour idempotence.
+- `/cancel-pause` : UPDATE `strategy_pauses SET status = "cancelled" WHERE status = "active"` — si 0 row updated, répondre "Aucune pause active en cours."
+
+---
+
 ## 2. Format Message Telegram — Templates V1
 
 Contrainte brand-platform : **6 lignes max signal + 1 ligne confiance**. Zéro mot de marketing. Conditionnel de l'incertitude obligatoire sur le TP.

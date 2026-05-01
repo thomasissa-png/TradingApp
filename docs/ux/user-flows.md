@@ -477,6 +477,9 @@ Signaux GO suspendus jusqu'à ta décision.
 | F19 | Thomas ne répond pas à /continue (chemin OK) | Flow 5 | P2 | /continue optionnel — signaux reprennent automatiquement si aucun arrêt actif |
 | F20 | Thomas envoie /continue par réflexe sans lire l'alerte | Flow 5 | P0 | Double confirmation si ≥ 2 critères KO — friction volontaire |
 | F21 | /stop interprété comme arrêt définitif | Flow 5 | P1 | /stop → mode paper-trading (pas arrêt définitif) expliqué dans le message |
+| F22 | Changement de téléphone / réinstallation Telegram — Thomas perd son `chat_id`, le bot envoie dans le vide | Transversal | P1 | (a) Message de bienvenue automatique au premier contact `/start` : demande à Thomas de copier son nouveau `chat_id` dans la variable d'env `THOMAS_CHAT_ID` sur Replit. (b) healthchecks.io alerte si aucune delivery confirmation Telegram pendant 5 jours ouvrés consécutifs. (c) Procédure documentée dans le runbook Thomas (Phase 4). |
+| F23 | Vacances / déconnexion volontaire — sans pause, Thomas reçoit 10+ signaux GO/NO-TRADE ignorés → bruit, perte de saillance au retour | Transversal | P1 | Commande **US-12 `/pause [YYYY-MM-DD YYYY-MM-DD]`** (cf. functional-specs.md US-12) — Thomas suspend volontairement les signaux avant de partir. Rappel automatique veille de fin de pause : "Bot reprend demain 8h45 CET." |
+| F24 | RER bloqué / pas de réseau 4G entre 8h45 et 8h55 — Thomas reçoit la notification à 8h57 (sortie tunnel), fenêtre dépassée, signal horodaté ne dit pas "expiré" → risque d'exécution sur prix obsolète | Flow 1 | P1 | (a) Ajouter ligne explicite dans tous les templates ACHAT/VENTE : "Valable jusqu'à 8h55 CET — au-delà, ne pas exécuter" (à coordonner avec @copywriter). (b) Si Thomas envoie `/trade` après 9h00 sur un signal horodaté avant 8h55, le bot répond "Signal périmé — à ne pas tracker dans le journal." (c) Chaque message Telegram inclut un timestamp ISO 8601 dans les métadonnées pour calcul automatique du staleness. |
 
 ---
 

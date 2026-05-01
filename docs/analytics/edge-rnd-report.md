@@ -94,18 +94,26 @@ frais_total_par_trade = (
 | Statistique | Formule | Seuil GO Phase 2 |
 |-------------|---------|------------------|
 | Nb trades IS | COUNT(*) trades IS | ≥ 100 (significativité minimale) |
+| **Nb trades OOS (M1 — ajout @qa)** | COUNT(*) trades OOS sur 2025 | **≥ 50** — en dessous de 50 trades OOS, les statistiques (Sharpe, PF) ne sont pas statistiquement significatives (Lo 2002, IC95%) |
 | Win rate IS | Trades gagnants IS / total × 100 | ≥ 50 % |
 | Win rate OOS | idem sur 2025 | ≥ Win_rate_IS − 5 pts |
 | Profit Factor IS | Σ gains IS / Σ pertes IS | ≥ 1,5 |
 | **Profit Factor OOS** | idem sur 2025 | **≥ 1,5** |
 | Sharpe ratio annualisé IS | (Rend_moy − Rf) / σ × √252 | > 1,5 |
-| **Sharpe ratio annualisé OOS** | idem sur 2025 | **> 1,0** |
+| **Sharpe ratio annualisé OOS** | idem sur 2025 | **> 1,2** (relevé de > 1,0 → seuil Lo 2002 IC95%) |
 | Max drawdown IS | % du capital IS | < 25 % |
-| **Max drawdown OOS** | % du capital OOS | **< 20 %** |
+| **Max drawdown mensuel OOS (M2 renforcé)** | Max perte mensuelle / capital OOS | **< 20 % mensuel** (plus restrictif que max drawdown annuel — aligné signal d'arrêt n°1 persona Thomas) |
 | Durée moyenne trade | Σ(exit − entry) / N | 5-45 min (fenêtre Thomas) |
-| **Robustesse IS→OOS** | Sharpe_OOS / Sharpe_IS | **≥ 50 %** |
-| Walk-forward | Sharpe_OOS sur 2/3 fenêtres | ≥ seuil sur 2 fenêtres min |
-| p-value bootstrap | Test H0 : aléatoire | < 0,05 |
+| **Robustesse IS→OOS** | Sharpe_OOS / Sharpe_IS | **≥ 0,6** (relevé de ≥ 0,5 — Pardo 2008) |
+| Walk-forward | Sharpe_OOS sur 3/3 fenêtres | **≥ seuil sur 3 fenêtres (3/3 PASS)** |
+| **p-value multi-tests (M4 — paramétré @qa)** | Voir §2.4 note ci-dessous | p-value ajustée < 0,05 |
+
+**Note §2.4 — p-value multi-tests paramétrée (M4 @qa)** : 7 hypothèses testées simultanément → risque de faux positifs par hasard. Deux méthodes acceptées :
+
+- **Méthode A (préférée) : stationary bootstrap Politis-Romano n=10 000, block size moyen 5 + Hansen SPA test α=0,05**. Tient compte de la dépendance temporelle des séries financières. Requis : Python `arch` package (fonction `StationaryBootstrap`). Rejette H0 "tous les edges sont nuls" si p-value SPA < 0,05.
+- **Méthode B (fallback) : correction de Bonferroni multi-tests** — α effectif = 0,05 / 7 ≈ 0,0071 par hypothèse. Plus conservative mais aucune dépendance de librairie externe.
+
+[HYPOTHÈSE — Méthode A si `arch` package disponible dans l'environnement Python du backtester, Méthode B sinon. Documenter le choix dans le rapport de résultats H-X-results.json champ `pvalue_method`.]
 
 ## 3. Détail des 7 hypothèses
 
@@ -398,19 +406,25 @@ python -m backtester.run \
 
 ## 5. Critère GO/NO-GO Phase 2
 
-**Toutes les 5 conditions suivantes sont requises (AND) pour au moins 1 hypothèse :**
+**Toutes les 6 conditions suivantes sont requises (AND) pour au moins 1 hypothèse** (durcissement v1.1 @qa Phase 1b) :
 
-| # | Condition | Valeur précise | Commentaire |
-|---|-----------|---------------|-------------|
-| C1 | Sharpe ratio annualisé OOS ≥ seuil | **> 1,0** | Calculé sur 2025 uniquement (black-box) |
-| C2 | Profit Factor OOS ≥ seuil | **> 1,5** | Σ gains OOS / Σ pertes OOS (valeur absolue) |
-| C3 | Drawdown max OOS ≤ seuil | **< 20 %** | Sur capital de référence 15 000 € (1 500 € × levier × 10) |
-| C4 | Robustesse IS → OOS | **Sharpe_OOS / Sharpe_IS ≥ 0,5** | Si Sharpe IS = 1,6 et Sharpe OOS = 0,7 → 0,44 → FAIL |
-| C5 | Walk-forward suffisant | **≥ 2/3 fenêtres walk-forward > seuil C1** | Protection contre le cherry-picking de période |
+| # | Condition | Seuil v1.1 | Seuil v1.0 | Source durcissement |
+|---|-----------|-----------|-----------|---------------------|
+| C1 | Sharpe ratio annualisé OOS | **> 1,2** | > 1,0 | @qa (Lo 2002 IC95% — Sharpe > 1,0 sur 1 an OOS insuffisant statistiquement) |
+| C2 | Profit Factor OOS | **> 1,5** | > 1,5 | Inchangé — seuil robuste |
+| C3 | Drawdown **mensuel** OOS | **< 20 %** mensuel | < 20 % annuel | @qa + signal d'arrêt n°1 persona Thomas (perte mensuelle insupportable psychologiquement indépendamment du drawdown annuel) |
+| C4 | Robustesse IS → OOS | **Sharpe_OOS / Sharpe_IS ≥ 0,6** | ≥ 0,5 | @qa (Pardo 2008 — ratio 0,5 trop permissif, accepte des edges dont l'OOS perd 50 % du Sharpe IS) |
+| C5 | Walk-forward | **3/3 fenêtres PASS** | ≥ 2/3 fenêtres | @qa (2/3 = probabilité de succès par hasard ~50 % sur 2 fenêtres → ne rejette pas H0) |
+| **C6** | **nb_trades_OOS** | **≥ 50** | (manquant) | @qa + @reviewer (< 50 trades OOS → IC95% du Sharpe trop large pour conclure) |
+
+Exemple C4 : Sharpe IS = 1,6 et Sharpe OOS = 0,9 → ratio = 0,56 → **FAIL** (passe v1.0, échoue v1.1).
+Exemple C3 : drawdown max annuel 18 % mais un mois à −22 % → **FAIL** (passerait sous seuil annuel v1.0, échoue sous seuil mensuel v1.1).
+
+[HYPOTHÈSE — probabilité d'au moins 1 hypothèse PASS sous conditions renforcées v1.1 : ~55 %, vs ~75 % sous seuils v1.0]
 
 **Règle de décision** :
 
-- **Si ≥ 1 hypothèse PASSE les 5 conditions** → GO Phase 2. L'hypothèse retenue devient l'edge de production. Si plusieurs passent → retenir celle avec le Sharpe OOS le plus élevé ET le drawdown le plus bas.
+- **Si ≥ 1 hypothèse PASSE les 6 conditions** → GO Phase 2. L'hypothèse retenue devient l'edge de production. Si plusieurs passent → retenir celle avec le Sharpe OOS le plus élevé ET le drawdown mensuel le plus bas.
 - **Si 0 hypothèse passe** → NO-GO assumé. Décision structurante n°4 respectée. Ne pas sur-fitter pour "trouver" un edge. Options : affiner les coûts de transaction avec des données réelles Bourse Direct, tester des sous-hypothèses sur sous-ensembles temporels, ou archiver et réévaluer dans 12 mois avec de nouvelles données.
 
 **Note fiscale** : la performance GO doit être raisonnée en net PFU 31,4 %. Un edge avec Sharpe OOS brut de 1,2 et P&L brut de 8 000 €/an donnera ~5 480 € net PFU (North Star KPI — kpi-framework.md §1).
@@ -419,13 +433,15 @@ python -m backtester.run \
 
 | Risque | Probabilité | Impact | Mitigation |
 |--------|-------------|--------|------------|
-| **Overfitting IS** | Élevée | Critique | Walk-forward obligatoire (3 fenêtres) + p-value < 0,05 + sensibilité paramètres ±10 % + OOS black-box strict |
+| **Overfitting IS** | Élevée | Critique | Walk-forward obligatoire (3 fenêtres, 3/3 PASS) + p-value ajustée multi-tests (Hansen SPA ou Bonferroni §2.4) + sensibilité paramètres ±10 % + OOS black-box strict |
 | **Régime changeant** | Moyenne | Élevé | Walk-forward glissant documente la stabilité inter-régimes ; si Sharpe chute entre fenêtre 1 et fenêtre 2 → signal d'instabilité |
 | **Données manquantes Twelve Data** | Faible | Moyen | Cache SQLite one-shot + retry automatique + flag `DEGRADED` dans les résultats si trous > 30 min ; jours avec > 10 % de bougies manquantes exclus du backtest |
-| **Slippage réel > estimation** | Moyenne | Moyen | Test conservateur : recalculer chaque edge avec slippage × 2 (0,2 %) — si GO tient → robuste. Mesure réelle en paper-trading Phase 2 |
+| **Slippage réel > estimation** | Moyenne | Moyen | Test conservateur : recalculer chaque edge avec slippage × 2 (0,2 %) — si Sharpe stress slippage > 0,8 → robuste. En Phase 2 paper-trading : log slippage réel quotidien, **abandon automatique si slippage médian > 0,15 % sur 30 jours consécutifs** (R3 — @qa) |
 | **Cherry-picking sous-jacents** | Élevée | Élevé | Tester chaque hypothèse sur TOUS les sous-jacents éligibles ; reporter résultats par sous-jacent individuellement ; interdire de sélectionner uniquement les sous-jacents performants a posteriori |
-| **Biais look-ahead (H-E news)** | Élevée sur H-E | Critique | Vérifier que les timestamps news sont bien antérieurs à 8h45 ; exclure tout résumé news dont l'horodatage est postérieur à l'ouverture |
+| **Biais look-ahead (H-E news)** | Élevée sur H-E | Critique | Vérifier que les timestamps news sont bien antérieurs à 8h45 ; exclure tout résumé news dont l'horodatage est postérieur à l'ouverture ; **test contrôle `t_publication` vs `t_publication+1h`** obligatoire pour valider absence de look-ahead bias (M3 §2.3) |
 | **Corrélation tickers** | Moyenne | Moyen | Si H-C sur DAX et CAC donnent des signaux corrélés > 0,7 sur 80 % des jours → compter comme un seul signal en backtest |
+| **Multi-tests (R1 — ajout @qa)** | Élevée | Élevé | 7 hypothèses testées simultanément → FWER non contrôlé sans correction. Mitigation : Hansen SPA test (méthode A) — contrôle le Family-Wise Error Rate en tenant compte de la dépendance entre hypothèses. Alternative : Benjamini-Hochberg FDR (contrôle moins strict mais plus puissant sur H non corrélées). Documenter la méthode choisie dans chaque H-X-results.json |
+| **Drift régime 2026 ≠ 2021-2025 (R2 — ajout @qa)** | Moyenne | Élevé | Le backtest couvre 2021-2025 — la structure de marché EU en 2026 peut différer (volatilité post-elections, politique BCE, liquidité). Mitigation : **monitoring rolling 30j du Sharpe live vs Sharpe OOS** après déploiement Phase 2 ; **re-walk-forward trimestriel** si Sharpe rolling 30j < 60 % du Sharpe OOS → suspendre les trades et re-tester |
 
 **Protocole de test de sensibilité** (obligatoire pour tout edge candidat GO) :
 ```python
@@ -448,7 +464,7 @@ for param_name, param_value in best_params.items():
 |---------|--------------|----------------|
 | §2 Méthodologie | Rigueur du split IS/OOS ; règle OOS black-box explicite ; coûts de transaction complets (frais 1,98 € + spread 0,05 € + slippage 0,1 %) | GO méthodologie / RETRAVAILLER |
 | §3 Hypothèses | Cohérence des estimations Sharpe OOS [ESTIMATION] vs littérature académique citée ; biais de sélection des sous-jacents (tous testés ?) ; validité des références (Brock 1992 confirmé, Heyman 2008 non confirmé signalé) | GO méthodologie / RETRAVAILLER |
-| §5 Critère GO/NO-GO | Les 5 conditions AND sont-elles suffisantes pour éliminer les edges fragiles ? Le critère walk-forward 2/3 fenêtres est-il bien implémenté ? | GO ou suggestion de renforcement |
+| §5 Critère GO/NO-GO | Les **6 conditions AND** (v1.1) sont-elles suffisantes pour éliminer les edges fragiles ? Le critère walk-forward 3/3 fenêtres est-il bien implémenté ? Seuil nb_trades_OOS ≥ 50 vérifié ? | GO ou suggestion de renforcement |
 | §6 Risques | Les 7 risques documentés couvrent-ils les patterns overfitting O1-O7 de `testeur-backtest-edge.md` ? | GO suffisant / Mitigation manquante |
 
 **Processus** : @testeur-backtest-edge est invoqué APRÈS réception des résultats JSON du backtester (fichiers `docs/analytics/results/H-X-results.json`). Il produit un rapport `docs/qa/backtest-audit-YYYY-MM-DD.md` avec verdict GO backtest / RETRAVAILLER / NO-GO edge pour chaque hypothèse testée.
@@ -484,4 +500,6 @@ Ligne à ajouter dans le tableau **Performance des agents** :
 | G15 | Placeholders documentés | PASS | Pas de placeholders non documentés ; pseudo-codes avec variables EN_MAJUSCULES explicitement définis comme paramètres à optimiser |
 | G17 | Naming convention | PASS | snake_case dans tout le code pseudo ; noms de variables cohérents avec kpi-framework.md et edge-rnd-brief.md |
 
-**Résultat auto-évaluation** : 10/10 gates PASS. Rapport prêt pour revue @testeur-backtest-edge.
+| G4 v1.1 | Sources corrections @qa vérifiées | PASS | Lo (2002) : *The Statistics of Sharpe Ratios* — seuil Sharpe IC95% ; Pardo (2008) : *The Evaluation and Optimization of Trading Strategies* — ratio robustesse 0,6 ; Politis & Romano (1994) : stationary bootstrap ; Hansen (2005) : SPA test — tous référencés dans la littérature quantitative standard |
+
+**Résultat auto-évaluation v1.1** : 11/11 gates PASS. Rapport v1.1 prêt pour revue @testeur-backtest-edge — corrections @qa Phase 1b intégrées.

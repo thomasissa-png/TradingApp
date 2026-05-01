@@ -155,7 +155,7 @@ score_brut = clip( Σ(D_i × poids_i × normalisation_i), 1.0, 10.0 )
 ### 3.2 SC2 — Risk/Reward minimum 1.5
 
 **Règle** : `(TP - entry) / (entry - SL) ≥ 1.5` pour ACHAT, et symétrique pour VENTE.
-- Si R/R < 1.5 → **score plafonné à 6.0** (sous le `CONFIDENCE_THRESHOLD` 6.5 par défaut → NO-TRADE de fait).
+- Si R/R < 1.5 → **score plafonné à 6.0** (sous `CONFIDENCE_THRESHOLD_LIVE` 6.5 et a fortiori sous `_PAPER` 7.0 → NO-TRADE de fait dans les deux modes, v1.1).
 - Si R/R < 1.0 → **NO-TRADE forcé** + `no_trade_reason: "R/R < 1.0 — gain potentiel insuffisant vs risque"`.
 
 **Pourquoi** : un signal avec R/R 1:1 ou pire est mathématiquement perdant à win_rate < 50 %. Cohérent edge-rnd-brief seuil PF > 1.5 — un signal individuel doit refléter la qualité statistique de l'edge.
@@ -214,16 +214,37 @@ score_brut = clip( Σ(D_i × poids_i × normalisation_i), 1.0, 10.0 )
 
 ---
 
-## 4. Calibration de CONFIDENCE_THRESHOLD
+## 4. Calibration de CONFIDENCE_THRESHOLD (split paper/live, v1.1)
 
-### 4.1 Valeur initiale
+### 4.1 Valeurs initiales — split paper-trading vs live
 
-**`CONFIDENCE_THRESHOLD = 6.5`** [HYPOTHÈSE — calibration R&D obligatoire].
+**Décision v1.1** (verdicts @reviewer testeur-persona-thomas + @qa testeur-backtest-edge) : un seuil unique ne reflète ni le verbatim Thomas ni la rigueur méthodologique. **Split en 2 variables d'environnement** :
 
-Justification a priori 6.5 :
-- Signal "raisonnable, pas exceptionnel" — au-dessus de la médiane (5) mais en-dessous du "fortement convaincant" (8).
-- Évite biais 6.5 = note moyenne intuitive (conscient du biais — à valider en R&D, pas figé).
-- Cohérent template Telegram payload : score affiché sur 10, le persona Thomas "engage 1500 € à partir de 7" (cf. personas.md critères pull-the-trigger) → 6.5 = "OK pour Thomas, juste sous son seuil personnel" = bon point de départ conservateur.
+| Variable | Valeur initiale | Mode | Justification |
+|---|---|---|---|
+| `CONFIDENCE_THRESHOLD_PAPER` | **7.0** | Paper-trading (4-8 premières semaines) | **Verbatim Thomas** : "j'engage à partir de 7" (personas.md critères pull-the-trigger). Conservateur en bootstrap = apprentissage, on filtre dur, on accepte plus de NO-TRADE. |
+| `CONFIDENCE_THRESHOLD_LIVE` | **6.5** [HYPOTHÈSE] | Live (post-validation paper) | Permissif après calibration empirique R&D — cible la valeur f(seuil) maximale (cf. §4.2). |
+| `CONFIDENCE_THRESHOLD_ACTIVE` | runtime | Sélection automatique | Lecture `STRATEGY_ACTIVE` SQLite (cf. US-11 `/stop`). Si `STRATEGY_ACTIVE = 'paper'` → `CONFIDENCE_THRESHOLD_PAPER` ; si `'live'` → `CONFIDENCE_THRESHOLD_LIVE`. |
+
+**Pseudo-code de sélection** (`src/lib/ai/scoring.ts`) :
+```ts
+const mode = await db.get("SELECT mode FROM strategy_state WHERE id = 1");
+const threshold = mode.mode === "paper"
+  ? Number(process.env.CONFIDENCE_THRESHOLD_PAPER ?? 7.0)
+  : Number(process.env.CONFIDENCE_THRESHOLD_LIVE ?? 6.5);
+```
+
+### 4.1bis Procédure de transition paper → live
+
+**Critères de bascule** (à valider explicitement par Thomas via `/start live` après revue) :
+1. **Durée minimum** : ≥ 4 semaines paper-trading concluant.
+2. **Volume minimum** : ≥ 30 signaux émis (hors NO-TRADE) en paper.
+3. **% no-trade** : entre 30 % et 70 % (ni sur-trading, ni silence permanent).
+4. **Win rate paper** : ≥ 55 % (cohérent edge-rnd-brief seuil).
+5. **Drawdown max paper** : ≤ -20 % (cohérent edge-rnd-brief seuil).
+6. **Aucun déclenchement circuit breaker** (3 timeouts consécutifs) sur les 7 derniers jours.
+
+Si critères 1-6 PASS → @data-analyst valide via dashboard hebdo + Thomas exécute `/start live`. Sinon → 4 semaines paper supplémentaires + audit @qa.
 
 ### 4.2 Méthodologie de calibration en R&D
 
@@ -242,7 +263,11 @@ Phase 1 R&D edge (cf. edge-rnd-brief §5) :
 
 ### 4.3 Passage à la calibration finale
 
-Si calibration sort `CONFIDENCE_THRESHOLD = X.Y` ≠ 6.5 → `@testeur-backtest-edge` audite + `@ia` met à jour `MONTHLY_AI_BUDGET_EUR` env var et documente dans `model-selection.md` (à créer Phase 1 si valeur change).
+La calibration R&D §4.2 produit la valeur optimale de `CONFIDENCE_THRESHOLD_LIVE` (la valeur paper reste figée à 7.0 par décision persona).
+
+- Si calibration sort `CONFIDENCE_THRESHOLD_LIVE = X.Y` ≠ 6.5 → `@testeur-backtest-edge` audite + `@ia` met à jour la variable d'environnement et documente dans `model-selection.md` (à créer Phase 1 si valeur change).
+- `CONFIDENCE_THRESHOLD_PAPER = 7.0` reste figé (ancrage verbatim Thomas — modification = revue persona requise).
+- Le split est documenté pour Thomas dans le help du bot (`/help` US-XX) : "Mode paper = filtre 7.0 conservateur, mode live = filtre 6.5 calibré R&D."
 
 ---
 
@@ -270,11 +295,11 @@ Si calibration sort `CONFIDENCE_THRESHOLD = X.Y` ≠ 6.5 → `@testeur-backtest-
 | Dim | Calcul | Score | Pondéré |
 |---|---|---|---|
 | D1 (30 %) | gap_pct/σ_gap = 0.82/0.45 ×5 = 9.1 | 9.1 | 2.73 |
-| D2 (20 %) | RSI 58 + MACD>0 + BB upper = 3/3 alignés ACHAT | 10 | 2.00 |
+| D2 (15 %, v1.1) | RSI 58 + MACD>0 + BB upper = 3/3 alignés ACHAT | 10 | 1.50 |
 | D3 (15 %) | news indispo → plafond 7.0 | 7.0 | 1.05 |
 | D4 (15 %) | volume_ratio 1.4 = sur-volatilité | 8 | 1.20 |
 | D5 (10 %) | VIX 14.2 < 15 = trend | 8 | 0.80 |
-| D6 (10 %) | Sharpe 1.3×3 + 61/10 + min(87/20,5) = 14.9 → clip 10 ; backtest 12j frais → pas de pénalité | 10 | 1.00 |
+| D6 (15 %, v1.1) | Sharpe 1.3×3 + 61/10 + min(87/20,5) = 14.9 → clip 10 ; backtest 12j frais → pas de pénalité | 10 | 1.50 |
 | **Σ** | | | **8.78** |
 
 **Réponse Claude (résumée)** : `direction=ACHAT`, `score_brut=8.0` (Claude tempère le 8.78 vers 8.0, jugement composite raisonnable), raison "Gap haussier +0,82 % sur clôture US + ORB Xetra cassé à la hausse (18420) + volume pré-marché 1,4× moyenne. Cible potentielle alignée backtest #B-031."
@@ -308,11 +333,11 @@ Si calibration sort `CONFIDENCE_THRESHOLD = X.Y` ≠ 6.5 → `@testeur-backtest-
 | Dim | Calcul | Score | Pondéré |
 |---|---|---|---|
 | D1 (30 %) | sentiment ×10 = 7.2 | 7.2 | 2.16 |
-| D2 (20 %) | RSI 42 + MACD<0 + BB lower = 3/3 alignés VENTE | 10 | 2.00 |
+| D2 (15 %, v1.1) | RSI 42 + MACD<0 + BB lower = 3/3 alignés VENTE | 10 | 1.50 |
 | D3 (15 %) | sentiment -0.72 ×10 = 7.2 (aligné VENTE) | 7.2 | 1.08 |
 | D4 (15 %) | atr élevé sur news = sur-volatilité | 7 | 1.05 |
 | D5 (10 %) | VIX 18.5 = range | 6 | 0.60 |
-| D6 (10 %) | Sharpe 0.9×3 + 56/10 + min(64/20,5)=11.5→clip 10 ; backtest 30j ok | 10 | 1.00 |
+| D6 (15 %, v1.1) | Sharpe 0.9×3 + 56/10 + min(64/20,5)=11.5→clip 10 ; backtest 30j ok | 10 | 1.50 |
 | **Σ** | | | **7.89** |
 
 **Réponse Claude** : `direction=VENTE`, `score_brut=7.0` (Claude pondère vers le bas vu Sharpe modeste), raison "Gap baissier -0,65 % + BCE hawkish inattendu (sentiment -0,72) + RSI 42 / MACD négatif. Cible potentielle alignée backtest #B-024."
@@ -345,14 +370,14 @@ Si calibration sort `CONFIDENCE_THRESHOLD = X.Y` ≠ 6.5 → `@testeur-backtest-
 | Dim | Calcul | Score | Pondéré |
 |---|---|---|---|
 | D1 (30 %) | gap 0.10/0.45×5 = 1.1 | 1.1 | 0.33 |
-| D2 (20 %) | RSI 51 ≈ neutre, MACD ≈ 0, BB middle = 0/3 alignés | 0 | 0.00 |
+| D2 (15 %, v1.1) | RSI 51 ≈ neutre, MACD ≈ 0, BB middle = 0/3 alignés | 0 | 0.00 |
 | D3 (15 %) | news indispo → plafond 7.0 | 7.0 | 1.05 |
 | D4 (15 %) | volatilité moyenne | 5 | 0.75 |
 | D5 (10 %) | VIX 16.8 = range | 6 | 0.60 |
-| D6 (10 %) | backtest stats fortes | 10 | 1.00 |
-| **Σ** | | | **3.73** |
+| D6 (15 %, v1.1) | backtest stats fortes | 10 | 1.50 |
+| **Σ** | | | **4.23** (v1.1, ex-3.73) |
 
-**Réponse Claude** : `direction=NO-TRADE`, `score_brut=5.2` (Claude remonte légèrement par jugement composite mais reste sous seuil), raison "Marché flat à l'ouverture (gap 0,1 %), RSI neutre, range ORB non cassé. Aucune configuration au-dessus du seuil 6.5."
+**Réponse Claude** : `direction=NO-TRADE`, `score_brut=5.2` (Claude remonte légèrement par jugement composite mais reste sous seuil), raison "Marché flat à l'ouverture (gap 0,1 %), RSI neutre, range ORB non cassé. Aucune configuration au-dessus du seuil actif (6.5 live ou 7.0 paper)."
 
 **Sanity checks** :
 - SC1 : NO-TRADE → entry/sl/tp = null ✅
@@ -360,6 +385,7 @@ Si calibration sort `CONFIDENCE_THRESHOLD = X.Y` ≠ 6.5 → `@testeur-backtest-
 - SC3 : 5.2 ≤ 9.0 ✅
 - SC4 : %no-trade 7j = 30 % ✅
 - SC5 : "Aucune configuration au-dessus du seuil" — pas de spéculatif ✅
+- SC6 (v1.1) : H-A trigge sur 5 sous-jacents distincts dans 30j (DAX/CAC/EuroStoxx/2 actions BD) ≥ 2 ✅
 
 **Score final** : **5.2**, `ALERT_flag=NO-TRADE`, message Telegram NO-TRADE 3 lignes.
 
@@ -383,11 +409,11 @@ Si calibration sort `CONFIDENCE_THRESHOLD = X.Y` ≠ 6.5 → `@testeur-backtest-
 | Dim | Calcul | Score | Pondéré |
 |---|---|---|---|
 | D1 (30 %) | ORB haussier amplitude 1.8/atr 1.5 ×4 = 4.8 | 4.8 | 1.44 |
-| D2 (20 %) | RSI 62 + MACD>0 + BB upper = 3/3 alignés ACHAT | 10 | 2.00 |
+| D2 (15 %, v1.1) | RSI 62 + MACD>0 + BB upper = 3/3 alignés ACHAT | 10 | 1.50 |
 | D3 (15 %) | sentiment -0.5 (signal hausser, news baissier) → pénalité ×5 = -2.5 | 0 (clip) | 0.00 |
 | D4 (15 %) | atr 1.5 = volatilité moyenne | 5 | 0.75 |
 | D5 (10 %) | VIX 17.2 = range | 6 | 0.60 |
-| D6 (10 %) | nb_trades 52 < 30 ? Non, 52 OK ; Sharpe 1.1×3+5.8+min(52/20,5)=11.7→clip 10 | 10 | 1.00 |
+| D6 (15 %, v1.1) | nb_trades 52 < 30 ? Non, 52 OK ; Sharpe 1.1×3+5.8+min(52/20,5)=11.7→clip 10 | 10 | 1.50 |
 | **Σ** | | | **5.79** |
 
 **Réponse Claude** : `direction=NO-TRADE`, `score_brut=5.8`, raison "Signaux techniques (ORB haussier) et news (sentiment -0,5 sur rumeur scission) contradictoires — pas de configuration univoque."
@@ -473,15 +499,26 @@ Sans cache : ~0,03 $/signal (cohérent ai-architecture §7.1 — 0,66 $/mois ÷ 
 
 ### 7.1 Version du modèle de scoring
 
-- **Version actuelle** : `scoring-model-v1.0`.
-- **Couplage** : `scoring-model-v1.0` ↔ `prompt-version=signal-scoring-v1.0` ↔ `model_used=claude-sonnet-4-5-20250929` (live) ou `claude-haiku-4-5` (R&D).
+- **Version actuelle** : `scoring-model-v1.1` (Phase 1b corrections @reviewer + @qa).
+- **Couplage** : `scoring-model-v1.1` ↔ `prompt-version=signal-scoring-v1.1` ↔ `model_used=claude-sonnet-4-5-20250929` (live, **tag exact inchangé** cf. L002) ou `claude-haiku-4-5` (R&D).
 - **Stockage SQLite** : table `signals` colonnes `scoring_model_version`, `prompt_version`, `model_used` (cf. data-analyst kpi-framework SQL schema).
+
+### 7.1bis Changelog
+
+**v1.1 (2026-05-01) — Corrections Phase 1b @reviewer + @qa**
+- **A3 (split CONFIDENCE_THRESHOLD)** : décomposition en `CONFIDENCE_THRESHOLD_PAPER = 7.0` (verbatim Thomas) et `CONFIDENCE_THRESHOLD_LIVE = 6.5` [HYPOTHÈSE] avec sélection runtime via `STRATEGY_ACTIVE` SQLite. Procédure transition paper → live explicitée (§4.1bis).
+- **A4a (repondération D2/D6)** : D2 confluence indicateurs 20 % → **15 %** (corrélation intra-classe RSI/MACD/BB), D6 référence backtest 10 % → **15 %** (signal le plus robuste anti-overfitting). Total reste 100 % (30 + 15 + 15 + 15 + 10 + 15).
+- **A4b (ajout SC6 diversité sous-jacents)** : nouveau sanity check — si edge trigge sur 1 seul sous-jacent / 13 dans fenêtre 30 jours → score plafonné 7.0 + flag ALERT. Couvre angle mort O5 runtime (overfitting au sous-jacent d'apprentissage). Bootstrap 30j (lookup historique requis).
+- **Test cases TC-01 à TC-05** : recalculés avec nouvelles pondérations (cf. §5).
+
+**v1.0 (2026-05-01) — Création initiale**
+- Approche hybride Claude + 5 sanity checks. 6 dimensions (30/20/15/15/10/10). CONFIDENCE_THRESHOLD unique = 6.5 [HYPOTHÈSE]. 5 TC réalistes.
 
 ### 7.2 Quand bumper la version
 
 - **v1.X** (mineure) : ajustement poids dimensions D1-D6, ajustement seuils sanity checks (ex: SC2 R/R 1.5 → 1.7).
 - **v2.0** (majeure) : ajout/suppression d'une dimension, refonte de l'architecture hybride.
-- **Couplé** : si bump `scoring-model-v1.0 → v1.1`, alors bump aussi `prompt-version=signal-scoring-v1.1` (synchronisation obligatoire pour traçabilité).
+- **Couplé** : si bump `scoring-model-v1.1 → v1.2`, alors bump aussi `prompt-version=signal-scoring-v1.2` (synchronisation obligatoire pour traçabilité). À ce jour : `v1.1` ↔ `signal-scoring-v1.1`.
 
 ### 7.3 Procédure de migration (cf. ai-architecture §8 + protocole agent @ia)
 

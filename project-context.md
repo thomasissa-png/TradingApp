@@ -53,7 +53,7 @@
 - **Backend** : *À arbitrer T0+1 par @fullstack* — Python (continuité Finance, libs trading riches : pandas, vectorbt, backtesting.py) vs Node/Bun + TypeScript (léger, moderne, bot Telegram natif).
 - **Base de données** : SQLite minimal pour le journal trades + résultats backtest. Postgres Replit en option si volume R&D le justifie.
 - **Authentification** : N/A (un seul utilisateur, identifié par chat_id Telegram)
-- **Hébergement** : Replit always-on, déclencheur cron jours ouvrés à 8h40 CET (calcul signal à 8h45-8h55).
+- **Hébergement** : **Replit Core ~20 $/mois** (validé persona 2026-05-01, source @infrastructure infra-audit.md §1) — **Cron Deployment** (pas Always-On 24/7), déclencheur jours ouvrés Mon-Fri à 8h40 CET (calcul signal 8h45-8h55).
 - **Outils IA utilisés** : Anthropic Claude (Sonnet ou Haiku selon coût/qualité — à arbitrer en R&D) pour scoring multi-dimension du signal et génération de la justification structurée envoyée sur Telegram.
 - **Budget IA mensuel (tokens)** : < 10 €/mois estimé en live (1 appel Claude par signal × 22 jours ouvrés). Phase R&D potentiellement plus consommatrice (à monitorer).
 - **Volume d'usage IA prévu** : ~22 appels/mois en live (1 par jour ouvré). 100-500 appels/jour pendant la phase R&D edge.
@@ -106,12 +106,15 @@
 
 ## Hypothèses à valider en T0+1
 
-| # | Hypothèse | Action |
-|---|-----------|--------|
-| H1 | Plan Replit Hacker (~7 €/mois) suffit pour always-on + cron quotidien | @infrastructure audit besoins |
-| H2 | Twelve Data plan actuel couvre indices EU + actions FR + FX + commodities en intraday 1m sur 5 ans | Vérifier le plan dans ton compte Twelve Data |
-| H3 | Bourse Direct propose des turbos sur tous les sous-jacents retenus (CAC40, DAX, EuroStoxx50, blue chips FR, EUR/USD, or, brent, gaz) | Parcourir le catalogue Bourse Direct |
-| H4 | 1 appel Claude / signal × 22 jours = budget IA marginal en live | À monitorer en phase R&D pour ne pas exploser |
+| # | Hypothèse | Statut | Décision / Action |
+|---|-----------|--------|-------------------|
+| H1 | Hébergement | ✅ **PASS** (persona 2026-05-01) | **Replit Core ~20 $/mois** + Cron Deployment (pas Always-On). Hetzner CX11 écarté. |
+| H2 | Twelve Data 1m intraday EU sur 5 ans | ✅ **PASS** (persona 2026-05-01) | Plan **Pro Individual confirmé** par persona — 1m intraday EU stocks couvert. Phase 1 R&D peut démarrer. |
+| H3 | Bourse Direct propose turbos sur les 13 sous-jacents | ✅ **PASS** (persona 2026-05-01) | Catalogue confirmé — CAC40, DAX, EuroStoxx50, 5 blue chips FR, EUR/USD, GBP/USD, XAU/USD, Brent, gaz. |
+| H4 | Budget IA < 10 €/mois live | ✅ **PASS** | Sonnet 4.5 live = 0,66 $/mois + Haiku 4.5 R&D batch ≈ 10 $/mois. Verdict @ia confirme. |
+| H-KPI | Heure cutoff turbo Bourse Direct (signal d'arrêt n°5 position overnight) | ✅ **PASS** (persona 2026-05-01) | **18h00 CET confirmé** — à propager dans kpi-framework.md (était [HYPOTHÈSE 17h30]). |
+| H-ZDR | Activation Zero Data Retention Anthropic | ⏸️ **DIFFÉRÉE** (persona 2026-05-01) | Pas activée pour MVP — données envoyées sont publiques (marché + signaux), pas de PII. Réévaluer si scope élargi. |
+| H-BUDGET | Budget total mensuel R&D 90-145 €/mois + live croisière 17-35 €/mois | ✅ **ACCEPTÉ** (persona 2026-05-01, conditionnel résultats) | Si edge robuste sortie de R&D : OK. Sinon no-go assumé (décision structurante #4). |
 
 ---
 

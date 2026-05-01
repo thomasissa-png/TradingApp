@@ -303,7 +303,7 @@ Implémenter en **triggers SQLite + alerte Telegram P0** (infra-audit.md section
 | 2 | 3 semaines consécutives sans signal GO | 15 jours ouvrés consécutifs avec `direction = 'NO_TRADE'` | "Revue seuil de confiance — 15 j ouvrés sans signal GO. Edge peut-être sur-paramétré." |
 | 3 | Win rate live < win rate backtest − 15 pts sur 3 mois | Calculé en batch mensuel (comparaison journal vs `backtest_ref`) | "ALERTE — win rate live [X%] vs backtest [Y%]. Écart > 15 pts sur 3 mois. Revue edge." |
 | 4 | Score confiance moyen en live > score moyen backtest (euphorie) | `AVG(score) WHERE direction='BUY'` dernier mois > `backtest_avg_score` | "ALERTE euphorie — scores signaux récents supérieurs backtest. Forcer walk-forward OOS." |
-| 5 | Position turbo non clôturée en fin de journée (overnight) | Trade sans `exit_date` après 17h30 CET le jour J | P0 — "INCIDENT — position ouverte non clôturée. Vérifier immédiatement sur Bourse Direct." |
+| 5 | Position turbo non clôturée en fin de journée (overnight) | Trade sans `exit_date` après 18h00 CET le jour J | P0 — "INCIDENT — position ouverte non clôturée. Vérifier immédiatement sur Bourse Direct." |
 
 ---
 
@@ -332,7 +332,7 @@ Implémenter en **triggers SQLite + alerte Telegram P0** (infra-audit.md section
   - **@fullstack** : implémenter le schéma SQLite `journal.sqlite` (tables `signals` + `trades` + index) — prêt à copier tel quel
   - **@ia** : le champ `score` dans `signals` est la sortie directe du scoring Claude (1.0-10.0) — aligner avec le prompt de scoring
   - **@fullstack** : calculer `pfu_year_estimate` dans `trades` = MAX(0, pnl_net_avant_pfu) × 31,4 % en Python/SQL
-  - **Signal d'arrêt n°5** (position overnight) : vérifier l'heure avec `TZ=Europe/Paris` — 17h30 CET = cutoff turbo Bourse Direct [HYPOTHÈSE H3 non validée — confirmer l'heure exacte de clôture des turbos sur Bourse Direct]
+  - **Signal d'arrêt n°5** (position overnight) : vérifier l'heure avec `TZ=Europe/Paris` — **18h00 CET = cutoff turbo Bourse Direct** (✅ confirmé persona 2026-05-01).
   - Rétention journal SQLite 10 ans obligatoire (legal-audit.md section 7.4)
 - Actions Replit requises : aucune (livrable documentation uniquement — le schéma SQL sera implémenté par @fullstack Phase 2)
 - Gates BLOQUANT vérifiées : G1 PASS, G3 PASS, G5 PASS (Thomas mentionné), G6 PASS (P&L net mensuel = North Star identique project-context.md), G7 PASS (PFU 31,4 % aligné legal-audit.md L001), G12 PASS, G13 PASS (zéro chiffre inventé — seuils sourcés, hypothèses marquées), G15 PASS, G17 PASS, G23 PASS (chaque KPI a formule + seuil d'alerte)

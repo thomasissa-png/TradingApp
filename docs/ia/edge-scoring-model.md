@@ -1,19 +1,20 @@
 <!-- Version: 2026-05-01T00:00 — @ia — Création initiale edge-scoring-model TradingApp -->
+<!-- Version: 2026-05-01T01:30 — @ia — v1.2 corrections post-audit self-critical (SC7 plausibilité, repondération D1 30→35 / D6 15→10, TC-06/07/08) -->
 
 # Edge Scoring Model — TradingApp
 
 > Auteur : @ia — Date : 2026-05-01
 > Mission : modèle de scoring multi-dimension du signal turbo (1.0-10.0), hybride Claude + sanity checks déterministes.
 > **Lecture obligatoire amont** : `project-context.md`, `docs/ia/ai-architecture.md` (modèles + 9 règles anti-hallucination + tool use), `docs/ia/prompt-library.md` (PROMPT_VERSION signal-scoring-v1.0, prompts H-A à H-G), `docs/analytics/edge-rnd-brief.md` (7 hypothèses + seuils GO Phase 2), `docs/product/functional-specs.md` (US-01 schéma 15 champs, US-05 timeout 45 s).
-> **Version modèle** : `scoring-model-v1.1` (Phase 1b, couplé `prompt-version=signal-scoring-v1.1`). Voir §7.1bis pour le changelog.
+> **Version modèle** : `scoring-model-v1.2` (Phase 1b post-audit @ia self-critical, couplé `prompt-version=signal-scoring-v1.1`). Voir §7.1bis pour le changelog.
 
 ---
 
 ## Résumé exécutif
 
-- **Approche hybride** : Claude (Sonnet 4.5 live, Haiku 4.5 R&D) génère un score brut 1.0-10.0 + raison structurée → 6 sanity checks déterministes ex-post (v1.1) → score final + flag (ALERT / SAFE / NO-TRADE).
-- **6 dimensions pondérées** (v1.1) : D1 force signal (30 %), D2 confluence indicateurs (15 %), D3 contexte news (15 %), D4 volatilité (15 %), D5 régime VIX/V2X (10 %), D6 référence backtest (15 %).
-- **6 sanity checks anti-overfitting / anti-euphorie** (v1.1) : SC1 cohérence direction, SC2 R/R ≥ 1.5, SC3 score > 9 → ALERT, SC4 % no-trade < 20 % → pénalité, SC5 langage spéculatif → plafond 6.0, **SC6 diversité sous-jacents 30j → plafond 7.0 + ALERT**.
+- **Approche hybride** : Claude (Sonnet 4.5 live, Haiku 4.5 R&D) génère un score brut 1.0-10.0 + raison structurée → **7 sanity checks déterministes ex-post (v1.2)** → score final + flag (ALERT / SAFE / NO-TRADE).
+- **6 dimensions pondérées** (v1.2 — repondération D1/D6) : D1 force signal (**35 %**), D2 confluence indicateurs (15 %), D3 contexte news (15 %), D4 volatilité (15 %), D5 régime VIX/V2X (10 %), D6 référence backtest (**10 %**).
+- **7 sanity checks anti-overfitting / anti-euphorie** (v1.2) : SC1 cohérence direction, SC2 R/R ≥ 1.5, SC3 score > 9 → ALERT, SC4 % no-trade < 20 % → pénalité, SC5 langage spéculatif → plafond 6.0, SC6 diversité sous-jacents 30j → plafond 7.0 + ALERT, **SC7 plausibilité LLM vs déterministe (|écart| > 1.5) → plafond 7.0 + ALERT**.
 - **CONFIDENCE_THRESHOLD split paper/live** (v1.1) : `CONFIDENCE_THRESHOLD_PAPER = 7.0` (bootstrap conservateur 4-8 sem.), `CONFIDENCE_THRESHOLD_LIVE = 6.5` [HYPOTHÈSE — calibrable R&D]. Sélection runtime via `STRATEGY_ACTIVE` SQLite (US-11).
 - **Coût/signal Sonnet 4.5** : ~0,03 $ (cohérent ai-architecture §7 — verdict H4 PASS confortable).
 - **Verdict modèle** : à valider par @testeur-backtest-edge avant Phase 2.
@@ -27,8 +28,9 @@
 Ni LLM seul (risque hallucination + sur-confiance), ni calcul déterministe seul (perd la capacité d'agréger contexte qualitatif news + régime). **Hybride obligatoire** :
 
 1. **Claude génère le score brut** (1.0-10.0) à partir de l'input typé `SignalScoringInput` (cf. ai-architecture §2.1) et produit la `raison` (1-3 lignes).
-2. **6 sanity checks déterministes ex-post** (v1.1) corrigent le score si nécessaire (plafonnage, flag ALERT, NO-TRADE forcé).
-3. **Score final + flag** émis dans le JSON 15 champs (US-01).
+2. **Calcul parallèle déterministe** (v1.2) : Σ pondérée D1-D6 calculée côté code à partir des inputs (sert de référence pour SC7 plausibilité).
+3. **7 sanity checks déterministes ex-post** (v1.2) corrigent le score si nécessaire (plafonnage, flag ALERT, NO-TRADE forcé).
+4. **Score final + flag** émis dans le JSON 15 champs (US-01).
 
 ### 1.2 Diagramme de flux
 
@@ -84,14 +86,16 @@ Ni LLM seul (risque hallucination + sur-confiance), ni calcul déterministe seul
 
 | # | Dimension | Poids | Source | Formule | Range |
 |---|---|---|---|---|---|
-| **D1** | Force du signal d'edge | **30 %** | `edge_features` (variable selon H-A..G) | amplitude normalisée par σ historique 30j | 0-10 |
+| **D1** | Force du signal d'edge | **35 %** (v1.2, ex-30 %) | `edge_features` (variable selon H-A..G) | amplitude normalisée par σ historique 30j | 0-10 |
 | **D2** | Confluence indicateurs techniques | **15 %** (v1.1, ex-20 %) | `indicators` (RSI/MACD/Bollinger) | % des 3 indicateurs alignés avec la direction signal | 0-10 |
 | **D3** | Contexte news pré-marché | **15 %** | `edge_features.news_titles` + `sentiment_score` | sentiment ×10 (signe aligné direction) — **plafond 7.0 si news indispo** | 0-10 |
 | **D4** | Volatilité réalisée vs implicite | **15 %** | `indicators.atr_14` + VIX/V2X (si disponible) | ratio σ_realisée / σ_implicite ; > 1 = sur-volatilité | 0-10 |
 | **D5** | Régime de marché VIX/V2X | **10 %** | VIX (ou V2X pour EU) + classification trend/range/panic | VIX < 15 trend = 8, 15-25 range = 6, > 25 panic = 3 | 0-10 |
-| **D6** | Référence backtest | **15 %** (v1.1, ex-10 %) | `backtest_stats` (Sharpe + win_rate + nb_trades + fraicheur) | Sharpe×3 + win_rate/10 + min(nb_trades/20, 5) ; pénalité si backtest > 90j | 0-10 |
+| **D6** | Référence backtest | **10 %** (v1.2, ex-15 % v1.1, ex-10 % v1.0) | `backtest_stats` (Sharpe + win_rate + nb_trades + fraicheur) | Sharpe×3 + win_rate/10 + min(nb_trades/20, 5) ; pénalité si backtest > 90j | 0-10 |
 
-**Justification rééquilibrage v1.1** (verdict @qa) : D2 confluence techniques baissée car les 3 indicateurs (RSI/MACD/BB) sont fortement corrélés intra-classe (signal redondant) — 20 % surévaluait leur poids informationnel réel. D6 backtest remontée car la qualité statistique de l'edge (Sharpe, win_rate, nb_trades) est le signal le plus robuste anti-overfitting — 10 % sous-pondérait la référence empirique. Total reste 100 % (30 + 15 + 15 + 15 + 10 + 15).
+**Justification rééquilibrage v1.1** (verdict @qa) : D2 confluence techniques baissée car les 3 indicateurs (RSI/MACD/BB) sont fortement corrélés intra-classe (signal redondant) — 20 % surévaluait leur poids informationnel réel. D6 backtest remontée car la qualité statistique de l'edge (Sharpe, win_rate, nb_trades) est le signal le plus robuste anti-overfitting — 10 % sous-pondérait la référence empirique.
+
+**Justification repondération v1.2** (audit @ia self-critical) : D1 force du signal d'edge remontée à 35 % car c'est le **vrai signal informationnel** (amplitude normalisée par σ — mesure directe de l'edge en train de se manifester). D6 backtest redescendue à 10 % car c'est un **signal binaire frais/pas frais** plutôt qu'un signal informationnel granulaire (la qualité Sharpe + win_rate est déjà capturée par le seuil minimum nb_trades ≥ 30 et la pénalité fraîcheur > 90j — au-delà, la pondération marginale décroît). Total reste 100 % (35 + 15 + 15 + 15 + 10 + 10).
 
 ### 2.2 Formule globale
 
@@ -105,7 +109,7 @@ score_brut = clip( Σ(D_i × poids_i × normalisation_i), 1.0, 10.0 )
 
 ### 2.3 Détail par dimension
 
-**D1 — Force du signal d'edge (30 %)** : variable selon `edge_id`.
+**D1 — Force du signal d'edge (35 %, v1.2)** : variable selon `edge_id`.
 - H-A Gap Follow : `D1 = clip(|gap_pct| / σ_gap_30j × 5, 0, 10)` (gap normalisé par écart-type historique 30 jours).
 - H-C ORB : `D1 = clip((breakout_amplitude / atr_14) × 4, 0, 10)`.
 - H-E News : `D1 = clip(|sentiment_score| × 10, 0, 10)`.

@@ -50,7 +50,7 @@
 
 ## Stack technique
 - **Frontend** : [ ] Next.js  [ ] React  [ ] Expo/React Native  [x] Aucun (bot Telegram, pas de UI web)
-- **Backend** : *À arbitrer T0+1 par @fullstack* — Python (continuité Finance, libs trading riches : pandas, vectorbt, backtesting.py) vs Node/Bun + TypeScript (léger, moderne, bot Telegram natif).
+- **Backend** : **Python pur** (validé 2026-05-01 post-audit @moi + @ia) — pandas, vectorbt, backtesting.py, arch (p-value Hansen SPA), python-telegram-bot, anthropic SDK Python. Justification : R&D edge = standard industrie Python ; éviter split Python (R&D) + Node (bot) = dette technique (anti-pattern n°1 Notes libres). Anthropic SDK Python supporte tool use natif. **Hébergement Replit Core confirmé persona, Hetzner non re-challengé.**
 - **Base de données** : SQLite minimal pour le journal trades + résultats backtest. Postgres Replit en option si volume R&D le justifie.
 - **Authentification** : N/A (un seul utilisateur, identifié par chat_id Telegram)
 - **Hébergement** : **Replit Core ~20 $/mois** (validé persona 2026-05-01, source @infrastructure infra-audit.md §1) — **Cron Deployment** (pas Always-On 24/7), déclencheur jours ouvrés Mon-Fri à 8h40 CET (calcul signal 8h45-8h55).
@@ -115,15 +115,19 @@
 | H-KPI | Heure cutoff turbo Bourse Direct (signal d'arrêt n°5 position overnight) | ✅ **PASS** (persona 2026-05-01) | **18h00 CET confirmé** — à propager dans kpi-framework.md (était [HYPOTHÈSE 17h30]). |
 | H-ZDR | Activation Zero Data Retention Anthropic | ⏸️ **DIFFÉRÉE** (persona 2026-05-01) | Pas activée pour MVP — données envoyées sont publiques (marché + signaux), pas de PII. Réévaluer si scope élargi. |
 | H-BUDGET | Budget total mensuel R&D 90-145 €/mois + live croisière 17-35 €/mois | ✅ **ACCEPTÉ** (persona 2026-05-01, conditionnel résultats) | Si edge robuste sortie de R&D : OK. Sinon no-go assumé (décision structurante #4). |
+| H-STACK | Stack backend : Python pur (vs Node/Bun) | ✅ **PASS** (persona 2026-05-01 post-audit @moi + @ia) | Python = lib R&D + bot + Anthropic SDK + Telegram + arch p-value. Tranchée. |
+| H-WAVES | Séquencement R&D edge : 2 waves (H-C + H-A wave 1, étendre wave 2 si ≥1 PASS) | ✅ **TRANCHÉ** (audit @moi 2026-05-01) | Économie ~30% budget Haiku, focus persona. Si wave 1 = 0/2 PASS → escalade no-go. |
+| H-MILESTONE | Mini-jalon Telegram J+7 avant R&D edge | ✅ **TRANCHÉ** (audit @moi 2026-05-01) | Cron Replit + push hello-world quotidien + journal SQLite vide initialisé. Engage persona, valide infra réelle (téléphone Thomas), accepte les 30-90j R&D. |
+| H-STOPLOSS | Budget stop-loss J+45 R&D | ✅ **TRANCHÉ** (audit @moi 2026-05-01) | Si à J+45 aucune hypothèse n'a passé tests `methodology.py` PRE-backtest → escalade fondateur pour décision continue/stop. Évite biais coût irrécupérable. |
 
 ---
 
 ## Décisions structurantes (règles d'or, ne pas dévier)
 
 1. **Un seul signal par jour ouvré** — pas de multi-scan, pas de multi-team. Lisibilité maximale.
-2. **Signal "no-trade" autorisé et explicite** — si aucune config ne dépasse le seuil de confiance, envoyer « pas de trade aujourd'hui » plutôt qu'une reco forcée.
+2. **Signal "no-trade" autorisé et explicite** — si aucune config ne dépasse le seuil de confiance, envoyer « pas de trade aujourd'hui » plutôt qu'une reco forcée. **Pas de mode `[PAPER < 7.0]` qui ajoute du bruit** — silence honnête (cohérent brand "no-trade assumé"). Si simulation distribution scores R5 montre > 80 % no-trade attendu en paper → recalibrer le seuil paper, pas afficher des signaux faibles.
 3. **Justification obligatoire dans chaque alerte Telegram** : sous-jacent + sens + niveau d'entrée + SL + TP + raison + score de confiance + référence backtest. Levier n°1 pour résoudre la friction "pas confiance".
-4. **R&D edge AVANT tout code de prod** : exploration de plusieurs hypothèses (gap follow / gap fade, Opening Range Breakout, momentum overnight US→EU, news pré-marché, écart spot/futures, sentiment overnight Asie) sur 5 ans d'historique Twelve Data.
+4. **R&D edge AVANT tout code de prod** : exploration de plusieurs hypothèses (gap follow / gap fade, Opening Range Breakout, momentum overnight US→EU, news pré-marché, écart spot/futures, sentiment overnight Asie) sur 5 ans d'historique Twelve Data. **Séquencement 2 waves** (H-C + H-A wave 1, wave 2 conditionnelle).
 5. **Backtest exhaustif obligatoire avant un seul euro réel** — pas de live au feeling. Période de paper-trading 4-8 semaines minimum après backtest.
 6. **Pas de réintroduction de complexité Finance** sans justification claire (chaque module repris doit servir l'edge retenu, pas être copié par habitude).
 

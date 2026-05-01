@@ -7,6 +7,12 @@ Source de verite :
 - `strategy_pauses` : functional-specs.md US-12
 - `strategy_state` + `rnd_results` : kpi-framework.md §7 signal n°6 (J+45 stop-loss)
 
+Versions schema signals :
+  - v1.3 (Phase 2c-2) : 4 colonnes tracabilite scoring (scoring_model_version, prompt_version,
+    model_used, sanity_check_failed) + backtest_ref + no_trade_reason + latency_total_ms.
+  - v1.4 (Phase 2f, A1 audit @testeur-persona-thomas) : ajout `raison` (TEXT NULL) +
+    `ALERT_flag` (TEXT NULL) — narratifs Claude indispensables a l'audit hebdo/mensuel.
+
 Toute migration future DOIT respecter le pattern ALTER TABLE ADD COLUMN IF NOT EXISTS
 (cf agent fullstack — section "Migrations SQL idempotentes").
 """

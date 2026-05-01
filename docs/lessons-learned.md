@@ -8,6 +8,7 @@
 
 | ID | Date | Phase | Agent | Sévérité | Description | Cible propagation | Fichiers impactés | Statut correction | Statut propagation | Notes |
 |----|------|-------|-------|----------|-------------|-------------------|-------------------|-------------------|---------------------|-------|
+| L001 | 2026-05-01 | 0 | @legal | P0 | PFU = 31,4 % depuis 01/01/2025 (12,8 % IR + 18,6 % PS), pas 30 %. Hausse effective des prélèvements sociaux. | Tout livrable mentionnant la fiscalité turbos / PFU / scénarios P&L net | project-context.md L45, docs/strategy/personas.md L191, docs/orchestration-plan.md L235 + L317 | ✅ corrigé | ✅ propagé (4 fichiers, vérifié grep "PFU 30") | Réf. Service-public.fr fiche F21618. À garder en référence pour @data-analyst kpi-framework + @product-manager specs (rapport mensuel net). |
 
 ## Agents fragiles (circuit breaker)
 

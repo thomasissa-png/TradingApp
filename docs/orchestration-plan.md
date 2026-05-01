@@ -232,7 +232,7 @@ Mission : produire docs/legal/legal-audit.md couvrant les 9 sections suivantes :
 4. Twelve Data CGU — usage perso autorisé ? Restrictions redistribution.
 5. Bourse Direct — exécution manuelle = aucun risque conformité broker.
 6. Anthropic Claude — données envoyées (publiques marché + signaux), pas de PII. Politique rétention. Zero Data Retention si possible.
-7. Fiscalité — PFU 30% turbos CTO, formulaire 2074, recommandation journal trades.
+7. Fiscalité — PFU 31,4% (12,8% IR + 18,6% PS, taux 2025+) turbos CTO, formulaire 2074, recommandation journal trades.
 8. Risques redistribution future — paliers vers CIF.
 9. Limitation responsabilité — disclaimer README repo.
 
@@ -314,7 +314,7 @@ ANTI-TIMEOUT : écris le fichier IMMÉDIATEMENT après lecture. Write d'abord, E
 **prompt** :
 
 ```
-Contexte : TradingApp, bot Telegram 1 signal/jour, persona Thomas trader perso. KPI North Star = P&L net mensuel après frais (turbos Bourse Direct ~0,99 € + spread émetteur) et fiscalité PFU 30%. Objectif secondaire : drawdown mensuel max < 20% capital dédié.
+Contexte : TradingApp, bot Telegram 1 signal/jour, persona Thomas trader perso. KPI North Star = P&L net mensuel après frais (turbos Bourse Direct ~0,99 € + spread émetteur) et fiscalité PFU 31,4% (taux 2025+, source @legal). Objectif secondaire : drawdown mensuel max < 20% capital dédié.
 
 Lire AVANT : docs/strategy/brand-platform.md, docs/strategy/personas.md, project-context.md (verbatims persona, héritage Finance "garde MAE/MFE journal").
 

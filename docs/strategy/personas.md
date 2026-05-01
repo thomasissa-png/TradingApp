@@ -188,7 +188,7 @@ Message reçu :
 
 Thomas lit en 25 secondes. Score 7,1 > 6,5. SL présent. Risque 126 € : acceptable. Backtest #B-031 : il se souvient vaguement — ORB gap, solide. Il ouvre Bourse Direct. Cherche "DAX Call" dans les turbos. Trouve le bon (delta ~0,5, pas trop dans la monnaie). Spread affiché : 0,03 €. Passe l'ordre à 3,42 €. Ordre exécuté à 8h49. Il referme l'app. Il arrive à son bureau à 9h05. Il ne regardera le cours qu'à 10h — les ordres SL/TP sont posés.
 
-À 10h12, Bourse Direct envoie une notification : TP touché à 3,85 €. P&L brut : +258 €. Net après frais (0,99 € × 2) et PFU 30 % : ~179 €.
+À 10h12, Bourse Direct envoie une notification : TP touché à 3,85 €. P&L brut : +258 €. Net après frais (0,99 € × 2) et PFU 31,4 % (12,8 % IR + 18,6 % PS, taux 2025+ confirmé @legal) : ~176 €.
 
 **Ce scénario illustre :**
 - La fenêtre d'exécution réelle (8h42 → 8h49 = 7 minutes, dans le seuil)

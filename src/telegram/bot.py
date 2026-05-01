@@ -27,6 +27,7 @@ from src.journal.db import (
     cancel_active_pause,
     get_last_journal_week_criteria_ko,
     get_latest_signal_today,
+    get_strategy_mode,
     insert_journal_week,
     insert_strategy_decision,
     insert_strategy_pause,
@@ -155,9 +156,18 @@ def handle_trade(
         mfe=mfe,
     )
     pl_net = pl_brut - 0.99 - 0.99
+
+    # Phase 2f (A2 audit @testeur-persona-thomas) : afficher mode PAPER/LIVE
+    # dans la confirmation pour eviter le shoot a cote (verbatim Thomas RER 8h48 :
+    # "je peux taper /trade apres /stop sans m'en rendre compte"). Cf §2.2 et §6.3
+    # docs/qa/persona-final-review-phase2.md.
+    current_mode = get_strategy_mode(conn)
+    mode_tag = "[PAPER 📝]" if current_mode == "paper" else "[LIVE 💰]"
+    pfu_note = "(simulé)" if current_mode == "paper" else "(PFU 31,4 % a appliquer)"
+
     return (
-        f"✅ Trade #{trade_id} enregistré (signal #{signal['id']} {signal['asset']}).\n"
-        f"P&amp;L brut : {pl_brut:+.2f} € | P&amp;L net (frais BD A/R) : {pl_net:+.2f} €\n"
+        f"✅ Trade #{trade_id} enregistré {mode_tag} (signal #{signal['id']} {signal['asset']}).\n"
+        f"P&amp;L brut : {pl_brut:+.2f} € | P&amp;L net (frais BD A/R) : {pl_net:+.2f} € {pfu_note}\n"
         f"MAE : {mae:+.2f} € | MFE : {mfe:+.2f} €"
     )
 

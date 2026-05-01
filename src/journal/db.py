@@ -49,6 +49,7 @@ def init_database(data_dir: Path | str) -> Path:
         migrate_strategy_state_add_mode(conn)
         migrate_trades_add_mode(conn)
         migrate_rnd_results_add_stats(conn)
+        migrate_signals_add_raison_alert_flag(conn)
         conn.commit()
 
     logger.info("database_initialized", db_path=str(db_path))
@@ -106,6 +107,27 @@ def migrate_trades_add_mode(conn: sqlite3.Connection) -> None:
         logger.info("migration_applied", change="trades.mode")
 
 
+def migrate_signals_add_raison_alert_flag(conn: sqlite3.Connection) -> None:
+    """ALTER TABLE signals ADD COLUMNS raison + ALERT_flag (Phase 2f — A1 audit @testeur-persona-thomas).
+
+    Sans ces colonnes, l'audit hebdo/mensuel de Thomas est impossible : la `raison`
+    (justification narrative Claude) et le `ALERT_flag` (sortie SC3 ALERT/SAFE/NO_TRADE)
+    sont les 2 informations critiques pour reconstituer 6 mois plus tard "pourquoi le
+    bot m'a envoye ce signal ce jour-la". Cf docs/qa/persona-final-review-phase2.md §4.3.
+
+    Idempotent via PRAGMA table_info — chaque colonne ajoutee individuellement.
+    Bumping signals schema v1.3 -> v1.4.
+    """
+    cursor = conn.execute("PRAGMA table_info(signals);")
+    cols = {row[1] for row in cursor.fetchall()}
+    if "raison" not in cols:
+        conn.execute("ALTER TABLE signals ADD COLUMN raison TEXT NULL;")
+        logger.info("migration_applied", change="signals.raison")
+    if "ALERT_flag" not in cols:
+        conn.execute("ALTER TABLE signals ADD COLUMN ALERT_flag TEXT NULL;")
+        logger.info("migration_applied", change="signals.ALERT_flag")
+
+
 def migrate_rnd_results_add_stats(conn: sqlite3.Connection) -> None:
     """ALTER TABLE rnd_results ADD COLUMNS backtest_ref/win_rate/nb_trades/drawdown_max.
 
@@ -156,8 +178,8 @@ def insert_signal(
         INSERT INTO signals (
             date, hour_calc, asset, direction, entry, sl, tp, score,
             scoring_model_version, prompt_version, model_used, sanity_check_failed,
-            backtest_ref, no_trade_reason, latency_total_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            backtest_ref, no_trade_reason, raison, ALERT_flag, latency_total_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             signal.date,
@@ -174,6 +196,8 @@ def insert_signal(
             sanity_failed_str,
             signal.backtest_ref,
             signal.no_trade_reason,
+            signal.raison,
+            signal.ALERT_flag,
             meta.get("latency_ms"),
         ),
     )
@@ -187,7 +211,7 @@ def get_recent_signals(conn: sqlite3.Connection, days: int) -> list[dict[str, An
         """
         SELECT id, date, hour_calc, asset, direction, entry, sl, tp, score,
                scoring_model_version, prompt_version, model_used, sanity_check_failed,
-               backtest_ref, no_trade_reason
+               backtest_ref, no_trade_reason, raison, ALERT_flag
         FROM signals
         WHERE date >= date('now', ?)
         ORDER BY date DESC, hour_calc DESC
@@ -452,6 +476,37 @@ def is_paused_today(conn: sqlite3.Connection, today: date | str | None = None) -
     return cursor.fetchone() is not None
 
 
+def get_active_pause_end_date(
+    conn: sqlite3.Connection, today: date | str | None = None
+) -> str | None:
+    """Retourne la end_date (ISO YYYY-MM-DD) de la pause active couvrant aujourd'hui.
+
+    Phase 2f (A3 audit @testeur-persona-thomas) : utilisee pour le message courtoisie
+    skip pause active afin que Thomas voie quand le bot reprendra (cf §3.2).
+
+    Returns:
+        end_date ISO ou None si aucune pause active.
+    """
+    today_str = (
+        today
+        if isinstance(today, str)
+        else (today or date.today()).isoformat()
+    )
+    cursor = conn.execute(
+        """
+        SELECT end_date FROM strategy_pauses
+        WHERE status = 'active'
+          AND start_date <= ?
+          AND end_date >= ?
+        ORDER BY end_date DESC
+        LIMIT 1
+        """,
+        (today_str, today_str),
+    )
+    row = cursor.fetchone()
+    return str(row[0]) if row else None
+
+
 def cancel_active_pause(conn: sqlite3.Connection) -> int:
     """Annule la pause active (US-12 edge /cancel-pause).
 
@@ -553,6 +608,7 @@ def get_last_journal_week_criteria_ko(conn: sqlite3.Connection) -> int:
 __all__ = [
     "cancel_active_pause",
     "cleanup_expired_pauses",
+    "get_active_pause_end_date",
     "get_backtest_stats",
     "get_connection",
     "get_last_journal_week_criteria_ko",
@@ -568,6 +624,7 @@ __all__ = [
     "insert_trade",
     "is_paused_today",
     "migrate_rnd_results_add_stats",
+    "migrate_signals_add_raison_alert_flag",
     "migrate_strategy_state_add_mode",
     "migrate_trades_add_mode",
     "set_strategy_mode",

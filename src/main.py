@@ -23,6 +23,7 @@ from src.ai.client import AnthropicClient, AnthropicClientError
 from src.ai.tools import ScoringSignalOutput
 from src.config import Config
 from src.journal.db import (
+    get_active_pause_end_date,
     get_connection,
     get_recent_signals,
     get_strategy_mode,
@@ -33,6 +34,7 @@ from src.journal.db import (
 )
 from src.lib.healthchecks import ping_healthchecks
 from src.lib.logger import get_logger
+from src.scheduler.calendar_fr import get_holiday_name_fr
 from src.scheduler.cron import is_market_day_fr
 from src.scoring.engine import ScoringEngine
 from src.telegram.bot import send_message
@@ -168,15 +170,38 @@ def run_signal_mode(config: Config) -> int:
     init_database(config.data_dir)
 
     # 1. Holiday FR
+    # Phase 2f (A3 audit @testeur-persona-thomas) : message Telegram courtoisie pour
+    # lever le doute Thomas "le bot a-t-il plante ?" en silence legitime (cf §3.2).
+    # Weekend (samedi/dimanche) reste silencieux : Thomas sait que le marche est ferme.
     if not is_market_day_fr():
-        logger.info("signal_skipped", reason="not_a_market_day_fr")
+        now_paris = datetime.now(PARIS_TZ)
+        holiday_name = get_holiday_name_fr(now_paris.date())
+        if holiday_name is not None:
+            # Jour ferie FR : envoi message courtoisie
+            msg = (
+                f"⚪️ Pas de signal aujourd'hui (jour ferie FR : {holiday_name}). "
+                f"Bot vivant. Reprise au prochain jour ouvre."
+            )
+            _send(config, msg)
+            logger.info("signal_skipped", reason="french_holiday", holiday=holiday_name)
+        else:
+            # Weekend : silence (Thomas sait que le marche est ferme)
+            logger.info("signal_skipped", reason="not_a_market_day_fr")
         ping_healthchecks(config.healthchecks_ping_url, status="success")
         return EXIT_SKIPPED
 
     # 2. Pause active (US-12)
     with get_connection(config.data_dir) as conn:
         if is_paused_today(conn):
-            logger.info("signal_skipped", reason="pause_active")
+            # Phase 2f (A3) : message courtoisie pause active avec date de fin
+            end_date = get_active_pause_end_date(conn)
+            end_str = end_date or "date inconnue"
+            msg = (
+                f"⚪️ Pas de signal aujourd'hui (pause active jusqu'au {end_str}). "
+                f"Bot vivant. /cancel-pause pour reprendre immediatement."
+            )
+            _send(config, msg)
+            logger.info("signal_skipped", reason="pause_active", end_date=end_str)
             ping_healthchecks(config.healthchecks_ping_url, status="success")
             return EXIT_SKIPPED
 
@@ -184,6 +209,7 @@ def run_signal_mode(config: Config) -> int:
     # Phase 2d-bis (B4 audit @qa) : comparison `>=` au lieu de `>` —
     # 8h55:00 EXACT = trop tard, silence Telegram. Justification : la fenetre US-06 est
     # `8h45-8h55` exclusive en haut (le signal DOIT etre envoye AVANT 8h55, pas A 8h55).
+    # Phase 2f (A3) : pas de message courtoisie ici (cas degrade — healthchecks suffit).
     now_paris = datetime.now(PARIS_TZ)
     if now_paris.time() >= SIGNAL_CUTOFF:
         logger.warning(

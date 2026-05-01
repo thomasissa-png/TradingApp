@@ -348,6 +348,7 @@ def test_french_national_holiday_july_14_skipped() -> None:
     assert is_working_day_fr(bastille_day) is False
 
 
+@patch("src.main.get_holiday_name_fr", return_value="14 juillet (Fete nationale)")
 @patch("src.main.send_message")
 @patch("src.main.ping_healthchecks")
 @patch("src.main.is_market_day_fr", return_value=False)
@@ -355,12 +356,20 @@ def test_signal_mode_skipped_on_july_14_silent_with_ping_success(
     mock_market: MagicMock,
     mock_ping: MagicMock,
     mock_send: MagicMock,
+    mock_holiday: MagicMock,
     config: Config,
 ) -> None:
-    """run_signal_mode sur jour férié FR → pas de Telegram, ping success."""
+    """Phase 2f (A3) : 14 juillet -> message Telegram courtoisie + ping success.
+
+    Avant Phase 2f : silence total (Thomas pouvait douter du cron).
+    Apres Phase 2f : 1 message courtoisie "Pas de signal aujourd'hui (jour ferie...)".
+    """
+    mock_send.return_value = {"ok": True, "result": {"message_id": 1}}
     result = run_signal_mode(config)
     assert result == EXIT_SKIPPED
-    mock_send.assert_not_called()
+    mock_send.assert_called_once()
+    sent_text = mock_send.call_args.kwargs.get("text") or mock_send.call_args.args[2]
+    assert "jour ferie FR" in sent_text
     mock_ping.assert_called_with(config.healthchecks_ping_url, status="success")
 
 
@@ -378,15 +387,24 @@ def test_pause_active_today_skips_with_ping_success(
     mock_send: MagicMock,
     config: Config,
 ) -> None:
-    """Pause active couvrant la date du jour → silence Telegram + ping success."""
-    init_database(config.data_dir)
-    with get_connection(config.data_dir) as conn:
-        today = date.today()
-        insert_strategy_pause(conn, today, today + timedelta(days=2))
+    """Phase 2f (A3) : pause active -> message Telegram courtoisie avec end_date + ping success.
 
+    Avant Phase 2f : silence total. Apres Phase 2f : message "Pas de signal aujourd'hui
+    (pause active jusqu'au YYYY-MM-DD)".
+    """
+    init_database(config.data_dir)
+    today = date.today()
+    end = today + timedelta(days=2)
+    with get_connection(config.data_dir) as conn:
+        insert_strategy_pause(conn, today, end)
+
+    mock_send.return_value = {"ok": True, "result": {"message_id": 1}}
     result = run_signal_mode(config)
     assert result == EXIT_SKIPPED
-    mock_send.assert_not_called()
+    mock_send.assert_called_once()
+    sent_text = mock_send.call_args.kwargs.get("text") or mock_send.call_args.args[2]
+    assert "pause active" in sent_text
+    assert end.isoformat() in sent_text
     mock_ping.assert_called_with(config.healthchecks_ping_url, status="success")
 
 

@@ -112,6 +112,42 @@ def test_trade_refuses_when_no_signal_today(db_conn: sqlite3.Connection) -> None
         handle_trade(db_conn, ["42.50", "-18.00", "65.30"], today=date.today())
 
 
+def test_trade_confirmation_shows_paper_mode_by_default(
+    db_conn: sqlite3.Connection,
+) -> None:
+    """Phase 2f (A2) : confirmation /trade affiche [PAPER 📝] par defaut.
+
+    Le mode par defaut de strategy_state est 'paper' (cf migration B2). Sans
+    feedback visuel explicite dans la confirmation, Thomas peut shooter a cote
+    en pensant etre en live (cf §2.2 audit @testeur-persona-thomas Phase 2e).
+    """
+    today = date.today()
+    insert_signal(db_conn, _signal_buy(today.isoformat()))
+    msg = handle_trade(db_conn, ["42.50", "-18.00", "65.30"], today=today)
+    assert "[PAPER" in msg
+    assert "📝" in msg
+    assert "(simulé)" in msg
+
+
+def test_trade_confirmation_shows_live_mode_when_active(
+    db_conn: sqlite3.Connection,
+) -> None:
+    """Phase 2f (A2) : confirmation /trade affiche [LIVE 💰] apres /continue.
+
+    Verifie que la confirmation reflete bien strategy_state.mode courant
+    (snapshot DB au moment du INSERT trade + lecture pour affichage).
+    """
+    from src.journal.db import set_strategy_mode
+
+    today = date.today()
+    insert_signal(db_conn, _signal_buy(today.isoformat()))
+    set_strategy_mode(db_conn, "live")
+    msg = handle_trade(db_conn, ["42.50", "-18.00", "65.30"], today=today)
+    assert "[LIVE" in msg
+    assert "💰" in msg
+    assert "PFU" in msg
+
+
 # ---------------------------------------------------------------------------
 # /pause — US-12
 # ---------------------------------------------------------------------------

@@ -184,39 +184,76 @@ def test_signal_mode_no_trade_when_all_below_threshold(
 # ---------------------------------------------------------------------------
 
 
+@patch("src.main.get_holiday_name_fr", return_value=None)
 @patch("src.main.send_message")
 @patch("src.main.ping_healthchecks")
 @patch("src.main.is_market_day_fr", return_value=False)
-def test_signal_mode_skipped_on_holiday(
+def test_signal_mode_skipped_silent_on_weekend(
     mock_market: MagicMock,
     mock_ping: MagicMock,
     mock_send: MagicMock,
+    mock_holiday: MagicMock,
     config: Config,
 ) -> None:
+    """Weekend : silence Telegram (Thomas sait que le marche est ferme)."""
     result = run_signal_mode(config)
     assert result == EXIT_SKIPPED
     mock_send.assert_not_called()
     mock_ping.assert_called_with(config.healthchecks_ping_url, status="success")
 
 
+@patch("src.main.get_holiday_name_fr", return_value="14 juillet (Fete nationale)")
+@patch("src.main.send_message")
+@patch("src.main.ping_healthchecks")
+@patch("src.main.is_market_day_fr", return_value=False)
+def test_signal_mode_sends_courtesy_message_on_french_holiday(
+    mock_market: MagicMock,
+    mock_ping: MagicMock,
+    mock_send: MagicMock,
+    mock_holiday: MagicMock,
+    config: Config,
+) -> None:
+    """Phase 2f (A3) : jour ferie FR -> message Telegram courtoisie + ping success.
+
+    Sans ce message, Thomas peut douter "le bot a-t-il plante ?" en silence legitime
+    (cf §3.2 audit @testeur-persona-thomas Phase 2e).
+    """
+    mock_send.return_value = {"ok": True, "result": {"message_id": 1}}
+    result = run_signal_mode(config)
+    assert result == EXIT_SKIPPED
+    mock_send.assert_called_once()
+    sent_text = mock_send.call_args.kwargs.get("text") or mock_send.call_args.args[2]
+    assert "⚪️" in sent_text
+    assert "jour ferie FR" in sent_text
+    assert "14 juillet" in sent_text
+    mock_ping.assert_called_with(config.healthchecks_ping_url, status="success")
+
+
 @patch("src.main.send_message")
 @patch("src.main.ping_healthchecks")
 @patch("src.main.is_market_day_fr", return_value=True)
-def test_signal_mode_skipped_when_paused(
+def test_signal_mode_sends_courtesy_message_when_paused(
     mock_market: MagicMock,
     mock_ping: MagicMock,
     mock_send: MagicMock,
     config: Config,
 ) -> None:
+    """Phase 2f (A3) : pause active -> message Telegram courtoisie avec end_date."""
     # Pré-insère pause active couvrant aujourd'hui
     init_database(config.data_dir)
+    today = date.today()
+    end = today
     with get_connection(config.data_dir) as conn:
-        today = date.today()
-        insert_strategy_pause(conn, today, today)
+        insert_strategy_pause(conn, today, end)
 
+    mock_send.return_value = {"ok": True, "result": {"message_id": 1}}
     result = run_signal_mode(config)
     assert result == EXIT_SKIPPED
-    mock_send.assert_not_called()
+    mock_send.assert_called_once()
+    sent_text = mock_send.call_args.kwargs.get("text") or mock_send.call_args.args[2]
+    assert "⚪️" in sent_text
+    assert "pause active" in sent_text
+    assert end.isoformat() in sent_text
     mock_ping.assert_called_with(config.healthchecks_ping_url, status="success")
 
 

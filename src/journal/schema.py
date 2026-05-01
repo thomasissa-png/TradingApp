@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS signals (
     sanity_check_failed     TEXT NULL,
     backtest_ref            TEXT,
     no_trade_reason         TEXT,
+    raison                  TEXT NULL,
+    ALERT_flag              TEXT NULL,
     sent_to_telegram        INTEGER NOT NULL DEFAULT 0,
     telegram_msg_id         INTEGER,
     hour_sent               TIME,

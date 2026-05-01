@@ -1,3 +1,3 @@
 ⚪️ NO-TRADE  CAC40
-VIX 28,4 > seuil 27,0 (régime panique)
+VIX 28,4 &gt; seuil 27,0 (régime panique) — Reprise quand VIX &lt; 25,0 sur clôture consécutive
 Prochaine fenêtre : demain 8h45 CET

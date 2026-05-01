@@ -18,6 +18,11 @@ from anthropic import APITimeoutError
 from src.ai.client import AnthropicClient, AnthropicClientError
 from src.ai.tools import ScoringSignalOutput
 from src.config import Config
+from src.journal.db import (
+    migrate_rnd_results_add_stats,
+    migrate_strategy_state_add_mode,
+    migrate_trades_add_mode,
+)
 from src.journal.schema import get_all_ddls
 from src.scoring.engine import ScoringEngine
 
@@ -62,6 +67,10 @@ def db_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:")
     for ddl in get_all_ddls():
         conn.execute(ddl)
+    # Phase 2d-bis : migrations idempotentes (R1 rnd_results stats, B2 trades.mode)
+    migrate_strategy_state_add_mode(conn)
+    migrate_trades_add_mode(conn)
+    migrate_rnd_results_add_stats(conn)
     conn.commit()
     return conn
 

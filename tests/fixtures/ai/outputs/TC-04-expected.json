@@ -13,5 +13,8 @@
   "backtest_ref": "#B-018",
   "ALERT_flag": "ALERT",
   "no_trade_reason": "Signaux techniques (ORB haussier) et news (sentiment -0,50) contradictoires.",
-  "model_used": "claude-sonnet-4-5-20250929"
+  "model_used": "claude-sonnet-4-5-20250929",
+  "win_rate_backtest": null,
+  "nb_trades_backtest": null,
+  "drawdown_max_backtest": null
 }

@@ -157,7 +157,7 @@ def handle_trade(
     pl_net = pl_brut - 0.99 - 0.99
     return (
         f"✅ Trade #{trade_id} enregistré (signal #{signal['id']} {signal['asset']}).\n"
-        f"P&L brut : {pl_brut:+.2f} € | P&L net (frais BD A/R) : {pl_net:+.2f} €\n"
+        f"P&amp;L brut : {pl_brut:+.2f} € | P&amp;L net (frais BD A/R) : {pl_net:+.2f} €\n"
         f"MAE : {mae:+.2f} € | MFE : {mfe:+.2f} €"
     )
 

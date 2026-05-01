@@ -144,6 +144,17 @@ def test_pause_refuses_wrong_arg_count(db_conn: sqlite3.Connection) -> None:
         handle_pause(db_conn, ["2026-07-15"])
 
 
+def test_pause_refuses_overlap_with_active(db_conn: sqlite3.Connection) -> None:
+    """Phase 2d-bis (B1) : 2e /pause chevauchant la 1re est REJETEE explicitement.
+
+    Le handler doit transformer le ValueError de db.py en CommandError lisible
+    pour Thomas (avec mention `/cancel-pause`).
+    """
+    handle_pause(db_conn, ["2026-07-15", "2026-07-29"])
+    with pytest.raises(CommandError, match=r"overlap|cancel-pause"):
+        handle_pause(db_conn, ["2026-07-20", "2026-08-05"])
+
+
 # ---------------------------------------------------------------------------
 # /cancel-pause — US-12 edge
 # ---------------------------------------------------------------------------

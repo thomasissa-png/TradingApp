@@ -181,8 +181,11 @@ def run_signal_mode(config: Config) -> int:
             return EXIT_SKIPPED
 
     # 3. Cutoff 8h55 strict (US-06)
+    # Phase 2d-bis (B4 audit @qa) : comparison `>=` au lieu de `>` —
+    # 8h55:00 EXACT = trop tard, silence Telegram. Justification : la fenetre US-06 est
+    # `8h45-8h55` exclusive en haut (le signal DOIT etre envoye AVANT 8h55, pas A 8h55).
     now_paris = datetime.now(PARIS_TZ)
-    if now_paris.time() > SIGNAL_CUTOFF:
+    if now_paris.time() >= SIGNAL_CUTOFF:
         logger.warning(
             "signal_cutoff_exceeded",
             now=now_paris.isoformat(timespec="seconds"),
@@ -288,12 +291,20 @@ def run_signal_mode(config: Config) -> int:
 
 
 def _send(config: Config, text: str) -> bool:
-    """Helper envoi Telegram avec parse_mode Markdown (cf format strict ** **)."""
+    """Helper envoi Telegram avec parse_mode HTML.
+
+    Phase 2d-bis (R2 audit @design) : migration Markdown → HTML.
+    Raisons : (a) plus robuste — caracteres `.`, `-`, `(`, `)`, `,`, `%` ne necessitent
+    PAS d'escape en HTML Telegram alors qu'ils doivent etre prefixes `\\` en MarkdownV2 ;
+    (b) `<b>...</b>` rendu par Telegram Bot API quel que soit le contenu interne.
+    Les templates utilisent `<b>` (gras), pas de Markdown `**`. Le `&` litteral DOIT
+    etre echappe en `&amp;` dans les templates (P&L → P&amp;L).
+    """
     response = send_message(
         bot_token=config.telegram_bot_token,
         chat_id=config.thomas_chat_id,
         text=text,
-        parse_mode="Markdown",
+        parse_mode="HTML",
     )
     return response is not None
 

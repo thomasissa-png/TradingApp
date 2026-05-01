@@ -86,24 +86,39 @@ def _signal(direction: str = "BUY", score: float = 7.5, edge_id: str = "H-A") ->
 # ---------------------------------------------------------------------------
 
 
-def test_pause_overlap_replaces_previous_active(db_conn: sqlite3.Connection) -> None:
-    """COMPORTEMENT ACTUEL : insert_strategy_pause UPDATE l'ancienne en 'cancelled' puis crée la nouvelle.
+def test_pause_overlap_rejects_explicitly(db_conn: sqlite3.Connection) -> None:
+    """Phase 2d-bis (B1 audit @qa) : pause overlap = REJET explicite (plus d'ecrasement silencieux).
 
-    REGRESSION captée : si l'utilisateur fait /pause 2026-07-01 2026-07-15 puis
-    /pause 2026-07-10 2026-07-20, la 1re pause est silencieusement annulée.
-    Si la spec US-12 exige un REJET → bug. À arbitrer @product-manager.
+    Si Thomas fait `/pause 2026-07-01 2026-07-15` puis `/pause 2026-07-10 2026-07-20`,
+    la 2e doit lever ValueError mentionnant la pause existante. Pour la remplacer, il faut
+    /cancel-pause d'abord. Garde-fou anti-erreur : evite d'annuler accidentellement une
+    pause posee la veille.
     """
     insert_strategy_pause(db_conn, "2026-07-01", "2026-07-15")
-    insert_strategy_pause(db_conn, "2026-07-10", "2026-07-20")
 
+    with pytest.raises(ValueError, match="overlap"):
+        insert_strategy_pause(db_conn, "2026-07-10", "2026-07-20")
+
+    # La 1re pause reste active, aucune 2e creee
     cursor = db_conn.execute(
         "SELECT start_date, end_date, status FROM strategy_pauses ORDER BY id"
     )
     rows = cursor.fetchall()
-    assert len(rows) == 2
-    assert rows[0]["status"] == "cancelled"  # 1re pause écrasée
-    assert rows[1]["status"] == "active"  # 2e devient active
-    assert rows[1]["start_date"] == "2026-07-10"
+    assert len(rows) == 1
+    assert rows[0]["status"] == "active"
+    assert rows[0]["start_date"] == "2026-07-01"
+
+
+def test_pause_no_overlap_accepted(db_conn: sqlite3.Connection) -> None:
+    """Phase 2d-bis (B1) : 2 pauses NON-chevauchantes sont acceptees.
+
+    Premiere pause cancellee manuellement avant la seconde → pas d'overlap → OK.
+    """
+    insert_strategy_pause(db_conn, "2026-07-01", "2026-07-15")
+    cancel_active_pause(db_conn)
+    # Pause 2 ne chevauche pas (pause 1 n'est plus active)
+    pid = insert_strategy_pause(db_conn, "2026-07-10", "2026-07-20")
+    assert pid > 0
 
 
 # ---------------------------------------------------------------------------
@@ -111,14 +126,14 @@ def test_pause_overlap_replaces_previous_active(db_conn: sqlite3.Connection) -> 
 # ---------------------------------------------------------------------------
 
 
-def test_trade_after_stop_paper_mode_not_persisted_on_trade_row(
+def test_trade_after_stop_persists_paper_mode_on_trade_row(
     db_conn: sqlite3.Connection,
 ) -> None:
-    """REGRESSION captée : trades.paper_mode n'existe PAS comme colonne.
+    """Phase 2d-bis (B2 audit @qa) : trades.mode est renseigne au moment de l'INSERT.
 
-    Le mode global (strategy_state.mode) est consultable mais on ne saura PAS
-    en relisant la table trades quels trades étaient en paper vs live.
-    Signalement @fullstack : ajouter colonne `mode TEXT NOT NULL DEFAULT 'paper'`.
+    Snapshot du mode actif (strategy_state.mode) → permet de relire l'historique trades
+    et distinguer paper vs live a posteriori (necessaire pour analytics et stats P&L
+    par mode).
     """
     set_strategy_mode(db_conn, "paper")
     assert get_strategy_mode(db_conn) == "paper"
@@ -131,12 +146,20 @@ def test_trade_after_stop_paper_mode_not_persisted_on_trade_row(
 
     insert_trade(db_conn, signal_id=signal_id, pl_brut=42.5, mae=-18.0, mfe=65.3)
 
+    # Verif (a) la colonne `mode` existe
     cursor = db_conn.execute("PRAGMA table_info(trades);")
     cols = {row[1] for row in cursor.fetchall()}
-    # ASSERTION : si un jour 'mode' ou 'paper_mode' est ajouté, ce test échoue → màj attendue
-    assert "mode" not in cols and "paper_mode" not in cols, (
-        "BUG résolu : mettre à jour ce test pour vérifier persistance paper_mode"
-    )
+    assert "mode" in cols
+
+    # Verif (b) la valeur est bien 'paper' (snapshot actif au moment de l'insert)
+    cursor = db_conn.execute("SELECT mode FROM trades ORDER BY id DESC LIMIT 1")
+    assert cursor.fetchone()["mode"] == "paper"
+
+    # Switch live → nouveau trade doit avoir mode='live'
+    set_strategy_mode(db_conn, "live")
+    insert_trade(db_conn, signal_id=signal_id, pl_brut=10.0, mae=-2.0, mfe=15.0)
+    cursor = db_conn.execute("SELECT mode FROM trades ORDER BY id DESC LIMIT 1")
+    assert cursor.fetchone()["mode"] == "live"
 
 
 # ---------------------------------------------------------------------------
@@ -290,31 +313,26 @@ def test_signal_after_cutoff_8h57_silent_and_ping_success(
 @patch("src.main.ping_healthchecks")
 @patch("src.main.is_market_day_fr", return_value=True)
 @patch("src.main.datetime")
-def test_signal_at_exact_cutoff_8h55_00_passes(
+def test_signal_at_exact_cutoff_8h55_00_silent(
     mock_dt: MagicMock,
     mock_market: MagicMock,
     mock_ping: MagicMock,
     mock_send: MagicMock,
     config: Config,
 ) -> None:
-    """Frontière 8h55:00 EXACTE — comportement actuel : `> SIGNAL_CUTOFF` donc 8h55:00 PASSE.
+    """Frontière 8h55:00 EXACTE — Phase 2d-bis (B4 audit @qa) : `>= SIGNAL_CUTOFF`
+    donc 8h55:00 BLOQUE.
 
-    Documente le comportement (frontière inclusive). Si la spec US-06 dit "strict <= 8h55",
-    8h55:00 doit passer ; si "strict < 8h55", il faut bloquer. Comportement actuel = passe.
+    Spec US-06 : fenetre `8h45-8h55` exclusive en haut — le signal doit partir AVANT 8h55,
+    PAS A 8h55. Le comportement precedent (`> cutoff`) laissait passer 8h55:00:000 ce qui
+    est ambigu cote operationnel. Convergence vers la spec stricte.
     """
     mock_dt.now.return_value = datetime(2026, 5, 4, 8, 55, 0)  # exactement 8h55:00
-    # On mock aussi ScoringEngine pour éviter appel réel Anthropic
-    with patch("src.main.ScoringEngine") as mock_engine_cls, patch("src.main.AnthropicClient"):
-        mock_engine = MagicMock()
-        mock_engine.score.return_value = (
-            _signal("NO_TRADE", score=4.0),
-            {"sanity_checks_triggered": []},
-        )
-        mock_engine_cls.return_value = mock_engine
-        mock_send.return_value = {"ok": True, "result": {"message_id": 1}}
-        result = run_signal_mode(config)
-    # 8h55:00 == cutoff → comportement actuel `now > cutoff` est False → pipeline tourne
-    assert result == EXIT_OK
+    result = run_signal_mode(config)
+    # 8h55:00 == cutoff → comportement Phase 2d-bis `now >= cutoff` est True → silence
+    assert result == EXIT_SKIPPED
+    mock_send.assert_not_called()
+    mock_ping.assert_called_with(config.healthchecks_ping_url, status="success")
 
 
 # ---------------------------------------------------------------------------

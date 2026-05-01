@@ -25,6 +25,7 @@ from src.ai.client import (
 )
 from src.ai.tools import ScoringSignalOutput, sanitize_news_titles
 from src.config import Config
+from src.journal.db import get_backtest_stats
 from src.scoring.dimensions import compute_deterministic_score
 from src.scoring.sanity_checks import apply_all_sanity_checks
 from src.scoring.threshold import select_threshold
@@ -92,6 +93,21 @@ class ScoringEngine:
 
         # 5. Select threshold runtime
         threshold, mode_used = select_threshold(self.config, db_conn=self.db_conn)
+
+        # 5b. Phase 2d-bis (R1) : enrichir signal avec stats backtest depuis rnd_results.
+        # Lookup cote code (jamais Claude) — anti-hallucination R-AI-1.
+        # Si rnd_results vide / backtest_ref absent : laisse les 3 champs a None
+        # (le template affichera "Backtest : Réf. {ref}" sans stats).
+        if self.db_conn is not None and signal.backtest_ref:
+            stats = get_backtest_stats(self.db_conn, signal.backtest_ref)
+            if stats is not None:
+                signal = signal.model_copy(
+                    update={
+                        "win_rate_backtest": stats["win_rate"],
+                        "nb_trades_backtest": stats["nb_trades"],
+                        "drawdown_max_backtest": stats["drawdown_max"],
+                    }
+                )
 
         # 6. Final decision : si score < threshold ET direction != NO_TRADE -> force NO_TRADE
         if signal.direction != "NO_TRADE" and signal.score < threshold:

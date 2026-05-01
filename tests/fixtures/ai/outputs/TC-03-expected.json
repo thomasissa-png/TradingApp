@@ -13,5 +13,8 @@
   "backtest_ref": "#B-031",
   "ALERT_flag": "NO_TRADE",
   "no_trade_reason": "Score max releve 5,2/10 — en dessous du seuil 6,5.",
-  "model_used": "claude-sonnet-4-5-20250929"
+  "model_used": "claude-sonnet-4-5-20250929",
+  "win_rate_backtest": null,
+  "nb_trades_backtest": null,
+  "drawdown_max_backtest": null
 }

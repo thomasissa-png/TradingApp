@@ -284,7 +284,8 @@ def test_weekly_summary_renders_all_kpis() -> None:
     }
     msg = format_weekly_summary(stats, paper_mode=False)
     assert "Résumé semaine 18" in msg
-    assert "P&L brut semaine" in msg
+    # Phase 2d-bis (R2) : passage parse_mode HTML — & escape en &amp;
+    assert "P&amp;L brut semaine" in msg
     assert "Win rate semaine : 66%" in msg
     assert "DAX" in msg
     # Drawdown < 15 → pas d'alerte affichée
@@ -344,7 +345,8 @@ def test_monthly_report_includes_pfu_and_prompt() -> None:
     msg = format_monthly_report(stats, prompt_continue=True)
     assert "Rapport mensuel Avril 2026" in msg
     assert "Fiscalité PFU" in msg
-    assert "P&L net après PFU" in msg
+    # Phase 2d-bis (R2) : passage parse_mode HTML — & escape en &amp;
+    assert "P&amp;L net après PFU" in msg
     assert "/continue" in msg
     assert "/stop" in msg
 

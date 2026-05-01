@@ -1,5 +1,5 @@
 ⚠️ DEGRADED MODE  Signal du jour
-Scoring Claude indisponible (timeout > 45 s)
+Scoring Claude indisponible (timeout &gt; 45 s)
 Données de marché reçues — scoring IA non complété
 Signal non envoyé : une justification incomplète n'est pas une justification
 Prochaine tentative : demain 8h40 CET

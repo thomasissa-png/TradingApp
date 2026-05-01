@@ -1,9 +1,17 @@
 """Tool definitions Anthropic + Pydantic validation pour le scoring de signal.
 
 Source de verite :
-- docs/ia/prompt-library.md v1.1 §3.1 (tool emit_signal_scoring 15 champs)
+- docs/ia/prompt-library.md v1.1 §3.1 (tool emit_signal_scoring)
 - docs/ia/ai-architecture.md v1.1 §2.2 (schema output strict)
 - src/journal/schema.py (DDL_SIGNALS — directions BUY/SELL/NO_TRADE)
+
+Versioning du tool schema :
+- v1.2 (Phase 2c) : 15 champs stricts emis par Claude
+- v1.3 (Phase 2d-bis) : +3 champs OPTIONNELS `win_rate_backtest`, `nb_trades_backtest`,
+  `drawdown_max_backtest` — calcules cote code (lookup rnd_results) AVANT format
+  Telegram, JAMAIS emis par Claude (cf docs/ia/ai-architecture.md §2.2 note —
+  anti-hallucination R-AI-1 : Claude ne doit pas inventer des stats backtest).
+  Acceptes None pour les signaux sans backtest_ref retrouve dans rnd_results.
 
 Note : la table SQLite signals utilise BUY/SELL/NO_TRADE (UPPER, underscore).
 Les docs IA utilisent ACHAT/VENTE/NO-TRADE (FR, hyphen). Le tool Anthropic accepte
@@ -20,14 +28,18 @@ import anthropic
 from pydantic import BaseModel, ConfigDict, Field
 
 # ---------------------------------------------------------------------------
-# Tool definition Anthropic — schema 15 champs strict
+# Tool definition Anthropic — schema 15 champs strict (emis par Claude)
+# +3 champs OPTIONNELS post-LLM (win_rate_backtest, nb_trades_backtest,
+#  drawdown_max_backtest) — alimentes cote code via lookup rnd_results
 # ---------------------------------------------------------------------------
 
 SCORING_TOOL_DEFINITION: dict[str, Any] = {
     "name": "emit_signal_scoring",
     "description": (
         "Emet le scoring structure du signal turbo intraday EU pour TradingApp. "
-        "A appeler une seule fois par requete. Tous les champs sont obligatoires."
+        "A appeler une seule fois par requete. Les 15 premiers champs sont "
+        "obligatoires (emis par Claude). Les 3 stats backtest sont alimentees "
+        "cote code apres l'appel — ne PAS les inventer."
     ),
     "input_schema": {
         "type": "object",
@@ -50,6 +62,31 @@ SCORING_TOOL_DEFINITION: dict[str, Any] = {
             "ALERT_flag": {"type": "string", "enum": ["ALERT", "SAFE", "NO_TRADE"]},
             "no_trade_reason": {"type": ["string", "null"]},
             "model_used": {"type": "string"},
+            # v1.3 — champs OPTIONNELS calcules cote code (lookup rnd_results),
+            # JAMAIS emis par Claude. Acceptes pour passage strict du schema si
+            # un futur outil les renseignait, sinon laisses None par parse_tool_response.
+            "win_rate_backtest": {
+                "type": ["number", "null"],
+                "minimum": 0.0,
+                "maximum": 100.0,
+                "description": (
+                    "NE PAS REMPLIR — alimente cote code apres l'appel "
+                    "depuis rnd_results.backtest_ref."
+                ),
+            },
+            "nb_trades_backtest": {
+                "type": ["integer", "null"],
+                "minimum": 0,
+                "description": "NE PAS REMPLIR — alimente cote code.",
+            },
+            "drawdown_max_backtest": {
+                "type": ["number", "null"],
+                "minimum": 0.0,
+                "description": (
+                    "NE PAS REMPLIR — alimente cote code. Stocke en valeur "
+                    "POSITIVE (ex 17.0 pour drawdown -17%)."
+                ),
+            },
         },
         "required": [
             "id",
@@ -78,9 +115,12 @@ SCORING_TOOL_DEFINITION: dict[str, Any] = {
 
 
 class ScoringSignalOutput(BaseModel):
-    """Output strict du tool `emit_signal_scoring` (15 champs).
+    """Output du tool `emit_signal_scoring`.
 
-    Validation Zod-like : toute reponse Claude non conforme = retry max 2 (cf R-AI-5).
+    - 15 premiers champs : emis par Claude (strict, validation Pydantic + retry max 2 cf R-AI-5)
+    - 3 champs backtest (v1.3) : OPTIONNELS, alimentes cote code via lookup rnd_results
+      apres l'appel LLM (cf docs/ia/ai-architecture.md §2.2 — anti-hallucination R-AI-1).
+      None si backtest_ref non trouve dans rnd_results (template affichera fallback).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -100,6 +140,26 @@ class ScoringSignalOutput(BaseModel):
     ALERT_flag: Literal["ALERT", "SAFE", "NO_TRADE"]
     no_trade_reason: str | None
     model_used: str
+    # v1.3 — stats backtest enrichies cote code (lookup rnd_results)
+    win_rate_backtest: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="Win rate du backtest reference en % (None si lookup KO).",
+    )
+    nb_trades_backtest: int | None = Field(
+        default=None,
+        ge=0,
+        description="Nombre de trades du backtest reference (None si lookup KO).",
+    )
+    drawdown_max_backtest: float | None = Field(
+        default=None,
+        ge=0.0,
+        description=(
+            "Drawdown max du backtest reference en % (POSITIF, ex 17.0 pour DD -17%). "
+            "None si lookup KO."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

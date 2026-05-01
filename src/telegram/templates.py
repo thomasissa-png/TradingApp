@@ -13,9 +13,21 @@ UTF-8 natif obligatoire (é, è, à) — pas d'\\uXXXX (cf CLAUDE.md règle UTF-
 
 from __future__ import annotations
 
+import html
 from typing import Any, Final, Literal
 
 from src.ai.tools import ScoringSignalOutput
+
+
+def _esc(text: str | None) -> str:
+    """Escape HTML pour parse_mode='HTML' Telegram (R2 audit @design).
+
+    Echappe `<`, `>`, `&` dans les champs free-form (raison, asset, no_trade_reason)
+    qui peuvent contenir du contenu Claude non controle. Renvoie chaine vide si None.
+    """
+    if text is None:
+        return ""
+    return html.escape(str(text), quote=False)
 
 # ---- Mini-jalon J+7 : message hello-world (conserve pour mode hello) ----
 
@@ -61,6 +73,32 @@ def _expiration_line_for_edge(edge_id: str) -> str:
     return "Avant 8h55 CET — au-delà, ne pas exécuter"
 
 
+def _backtest_line(signal: ScoringSignalOutput) -> str:
+    """Ligne 5 du template ACHAT/VENTE (Phase 2d-bis — R1 audit @design).
+
+    Si stats backtest disponibles (alimentees par engine.py via get_backtest_stats) :
+        "Backtest : 63% sur 81 trades | DD max -17% | Ref. #B-031"
+    Sinon (lookup rnd_results KO) : fallback minimal pour ne pas bloquer le signal :
+        "Backtest : Ref. #B-031"
+
+    Format conforme docs/copy/message-templates.md v1.2 §2 (3 stats + ref).
+    Note : le caractere MINUS SIGN typographique (U+2212) est intentionnel pour
+    rendu Telegram (convention financiere : "-XX %").
+    """
+    if (
+        signal.win_rate_backtest is not None
+        and signal.nb_trades_backtest is not None
+        and signal.drawdown_max_backtest is not None
+    ):
+        return (
+            f"Backtest : {signal.win_rate_backtest:.0f}% sur "
+            f"{signal.nb_trades_backtest} trades | "
+            f"DD max −{signal.drawdown_max_backtest:.0f}% | "  # noqa: RUF001
+            f"Réf. {signal.backtest_ref}"
+        )
+    return f"Backtest : Réf. {signal.backtest_ref}"
+
+
 def _paper_prefix(paper_mode: bool) -> str:
     """Préfixe [PAPER TRADING] si mode paper actif (US-11)."""
     return "[PAPER TRADING] " if paper_mode else ""
@@ -102,7 +140,7 @@ def format_buy_signal(signal: ScoringSignalOutput, paper_mode: bool = False) -> 
     prefix = _paper_prefix(paper_mode)
 
     lines = [
-        f"{prefix}🟢 ACHAT  **{signal.asset}**",
+        f"{prefix}🟢 ACHAT  <b>{_esc(signal.asset)}</b>",
         (
             f"Entrée : {_fmt_decimal(signal.entry)}  |  "
             f"SL : {_fmt_decimal(signal.sl)}  |  "
@@ -113,8 +151,8 @@ def format_buy_signal(signal: ScoringSignalOutput, paper_mode: bool = False) -> 
             f"Capital engagé : {_fmt_eur(capital)}  |  "
             f"{expiration}"
         ),
-        f"Raison : {signal.raison}",
-        f"Backtest : Réf. {signal.backtest_ref}",
+        f"Raison : {_esc(signal.raison)}",
+        _backtest_line(signal),
         f"Score : {_fmt_decimal(signal.score, 1)}/10",
     ]
     return "\n".join(lines)
@@ -133,7 +171,7 @@ def format_sell_signal(signal: ScoringSignalOutput, paper_mode: bool = False) ->
     prefix = _paper_prefix(paper_mode)
 
     lines = [
-        f"{prefix}🔴 VENTE  **{signal.asset}**",
+        f"{prefix}🔴 VENTE  <b>{_esc(signal.asset)}</b>",
         (
             f"Entrée : {_fmt_decimal(signal.entry)}  |  "
             f"SL : {_fmt_decimal(signal.sl)}  |  "
@@ -144,8 +182,8 @@ def format_sell_signal(signal: ScoringSignalOutput, paper_mode: bool = False) ->
             f"Capital engagé : {_fmt_eur(capital)}  |  "
             f"{expiration}"
         ),
-        f"Raison : {signal.raison}",
-        f"Backtest : Réf. {signal.backtest_ref}",
+        f"Raison : {_esc(signal.raison)}",
+        _backtest_line(signal),
         f"Score : {_fmt_decimal(signal.score, 1)}/10",
     ]
     return "\n".join(lines)
@@ -164,18 +202,31 @@ def format_no_trade(
 
     La raison est extraite de signal.no_trade_reason ou signal.raison.
     Si max_score fourni : permet de contextualiser (NT-01 score sous seuil).
+
+    Phase 2d-bis (R3 audit @design) : pour les cas VIX (NT-03), la condition de
+    reprise chiffree (`Reprise quand VIX < 25,0 sur clôture consécutive`) est
+    appendue automatiquement a la ligne 2 si elle n'est pas deja presente — Thomas
+    doit pouvoir suivre le VIX sans relancer le bot (brand-platform §6 Do#1).
     """
     raison = signal.no_trade_reason or signal.raison or "Conditions non remplies"
     raison = raison[:200]  # Garde-fou longueur
 
-    # Ligne 1 : asset + score si pertinent
-    if max_score is not None:
-        line1 = f"⚪️ NO-TRADE  {signal.asset} / Score {_fmt_decimal(max_score, 1)}/10"
-    else:
-        line1 = f"⚪️ NO-TRADE  {signal.asset}"
+    # R3 — enrichissement automatique cas VIX
+    if "VIX" in raison and "Reprise" not in raison:
+        # Format 3L strict respecte : on append en fin de ligne 2 (separateur ` — `)
+        raison_enriched = f"{raison} — Reprise quand VIX < 25,0 sur clôture consécutive"
+        # Garde-fou longueur (pour ne pas exploser sur Telegram 4096 chars)
+        raison = raison_enriched[:300]
 
-    # Ligne 2 : raison concrète
-    line2 = raison
+    # Ligne 1 : asset + score si pertinent (escape HTML pour parse_mode HTML)
+    asset_safe = _esc(signal.asset)
+    if max_score is not None:
+        line1 = f"⚪️ NO-TRADE  {asset_safe} / Score {_fmt_decimal(max_score, 1)}/10"
+    else:
+        line1 = f"⚪️ NO-TRADE  {asset_safe}"
+
+    # Ligne 2 : raison concrète (escape HTML)
+    line2 = _esc(raison)
 
     # Ligne 3 : prochaine fenêtre (constante)
     line3 = "Prochaine fenêtre : demain 8h45 CET"
@@ -196,9 +247,9 @@ def format_data_error(error_context: dict[str, Any]) -> str:
       - missing_field (str) : champ manquant (ex "volume 1m Xetra")
       - hour (str) : heure de la détection (ex "8h44")
     """
-    asset = str(error_context.get("asset", "Sous-jacent prévu"))
-    missing = str(error_context.get("missing_field", "champ inconnu"))
-    hour = str(error_context.get("hour", "8h45"))
+    asset = _esc(error_context.get("asset", "Sous-jacent prévu"))
+    missing = _esc(error_context.get("missing_field", "champ inconnu"))
+    hour = _esc(error_context.get("hour", "8h45"))
 
     lines = [
         f"⚠️ ERREUR DATA  {asset}",
@@ -221,13 +272,13 @@ def format_degraded_mode(
     - cron_late : cron démarré > 8h55 (US-06)
     """
     ctx = context or {}
-    asset = str(ctx.get("asset", "Signal du jour"))
+    asset = _esc(ctx.get("asset", "Signal du jour"))
 
     if reason == "claude_timeout":
         return "\n".join(
             [
                 f"⚠️ DEGRADED MODE  {asset}",
-                "Scoring Claude indisponible (timeout > 45 s)",
+                "Scoring Claude indisponible (timeout &gt; 45 s)",
                 "Données de marché reçues — scoring IA non complété",
                 "Signal non envoyé : une justification incomplète n'est pas une justification",
                 "Prochaine tentative : demain 8h40 CET",
@@ -235,8 +286,8 @@ def format_degraded_mode(
         )
 
     if reason == "twelvedata_partial":
-        missing = str(ctx.get("missing_field", "données partielles"))
-        hour = str(ctx.get("hour", "8h44"))
+        missing = _esc(ctx.get("missing_field", "données partielles"))
+        hour = _esc(ctx.get("hour", "8h44"))
         return "\n".join(
             [
                 f"⚠️ DEGRADED MODE  {asset}",
@@ -247,13 +298,13 @@ def format_degraded_mode(
         )
 
     # cron_late
-    date_str = str(ctx.get("date", "aujourd'hui"))
+    date_str = _esc(ctx.get("date", "aujourd'hui"))
     return "\n".join(
         [
             f"⚠️ CRON MANQUÉ  Signal du {date_str}",
             "Pipeline non exécuté à 8h40 CET (alerte healthchecks.io)",
             "Signal du jour non calculé — fenêtre d'exécution 8h45-8h55 expirée",
-            "Cause probable : démarrage Replit > 60 s",
+            "Cause probable : démarrage Replit &gt; 60 s",
             "Action : vérifier logs Replit. Signal reprendra demain matin automatiquement.",
         ]
     )
@@ -291,8 +342,8 @@ def format_weekly_summary(stats: dict[str, Any], paper_mode: bool = False) -> st
             f"NO-TRADE : {stats.get('no_trades', 0)}"
         ),
         (
-            f"P&L brut semaine : {_fmt_decimal(stats.get('pnl_brut'), 2)} € | "
-            f"P&L net (frais) : {_fmt_decimal(stats.get('pnl_net'), 2)} €"
+            f"P&amp;L brut semaine : {_fmt_decimal(stats.get('pnl_brut'), 2)} € | "
+            f"P&amp;L net (frais) : {_fmt_decimal(stats.get('pnl_net'), 2)} €"
         ),
         (
             f"Win rate semaine : {stats.get('win_rate', 0):.0f}% "
@@ -318,7 +369,7 @@ def format_weekly_summary(stats: dict[str, Any], paper_mode: bool = False) -> st
     if drawdown > 15:
         lines.append("")
         lines.append(
-            f"⚠️ Drawdown hebdo {drawdown:.0f}% > 15% — surveiller semaine prochaine"
+            f"⚠️ Drawdown hebdo {drawdown:.0f}% &gt; 15% — surveiller semaine prochaine"
         )
     pertes = int(stats.get("pertes_consecutives", 0) or 0)
     if pertes >= 3:
@@ -353,13 +404,13 @@ def format_monthly_report(stats: dict[str, Any], prompt_continue: bool = True) -
         f"📈 Rapport mensuel {mois}",
         "",
         (
-            f"P&L brut : {_fmt_decimal(stats.get('pnl_brut'), 2)} € | "
+            f"P&amp;L brut : {_fmt_decimal(stats.get('pnl_brut'), 2)} € | "
             f"Frais Bourse Direct : {_fmt_decimal(stats.get('frais'), 2)} € | "
-            f"P&L net frais : {_fmt_decimal(stats.get('pnl_net'), 2)} €"
+            f"P&amp;L net frais : {_fmt_decimal(stats.get('pnl_net'), 2)} €"
         ),
         (
             f"Fiscalité PFU estimée (31,4%) : {_fmt_decimal(stats.get('pfu'), 2)} € | "
-            f"**P&L net après PFU : {_fmt_decimal(stats.get('pnl_net_pfu'), 2)} €**"
+            f"<b>P&amp;L net après PFU : {_fmt_decimal(stats.get('pnl_net_pfu'), 2)} €</b>"
         ),
         "",
         (

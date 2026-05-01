@@ -1,6 +1,6 @@
 # Message Templates — Telegram
 > TradingApp · Agent : @copywriter · Date : 2026-05-01
-> v1.1 — 2026-05-01 — corrections @reviewer A1+A2
+> v1.2 — 2026-05-01 — F24 mitigation — ligne expiration intégrée dans 14 templates ACHAT/VENTE
 > Brand voice : Justifié · Concis · Backtesté — Zéro bullshit, transparent sur l'incertitude
 > Framework copy : FAB (Feature → Advantage → Benefit) pour chaque champ du signal
 
@@ -16,7 +16,7 @@
 ```
 🟢 ACHAT / 🔴 VENTE / ⚪️ NO-TRADE  [Sous-jacent]
 Entrée : [X,XX]  |  SL : [X,XX]  |  Cible potentielle : [X,XX]
-Risque : [X€ max]  |  Capital engagé : [X€]  |  Avant [HH:MM] CET
+Risque : [X€ max]  |  Capital engagé : [X€]  |  Avant [HH:MM] CET — au-delà, ne pas exécuter
 Raison : [1-2 phrases max — chiffres obligatoires]
 Backtest : [win_rate]% sur [nb] trades | DD max [−XX%] | Réf. [#B-NNN]
 Score : [X.X]/10
@@ -68,7 +68,7 @@ Score : [X.X]/10
 ```
 🟢 ACHAT  **DAX Turbo Call**
 Entrée : 3,42  |  SL : 3,21  |  Cible potentielle : 3,85
-Risque : 126 € max  |  Capital engagé : 600 €  |  Avant 8h55 CET
+Risque : 126 € max  |  Capital engagé : 600 €  |  Avant 8h55 CET — au-delà, ne pas exécuter
 Raison : gap haussier DAX +0,9% vs clôture US — amplitude dans top 15% des 250 dernières ouvertures, volume Xetra 8h05 à +34% vs moyenne 5j
 Backtest : 63% sur 81 trades | DD max −17% | Réf. #B-031
 Score : 7,4/10
@@ -81,7 +81,7 @@ Score : 7,4/10
 ```
 🔴 VENTE  **CAC40 Turbo Put**
 Entrée : 4,17  |  SL : 4,38  |  Cible potentielle : 3,71
-Risque : 147 € max  |  Capital engagé : 700 €  |  Avant 8h55 CET
+Risque : 147 € max  |  Capital engagé : 700 €  |  Avant 8h55 CET — au-delà, ne pas exécuter
 Raison : gap baissier CAC40 −1,1% vs clôture jeudi — futures US en baisse −0,7% pré-session, amplitude gap dans top 12% historique 5 ans
 Backtest : 61% sur 94 trades | DD max −19% | Réf. #B-018
 Score : 7,2/10
@@ -94,7 +94,7 @@ Score : 7,2/10
 ```
 🟢 ACHAT  **EuroStoxx50 Turbo Call**
 Entrée : 2,88  |  SL : 2,71  |  Cible potentielle : 3,14
-Risque : 119 € max  |  Capital engagé : 504 €  |  Avant 8h55 CET
+Risque : 119 € max  |  Capital engagé : 504 €  |  Avant 8h55 CET — au-delà, ne pas exécuter
 Raison : gap baissier ESTX50 −0,6% au rebond : comble historiquement 58% des cas sous ce seuil — RSI 30min en survente à 28, rejet sur support 4 810
 Backtest : 58% sur 73 trades | DD max −22% | Réf. #B-047
 Score : 6,9/10
@@ -107,7 +107,7 @@ Score : 6,9/10
 ```
 🔴 VENTE  **CAC40 Turbo Put**
 Entrée : 3,95  |  SL : 4,14  |  Cible potentielle : 3,56
-Risque : 133 € max  |  Capital engagé : 592 €  |  Avant 8h55 CET
+Risque : 133 € max  |  Capital engagé : 592 €  |  Avant 8h55 CET — au-delà, ne pas exécuter
 Raison : gap haussier CAC40 +1,3% fade — amplitude excessive vs ATR 5j (ratio 1,8×), zone de résistance 7 950 testée 3 fois sans franchissement, retour vers 7 810 cible potentielle
 Backtest : 55% sur 68 trades | DD max −24% | Réf. #B-052
 Score : 6,8/10
@@ -146,7 +146,7 @@ Score : 7,5/10
 ```
 🟢 ACHAT  **EuroStoxx50 Turbo Call**
 Entrée : 3,18  |  SL : 2,99  |  Cible potentielle : 3,56
-Risque : 133 € max  |  Capital engagé : 540 €  |  Avant 8h55 CET
+Risque : 133 € max  |  Capital engagé : 540 €  |  Avant 8h55 CET — au-delà, ne pas exécuter
 Raison : S&P500 clôture +1,4% hier, Nasdaq +1,7% — corrélation S&P→ESTX50 sur ouverture EU à 0,72 (252j), ESTX50 futures +0,9% — momentum haussier US se transfert en ouverture EU dans 68% des cas à ce niveau
 Backtest : 61% sur 103 trades | DD max −16% | Réf. #B-067
 Score : 7,1/10
@@ -159,7 +159,7 @@ Score : 7,1/10
 ```
 🔴 VENTE  **CAC40 Turbo Put**
 Entrée : 4,42  |  SL : 4,63  |  Cible potentielle : 3,98
-Risque : 147 € max  |  Capital engagé : 663 €  |  Avant 8h55 CET
+Risque : 147 € max  |  Capital engagé : 663 €  |  Avant 8h55 CET — au-delà, ne pas exécuter
 Raison : S&P500 clôture −1,9% hier, VIX +2,1 pts à 21,4 — pression baissière US transférée sur EU dans 71% des cas à magnitude ≥ 1,5%, futures CAC40 −0,8% à 8h30 confirmant le biais
 Backtest : 64% sur 91 trades | DD max −14% | Réf. #B-071
 Score : 7,6/10
@@ -172,7 +172,7 @@ Score : 7,6/10
 ```
 🟢 ACHAT  **TotalEnergies Turbo Call**
 Entrée : 4,87  |  SL : 4,61  |  Cible potentielle : 5,42
-Risque : 182 € max  |  Capital engagé : 778 €  |  Avant 8h55 CET
+Risque : 182 € max  |  Capital engagé : 778 €  |  Avant 8h55 CET — au-delà, ne pas exécuter
 Raison : résultats T1 TotalEnergies publiés 7h45 — EPS +8% vs consensus Bloomberg, réaction pré-marché +1,6% en 8 min — catalyseur earnings + momentum initial dans top 20% historique sur actions FR
 Backtest : 59% sur 54 trades | DD max −21% | Réf. #B-088
 Score : 7,0/10
@@ -185,7 +185,7 @@ Score : 7,0/10
 ```
 🔴 VENTE  **Sanofi Turbo Put**
 Entrée : 5,33  |  SL : 5,58  |  Cible potentielle : 4,81
-Risque : 175 € max  |  Capital engagé : 799 €  |  Avant 8h55 CET
+Risque : 175 € max  |  Capital engagé : 799 €  |  Avant 8h55 CET — au-delà, ne pas exécuter
 Raison : avertissement sur résultats Sanofi 7h30 — guidance annuelle révisée −4%, réaction pré-marché −2,1% en 12 min — catalyseur négatif + gap de rupture confirmé en pré-ouverture
 Backtest : 62% sur 47 trades | DD max −23% | Réf. #B-091
 Score : 7,1/10
@@ -198,7 +198,7 @@ Score : 7,1/10
 ```
 🟢 ACHAT  **XAU/USD Turbo Call (Or)**
 Entrée : 3,64  |  SL : 3,42  |  Cible potentielle : 4,08
-Risque : 154 € max  |  Capital engagé : 546 €  |  Avant 8h55 CET
+Risque : 154 € max  |  Capital engagé : 546 €  |  Avant 8h55 CET — au-delà, ne pas exécuter
 Raison : spread Spot/Futures Or inversé à −0,4$/oz (contango → backwardation) — signal de tension physique, or spot à 2 412 $ résistance clé franchie en pré-session, USD index −0,3%
 Backtest : 60% sur 76 trades | DD max −19% | Réf. #B-105
 Score : 7,2/10
@@ -211,7 +211,7 @@ Score : 7,2/10
 ```
 🔴 VENTE  **Brent Turbo Put**
 Entrée : 4,21  |  SL : 4,43  |  Cible potentielle : 3,78
-Risque : 154 € max  |  Capital engagé : 631 €  |  Avant 8h55 CET
+Risque : 154 € max  |  Capital engagé : 631 €  |  Avant 8h55 CET — au-delà, ne pas exécuter
 Raison : contango Brent élargi à +1,8$/bl (M1-M2) — pression baissière structures terme, inventaires API +3,2 Mb annoncés hier soir, Brent spot 83,4 $ sous EMA20 depuis 3 séances
 Backtest : 57% sur 69 trades | DD max −22% | Réf. #B-112
 Score : 6,8/10
@@ -224,7 +224,7 @@ Score : 6,8/10
 ```
 🟢 ACHAT  **CAC40 Turbo Call**
 Entrée : 3,77  |  SL : 3,56  |  Cible potentielle : 4,21
-Risque : 147 € max  |  Capital engagé : 566 €  |  Avant 8h55 CET
+Risque : 147 € max  |  Capital engagé : 566 €  |  Avant 8h55 CET — au-delà, ne pas exécuter
 Raison : Nikkei +1,8%, Hang Seng +1,2% clôture Asie — corrélation Asie→CAC ouverture à 0,64 (252j), sentiment risk-on, EUR/USD stable 1,082 (pas de frein FX), CAC futures +0,7%
 Backtest : 59% sur 98 trades | DD max −18% | Réf. #B-134
 Score : 7,0/10
@@ -237,7 +237,7 @@ Score : 7,0/10
 ```
 🔴 VENTE  **CAC40 Turbo Put**
 Entrée : 4,09  |  SL : 4,30  |  Cible potentielle : 3,63
-Risque : 147 € max  |  Capital engagé : 613 €  |  Avant 8h55 CET
+Risque : 147 € max  |  Capital engagé : 613 €  |  Avant 8h55 CET — au-delà, ne pas exécuter
 Raison : Nikkei −2,1%, CSI300 −1,4% clôture Asie — risk-off généralisé, corrélation baissière Asie→CAC à 0,61 (252j), CAC futures −0,9%, EUR/USD −0,2% (amplificateur additionnel)
 Backtest : 60% sur 89 trades | DD max −20% | Réf. #B-138
 Score : 7,2/10

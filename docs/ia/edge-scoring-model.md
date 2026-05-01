@@ -11,7 +11,7 @@
 
 ## Résumé exécutif
 
-- **Approche hybride** : Claude (Sonnet 4.5 live, Haiku 4.5 R&D) génère un score brut 1.0-10.0 + raison structurée → 5 sanity checks déterministes ex-post → score final + flag (ALERT / SAFE / NO-TRADE).
+- **Approche hybride** : Claude (Sonnet 4.5 live, Haiku 4.5 R&D) génère un score brut 1.0-10.0 + raison structurée → 6 sanity checks déterministes ex-post (v1.1) → score final + flag (ALERT / SAFE / NO-TRADE).
 - **6 dimensions pondérées** (v1.1) : D1 force signal (30 %), D2 confluence indicateurs (15 %), D3 contexte news (15 %), D4 volatilité (15 %), D5 régime VIX/V2X (10 %), D6 référence backtest (15 %).
 - **6 sanity checks anti-overfitting / anti-euphorie** (v1.1) : SC1 cohérence direction, SC2 R/R ≥ 1.5, SC3 score > 9 → ALERT, SC4 % no-trade < 20 % → pénalité, SC5 langage spéculatif → plafond 6.0, **SC6 diversité sous-jacents 30j → plafond 7.0 + ALERT**.
 - **CONFIDENCE_THRESHOLD split paper/live** (v1.1) : `CONFIDENCE_THRESHOLD_PAPER = 7.0` (bootstrap conservateur 4-8 sem.), `CONFIDENCE_THRESHOLD_LIVE = 6.5` [HYPOTHÈSE — calibrable R&D]. Sélection runtime via `STRATEGY_ACTIVE` SQLite (US-11).
@@ -139,7 +139,7 @@ score_brut = clip( Σ(D_i × poids_i × normalisation_i), 1.0, 10.0 )
 
 ---
 
-## 3. Anti-overfitting / Anti-euphorie — 5 sanity checks
+## 3. Anti-overfitting / Anti-euphorie — 6 sanity checks (v1.1)
 
 > Ces sanity checks sont **déterministes** (pas LLM) et appliqués **après** la réponse Claude. Cohérent avec R-AI-1 à R-AI-9 (ai-architecture §3) — défense en profondeur.
 

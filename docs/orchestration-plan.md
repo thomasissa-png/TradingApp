@@ -32,16 +32,18 @@
 
 | Phase | Statut | Agents | Livrables principaux | Gates clés |
 |-------|--------|--------|----------------------|------------|
-| 0 — Fondations | EN COURS | @creative-strategy, @product-manager, @data-analyst, @ia, @infrastructure, @legal | brand-platform, personas, functional-specs, kpi-framework, ai-architecture, infra-audit (H1-H4), legal-audit | G1-G18 |
-| 0b — Agents testeurs | À VENIR | @agent-factory | testeur-persona-thomas.md | — |
-| 1 — R&D edge + Expérience | À VENIR | @data-analyst (R&D edge), @ia (scoring), @ux (parcours signal), @copywriter (templates messages) | edge-rnd-report, prompt-library, user-flows, message-templates | G19, GP1-GP10 |
-| 1b — Revue testeur-persona stratégie | À VENIR | testeur-persona-thomas | persona-review-strategy | GP1-GP10 |
-| 2 — Build | À VENIR | @infrastructure (setup), @fullstack (bot+backtester), @ia (intégration LLM), @design (maquettes Telegram), @qa (tests) | code src/, screenshots messages, test E2E | G20-G26, G31 (favicon repo), G32 |
-| 2c — Revue testeur-persona site/bot | À VENIR | testeur-persona-thomas | persona-review-bot | GP1-GP10 |
-| 2d — Revue testeur-client | N/A justifié | — | — | — |
-| 3 — Contenu | ADAPTÉ | @geo (lisibilité Telegram), @copywriter (justifications signaux) | geo-strategy, signal-copy-templates | G16-G18 |
-| 4 — Acquisition / Procédures | ADAPTÉ | @sales-enablement (playbook usage perso), @growth (rapport mensuel auto) | runbook-quotidien, decision-go-nogo-mensuel | — |
-| 5 — Conformité & Validation | À VENIR | @legal (déjà en 0), @qa (revue chirurgicale), @reviewer (revue croisée), testeur-persona | cross-review-report, final-audit | G1-G32, GP1-GP10 |
+| 0 — Fondations | ✅ COMPLETE | @creative-strategy, @product-manager, @data-analyst, @ia, @infrastructure, @legal | brand-platform, personas, functional-specs, kpi-framework, ai-architecture, prompt-library, infra-audit (H1-H4), legal-audit, edge-rnd-brief | G1-G18 PASS |
+| 0b — Agents testeurs | ✅ COMPLETE | @agent-factory | testeur-persona-thomas.md, testeur-backtest-edge.md (v1.1) | — |
+| 1 — R&D edge + Expérience | ✅ COMPLETE | @data-analyst, @ia, @ux, @copywriter | edge-rnd-report v1.1 (6 conditions AND), edge-scoring-model v1.2 (7 SC, D1/D6 35/10), prompt-library v1.1 (TC-06/07/08 + H-D/H-G seuils), user-flows (5 flows, 24 frictions), message-templates v1.2 (14 exemples + expiration F24), score-distribution-simulation | G19, GP1-GP10 |
+| 1b — Audits Phase 1 | ✅ COMPLETE | @reviewer (testeur-persona), @qa (testeur-backtest), @moi (proxy fondateur), @ia (auto-critical) | persona-test verdict AJUSTER, backtest-audit verdict RETRAVAILLER, audit @moi GO MODIFIÉ, audit @ia GO MODIFIÉ → 15 corrections appliquées | GP1-GP10 |
+| 2a — Mini-jalon J+7 (R2 @moi) | ✅ COMPLETE | @infrastructure, @fullstack | REPLIT_ACTIONS.md, .replit, .gitignore, replit.nix, pyproject.toml, src/ (15 modules Python), tests/ (18 tests, 10 PASS local), README.md, .env.example | G20-G21, G31, pytest 10/10 |
+| 2b — Backtester Wave 1 | À VENIR (priorité actuelle) | @fullstack, @data-analyst | src/backtester/ (data_loader, edges H-C+H-A, methodology.py, runner CLI, stats, report), tests E2E backtester | G22-G24 |
+| 2c — Bot Telegram complet | À VENIR | @fullstack, @ia, @design | src/scoring/ (6 dim + 7 SC + tool use Anthropic), src/ai/ (anthropic SDK), 5 templates Telegram, fixtures TC-01 à TC-08, maquettes Telegram desktop+mobile | G25-G26 |
+| 2d — Tests + boucle visuelle | À VENIR | @qa, @design | tests E2E 12 US, screenshots Telegram, methodology.py PRE-backtest | G27 |
+| 2e — Revue testeur-persona-thomas | À VENIR | testeur-persona via @reviewer | persona-review-bot, verdict GO live | GP1-GP10 |
+| 3 — Contenu / GEO Telegram | ADAPTÉ | @geo, @copywriter | geo-strategy Telegram lisibility, signal-copy enrichi | G16-G18 |
+| 4 — Procédures usage perso | ADAPTÉ | @sales-enablement (runbook), @growth (rapport mensuel) | runbook-quotidien, decision-go-nogo-mensuelle, rapport-mensuel-auto | — |
+| 5 — Conformité & Validation finale | À VENIR | @legal, @qa, @reviewer, testeur-persona | cross-review-report, final-audit, paper-trading 4-8 sem | G1-G32 + GP1-GP10 |
 
 ## Phase 0 — Fondations (en cours)
 

@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import sys
+from collections.abc import MutableMapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -38,10 +39,11 @@ class _StructuredAdapter(logging.LoggerAdapter[logging.Logger]):
     """Adapter qui accepte des kwargs structures et les passe via 'extra._extras'."""
 
     def process(
-        self, msg: Any, kwargs: dict[str, Any]
-    ) -> tuple[Any, dict[str, Any]]:
-        extras = {k: v for k, v in kwargs.items() if k not in {"exc_info", "stack_info", "stacklevel"}}
-        passthrough = {k: kwargs[k] for k in ("exc_info", "stack_info", "stacklevel") if k in kwargs}
+        self, msg: Any, kwargs: MutableMapping[str, Any]
+    ) -> tuple[Any, MutableMapping[str, Any]]:
+        reserved = {"exc_info", "stack_info", "stacklevel"}
+        extras = {k: v for k, v in kwargs.items() if k not in reserved}
+        passthrough: dict[str, Any] = {k: kwargs[k] for k in reserved if k in kwargs}
         passthrough["extra"] = {"_extras": extras}
         return msg, passthrough
 

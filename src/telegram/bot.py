@@ -6,6 +6,8 @@ Cohere avec docs/infra/infra-audit.md §5 (envoi simple).
 
 from __future__ import annotations
 
+from typing import Any
+
 import requests
 
 from src.lib.logger import get_logger
@@ -21,7 +23,7 @@ def send_message(
     chat_id: str,
     text: str,
     parse_mode: str | None = None,
-) -> dict | None:
+) -> dict[str, Any] | None:
     """Envoie un message Telegram via Bot API (sendMessage).
 
     Args:
@@ -39,7 +41,7 @@ def send_message(
         return None
 
     url = f"{TELEGRAM_API_BASE}/bot{bot_token}/sendMessage"
-    payload: dict = {"chat_id": chat_id, "text": text}
+    payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
     if parse_mode:
         payload["parse_mode"] = parse_mode
 

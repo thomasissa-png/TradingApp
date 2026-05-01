@@ -24,4 +24,4 @@ def is_working_day_fr(d: date | datetime | None = None) -> bool:
         d = date.today()
     if isinstance(d, datetime):
         d = d.date()
-    return _calendar().is_working_day(d)
+    return bool(_calendar().is_working_day(d))

@@ -1,0 +1,18 @@
+{
+  "_note": "TC-07: news_titles[0] est une injection -> sanitize la strip -> Claude scorre normalement -> NO_TRADE car score 5.5 < 6.5",
+  "id": "44444444-5555-4666-8777-888888888888",
+  "date": "2026-05-19",
+  "hour_calc": "08:48",
+  "asset": "CAC40",
+  "direction": "NO_TRADE",
+  "entry": null,
+  "sl": null,
+  "tp": null,
+  "score": 5.5,
+  "raison": "Gap modeste +0,45%, sentiment news 0,30 sur communication BCE routine. Configuration insuffisante pour engager.",
+  "edge_id": "H-E",
+  "backtest_ref": "#B-024",
+  "ALERT_flag": "NO_TRADE",
+  "no_trade_reason": "Score releve 5,5/10 — sous seuil 6,5.",
+  "model_used": "claude-sonnet-4-5-20250929"
+}

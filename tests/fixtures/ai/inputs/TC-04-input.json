@@ -1,0 +1,44 @@
+{
+  "date": "2026-05-07",
+  "hour_calc": "08:47",
+  "edge_id": "H-C",
+  "edge_name": "Opening Range Breakout",
+  "asset": {"ticker": "MC.PA", "name": "LVMH", "category": "blue_chip_fr"},
+  "ohlc_last_5d": [
+    {"date": "2026-04-28", "open": 720, "high": 728, "low": 718, "close": 725, "volume": 200000}
+  ],
+  "ohlc_today_premarket": [
+    {"ts": "2026-05-07T08:00:00", "open": 730, "high": 735, "low": 728, "close": 733, "volume": 5000}
+  ],
+  "indicators": {
+    "rsi_14": 65,
+    "macd_signal": 4.0,
+    "macd_histogram": 0.5,
+    "bollinger_upper": 740,
+    "bollinger_lower": 715,
+    "bollinger_middle": 727,
+    "atr_14": 8
+  },
+  "edge_features": {
+    "orb_breakout": true,
+    "orb_direction": "BUY",
+    "breakout_amplitude": 5.0,
+    "news_titles": [
+      "LVMH: rumeur scission Tiffany — analystes prudents",
+      "Reuters: brokers downgradent LVMH a HOLD"
+    ],
+    "sentiment_score": -0.50
+  },
+  "backtest_ref": "#B-018",
+  "backtest_stats": {
+    "win_rate": 55,
+    "nb_trades": 50,
+    "drawdown_max_pct": -25,
+    "sharpe_ratio": 0.8,
+    "period": "2021-2025",
+    "age_days": 60
+  },
+  "confidence_threshold": 6.5,
+  "position_sizing": {"capital_engage_target": 1500, "leverage_target": 10},
+  "vix": 17.0
+}

@@ -1,0 +1,18 @@
+{
+  "_note": "TC-05 = timeout total Sonnet + Haiku fallback -> AnthropicClientError -> degraded_mode_signal cote ScoringEngine",
+  "id": "00000000-0000-4000-8000-000000000000",
+  "date": "2026-05-15",
+  "hour_calc": "08:47",
+  "asset": "DAX",
+  "direction": "NO_TRADE",
+  "entry": null,
+  "sl": null,
+  "tp": null,
+  "score": 1.0,
+  "raison": "DEGRADED MODE: Anthropic timeout total",
+  "edge_id": "H-A",
+  "backtest_ref": "#B-031",
+  "ALERT_flag": "NO_TRADE",
+  "no_trade_reason": "DEGRADED MODE: Anthropic timeout total",
+  "model_used": "degraded-mode"
+}

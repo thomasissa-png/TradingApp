@@ -1,0 +1,17 @@
+{
+  "id": "22222222-3333-4444-8555-666666666666",
+  "date": "2026-05-07",
+  "hour_calc": "08:47",
+  "asset": "LVMH",
+  "direction": "NO_TRADE",
+  "entry": null,
+  "sl": null,
+  "tp": null,
+  "score": 5.8,
+  "raison": "Signaux contradictoires: ORB haussier casse mais sentiment news -0,50 sur rumeur scission Tiffany. Pas de configuration univoque, score 5,8/10.",
+  "edge_id": "H-C",
+  "backtest_ref": "#B-018",
+  "ALERT_flag": "ALERT",
+  "no_trade_reason": "Signaux techniques (ORB haussier) et news (sentiment -0,50) contradictoires.",
+  "model_used": "claude-sonnet-4-5-20250929"
+}

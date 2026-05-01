@@ -1,9 +1,23 @@
-"""Couche IA (Anthropic Claude scoring) — stub Phase 2a, rempli Phase 2c.
+"""Module AI — client Anthropic + tool definitions + sanitization (Phase 2c-1).
 
-Spec : docs/ia/ai-architecture.md + docs/ia/prompt-library.md (PROMPT_VERSION=signal-scoring-v1.0).
-Approche hybride : Claude (score brut + raison) + 5 sanity checks deterministes
-(cf docs/ia/edge-scoring-model.md scoring-model-v1.1).
-
-Modele live : claude-sonnet-4-5-20250929 (tag exact, jamais alias — cf L002).
-Modele R&D : claude-haiku-4-5 (Batch + Cache, cap 100 ap/j).
+Architecture : cf docs/ia/ai-architecture.md v1.1 + docs/ia/prompt-library.md v1.1.
+Modeles : Sonnet 4.5 live + Haiku 4.5 R&D + Haiku fallback live (timeout 25s -> 10s).
 """
+
+from __future__ import annotations
+
+from src.ai.client import AnthropicClient
+from src.ai.tools import (
+    SCORING_TOOL_DEFINITION,
+    ScoringSignalOutput,
+    parse_tool_response,
+    sanitize_news_titles,
+)
+
+__all__ = [
+    "SCORING_TOOL_DEFINITION",
+    "AnthropicClient",
+    "ScoringSignalOutput",
+    "parse_tool_response",
+    "sanitize_news_titles",
+]

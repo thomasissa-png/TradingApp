@@ -1,0 +1,17 @@
+{
+  "id": "11111111-2222-4333-8444-555555555555",
+  "date": "2026-05-06",
+  "hour_calc": "08:44",
+  "asset": "EuroStoxx50",
+  "direction": "NO_TRADE",
+  "entry": null,
+  "sl": null,
+  "tp": null,
+  "score": 5.2,
+  "raison": "Marche flat a l'ouverture (gap +0,10%), RSI neutre 51, range ORB non casse. Aucune configuration au-dessus du seuil 6,5.",
+  "edge_id": "H-A",
+  "backtest_ref": "#B-031",
+  "ALERT_flag": "NO_TRADE",
+  "no_trade_reason": "Score max releve 5,2/10 — en dessous du seuil 6,5.",
+  "model_used": "claude-sonnet-4-5-20250929"
+}

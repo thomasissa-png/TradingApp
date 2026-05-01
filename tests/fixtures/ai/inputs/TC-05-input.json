@@ -1,0 +1,43 @@
+{
+  "date": "2026-05-15",
+  "hour_calc": "08:47",
+  "edge_id": "H-A",
+  "edge_name": "Gap Follow EU Open",
+  "asset": {"ticker": "^GDAXI", "name": "DAX", "category": "indice_eu"},
+  "ohlc_last_5d": [
+    {"date": "2026-05-08", "open": 18400, "high": 18450, "low": 18380, "close": 18430, "volume": 1100000}
+  ],
+  "ohlc_today_premarket": [
+    {"ts": "2026-05-15T08:30:00", "open": 18500, "high": 18520, "low": 18495, "close": 18515, "volume": 28000}
+  ],
+  "indicators": {
+    "rsi_14": 56,
+    "macd_signal": 10.0,
+    "macd_histogram": 0.25,
+    "bollinger_upper": 18550,
+    "bollinger_lower": 18300,
+    "bollinger_middle": 18425,
+    "atr_14": 80
+  },
+  "edge_features": {
+    "gap_pct": 0.55,
+    "prev_close_us": 4525.0,
+    "orb_breakout": true,
+    "orb_high": 18510,
+    "volume_premarket_ratio": 1.2,
+    "sigma_gap_30d": 0.45
+  },
+  "backtest_ref": "#B-031",
+  "backtest_stats": {
+    "win_rate": 61,
+    "nb_trades": 87,
+    "drawdown_max_pct": -18,
+    "sharpe_ratio": 1.3,
+    "period": "2021-2025",
+    "age_days": 30
+  },
+  "confidence_threshold": 6.5,
+  "position_sizing": {"capital_engage_target": 1500, "leverage_target": 10},
+  "vix": 15.5,
+  "_simulate_timeout": true
+}

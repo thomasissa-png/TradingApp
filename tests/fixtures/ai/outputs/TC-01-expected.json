@@ -1,0 +1,17 @@
+{
+  "id": "8f4b2c1e-3a5d-4f7a-9b2c-1e3a5d4f7a9b",
+  "date": "2026-05-04",
+  "hour_calc": "08:47",
+  "asset": "DAX Turbo Call",
+  "direction": "BUY",
+  "entry": 3.42,
+  "sl": 3.21,
+  "tp": 3.85,
+  "score": 8.0,
+  "raison": "Gap haussier +0,82% sur cloture US, ORB Xetra casse a 18420 avec volume pre-marche 1,4x moyenne. Cible potentielle alignee backtest #B-031.",
+  "edge_id": "H-A",
+  "backtest_ref": "#B-031",
+  "ALERT_flag": "SAFE",
+  "no_trade_reason": null,
+  "model_used": "claude-sonnet-4-5-20250929"
+}

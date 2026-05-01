@@ -1,11 +1,48 @@
-"""Scoring deterministe (sanity checks SC1-SC6) — stub Phase 2a, rempli Phase 2c.
+"""Module scoring — pipeline complet (LLM + 6 dimensions deterministes + 7 sanity checks).
 
-Spec : docs/ia/edge-scoring-model.md scoring-model-v1.1.
-
-SC1 : coherence direction (BLOQUANT)
-SC2 : R/R >= 1.5 (NO-TRADE si <1.0)
-SC3 : score > 9 -> ALERT (sur-confiance)
-SC4 : %no-trade 7j <20% -> -1.0
-SC5 : speculatif sans chiffre -> plafond 6.0
-SC6 : diversite sous-jacents 30j (1/13) -> plafond 7.0 + ALERT
+Architecture : cf docs/ia/edge-scoring-model.md v1.2 (6D 35/15/15/15/10/10 + SC1-SC7).
 """
+
+from __future__ import annotations
+
+from src.scoring.dimensions import (
+    compute_d1_force_signal,
+    compute_d2_confluence_indicators,
+    compute_d3_news_context,
+    compute_d4_volatility,
+    compute_d5_regime_vix,
+    compute_d6_backtest_freshness,
+    compute_deterministic_score,
+)
+from src.scoring.engine import ScoringEngine
+from src.scoring.sanity_checks import (
+    apply_all_sanity_checks,
+    apply_sc1,
+    apply_sc2,
+    apply_sc3,
+    apply_sc4,
+    apply_sc5,
+    apply_sc6,
+    apply_sc7,
+)
+from src.scoring.threshold import select_threshold
+
+__all__ = [
+    "ScoringEngine",
+    "apply_all_sanity_checks",
+    "apply_sc1",
+    "apply_sc2",
+    "apply_sc3",
+    "apply_sc4",
+    "apply_sc5",
+    "apply_sc6",
+    "apply_sc7",
+    "compute_d1_force_signal",
+    "compute_d2_confluence_indicators",
+    "compute_d3_news_context",
+    "compute_d4_volatility",
+    "compute_d5_regime_vix",
+    "compute_d6_backtest_freshness",
+    "compute_deterministic_score",
+    "select_threshold",
+]

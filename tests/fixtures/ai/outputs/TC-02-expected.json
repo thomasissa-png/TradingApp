@@ -1,0 +1,17 @@
+{
+  "id": "5c7d3e2f-aaaa-4bbb-8ccc-1e3a5d4f7a9b",
+  "date": "2026-05-05",
+  "hour_calc": "08:48",
+  "asset": "CAC40 Turbo Put",
+  "direction": "SELL",
+  "entry": 2.50,
+  "sl": 2.65,
+  "tp": 2.20,
+  "score": 7.0,
+  "raison": "Gap baissier -0,65% + sentiment news -0,72 (BCE hawkish + profit warning TotalEnergies). Cible potentielle alignee backtest #B-024.",
+  "edge_id": "H-E",
+  "backtest_ref": "#B-024",
+  "ALERT_flag": "SAFE",
+  "no_trade_reason": null,
+  "model_used": "claude-sonnet-4-5-20250929"
+}

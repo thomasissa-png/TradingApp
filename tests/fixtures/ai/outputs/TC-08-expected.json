@@ -1,0 +1,18 @@
+{
+  "_note": "TC-08: OHLC partiel -> Claude flag ALERT + raison mentionne degradation, score plafonne 7.0",
+  "id": "55555555-6666-4777-8888-999999999999",
+  "date": "2026-05-20",
+  "hour_calc": "08:47",
+  "asset": "DAX Turbo Call",
+  "direction": "BUY",
+  "entry": 3.45,
+  "sl": 3.25,
+  "tp": 3.85,
+  "score": 7.0,
+  "raison": "Gap haussier +0,75%, ORB Xetra casse, volume 1,3x moyenne. Note: OHLC historique partiel (5j/10), score plafonne mode degrade.",
+  "edge_id": "H-A",
+  "backtest_ref": "#B-031",
+  "ALERT_flag": "ALERT",
+  "no_trade_reason": null,
+  "model_used": "claude-sonnet-4-5-20250929"
+}

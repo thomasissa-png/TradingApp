@@ -136,6 +136,7 @@
 |-------|------|-----------------|----------------|----------------------------------|
 | @orchestrator (cadrage) | 2026-05-01 | `project-context.md` rempli via 5 vagues de questions au persona | Bot Telegram, alerte simple, signal 8h45-8h55, scalp 5-20 min, Twelve Data, Bourse Direct, 20-30 k€, edge à trouver | Écarté : exécution auto via API broker (sécu MVP perso), dashboard web (n'a pas résolu friction Finance), réutilisation pleine du Finance (dette technique) |
 | @orchestrator (plan) | 2026-05-01 | `docs/orchestration-plan.md` (plan Phases 0→5 + 6 prompts pré-rédigés Phase 0) | Phase 1 R&D edge structurante (Phase 2 conditionnelle), Phase 2d testeur-client N/A justifié (perso 100%), boucle visuelle adaptée messages Telegram, @sales-enablement transposé en runbook usage perso, @growth en rapport mensuel auto, SEO N/A justifié | Écarté : ordre standard Phase 3 contenu web (pas de site), invocation Tasks directement (sub-agent sans accès Task → prompts pré-rédigés relayés au top-level) |
+| @creative-strategy | 2026-05-01 | `docs/strategy/brand-platform.md` + `docs/strategy/personas.md` | Golden Circle comme framework (mission-first, outil perso) ; positionnement "push passif + justification chiffrée + no-trade assumé" dans l'espace libre non occupé ; Voice & Tone : 5 do's / 5 don'ts, vocabulaire prescrit/proscrit, 2 exemples avant/après ; Thomas affiné (journée type 8h40-9h05, critères pull-the-trigger, signaux d'arrêt, JTBD ×5, scénario daté 4 mai 2026) ; 2 agents recommandés : @testeur-persona-thomas (haute priorité) + @testeur-backtest-edge (haute priorité) | Écarté : Prisme Kapferer (outil perso, pas multi-touchpoint commercial) ; Brand Key (pas de FMCG) ; testeur-client-du-persona N/A (outil perso 100 %) ; benchmark concurrents nommés (règle zéro mention concurrent) |
 
 ---
 
@@ -148,6 +149,7 @@
 |-------|------|----------|------------|-----------|----------------|----------|-------------|-------|
 | @orchestrator | 2026-05-01 | project-context.md | 5 | 5 | 5 | 5 | 5 | Cadrage initial via 5 vagues de questions ciblées au persona, hypothèses H1-H4 explicites |
 | @orchestrator | 2026-05-01 | docs/orchestration-plan.md | 5 | 5 | 5 | 5 | 5 | Plan Phases 0→5 adapté TradingApp (Telegram pur, perso 100%), 6 prompts Phase 0 pré-rédigés, checkpoint persona explicite après Phase 0 |
+| @creative-strategy | 2026-05-01 | docs/strategy/brand-platform.md + docs/strategy/personas.md | 5 | 5 | 5 | 5 | 5 | Positionnement taillé sur les frustrations verbatim Thomas, Golden Circle explicite, Voice & Tone opérationnel avec exemples Telegram concrets, JTBD ×5 + scénario daté + critères pull-the-trigger + signaux d'arrêt numériques |
 
 **Légende (échelle 1-5 alignée avec CLAUDE.md) :**
 - **Complétude** : 1 (sections manquantes) → 3 (sections principales couvertes) → 5 (tout rempli, rien à ajouter)

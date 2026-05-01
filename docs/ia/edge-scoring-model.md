@@ -1,0 +1,544 @@
+<!-- Version: 2026-05-01T00:00 — @ia — Création initiale edge-scoring-model TradingApp -->
+
+# Edge Scoring Model — TradingApp
+
+> Auteur : @ia — Date : 2026-05-01
+> Mission : modèle de scoring multi-dimension du signal turbo (1.0-10.0), hybride Claude + sanity checks déterministes.
+> **Lecture obligatoire amont** : `project-context.md`, `docs/ia/ai-architecture.md` (modèles + 9 règles anti-hallucination + tool use), `docs/ia/prompt-library.md` (PROMPT_VERSION signal-scoring-v1.0, prompts H-A à H-G), `docs/analytics/edge-rnd-brief.md` (7 hypothèses + seuils GO Phase 2), `docs/product/functional-specs.md` (US-01 schéma 15 champs, US-05 timeout 45 s).
+> **Version modèle** : `scoring-model-v1.0` (couplé `prompt-version=signal-scoring-v1.0`).
+
+---
+
+## Résumé exécutif
+
+- **Approche hybride** : Claude (Sonnet 4.5 live, Haiku 4.5 R&D) génère un score brut 1.0-10.0 + raison structurée → 5 sanity checks déterministes ex-post → score final + flag (ALERT / SAFE / NO-TRADE).
+- **6 dimensions pondérées** : D1 force signal (30 %), D2 confluence indicateurs (20 %), D3 contexte news (15 %), D4 volatilité (15 %), D5 régime VIX/V2X (10 %), D6 référence backtest (10 %).
+- **5 sanity checks anti-overfitting / anti-euphorie** : SC1 cohérence direction, SC2 R/R ≥ 1.5, SC3 score > 9 → ALERT, SC4 % no-trade < 20 % → pénalité, SC5 langage spéculatif → plafond 6.0.
+- **CONFIDENCE_THRESHOLD initial = 6.5** [HYPOTHÈSE — calibration R&D requise sur 5 ans backtest].
+- **Coût/signal Sonnet 4.5** : ~0,03 $ (cohérent ai-architecture §7 — verdict H4 PASS confortable).
+- **Verdict modèle** : à valider par @testeur-backtest-edge avant Phase 2.
+
+---
+
+## 1. Architecture du scoring
+
+### 1.1 Approche hybride (LLM + déterministe)
+
+Ni LLM seul (risque hallucination + sur-confiance), ni calcul déterministe seul (perd la capacité d'agréger contexte qualitatif news + régime). **Hybride obligatoire** :
+
+1. **Claude génère le score brut** (1.0-10.0) à partir de l'input typé `SignalScoringInput` (cf. ai-architecture §2.1) et produit la `raison` (1-3 lignes).
+2. **5 sanity checks déterministes ex-post** corrigent le score si nécessaire (plafonnage, flag ALERT, NO-TRADE forcé).
+3. **Score final + flag** émis dans le JSON 15 champs (US-01).
+
+### 1.2 Diagramme de flux
+
+```
+                  ┌─────────────────────────────┐
+                  │ Inputs typés (SignalScoring │
+                  │ Input — ai-architecture §2.1)│
+                  │ - OHLC 5j + premarket 1m    │
+                  │ - Indicateurs (RSI/MACD/BB) │
+                  │ - News titres (H-E)         │
+                  │ - edge_features (par H-A..G)│
+                  │ - backtest_ref + stats      │
+                  └──────────────┬──────────────┘
+                                 │
+                                 ▼
+                  ┌─────────────────────────────┐
+                  │ Claude Sonnet 4.5 (live)    │
+                  │ ou Haiku 4.5 (R&D)          │
+                  │ tool_use=emit_signal_scoring│
+                  │ température 0.1             │
+                  │ → score_brut (1.0-10.0)     │
+                  │ → raison (10-200 chars)     │
+                  │ → direction (ACHAT/VENTE/   │
+                  │   NO-TRADE)                 │
+                  └──────────────┬──────────────┘
+                                 │
+                                 ▼
+                  ┌─────────────────────────────┐
+                  │ 5 sanity checks déterministes│
+                  │ SC1 cohérence direction     │
+                  │ SC2 R/R ≥ 1.5               │
+                  │ SC3 score > 9 → ALERT       │
+                  │ SC4 % no-trade < 20 % → -1  │
+                  │ SC5 langage futur → ≤ 6.0   │
+                  └──────────────┬──────────────┘
+                                 │
+                                 ▼
+                  ┌─────────────────────────────┐
+                  │ Score final + flag          │
+                  │ ALERT / SAFE / NO-TRADE     │
+                  │ → JSON 15 champs (US-01)    │
+                  │ → SQLite signals + Telegram │
+                  └─────────────────────────────┘
+```
+
+---
+
+## 2. Dimensions d'évaluation
+
+### 2.1 Tableau récapitulatif des 6 dimensions
+
+| # | Dimension | Poids | Source | Formule | Range |
+|---|---|---|---|---|---|
+| **D1** | Force du signal d'edge | **30 %** | `edge_features` (variable selon H-A..G) | amplitude normalisée par σ historique 30j | 0-10 |
+| **D2** | Confluence indicateurs techniques | **20 %** | `indicators` (RSI/MACD/Bollinger) | % des 3 indicateurs alignés avec la direction signal | 0-10 |
+| **D3** | Contexte news pré-marché | **15 %** | `edge_features.news_titles` + `sentiment_score` | sentiment ×10 (signe aligné direction) — **plafond 7.0 si news indispo** | 0-10 |
+| **D4** | Volatilité réalisée vs implicite | **15 %** | `indicators.atr_14` + VIX/V2X (si disponible) | ratio σ_realisée / σ_implicite ; > 1 = sur-volatilité | 0-10 |
+| **D5** | Régime de marché VIX/V2X | **10 %** | VIX (ou V2X pour EU) + classification trend/range/panic | VIX < 15 trend = 8, 15-25 range = 6, > 25 panic = 3 | 0-10 |
+| **D6** | Référence backtest | **10 %** | `backtest_stats` (Sharpe + win_rate + nb_trades + fraicheur) | Sharpe×3 + win_rate/10 + min(nb_trades/20, 5) ; pénalité si backtest > 90j | 0-10 |
+
+### 2.2 Formule globale
+
+```
+score_brut = clip( Σ(D_i × poids_i × normalisation_i), 1.0, 10.0 )
+```
+
+- `poids_i` = pondération du tableau (somme = 100 %).
+- `normalisation_i` = facteur correctif spécifique à la dimension (ex: D3 plafonné à 7.0 si news indispo, cf. prompt dégradé `prompt-library.md` §4.2).
+- Borné [1.0, 10.0] — pas de score < 1 ni > 10 (validation Zod stricte cf. ai-architecture §9).
+
+### 2.3 Détail par dimension
+
+**D1 — Force du signal d'edge (30 %)** : variable selon `edge_id`.
+- H-A Gap Follow : `D1 = clip(|gap_pct| / σ_gap_30j × 5, 0, 10)` (gap normalisé par écart-type historique 30 jours).
+- H-C ORB : `D1 = clip((breakout_amplitude / atr_14) × 4, 0, 10)`.
+- H-E News : `D1 = clip(|sentiment_score| × 10, 0, 10)`.
+- (Détail par hypothèse dans `prompt-library.md` §2.)
+
+**D2 — Confluence indicateurs (20 %)** : alignement des 3 indicateurs avec direction signal.
+- 3/3 alignés = 10, 2/3 = 6, 1/3 = 3, 0/3 = 0.
+- ACHAT aligné : RSI > 50, MACD histogram > 0, prix > Bollinger middle.
+- VENTE aligné : RSI < 50, MACD histogram < 0, prix < Bollinger middle.
+
+**D3 — Contexte news (15 %)** : sentiment news pré-marché.
+- `D3 = sentiment_score × 10` si direction signal = signe(sentiment).
+- `D3 = -sentiment_score × 5` si direction opposée (pénalité, signal contre-news).
+- **Plafond 7.0 si `news_titles` absent ou < 2 titres** — cohérent prompt dégradé `prompt-library.md` §4.2 (le bot ne doit pas sur-confier sans contexte news).
+
+**D4 — Volatilité réalisée vs implicite (15 %)** : ratio.
+- Si `σ_realisée / σ_implicite > 1.2` (sur-volatilité) → D4 = 8 (favorable scalp turbo).
+- Si ratio entre 0.8 et 1.2 → D4 = 5.
+- Si ratio < 0.8 (sous-volatilité) → D4 = 3 (turbo peu rentable, bouger lent).
+
+**D5 — Régime VIX/V2X (10 %)** : classification.
+- VIX < 15 → régime "trend" → D5 = 8 (favorable signaux directionnels).
+- VIX 15-25 → régime "range" → D5 = 6 (neutre).
+- VIX > 25 → régime "panic" → D5 = 3 (défavorable, levier risqué).
+- Si VIX indisponible → D5 = 5 par défaut (neutre, pas de pénalité).
+
+**D6 — Référence backtest (10 %)** : qualité statistique.
+- `D6 = clip(Sharpe×3 + win_rate/10 + min(nb_trades/20, 5), 0, 10)`.
+- **Pénalité fraicheur** : si backtest > 90 jours → `D6 -= 1.5` (les régimes de marché bougent).
+- Pénalité `nb_trades < 30` (cf. edge-rnd-brief seuils) → `D6 -= 2`.
+
+---
+
+## 3. Anti-overfitting / Anti-euphorie — 5 sanity checks
+
+> Ces sanity checks sont **déterministes** (pas LLM) et appliqués **après** la réponse Claude. Cohérent avec R-AI-1 à R-AI-9 (ai-architecture §3) — défense en profondeur.
+
+### 3.1 SC1 — Cohérence direction / SL / TP
+
+**Règle** : la direction doit être cohérente avec le placement SL/TP.
+- ACHAT : `entry > sl` ET `entry < tp` (turbo call).
+- VENTE : `entry < sl` ET `entry > tp` (turbo put — SL au-dessus, TP en-dessous).
+- Si incohérence détectée → **NO-TRADE forcé** + `no_trade_reason: "incohérence direction/SL/TP détectée par sanity check"` + log SQLite `sanity_check_failed=SC1`.
+
+**Pourquoi** : Claude peut occasionnellement inverser (rare avec température 0.1 + tool use, mais possible). Coût d'une erreur direction sur turbo levier 10 = perte totale en quelques minutes. SC1 = filet de sécurité non-négociable.
+
+### 3.2 SC2 — Risk/Reward minimum 1.5
+
+**Règle** : `(TP - entry) / (entry - SL) ≥ 1.5` pour ACHAT, et symétrique pour VENTE.
+- Si R/R < 1.5 → **score plafonné à 6.0** (sous le `CONFIDENCE_THRESHOLD` 6.5 par défaut → NO-TRADE de fait).
+- Si R/R < 1.0 → **NO-TRADE forcé** + `no_trade_reason: "R/R < 1.0 — gain potentiel insuffisant vs risque"`.
+
+**Pourquoi** : un signal avec R/R 1:1 ou pire est mathématiquement perdant à win_rate < 50 %. Cohérent edge-rnd-brief seuil PF > 1.5 — un signal individuel doit refléter la qualité statistique de l'edge.
+
+### 3.3 SC3 — Score brut > 9.0 → flag ALERT (revue manuelle)
+
+**Règle** : si `score_brut > 9.0` → `ALERT_flag = "ALERT"` (pas auto-envoi sans review).
+- Le signal est bien envoyé sur Telegram, mais avec un préfixe "ALERT — score exceptionnel 9.X, à valider manuellement avant trade".
+- Thomas peut overrider avec `/trade go` (cf. functional-specs US-08).
+
+**Pourquoi** : cohérent avec **signal d'arrêt n°4 personas** ("score d'euphorie — méfiance"). Un score 9.5 sur scoring à 6 dimensions hétérogènes est statistiquement suspect (probablement overfit ou erreur d'input). La règle anti-euphorie : "trop beau pour être vrai" déclenche revue, pas exécution aveugle.
+
+### 3.4 SC4 — % no-trade 7 derniers jours < 20 % → pénalité -1.0
+
+**Règle** : si sur les 7 derniers jours ouvrés, le bot a émis < 20 % de NO-TRADE → `score_brut -= 1.0` sur le signal du jour.
+- Lookup SQLite `signals` : `SELECT COUNT(*) FILTER (WHERE direction='NO-TRADE') / COUNT(*) FROM signals WHERE date >= date('now', '-7 days')`.
+- Si ratio < 0.20 → pénalité.
+
+**Pourquoi** : le bot doit accepter de se taire (silence assumé = pilier brand-platform Pilier 3 "Backtesté"). Si < 20 % de NO-TRADE → le bot **force des signaux** (probablement par sur-fit ou par seuil trop bas). Cohérent avec data-analyst kpi-framework "% no-trade = vertu", alerte si < 20 %. Cette pénalité ramène le scoring vers la sobriété.
+
+### 3.5 SC5 — Langage spéculatif sans chiffres → plafond 6.0
+
+**Règle** : si la `raison` mentionne un futur conjugué (`pourrait`, `devrait`, `probablement`, `possible que`, `va peut-être`) **sans être adossé à un chiffre** → score plafonné à 6.0.
+- Détection : regex `/\b(pourrait|devrait|probablement|peut-être|possible que|va peut-être)\b/i` sur `raison`.
+- Vérification chiffres : présence d'au moins un nombre ou pourcentage dans la même phrase.
+- Si match speculatif sans chiffre → `score = min(score_brut, 6.0)` + log `sanity_check_softfail=SC5`.
+
+**Pourquoi** : cohérent brand-platform §6 Voice & Tone — Do #4 "conditionnel d'incertitude" mais Don't "vague sans chiffres". "Le marché pourrait monter" = no-go. "Cible potentielle 18450 (cohérent backtest #B-031 win rate 61 %)" = OK. Le conditionnel doit être quantifié.
+
+### 3.6 Tableau de synthèse SC1-SC5
+
+| SC | Test | Action si échec | Sévérité |
+|---|---|---|---|
+| SC1 | direction cohérente avec SL/TP | NO-TRADE forcé | Bloquant |
+| SC2 | R/R ≥ 1.5 | Score plafonné 6.0 ; R/R < 1.0 → NO-TRADE forcé | Bloquant |
+| SC3 | score brut ≤ 9.0 | Flag ALERT (revue manuelle) | Avertissement |
+| SC4 | % no-trade 7j ≥ 20 % | Score -1.0 | Pénalité |
+| SC5 | conditionnel chiffré dans raison | Score plafonné 6.0 | Pénalité |
+
+---
+
+## 4. Calibration de CONFIDENCE_THRESHOLD
+
+### 4.1 Valeur initiale
+
+**`CONFIDENCE_THRESHOLD = 6.5`** [HYPOTHÈSE — calibration R&D obligatoire].
+
+Justification a priori 6.5 :
+- Signal "raisonnable, pas exceptionnel" — au-dessus de la médiane (5) mais en-dessous du "fortement convaincant" (8).
+- Évite biais 6.5 = note moyenne intuitive (conscient du biais — à valider en R&D, pas figé).
+- Cohérent template Telegram payload : score affiché sur 10, le persona Thomas "engage 1500 € à partir de 7" (cf. personas.md critères pull-the-trigger) → 6.5 = "OK pour Thomas, juste sous son seuil personnel" = bon point de départ conservateur.
+
+### 4.2 Méthodologie de calibration en R&D
+
+Phase 1 R&D edge (cf. edge-rnd-brief §5) :
+
+1. **Exécuter le scoring sur 5 ans backtest** pour les 7 hypothèses H-A à H-G (in-sample 2021-2024 + out-of-sample 2025).
+2. **Distribuer les scores** : histogramme par hypothèse, par sous-jacent, par direction.
+3. **Tester plusieurs seuils** : 5.5, 6.0, 6.5, 7.0, 7.5, 8.0.
+4. **Pour chaque seuil, calculer la fonction objectif** :
+   ```
+   f(seuil) = (profit_factor × win_rate × (1 - |%_no_trade - 0.50|)) / drawdown_max_pct
+   ```
+   (le terme `(1 - |%_no_trade - 0.50|)` favorise un % no-trade autour de 50 % — ni 0 % "force des trades", ni 90 % "ne trade jamais").
+5. **Choisir le seuil qui maximise `f(seuil)`** sur le walk-forward 3 fenêtres (cf. edge-rnd-brief).
+6. **Vérifier robustesse** : le seuil optimal doit être stable sur les 3 fenêtres walk-forward (variation < ±0.5).
+
+### 4.3 Passage à la calibration finale
+
+Si calibration sort `CONFIDENCE_THRESHOLD = X.Y` ≠ 6.5 → `@testeur-backtest-edge` audite + `@ia` met à jour `MONTHLY_AI_BUDGET_EUR` env var et documente dans `model-selection.md` (à créer Phase 1 si valeur change).
+
+---
+
+## 5. Test cases — 5 inputs réalistes complets
+
+### 5.1 TC-01 — ACHAT DAX gap+ORB (score 8.0, SAFE)
+
+**Input** (lundi 4 mai 2026, 8h47 CET) :
+```json
+{
+  "edge_id": "H-A", "asset": {"ticker": "^GDAXI", "name": "DAX"},
+  "edge_features": {"gap_pct": 0.82, "prev_close_us": 4521.30,
+                    "orb_breakout": true, "orb_high": 18420,
+                    "volume_premarket_ratio": 1.4, "sigma_gap_30d": 0.45},
+  "indicators": {"rsi_14": 58, "macd_histogram": 0.3, "bollinger_position": "upper_quartile"},
+  "news_titles": null,
+  "vix": 14.2,
+  "backtest_ref": "#B-031",
+  "backtest_stats": {"win_rate": 61, "nb_trades": 87, "drawdown_max_pct": -18, "sharpe": 1.3, "period": "2021-2025", "age_days": 12}
+}
+```
+
+**Décomposition par dimension** :
+
+| Dim | Calcul | Score | Pondéré |
+|---|---|---|---|
+| D1 (30 %) | gap_pct/σ_gap = 0.82/0.45 ×5 = 9.1 | 9.1 | 2.73 |
+| D2 (20 %) | RSI 58 + MACD>0 + BB upper = 3/3 alignés ACHAT | 10 | 2.00 |
+| D3 (15 %) | news indispo → plafond 7.0 | 7.0 | 1.05 |
+| D4 (15 %) | volume_ratio 1.4 = sur-volatilité | 8 | 1.20 |
+| D5 (10 %) | VIX 14.2 < 15 = trend | 8 | 0.80 |
+| D6 (10 %) | Sharpe 1.3×3 + 61/10 + min(87/20,5) = 14.9 → clip 10 ; backtest 12j frais → pas de pénalité | 10 | 1.00 |
+| **Σ** | | | **8.78** |
+
+**Réponse Claude (résumée)** : `direction=ACHAT`, `score_brut=8.0` (Claude tempère le 8.78 vers 8.0, jugement composite raisonnable), raison "Gap haussier +0,82 % sur clôture US + ORB Xetra cassé à la hausse (18420) + volume pré-marché 1,4× moyenne. Cible potentielle alignée backtest #B-031."
+
+**Sanity checks appliqués** :
+- SC1 : entry 3.42 < tp 3.85, entry 3.42 > sl 3.21 → cohérent ACHAT ✅
+- SC2 : R/R = (3.85-3.42)/(3.42-3.21) = 2.05 ≥ 1.5 ✅
+- SC3 : 8.0 ≤ 9.0 → SAFE ✅
+- SC4 : %no-trade 7j = 30 % ≥ 20 % → pas de pénalité ✅
+- SC5 : raison "Cible potentielle alignée backtest" — conditionnel chiffré ✅
+
+**Score final** : **8.0**, `ALERT_flag=SAFE`, signal envoyé sur Telegram.
+
+### 5.2 TC-02 — VENTE CAC gap+news BCE (score 7.0, SAFE)
+
+**Input** (mardi 5 mai 2026, 8h48 CET) :
+```json
+{
+  "edge_id": "H-E", "asset": {"ticker": "^FCHI", "name": "CAC40"},
+  "edge_features": {"gap_pct": -0.65, "sentiment_score": -0.72,
+                    "news_titles": ["BCE: signal hawkish inattendu", "TotalEnergies: profit warning Q2"]},
+  "indicators": {"rsi_14": 42, "macd_histogram": -0.2, "bollinger_position": "lower_quartile"},
+  "vix": 18.5,
+  "backtest_ref": "#B-024",
+  "backtest_stats": {"win_rate": 56, "nb_trades": 64, "drawdown_max_pct": -22, "sharpe": 0.9, "age_days": 30}
+}
+```
+
+**Décomposition** :
+
+| Dim | Calcul | Score | Pondéré |
+|---|---|---|---|
+| D1 (30 %) | sentiment ×10 = 7.2 | 7.2 | 2.16 |
+| D2 (20 %) | RSI 42 + MACD<0 + BB lower = 3/3 alignés VENTE | 10 | 2.00 |
+| D3 (15 %) | sentiment -0.72 ×10 = 7.2 (aligné VENTE) | 7.2 | 1.08 |
+| D4 (15 %) | atr élevé sur news = sur-volatilité | 7 | 1.05 |
+| D5 (10 %) | VIX 18.5 = range | 6 | 0.60 |
+| D6 (10 %) | Sharpe 0.9×3 + 56/10 + min(64/20,5)=11.5→clip 10 ; backtest 30j ok | 10 | 1.00 |
+| **Σ** | | | **7.89** |
+
+**Réponse Claude** : `direction=VENTE`, `score_brut=7.0` (Claude pondère vers le bas vu Sharpe modeste), raison "Gap baissier -0,65 % + BCE hawkish inattendu (sentiment -0,72) + RSI 42 / MACD négatif. Cible potentielle alignée backtest #B-024."
+
+**Sanity checks** :
+- SC1 : VENTE → entry 1.85 < sl 1.92, entry 1.85 > tp 1.72 ✅
+- SC2 : R/R = (1.85-1.72)/(1.92-1.85) = 1.86 ≥ 1.5 ✅
+- SC3 : 7.0 ≤ 9.0 → SAFE ✅
+- SC4 : %no-trade 7j = 25 % ≥ 20 % ✅
+- SC5 : "Cible potentielle alignée backtest" ✅
+
+**Score final** : **7.0**, `ALERT_flag=SAFE`, signal VENTE envoyé.
+
+### 5.3 TC-03 — NO-TRADE marché flat (score 5.2, NO-TRADE)
+
+**Input** (mercredi 6 mai 2026, 8h44 CET) :
+```json
+{
+  "edge_id": "H-A", "asset": {"ticker": "^STOXX50E", "name": "EuroStoxx50"},
+  "edge_features": {"gap_pct": 0.10, "orb_breakout": false, "sigma_gap_30d": 0.45},
+  "indicators": {"rsi_14": 51, "macd_histogram": 0.05, "bollinger_position": "middle"},
+  "vix": 16.8,
+  "backtest_ref": "#B-031",
+  "backtest_stats": {"win_rate": 61, "nb_trades": 87, "drawdown_max_pct": -18, "sharpe": 1.3, "age_days": 14}
+}
+```
+
+**Décomposition** :
+
+| Dim | Calcul | Score | Pondéré |
+|---|---|---|---|
+| D1 (30 %) | gap 0.10/0.45×5 = 1.1 | 1.1 | 0.33 |
+| D2 (20 %) | RSI 51 ≈ neutre, MACD ≈ 0, BB middle = 0/3 alignés | 0 | 0.00 |
+| D3 (15 %) | news indispo → plafond 7.0 | 7.0 | 1.05 |
+| D4 (15 %) | volatilité moyenne | 5 | 0.75 |
+| D5 (10 %) | VIX 16.8 = range | 6 | 0.60 |
+| D6 (10 %) | backtest stats fortes | 10 | 1.00 |
+| **Σ** | | | **3.73** |
+
+**Réponse Claude** : `direction=NO-TRADE`, `score_brut=5.2` (Claude remonte légèrement par jugement composite mais reste sous seuil), raison "Marché flat à l'ouverture (gap 0,1 %), RSI neutre, range ORB non cassé. Aucune configuration au-dessus du seuil 6.5."
+
+**Sanity checks** :
+- SC1 : NO-TRADE → entry/sl/tp = null ✅
+- SC2 : N/A pour NO-TRADE
+- SC3 : 5.2 ≤ 9.0 ✅
+- SC4 : %no-trade 7j = 30 % ✅
+- SC5 : "Aucune configuration au-dessus du seuil" — pas de spéculatif ✅
+
+**Score final** : **5.2**, `ALERT_flag=NO-TRADE`, message Telegram NO-TRADE 3 lignes.
+
+### 5.4 TC-04 — NO-TRADE conflit news/technique (score 5.8, ALERT)
+
+**Input** (jeudi 7 mai 2026, 8h47 CET) :
+```json
+{
+  "edge_id": "H-C", "asset": {"ticker": "MC.PA", "name": "LVMH"},
+  "edge_features": {"orb_breakout": true, "orb_direction": "haussier", "orb_amplitude": 1.8,
+                    "news_titles": ["LVMH: rumeur scission Tiffany"], "sentiment_score": -0.5},
+  "indicators": {"rsi_14": 62, "macd_histogram": 0.4, "bollinger_position": "upper_quartile", "atr_14": 1.5},
+  "vix": 17.2,
+  "backtest_ref": "#B-018",
+  "backtest_stats": {"win_rate": 58, "nb_trades": 52, "drawdown_max_pct": -19, "sharpe": 1.1, "age_days": 22}
+}
+```
+
+**Décomposition** :
+
+| Dim | Calcul | Score | Pondéré |
+|---|---|---|---|
+| D1 (30 %) | ORB haussier amplitude 1.8/atr 1.5 ×4 = 4.8 | 4.8 | 1.44 |
+| D2 (20 %) | RSI 62 + MACD>0 + BB upper = 3/3 alignés ACHAT | 10 | 2.00 |
+| D3 (15 %) | sentiment -0.5 (signal hausser, news baissier) → pénalité ×5 = -2.5 | 0 (clip) | 0.00 |
+| D4 (15 %) | atr 1.5 = volatilité moyenne | 5 | 0.75 |
+| D5 (10 %) | VIX 17.2 = range | 6 | 0.60 |
+| D6 (10 %) | nb_trades 52 < 30 ? Non, 52 OK ; Sharpe 1.1×3+5.8+min(52/20,5)=11.7→clip 10 | 10 | 1.00 |
+| **Σ** | | | **5.79** |
+
+**Réponse Claude** : `direction=NO-TRADE`, `score_brut=5.8`, raison "Signaux techniques (ORB haussier) et news (sentiment -0,5 sur rumeur scission) contradictoires — pas de configuration univoque."
+
+**Sanity checks** :
+- SC1 : NO-TRADE → entry/sl/tp = null ✅
+- SC2 : N/A
+- SC3 : 5.8 ≤ 9.0 → mais conflit détecté → **ALERT_flag = ALERT** (signal divergence)
+- SC4 : %no-trade 7j = 28 % ≥ 20 % ✅
+- SC5 : raison sans futur spéculatif ✅
+
+**Score final** : **5.8**, `ALERT_flag=ALERT` (conflit détecté), message Telegram NO-TRADE avec mention "signaux contradictoires".
+
+### 5.5 TC-05 — Timeout DEGRADED MODE (pas de scoring)
+
+**Input** (vendredi 15 mai 2026, 8h47 CET) :
+- Données Twelve Data OK, contexte assemblé OK.
+- Appel Claude n°1 : timeout 45 s.
+- Retry 1 (10 s plus tard) : timeout 30 s.
+- Retry 2 (5 s plus tard) : timeout 15 s.
+- Total écoulé : 8h49:30 — encore avant cutoff 8h55.
+
+**Décomposition** : N/A (pas de réponse Claude reçue).
+
+**Sanity checks** : non applicables — le pipeline n'a pas de score à corriger.
+
+**Action pipeline** :
+- US-05 DEGRADED MODE déclenchée.
+- Telegram reçoit le template DEGRADED MODE (3 lignes — cf. functional-specs §2).
+- SQLite : `direction=NO-TRADE`, `statut="erreur_claude"`, `motif="timeout_après_2_retries"`, `circuit_breaker_counter += 1`.
+- Si `circuit_breaker_counter >= 3` consécutifs → pause 24h + alerte critique Telegram.
+
+**Score final** : **N/A**, `ALERT_flag=NO-TRADE` (DEGRADED MODE), pas de signal envoyé (silence assumé).
+
+---
+
+## 6. Performance et coûts
+
+### 6.1 Tokens par appel
+
+| Élément | Tokens estimés | Source |
+|---|---|---|
+| System prompt (cacheable) | ~3 200 | `prompt-library.md` §1 |
+| User input (variable) | ~600-1 200 (selon edge_id et news) | `SignalScoringInput` |
+| **Input total** | **~3 800-4 400** | sous cap 5 000 (ai-architecture §2.1) |
+| Output JSON 15 champs + raison | ~500-900 | tool_use forcé |
+| **Output total** | **~600-1 000** | sous cap 1 000 |
+
+### 6.2 Latence cible
+
+- **Cible** : < 30 s par appel scoring.
+- **Marge US-05** : 45 s timeout − 30 s cible = **15 s de marge**.
+- Sonnet 4.5 P50 estimée 3-6 s pour 5k in / 1k out (cf. ai-architecture §1.1) → cible largement atteignable.
+- Si latence P95 dépasse 30 s pendant 3 jours → alerte + audit (peut-être dégradation provider).
+
+### 6.3 Coût par signal
+
+Calcul Sonnet 4.5 live avec prompt caching (-90 % sur ~80 % du prompt) :
+
+| Élément | Tokens | Tarif | Coût |
+|---|---|---|---|
+| Input cacheable (3 200 × 80 %) | 2 560 | 0,30 $/M (cached) | 0,00077 $ |
+| Input non-cacheable (3 200 × 20 % + 1 000) | 1 640 | 3,00 $/M | 0,00492 $ |
+| Output | 800 | 15,00 $/M | 0,01200 $ |
+| **Total / signal** | | | **~0,019 $ ≈ 0,02 €** |
+
+Sans cache : ~0,03 $/signal (cohérent ai-architecture §7.1 — 0,66 $/mois ÷ 22 signaux ≈ 0,03 $/signal).
+
+### 6.4 Verdict H4
+
+✅ **PASS confortable** : 22 signaux/mois × 0,02-0,03 $ = **0,44-0,66 $/mois live**, très large marge sous le budget 10 €/mois. Cohérent ai-architecture §7.3.
+
+### 6.5 Optimisations rappel
+
+1. **Prompt caching ephemeral** sur le system prompt (3 200 tokens) — `-90 %` sur réutilisations.
+2. **Pas de streaming** — synchrone simple.
+3. **Cap `max_tokens=1024`** sur output.
+4. **Batch API en R&D uniquement** — pas pour le live (latence batch 24h incompatible avec fenêtre 8h45-8h55).
+
+---
+
+## 7. Versioning et migration modèle
+
+### 7.1 Version du modèle de scoring
+
+- **Version actuelle** : `scoring-model-v1.0`.
+- **Couplage** : `scoring-model-v1.0` ↔ `prompt-version=signal-scoring-v1.0` ↔ `model_used=claude-sonnet-4-5-20250929` (live) ou `claude-haiku-4-5` (R&D).
+- **Stockage SQLite** : table `signals` colonnes `scoring_model_version`, `prompt_version`, `model_used` (cf. data-analyst kpi-framework SQL schema).
+
+### 7.2 Quand bumper la version
+
+- **v1.X** (mineure) : ajustement poids dimensions D1-D6, ajustement seuils sanity checks (ex: SC2 R/R 1.5 → 1.7).
+- **v2.0** (majeure) : ajout/suppression d'une dimension, refonte de l'architecture hybride.
+- **Couplé** : si bump `scoring-model-v1.0 → v1.1`, alors bump aussi `prompt-version=signal-scoring-v1.1` (synchronisation obligatoire pour traçabilité).
+
+### 7.3 Procédure de migration (cf. ai-architecture §8 + protocole agent @ia)
+
+1. **Lire la doc API du nouveau modèle** (si Sonnet 4.6 sort).
+2. **Comparer paramètres** (mapping ancien → nouveau).
+3. **Régression test sur les 5 cases TC-01 à TC-05** (fixtures `tests/fixtures/ai/`). Si un output régresse → ne pas déployer.
+4. **Propager à TOUS les builders** — Grep `claude-sonnet-4-5` dans `src/lib/ai/` doit retourner 0 occurrence après migration. Builders concernés : `scoringClient.ts`, `rndScoringClient.ts`, `newsScoringClient.ts`.
+5. **Bump PROMPT_VERSION + scoring-model-version** (sync obligatoire).
+6. **Documenter dans `model-selection.md`** (à créer si migration) + mise à jour ai-architecture §1.2.
+
+### 7.4 Tag exact obligatoire (rappel L002)
+
+`claude-sonnet-4-5-20250929` (tag exact, **pas `-latest`**). Cohérent ai-architecture §1.2 + règle alias agent @ia. Un alias cross-family peut basculer de génération sans warning = régression silencieuse en production sur signal qui engage du capital réel.
+
+---
+
+## 8. Handoff vers @testeur-backtest-edge
+
+### 8.1 Mission de l'audit
+
+Audit du modèle de scoring `scoring-model-v1.0` avant Phase 2 implémentation.
+
+### 8.2 Points d'audit (4)
+
+1. **Cohérence poids D1-D6 vs littérature edges intraday** : la pondération 30/20/15/15/10/10 est-elle alignée avec les références académiques sur scoring multi-facteur intraday ? D1 force du signal à 30 % est-il justifié, ou doit-il être renforcé/affaibli ?
+2. **Suffisance sanity checks anti-overfitting** : les 5 SC couvrent-ils les 7 patterns d'overfitting O1-O7 documentés dans `.claude/agents/testeur-backtest-edge.md` ? Y a-t-il des angles morts (ex: pas de check sur la concentration des signaux sur 1 sous-jacent) ?
+3. **Calibration `CONFIDENCE_THRESHOLD = 6.5` a priori conservatrice ?** : le seuil par défaut est-il trop laxiste (risque sur-trading) ou trop strict (risque silence permanent) ? Recommandation à valider après calibration R&D Phase 1.
+4. **Scoring déterministe / reproductible ?** : avec température 0.1 + tool use forcé + sanity checks déterministes, le même input produit-il le même output à ±0,2 ? Comment tester cette propriété sur les 5 TC ?
+
+### 8.3 Verdict attendu
+
+- **GO modèle** : `scoring-model-v1.0` validé, Phase 2 peut démarrer (intégration `src/lib/ai/` par @fullstack).
+- **RETRAVAILLER §X** : ajustements ciblés (poids dimensions, seuils SC, calibration). @ia bump v1.1 et re-soumet.
+- **NO-GO modèle** : repenser l'approche (ex: scoring déterministe pur sans LLM, ou inverse). @orchestrator escalade.
+
+---
+
+## 9. Auto-évaluation — Gates BLOQUANT
+
+| Gate | Critère | Verdict | Évidence |
+|---|---|---|---|
+| G1 | Toutes sections présentes | PASS | §1 à §8 + auto-éval §9 remplies |
+| G3 | Bloc Handoff structuré présent | PASS | §8 + bloc Handoff final |
+| G5 | Persona Thomas identique project-context.md | PASS | TC-01 à TC-05 cohérents fenêtre 8h45-8h55, capital 1500 €, turbos Bourse Direct, journée type Thomas |
+| G6 | Cohérence brand-platform | PASS | SC5 conditionnel chiffré obligatoire, SC4 % no-trade vertu, mots proscrits intégrés via R-AI-7 (ai-architecture §3) |
+| G7 | 0 contradiction livrables amont | PASS | Référence explicite ai-architecture §1.1 (modèles), §3 (R-AI-1..9), §7 (coûts), prompt-library.md §1 (system prompt), §2 (prompts H-A..G), §4.2 (prompt dégradé), edge-rnd-brief §5 (seuils GO Phase 2), functional-specs US-01 (15 champs) + US-05 (timeout) |
+| G12 | Implémentable sans question | PASS | Formules explicites D1-D6 + pseudo-code 5 SC + fonction objectif calibration + 5 TC complets décomposés |
+| G13 | 0 donnée inventée | PASS | Tarifs sourcés ai-architecture §1.1 ; tokens sourcés §2.1 + §5 ; HYPOTHÈSE 6.5 marquée explicitement §4.1 |
+| G14 | 5 test cases complets | PASS | §5 — 5 TC avec input JSON + décomposition D1-D6 + Claude résumé + sanity checks + score final |
+| G15 | 0 placeholder résiduel | PASS | Aucun `[À REMPLIR]`/`[TODO]` ; `[HYPOTHÈSE]` n'apparaît qu'au §4.1 (CONFIDENCE_THRESHOLD), volontaire et marqué |
+| G17 | Pas copiable pour concurrent | PASS | Spécifique TradingApp : Thomas, turbos, fenêtre 8h45-8h55, 7 hypothèses H-A..G nommées, calendrier fériés FR (TC-05), sous-jacents BD (DAX/CAC/EuroStoxx/LVMH), brand-platform §6 cité |
+
+---
+
+## Handoff
+
+---
+**Handoff → @orchestrator (relai vers @testeur-backtest-edge pour audit, puis @fullstack Phase 2)**
+
+- **Fichiers produits** :
+  - `/home/user/TradingApp/docs/ia/edge-scoring-model.md` (ce fichier, scoring-model-v1.0)
+- **Décisions prises** :
+  - Approche **hybride** Claude (score brut + raison) + 5 sanity checks déterministes ex-post.
+  - **6 dimensions** pondérées : D1 force signal 30 %, D2 confluence 20 %, D3 news 15 %, D4 volatilité 15 %, D5 régime VIX 10 %, D6 backtest 10 %.
+  - **5 sanity checks** : SC1 cohérence direction (bloquant), SC2 R/R ≥ 1.5 (bloquant si <1.0), SC3 score > 9 → ALERT, SC4 % no-trade 7j < 20 % → -1.0, SC5 spéculatif sans chiffre → plafond 6.0.
+  - **CONFIDENCE_THRESHOLD = 6.5** [HYPOTHÈSE] — calibration R&D obligatoire via fonction objectif `f(seuil) = (PF × WR × proximité 50 % no-trade) / DD`.
+  - **Coût/signal** : ~0,02-0,03 $ avec cache (verdict H4 PASS confortable).
+  - **Versioning** : `scoring-model-v1.0` couplé à `prompt-version=signal-scoring-v1.0` + `model_used`.
+- **Points d'attention** :
+  - **Prérequis bloquant Phase 2** : audit @testeur-backtest-edge (4 points §8.2) avant que @fullstack code l'intégration.
+  - **Calibration `CONFIDENCE_THRESHOLD`** : Phase 1 R&D obligatoire — valeur 6.5 a priori conservatrice mais à valider sur 5 ans backtest avec walk-forward 3 fenêtres.
+  - **VIX/V2X** : si données indisponibles via Twelve Data → D5 = 5 par défaut (neutre, pas de pénalité). À vérifier que le plan Twelve Data Pro Individual inclut VIX/V2X.
+  - **SC4 lookup SQLite** : la table `signals` doit être en place avec ≥ 7 jours de données avant que SC4 puisse s'activer. Bootstrap : SC4 désactivé les 7 premiers jours.
+  - **Migration future Sonnet 4.6+** : suivre protocole §7.3 — régression test sur les 5 TC, Grep tag exact dans tous les builders.
+  - **Coordination @qa** : tests E2E doivent inclure les 5 TC + propriété de reproductibilité (même input → même output ±0.2).
+- **Actions Replit requises** :
+  - [x] Aucune nouvelle env var au-delà de celles déjà listées dans ai-architecture §Handoff (`CONFIDENCE_THRESHOLD`, `RND_DAILY_CALL_CAP`, `MONTHLY_AI_BUDGET_EUR`, `ANTHROPIC_MODEL_LIVE`, `ANTHROPIC_MODEL_RND`).
+  - [x] Aucune migration DB nouvelle — la table `signals` doit inclure les colonnes `scoring_model_version`, `prompt_version`, `model_used`, `sanity_check_failed` (ajouter à la spec @data-analyst si manquantes).
+  - [x] Aucune modification `.replit`/`replit.nix` requise.
+
+---

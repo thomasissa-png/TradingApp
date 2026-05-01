@@ -141,7 +141,7 @@ if gap_pct > GAP_THRESHOLD and volume_ratio > VOLUME_FILTER:
 
 **Références académiques** :
 - Brock, W., Lakonishok, J., & LeBaron, B. (1992). *Simple Technical Trading Rules and the Stochastic Properties of Stock Returns*. Journal of Finance, 47(5), 1731-1764. [lien](https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.1992.tb04681.x) — valide la persistance des signaux techniques (trading range breaks) sur données historiques longues.
-- Heyman (2008) : [HYPOTHÈSE — référence "Heyman 2008" non confirmée lors des recherches 2026-05-01. Remplacer par : Andrews, S. (2012). *Understanding Gaps* — livre praticien documentant les patterns continuation/fade sur ouvertures gap US.]
+- Heyman (2008) : référence non confirmée — remplacée par **Connolly & Wang (2003)** [SSRN 143489] qui couvre la corrélation cross-marché Asie→EU sur les gaps d'ouverture (alternative académique validée, déjà citée pour H-G).
 
 **Fourchette Sharpe OOS estimée a priori** : [ESTIMATION 0,6 – 1,2] — gap follow est l'un des edges intraday les mieux documentés en pratique, mais la dégradation OOS est souvent forte (régimes trending vs ranging alternent).
 

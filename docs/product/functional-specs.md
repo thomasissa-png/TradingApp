@@ -541,6 +541,337 @@ En tant que Thomas, je veux pouvoir enregistrer le P&L réel de mon trade (brut,
 
 ---
 
+### US-09 : Envoyer l'audit hebdomadaire automatique et répondre à `/journal-week`
+
+**Persona** : Thomas
+**Epic** : Journal et audit
+**Dépendances** : US-07, US-08
+**Priorité RICE** : R=22 I=8 C=9 E=1 → Score=158
+
+#### Job-to-be-done
+En tant que Thomas, je veux recevoir un résumé hebdomadaire automatique chaque vendredi à 18h00 CET (et pouvoir le demander à tout moment via `/journal-week`) afin de piloter ma stratégie semaine par semaine et détecter les signaux d'arrêt avant qu'ils ne deviennent critiques.
+
+#### Contexte de navigation
+- **Page/écran d'origine** : N/A — push automatique (cron vendredi 18h00 CET) ou Thomas envoie `/journal-week` manuellement dans Telegram
+- **Déclencheur** : (a) cron vendredi 18h00 CET ; (b) commande Telegram `/journal-week` à tout moment
+- **Page/écran de destination (succès)** : Conversation Telegram TradingApp — message résumé hebdo affiché
+- **Page/écran de destination (échec)** : Telegram — message d'erreur si calcul impossible (données insuffisantes)
+
+#### Données et champs
+| Champ | Type | Obligatoire | Validation | Limites | Exemple |
+|---|---|---|---|---|---|
+| date_lundi | DATE | Oui | YYYY-MM-DD, lundi de la semaine calculée | | 2026-04-27 |
+| date_vendredi | DATE | Oui | YYYY-MM-DD, vendredi de la semaine calculée | | 2026-05-01 |
+| nb_signaux_go | integer | Oui | ≥ 0 | | 3 |
+| nb_no_trade | integer | Oui | ≥ 0 | | 2 |
+| nb_erreurs | integer | Oui | ≥ 0 | | 0 |
+| nb_trades_loggues | integer | Oui | ≥ 0, ≤ nb_signaux_go | | 3 |
+| pl_brut_semaine | number | Oui | Somme pl_brut_eur des trades de la semaine (0 si aucun trade logué) | décimale 2 chiffres | +580.00 |
+| pl_net_semaine | number | Oui | Somme pl_net_eur des trades de la semaine après frais + PFU 31,4 % proportionnel | décimale 2 chiffres | +412.00 |
+| drawdown_max_semaine | number | Oui | Min MAE cumulé de la semaine en % du capital dédié ; 0 si aucun trade | 0–100 | 7 |
+| win_rate_semaine | number | Oui | % trades gagnants sur la semaine (null si nb_trades_loggues = 0) | 0–100 | 67 |
+| win_rate_backtest_ref | number | Oui | Win rate backtest moyen des signaux GO de la semaine | 0–100 | 61 |
+| statut_semaine | enum | Oui | OK / ALERTE / ARRÊT | | OK |
+| signaux_arret_actifs | string | Non | Liste des flags R7 actifs (drawdown_alerte, win_rate_alerte, etc.) ou null | max 200 chars | null |
+
+#### 5 états UI (Gate G21)
+| État | Comportement | Message/Affichage |
+|---|---|---|
+| Défaut | Silence Telegram jusqu'au vendredi 18h00 | Rien |
+| Loading | Calcul du résumé en cours (agrégation SQLite) | Interne — durée max 10 s |
+| Vide | Aucun signal cette semaine (ex : semaine de jours fériés) | "Aucune activité cette semaine. Prochaine fenêtre : lundi 8h45." |
+| Erreur | Erreur d'agrégation SQLite ou calcul impossible | "Résumé hebdomadaire indisponible. Données SQLite inaccessibles à [HEURE] CET." |
+| Succès | Message résumé conforme au template section 2 envoyé | Template RÉSUMÉ HEBDO (docs/copy/message-templates.md section 5) |
+
+#### Critères d'acceptance (Given/When/Then)
+
+**Happy path :**
+- [ ] GIVEN vendredi 1er mai 2026 à 18h00:00 CET (heure NTP serveur), WHEN le cron hebdo se déclenche, THEN Thomas reçoit le message résumé hebdo dans la fenêtre 18h00-18h01 CET (± 1 min).
+- [ ] GIVEN un message résumé envoyé, WHEN Thomas lit le message, THEN il contient exactement : période (date_lundi à date_vendredi), nb_signaux_go, nb_no_trade, nb_erreurs, nb_trades_loggues, pl_brut_semaine, pl_net_semaine, drawdown_max_semaine, win_rate_semaine vs win_rate_backtest_ref, statut_semaine — aucun champ manquant.
+- [ ] GIVEN Thomas envoie `/journal-week` un mardi à 14h00, WHEN le bot reçoit la commande, THEN le bot répond avec le résumé de la semaine en cours (du lundi précédent au jour J inclus) en < 10 s.
+- [ ] GIVEN calcul terminé, WHEN les données sont agrégées, THEN le temps de calcul total est < 10 s (agrégation SQLite sur 7 jours max).
+- [ ] GIVEN statut_semaine = ALERTE ou ARRÊT, WHEN le message est envoyé, THEN le message contient une section P0 supplémentaire indiquant le flag R7 actif et l'action requise (cf. user-flows.md Flow 4 étape 3).
+
+**Cas d'erreur :**
+- [ ] GIVEN erreur d'accès SQLite lors du calcul, WHEN le cron tente d'agréger les données, THEN Thomas reçoit "Résumé hebdomadaire indisponible. Données SQLite inaccessibles à [HH:MM] CET." — aucun message partiel envoyé.
+- [ ] GIVEN `/journal-week` envoyée depuis un chat_id différent de THOMAS_CHAT_ID, WHEN le bot reçoit la commande, THEN la commande est ignorée silencieusement (sécurité — même règle que US-08).
+
+**Cas limites :**
+- [ ] GIVEN semaine sans aucun trade logué (nb_trades_loggues = 0), WHEN le résumé est calculé, THEN pl_brut_semaine = 0, pl_net_semaine = 0, win_rate_semaine = null, message affiché sans ces métriques (ou mention "aucun trade logué cette semaine").
+- [ ] GIVEN cron vendredi 18h00 et jour férié FR (ex : 1er mai — Fête du Travail), WHEN le cron est planifié, THEN le résumé hebdo est envoyé quand même (le résumé de semaine n'est pas inhibé par le calendrier ouvré — contrairement au signal quotidien US-03 qui l'est).
+- [ ] GIVEN double appel cron le même vendredi soir, WHEN un résumé a déjà été envoyé ce vendredi, THEN aucun second résumé envoyé (idempotence : vérification via SQLite colonne `journal_week_sent_at`).
+- [ ] GIVEN `/journal-week` envoyée un lundi en début de semaine (0 signal depuis lundi), WHEN le bot calcule, THEN le bot répond "Semaine en cours : aucun signal depuis le lundi [DATE]. Prochaine fenêtre : demain 8h45."
+
+**Permissions :**
+- [ ] GIVEN commande `/journal-week` envoyée depuis un chat_id non autorisé, WHEN le bot reçoit la commande, THEN ignorée silencieusement — aucun message de réponse.
+
+**Données existantes :**
+- [ ] GIVEN trades loggués avec pl_brut négatif (pertes), WHEN pl_net_semaine est calculé, THEN PFU 31,4 % n'est PAS appliqué sur les trades en perte (cohérence fiscale US-08 règle pl_net) — seuls les gains positifs sont taxés.
+
+#### Payload API (pipeline interne)
+- **Endpoint** : Telegram Bot API `POST /bot{TOKEN}/sendMessage`
+- **Authentification** : Token Bearer (`TELEGRAM_BOT_TOKEN`)
+- **Rate limit** : 1 message résumé/vendredi + réponses à commandes illimitées (Thomas seul utilisateur)
+- **Request body** : `{ "chat_id": "{THOMAS_CHAT_ID}", "text": "[résumé hebdo template]", "parse_mode": "Markdown" }`
+- **Response succès** : `{ "ok": true, "result": { "message_id": ... } }` HTTP 200 — logguer `journal_week_sent_at` en SQLite
+- **Response erreur** : `{ "ok": false, "description": "..." }` HTTP 4xx/5xx → logguer erreur en SQLite, ne pas retry (résumé hebdo non bloquant)
+
+#### Events analytics
+| Event | Trigger | Propriétés | Funnel |
+|---|---|---|---|
+| `journal_week_pushed` | Résumé hebdo automatique envoyé (cron vendredi 18h) | statut_semaine, nb_signaux_go, pl_net_semaine, win_rate_semaine, timestamp | retention |
+| `journal_week_command_invoked` | Thomas envoie `/journal-week` manuellement | timestamp, jour_semaine, nb_signaux_depuis_lundi | retention |
+| `weekly_alert_triggered` | statut_semaine = ALERTE ou ARRÊT dans le résumé | flags_actifs, drawdown_max_semaine, win_rate_semaine, timestamp | retention |
+
+#### Scénarios persona concrets
+1. Thomas est chez lui vendredi 1er mai 2026 à 18h00. Son téléphone vibre. Il voit sur l'écran de verrouillage "TradingApp — Semaine 27 avr.-1 mai | GO : 3 | P&L net : +412 € | Statut : OK". Il déverrouille, lit le résumé en 2 min. Aucune alerte. Il remet son téléphone. Résultat attendu : message complet reçu à 18h00 ± 1 min, statut OK visible sans action.
+2. Thomas a oublié de logger ses trades de la semaine (nb_trades_loggues = 0). Il reçoit le résumé vendredi 18h. Le message indique "Trades loggués : 0/3 — P&L indisponible. Envoie /trade [date] [résultat] pour compléter." Résultat attendu : message incite Thomas à logger sans bloquer l'envoi du résumé.
+3. Thomas est en déplacement vendredi soir. Il reçoit le push mais n'ouvre pas Telegram. Il voit sur l'écran verrouillé "Statut : ALERTE — Drawdown 18 %". Il ouvre immédiatement. Résultat attendu : statut visible sans déverrouiller, ALERTE pousse Thomas à ouvrir.
+4. Thomas envoie `/journal-week` un mercredi à 10h00 après une mauvaise journée. Il veut voir l'état de la semaine. Le bot répond avec les données du lundi au mercredi inclus (3 signaux, 2 trades loggués, P&L partiel). Résultat attendu : réponse en < 10 s avec données semaine en cours.
+5. Semaine de 1er mai (férié lundi). Le bot envoie le résumé vendredi 18h pour la semaine du 27 avr.-1 mai — seulement 3 jours ouvrés, 0 signal lundi (cron inhibé par US-03), 3 signaux mar-jeu. Résultat attendu : résumé cohérent avec les jours effectivement traités.
+
+#### Definition of Done (checklist @fullstack)
+- [ ] Cron vendredi 18h00 CET configuré (séparé du cron quotidien 8h40)
+- [ ] Agrégation SQLite sur la semaine courante (lundi 00h00 → vendredi 23h59) en < 10 s
+- [ ] Calcul pl_net_semaine avec règle fiscale PFU (gains uniquement)
+- [ ] Commande `/journal-week` reconnue par le bot handler, réponse en < 10 s
+- [ ] Idempotence : colonne `journal_week_sent_at` en SQLite (table `journal_weeks`)
+- [ ] Test E2E : simuler une semaine complète (3 GO + 2 NO-TRADE), vérifier message conforme
+
+#### Notes pour @qa
+- Tester idempotence : deux appels cron vendredi même soir → 1 seul résumé envoyé.
+- Tester calcul PFU sur semaine mixte (trades gagnants + perdants) → PFU sur gains uniquement.
+- Tester `/journal-week` un lundi à J+0 (0 signal) → message "aucun signal depuis lundi".
+- Tester `/journal-week` depuis chat_id non autorisé → silence.
+
+#### Notes pour @ux
+- Template résumé hebdo : conforme wireframe ASCII user-flows.md Template 5. Statut en dernière ligne (visible sans scroll mobile).
+- Si statut ALERTE ou ARRÊT : section P0 en dessous du résumé standard, séparée par "---".
+
+#### Notes pour @fullstack
+- Nouveau cron à créer : `CRON_WEEKLY="0 17 * * 5"` (UTC, vendredi 17h00 UTC = 18h00 CET hiver, ajuster pour heure d'été : `0 16 * * 5`). Ou utiliser la même logique DST que le cron quotidien.
+- Table SQLite : `journal_weeks (id, week_start DATE, week_end DATE, journal_week_sent_at DATETIME, statut TEXT)`.
+- Calcul `win_rate_semaine` : NULL si `nb_trades_loggues = 0` (ne pas afficher "0 %", afficher "aucun trade logué").
+
+---
+
+### US-10 : Confirmer la poursuite mensuelle via `/continue`
+
+**Persona** : Thomas
+**Epic** : Journal et audit
+**Dépendances** : US-07, US-08, US-09
+**Priorité RICE** : R=22 I=9 C=9 E=1 → Score=178
+
+#### Job-to-be-done
+En tant que Thomas, je veux répondre `/continue` au rapport mensuel afin de confirmer formellement que je poursuis la stratégie pour le mois suivant, avec trace écrite en SQLite de ma décision.
+
+#### Contexte de navigation
+- **Page/écran d'origine** : Telegram — Thomas lit le rapport mensuel automatique (1er jour ouvré du mois, 8h00 CET)
+- **Déclencheur** : Thomas envoie `/continue` en réponse au rapport mensuel
+- **Page/écran de destination (succès)** : Telegram — confirmation "Stratégie poursuivie pour le mois de [MOIS]."
+- **Page/écran de destination (échec)** : Telegram — erreur si commande envoyée sans rapport mensuel préalable ou contexte invalide
+
+#### Données et champs
+| Champ | Type | Obligatoire | Validation | Limites | Exemple |
+|---|---|---|---|---|---|
+| mois_concerne | string | Oui | Format "MOIS ANNEE" (mois en cours au moment de la commande) | | Mai 2026 |
+| decision | enum | Oui | continue / stop | | continue |
+| decided_at | DATETIME | Oui | ISO 8601 UTC — timestamp de réception de la commande | | 2026-05-01T08:05:00Z |
+| nb_criteres_ko | integer | Oui | Nombre de critères KO dans le rapport mensuel (0 = chemin OK, ≥ 1 = chemin DECISION REQUIRED) | 0–5 | 0 |
+| double_confirmation_requise | boolean | Oui | true si nb_criteres_ko ≥ 2 (friction volontaire user-flows.md Flow 5 F20) | | false |
+| confirmation_step | integer | Non | 1 = première confirmation, 2 = deuxième confirmation (si double_confirmation_requise=true) | 1–2 | 1 |
+
+#### 5 états UI (Gate G21)
+| État | Comportement | Message/Affichage |
+|---|---|---|
+| Défaut | Attente commande Thomas après rapport mensuel | Rapport mensuel affiché — Thomas choisit |
+| Loading | Écriture SQLite `strategy_decisions` en cours | N/A — immédiat |
+| Vide | N/A (la commande est toujours suivie d'une réponse) | N/A |
+| Erreur | Commande `/continue` envoyée hors contexte mensuel (aucun rapport reçu ce mois-ci) | "Aucun rapport mensuel reçu ce mois-ci. Le rapport est envoyé le 1er jour ouvré du mois à 8h00." |
+| Succès (chemin simple) | nb_criteres_ko = 0 ou 1 → confirmation directe | "Stratégie poursuivie pour le mois de [MOIS]. Signaux GO reprennent normalement." |
+| Succès (double confirmation) | nb_criteres_ko ≥ 2, premier /continue reçu → demande deuxième confirmation | "Confirme-tu la reprise avec [N] critères hors seuil ? Renvoie /continue pour confirmer." |
+| Succès (double confirmation step 2) | Deuxième /continue reçu → reprise effective | "Stratégie poursuivie pour le mois de [MOIS] — décision assumée avec [N] critères hors seuil. Signaux GO reprennent." |
+
+#### Critères d'acceptance (Given/When/Then)
+
+**Happy path :**
+- [ ] GIVEN rapport mensuel envoyé le 1er mai 2026 avec statut CONTINUE (0 critère KO), WHEN Thomas envoie `/continue`, THEN le bot répond "Stratégie poursuivie pour le mois de Mai 2026. Signaux GO reprennent normalement." et enregistre en SQLite : `{ mois: "2026-05", decision: "continue", decided_at: "2026-05-01T...", nb_criteres_ko: 0 }`.
+- [ ] GIVEN enregistrement SQLite créé avec succès, WHEN `STRATEGY_ACTIVE` est vérifié, THEN la variable d'environnement (ou flag SQLite) est `true` — les signaux GO du mois reprennent normalement.
+- [ ] GIVEN rapport mensuel avec 2 critères KO (chemin DECISION REQUIRED), WHEN Thomas envoie le premier `/continue`, THEN le bot répond "Confirme-tu la reprise avec 2 critères hors seuil ? Renvoie /continue pour confirmer." — pas encore d'enregistrement SQLite définitif.
+- [ ] GIVEN double confirmation requise et premier /continue reçu, WHEN Thomas envoie le deuxième `/continue`, THEN reprise effective, SQLite enregistre `{ decision: "continue", nb_criteres_ko: 2, confirmation_step: 2 }`, message de confirmation envoyé.
+
+**Cas d'erreur :**
+- [ ] GIVEN `/continue` envoyé sans rapport mensuel reçu ce mois-ci (ex : Thomas envoie /continue un 15 du mois sans raison), WHEN le bot reçoit la commande, THEN "Aucun rapport mensuel reçu ce mois-ci. Le rapport est envoyé le 1er jour ouvré du mois à 8h00."
+- [ ] GIVEN `/continue` envoyé depuis un chat_id différent de THOMAS_CHAT_ID, WHEN le bot reçoit la commande, THEN ignoré silencieusement.
+
+**Cas limites :**
+- [ ] GIVEN Thomas envoie `/continue` deux fois le même mois (après confirmation déjà enregistrée), WHEN le bot reçoit la commande, THEN "Stratégie déjà confirmée pour Mai 2026 (décision du [DATE])." — idempotence, pas de doublon SQLite.
+- [ ] GIVEN 3 critères KO et Thomas envoie `/continue` une seule fois, WHEN le bot attend le deuxième /continue, THEN le timeout de double confirmation est de 24h. Après 24h sans second /continue, le bot envoie un rappel : "Décision en attente — renvoie /continue pour confirmer ou /stop pour basculer en paper-trading."
+
+**Permissions :**
+- [ ] GIVEN commande `/continue` depuis chat_id non autorisé, WHEN le bot reçoit la commande, THEN ignorée silencieusement — aucune trace en SQLite.
+
+**Données existantes :**
+- [ ] GIVEN mois précédent avec décision /stop enregistrée (STRATEGY_ACTIVE = false), WHEN Thomas envoie `/continue` au rapport du mois suivant, THEN STRATEGY_ACTIVE repasse à true, mode paper-trading désactivé, signaux GO reprennent avec préfixe normal (sans [PAPER TRADING]).
+
+#### Payload API (pipeline interne)
+- **Endpoint** : Telegram Bot API `POST /bot{TOKEN}/sendMessage`
+- **Authentification** : Token Bearer (`TELEGRAM_BOT_TOKEN`)
+- **Rate limit** : 1 confirmation/mois (idempotence enforced)
+- **Request body** : `{ "chat_id": "{THOMAS_CHAT_ID}", "text": "[message confirmation]", "parse_mode": "Markdown" }`
+- **Response succès** : HTTP 200 → écriture SQLite `strategy_decisions`
+- **Response erreur** : HTTP 4xx/5xx → logguer erreur, réessayer une fois après 5 s
+
+#### Schéma SQLite — table `strategy_decisions`
+| Colonne | Type | Description |
+|---|---|---|
+| id | INTEGER PRIMARY KEY | Auto-increment |
+| month | TEXT | Format "YYYY-MM" (ex : "2026-05") |
+| decision | TEXT | "continue" ou "stop" |
+| decided_at | DATETIME | ISO 8601 UTC |
+| nb_criteres_ko | INTEGER | Nombre de critères KO au moment de la décision |
+| confirmation_step | INTEGER | 1 (simple) ou 2 (double confirmation) |
+
+Contrainte : UNIQUE sur `(month, decision)` — une seule décision finale par mois.
+
+#### Events analytics
+| Event | Trigger | Propriétés | Funnel |
+|---|---|---|---|
+| `monthly_continue_invoked` | Thomas envoie `/continue` et confirmation enregistrée | mois_concerne, nb_criteres_ko, confirmation_step, decided_at | retention |
+
+#### Scénarios persona concrets
+1. Thomas reçoit le rapport du 1er mai 2026 à 8h00. P&L net : +820 €, drawdown max : 9 %, win rate : 65 % vs 61 % backtest. Statut : CONTINUE. Thomas envoie `/continue` à 8h07. Le bot confirme "Stratégie poursuivie pour le mois de Mai 2026." Thomas reçoit son signal GO normalement à 8h47. Résultat attendu : décision tracée, signaux non interrompus.
+2. Thomas reçoit un rapport avec 1 critère KO (win rate live 44 % vs backtest 61 % — écart 17 pts). Statut : DECISION REQUIRED. Thomas lit l'alerte, décide de continuer quand même. Il envoie `/continue`. Bot confirme sans double confirmation (1 seul critère KO). Résultat attendu : 1 critère KO → confirmation simple suffisante.
+3. Thomas reçoit un rapport avec 2 critères KO (drawdown 22 % + win rate déviation 16 pts). Statut : DECISION REQUIRED. Il envoie `/continue`. Bot répond "Confirme-tu la reprise avec 2 critères hors seuil ?" Thomas réfléchit 2h, renvoie `/continue`. Bot confirme avec mention "décision assumée avec 2 critères hors seuil". Résultat attendu : friction volontaire bien présente, Thomas a été forcé de confirmer deux fois.
+4. Thomas tente `/continue` le 15 mai sans raison (teste la commande). Bot répond "Aucun rapport mensuel reçu ce mois-ci." Résultat attendu : commande hors contexte gérée proprement.
+5. Thomas avait envoyé `/stop` en mars. En avril, rapport OK, Thomas envoie `/continue`. STRATEGY_ACTIVE repasse à true. Les signaux du jour n'ont plus le préfixe [PAPER TRADING]. Résultat attendu : retour au live fluide depuis paper-trading.
+
+#### Definition of Done (checklist @fullstack)
+- [ ] Commande `/continue` reconnue par le bot handler
+- [ ] Table `strategy_decisions` créée avec contrainte UNIQUE sur `(month, decision)`
+- [ ] STRATEGY_ACTIVE mis à jour (flag SQLite ou variable d'environnement rechargée)
+- [ ] Double confirmation implémentée si nb_criteres_ko ≥ 2 (avec timeout 24h et rappel)
+- [ ] Idempotence : second /continue le même mois → réponse "déjà confirmé" sans doublon
+- [ ] Test E2E : simuler rapport OK → /continue → vérifier SQLite + signaux reprennent
+
+#### Notes pour @qa
+- Tester transition paper-trading → live : /stop en mois M, /continue en mois M+1 → signaux sans [PAPER TRADING].
+- Tester double confirmation : 2 critères KO → 1er /continue → attente → 2e /continue → confirmation.
+- Tester timeout 24h double confirmation → rappel envoyé.
+- Tester idempotence : deux /continue le même mois → deuxième ignoré avec message.
+
+#### Notes pour @fullstack
+- `STRATEGY_ACTIVE` : stocker en SQLite dans `strategy_decisions` (colonne `is_active BOOLEAN`), rechargé à chaque exécution du pipeline. Ne pas utiliser variable d'environnement pour ce flag (volatil au redémarrage) — source de vérité = SQLite.
+- Cron mensuel (rapport mensuel) : `0 7 1 * *` (UTC, 1er du mois à 7h00 UTC = 8h00 CET hiver). Si le 1er est samedi/dimanche, reporter au lundi (même logique calendrier ouvré US-03).
+
+---
+
+### US-11 : Basculer en paper-trading via `/stop`
+
+**Persona** : Thomas
+**Epic** : Journal et audit
+**Dépendances** : US-07, US-08, US-09, US-10
+**Priorité RICE** : R=22 I=9 C=9 E=1 → Score=178
+
+#### Job-to-be-done
+En tant que Thomas, je veux répondre `/stop` au rapport mensuel afin de suspendre les signaux live et basculer en paper-trading, tout en continuant à recevoir les signaux pour comparaison — sans arrêt définitif du bot.
+
+#### Contexte de navigation
+- **Page/écran d'origine** : Telegram — Thomas lit le rapport mensuel (1er jour ouvré du mois, 8h00 CET), contexte chemin (b) DECISION REQUIRED
+- **Déclencheur** : Thomas envoie `/stop` en réponse au rapport mensuel
+- **Page/écran de destination (succès)** : Telegram — confirmation "Stratégie en pause — bascule en paper-trading." + explication du mode paper-trading
+- **Page/écran de destination (échec)** : Telegram — erreur si commande hors contexte
+
+#### Données et champs
+| Champ | Type | Obligatoire | Validation | Limites | Exemple |
+|---|---|---|---|---|---|
+| mois_concerne | string | Oui | Format "MOIS ANNEE" | | Mai 2026 |
+| decision | enum | Oui | "stop" | | stop |
+| decided_at | DATETIME | Oui | ISO 8601 UTC | | 2026-05-01T08:12:00Z |
+| nb_criteres_ko | integer | Oui | ≥ 1 (le /stop intervient sur chemin DECISION REQUIRED ou volontaire) | 0–5 | 2 |
+| paper_trading_activated_at | DATETIME | Oui | Timestamp de bascule en paper-trading (= decided_at) | | 2026-05-01T08:12:00Z |
+
+#### 5 états UI (Gate G21)
+| État | Comportement | Message/Affichage |
+|---|---|---|
+| Défaut | Attente commande Thomas après rapport mensuel | Rapport mensuel affiché |
+| Loading | Écriture SQLite + mise à jour STRATEGY_ACTIVE = false | N/A — immédiat |
+| Vide | N/A | N/A |
+| Erreur | `/stop` envoyé hors contexte mensuel | "Aucun rapport mensuel reçu ce mois-ci. Le rapport est envoyé le 1er jour ouvré du mois à 8h00." |
+| Succès | STRATEGY_ACTIVE = false, mode paper-trading actif | "Stratégie en pause — bascule en paper-trading. Les signaux continuent à arriver avec le préfixe [PAPER TRADING]. Pour reprendre le live, envoie /continue au prochain rapport mensuel." |
+
+#### Critères d'acceptance (Given/When/Then)
+
+**Happy path :**
+- [ ] GIVEN rapport mensuel envoyé avec statut DECISION REQUIRED, WHEN Thomas envoie `/stop`, THEN le bot répond "Stratégie en pause — bascule en paper-trading. Les signaux continuent à arriver avec le préfixe [PAPER TRADING]. Pour reprendre le live, envoie /continue au prochain rapport mensuel."
+- [ ] GIVEN `/stop` confirmé, WHEN SQLite est mis à jour, THEN `strategy_decisions` enregistre `{ mois: "2026-05", decision: "stop", decided_at: "...", paper_trading_activated_at: "..." }` et `STRATEGY_ACTIVE = false`.
+- [ ] GIVEN STRATEGY_ACTIVE = false (paper-trading actif), WHEN le pipeline envoie un signal GO le lendemain, THEN le signal est préfixé `[PAPER TRADING]` — toutes les données du signal sont présentes (sens, SL, TP, score, backtest_ref) mais Thomas sait qu'il ne doit pas exécuter.
+- [ ] GIVEN mode paper-trading actif, WHEN le pipeline calcule un NO-TRADE, THEN le NO-TRADE est envoyé normalement (sans préfixe — ce n'est pas un signal de trading).
+- [ ] GIVEN mode paper-trading actif, WHEN le pipeline calcule une ERREUR DATA ou DEGRADED MODE, THEN ces messages sont envoyés normalement (sans préfixe — ce sont des messages techniques).
+
+**Cas d'erreur :**
+- [ ] GIVEN `/stop` envoyé sans rapport mensuel reçu ce mois-ci, WHEN le bot reçoit la commande, THEN "Aucun rapport mensuel reçu ce mois-ci. Le rapport est envoyé le 1er jour ouvré du mois à 8h00."
+- [ ] GIVEN `/stop` envoyé depuis un chat_id différent de THOMAS_CHAT_ID, WHEN le bot reçoit la commande, THEN ignoré silencieusement.
+
+**Cas limites :**
+- [ ] GIVEN `/stop` envoyé alors que STRATEGY_ACTIVE est déjà false (paper-trading déjà actif), WHEN le bot reçoit la commande, THEN "Paper-trading déjà actif depuis le [DATE]. Pour reprendre le live, envoie /continue au prochain rapport mensuel." — idempotence, pas de doublon SQLite.
+- [ ] GIVEN mode paper-trading actif depuis 2 mois consécutifs, WHEN le 3e rapport mensuel est envoyé, THEN le rapport contient une note : "Paper-trading actif depuis [N] mois — les données de P&L en paper-trading sont enregistrées mais ne reflètent pas le P&L live. Envoie /continue pour reprendre."
+- [ ] GIVEN signal GO en paper-trading avec score 7,1 suivi d'un /trade logué (Thomas a quand même tradé par curiosité), WHEN /trade est reçu, THEN le journal accepte la mise à jour — le champ `trade_effectué` peut être true même en paper-trading (Thomas a le contrôle).
+- [ ] GIVEN `/stop` envoyé sur chemin (a) CONTINUE (0 critère KO — Thomas veut volontairement s'arrêter), WHEN le bot reçoit la commande, THEN la commande est acceptée (Thomas a toujours le droit de s'arrêter volontairement même si les critères sont OK).
+
+**Permissions :**
+- [ ] GIVEN commande `/stop` depuis chat_id non autorisé, WHEN le bot reçoit la commande, THEN ignorée silencieusement — aucune trace en SQLite.
+
+**Données existantes :**
+- [ ] GIVEN décision /continue déjà enregistrée pour Mai 2026, WHEN Thomas envoie /stop le même mois, THEN le bot demande confirmation : "Tu as déjà confirmé /continue pour Mai 2026. Confirmes-tu le passage en paper-trading ? Renvoie /stop pour confirmer." — friction volontaire, overwrite possible.
+
+#### Payload API (pipeline interne)
+- **Endpoint** : Telegram Bot API `POST /bot{TOKEN}/sendMessage`
+- **Authentification** : Token Bearer (`TELEGRAM_BOT_TOKEN`)
+- **Rate limit** : N/A (commande manuelle, fréquence très faible)
+- **Request body** : `{ "chat_id": "{THOMAS_CHAT_ID}", "text": "[message paper-trading]", "parse_mode": "Markdown" }`
+- **Response succès** : HTTP 200 → écriture SQLite `strategy_decisions`, STRATEGY_ACTIVE = false
+- **Response erreur** : HTTP 4xx/5xx → logguer erreur, réessayer une fois après 5 s
+
+#### Events analytics
+| Event | Trigger | Propriétés | Funnel |
+|---|---|---|---|
+| `monthly_stop_invoked` | Thomas envoie `/stop` et bascule paper-trading confirmée | mois_concerne, nb_criteres_ko, decided_at | retention |
+| `paper_trading_mode_activated` | STRATEGY_ACTIVE passe à false | mois_concerne, paper_trading_activated_at, nb_criteres_ko | retention |
+
+#### Scénarios persona concrets
+1. Thomas reçoit le rapport du 1er mai 2026 avec drawdown 22 % (critère KO). Statut : DECISION REQUIRED. Thomas décide de marquer une pause. Il envoie `/stop`. Bot confirme "Stratégie en pause — bascule en paper-trading. Les signaux continuent à arriver avec le préfixe [PAPER TRADING]." Le lendemain, Thomas reçoit "[PAPER TRADING] ACHAT — DAX Turbo Call..." Il lit, ne trade pas, note mentalement le résultat. Résultat attendu : bascule propre, signaux formatés [PAPER TRADING], Thomas ne ressent pas de pression à exécuter.
+2. Thomas est en mode paper-trading depuis mars. Le rapport d'avril montre P&L paper +1 200 € simulé. Il reprend confiance. Il répond /continue au rapport de mai. Le bot confirme, les signaux reprennent sans [PAPER TRADING]. Résultat attendu : retour au live fluide, historique paper-trading conservé en SQLite.
+3. Thomas envoie `/stop` un mardi matin sans avoir reçu de rapport mensuel. Bot répond "Aucun rapport mensuel reçu ce mois-ci." Résultat attendu : commande hors contexte refusée proprement.
+4. Thomas est en paper-trading depuis 1 mois. Il reçoit le résumé hebdo vendredi. Le résumé indique les trades [PAPER TRADING] de la semaine avec P&L simulé. Drawdown paper = 5 %. Thomas relit ses décisions. Résultat attendu : résumé hebdo cohérent avec mode paper-trading, métriques calculées sur les signaux [PAPER TRADING].
+5. Thomas envoie `/stop` alors qu'il avait déjà envoyé /continue ce mois-ci. Bot demande confirmation "Tu as déjà confirmé /continue pour Mai 2026. Confirmes-tu le passage en paper-trading ? Renvoie /stop pour confirmer." Thomas renvoie /stop. Bascule effective. Résultat attendu : friction de confirmation présente avant overwrite d'une décision active.
+
+#### Definition of Done (checklist @fullstack)
+- [ ] Commande `/stop` reconnue par le bot handler
+- [ ] STRATEGY_ACTIVE = false enregistré en SQLite `strategy_decisions`
+- [ ] Pipeline vérifie STRATEGY_ACTIVE avant envoi de chaque signal GO : si false → préfixe [PAPER TRADING] ajouté
+- [ ] NO-TRADE, ERREUR DATA, DEGRADED MODE envoyés sans modification de format en paper-trading
+- [ ] Idempotence : second /stop alors que paper-trading déjà actif → message "déjà actif depuis [DATE]"
+- [ ] Résumé hebdo (US-09) adapté au mode paper-trading : mention "paper-trading actif" dans le message
+- [ ] Test E2E : /stop → signal GO du lendemain → vérifier préfixe [PAPER TRADING] présent
+
+#### Notes pour @qa
+- Tester transition live → paper-trading → live : /stop mois M → signals [PAPER TRADING] → /continue mois M+1 → signals normaux.
+- Tester que ERREUR DATA et DEGRADED MODE n'ont PAS le préfixe [PAPER TRADING] en mode pause.
+- Tester overwrite /continue → /stop le même mois : friction de confirmation avant bascule.
+- Tester `/stop` depuis chat_id non autorisé → silence.
+
+#### Notes pour @ux
+- Le message de confirmation /stop doit expliquer explicitement que ce n'est PAS un arrêt définitif (F21 user-flows.md). Formulation : "Les signaux continuent à arriver avec le préfixe [PAPER TRADING]. Pour reprendre le live, envoie /continue au prochain rapport mensuel."
+- Le préfixe [PAPER TRADING] en tête de signal doit être visible sur l'écran de verrouillage iOS/Android sans déverrouiller (première ligne du message).
+
+#### Notes pour @fullstack
+- `STRATEGY_ACTIVE` : même source de vérité SQLite que US-10 (table `strategy_decisions`, colonne `is_active`). Rechargé à chaque exécution pipeline.
+- Logique préfixe : `if not STRATEGY_ACTIVE: message = "[PAPER TRADING]\n" + message_standard` — aucune autre modification du contenu du signal.
+- Résumé hebdo US-09 : si paper-trading actif, ajouter en entête du résumé "Mode paper-trading actif depuis [DATE]."
+
+---
+
 ## 2. Format Message Telegram — Templates V1
 
 Contrainte brand-platform : **6 lignes max signal + 1 ligne confiance**. Zéro mot de marketing. Conditionnel de l'incertitude obligatoire sur le TP.
@@ -804,13 +1135,13 @@ Pistes V2 (à valider par R&D — pas de promesse) :
 
 | Gate | Critère | Verdict | Évidence |
 |---|---|---|---|
-| G1 | Persona Thomas identifié dans toutes les US | PASS | "Thomas" nommé dans chaque US-XX, jamais "l'utilisateur" |
-| G3 | Zéro donnée inventée non marquée | PASS | Seuil confiance marqué [HYPOTHÈSE], H3 marqué [À VÉRIFIER PAR PERSONA] |
+| G1 | Persona Thomas identifié dans toutes les US | PASS | "Thomas" nommé dans chaque US-01 à US-11, jamais "l'utilisateur" |
+| G3 | Zéro donnée inventée non marquée | PASS | Seuil confiance marqué [HYPOTHÈSE], H3 marqué [À VÉRIFIER PAR PERSONA] ; US-09/10/11 sans hypothèse non marquée |
 | G5 | Persona correspond exactement à project-context.md | PASS | Thomas, capital 20-30 k€, Bourse Direct, turbos 5-20, 8h45-8h55 CET |
-| G6 | KPI North Star cité avec PFU 31,4 % | PASS | Résumé exécutif + US-01 JTBD + US-08 calcul pl_net |
-| G7 | Cohérence brand-platform + personas + infra-audit + legal-audit | PASS | Templates respectent 6 lignes + 1 confiance (brand-platform §3 Pilier 2) ; signaux d'arrêt issus de personas.md ; CUTOFF 8h55 = G4 infra-audit ; PFU 31,4 % = legal-audit L001 ; DEGRADED MODE = brand-platform promesse interne "pas de signal forcé" |
-| G12 | Chaque user story implémentable sans question @fullstack | PASS | Champs typés, validations, payloads Telegram, schéma SQLite, calcul pl_net explicite |
-| G15 | Zéro placeholder résiduel | PASS | Marqueurs [À VÉRIFIER PAR PERSONA] et [HYPOTHÈSE] sont des annotations volontaires, pas des placeholders oubliés |
-| G17 | Livrable non copiable pour un concurrent | PASS | Référence explicite à Thomas, Bourse Direct, fenêtre 8h45-8h55, calendrier fériés FR, Twelve Data tickers EU |
+| G6 | KPI North Star cité avec PFU 31,4 % | PASS | Résumé exécutif + US-01 JTBD + US-08 calcul pl_net + US-09 pl_net_semaine (règle fiscale PFU gains uniquement) |
+| G7 | Cohérence brand-platform + personas + user-flows.md + legal-audit | PASS | US-09 conforme Flow 4 user-flows.md (cron vendredi 18h, commande /journal-week, statut OK/ALERTE/ARRÊT) ; US-10 conforme Flow 5 (chemin a /continue, double confirmation si ≥ 2 KO, F20 mitigation) ; US-11 conforme Flow 5 (chemin b /stop = paper-trading pas arrêt définitif, F21 mitigation) ; PFU 31,4 % US-09 cohérent legal-audit L001 ; signaux d'arrêt R7 functional-specs §4 intégrés dans US-09 statut_semaine |
+| G12 | Chaque user story implémentable sans question @fullstack | PASS | US-09 : schéma `journal_weeks`, cron CRON_WEEKLY, calcul PFU, idempotence `journal_week_sent_at` ; US-10 : schéma `strategy_decisions`, double confirmation, timeout 24h ; US-11 : STRATEGY_ACTIVE SQLite, logique préfixe [PAPER TRADING], résumé hebdo adapté |
+| G15 | Zéro placeholder résiduel | PASS | Marqueurs [À VÉRIFIER PAR PERSONA] et [HYPOTHÈSE] sont des annotations volontaires. US-09/10/11 : aucun placeholder non justifié |
+| G17 | Livrable non copiable pour un concurrent | PASS | Référence explicite à Thomas, Bourse Direct, fenêtre 8h45-8h55, calendrier fériés FR, Twelve Data tickers EU, commandes /journal-week /continue /stop spécifiques au workflow Thomas |
 
 ---

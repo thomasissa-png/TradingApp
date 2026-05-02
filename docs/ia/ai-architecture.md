@@ -1,5 +1,6 @@
 <!-- Version: 2026-05-01T00:00 — @ia — Création initiale ai-architecture TradingApp -->
 <!-- Version: 2026-05-01T01:30 — @ia — v1.1 corrections post-audit self-critical (cache hit rate live 0%, fallback Haiku 4.5 si Sonnet timeout, coût annuel réaliste) -->
+<!-- Version: 2026-05-02T08:30 — @ia — v1.2 correction L010 P0 : tag modèle obsolète Sonnet 4.5 → Sonnet 4.6 (alias minor-family `claude-sonnet-4-6`) + Haiku 4.5 daté (`claude-haiku-4-5-20251001`). Pricing inchangé [HYPOTHÈSE — pricing 4.5 retenu pour estimation, à actualiser si Sonnet 4.6 différent]. -->
 
 # AI Architecture — TradingApp
 
@@ -13,7 +14,7 @@
 
 - **Objectif** : scorer chaque matin entre 8h45-8h55 CET le candidat trade généré par les hypothèses d'edge (H-A à H-G) et produire le JSON 15 champs attendu par US-01, sans hallucination, en moins de 45 secondes.
 - **Décisions clés** :
-  1. **Split modèle** : `claude-sonnet-4-5-20250929` en live (qualité justification = levier persona "pas confiance") + `claude-haiku-4-5` en R&D batch + prompt cache (-50 % batch, -90 % cached input).
+  1. **Split modèle** : `claude-sonnet-4-6` en live (qualité justification = levier persona "pas confiance") + `claude-haiku-4-5-20251001` en R&D batch + prompt cache (-50 % batch, -90 % cached input).
   2. **Verdict H4 confirmé PASS** : 0,66 $/mois live (cf. infra-audit §3.3), 10 $/mois R&D Haiku 100 ap/j cap, ~51 $/mois R&D Haiku 500 ap/j (NEEDS-DECISION volume R&D — recommandé 100 ap/j).
   3. **Anti-hallucination strict** : température 0.1, JSON schema validation Zod/Pydantic, retry max 2, refus signal si données partielles.
   4. **ZDR Anthropic recommandé** (défense en profondeur — cf. legal-audit §6.3) bien que les prompts ne contiennent aucune PII.
@@ -22,11 +23,11 @@
 
 ---
 
-## 1. Choix modèle — Sonnet 4.5 vs Haiku 4.5
+## 1. Choix modèle — Sonnet 4.6 vs Haiku 4.5
 
 ### 1.1 Tableau comparatif (tarifs Anthropic mai 2026, source infra-audit §3.1)
 
-| Critère | Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`) | Claude Haiku 4.5 (`claude-haiku-4-5`) | Verdict |
+| Critère | Claude Sonnet 4.6 (`claude-sonnet-4-6`) | Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) | Verdict |
 |---|---|---|---|
 | Coût input ($/M tokens) | 3,00 | 1,00 | Haiku 3× moins cher |
 | Coût output ($/M tokens) | 15,00 | 5,00 | Haiku 3× moins cher |
@@ -46,9 +47,9 @@
 
 | Phase | Modèle | Justification | Volume |
 |---|---|---|---|
-| **Live (Phase 2-3)** | `claude-sonnet-4-5-20250929` (tag exact, pas `-latest` cf. règle alias) | Qualité de justification = levier critique frustration #1 Thomas ("pas assez d'éléments pour engager 1500 €"). Écart de coût Haiku→Sonnet en live = 0,44 $/mois — non significatif vs risque qualité. Tool use natif pour JSON 15 champs strict. | 22 appels/mois, 0,66 $/mois |
-| **R&D edge (Phase 1)** | `claude-haiku-4-5` + Batch API + Prompt Caching | 100-500 itérations/jour pendant exploration des 7 hypothèses (H-A à H-G). Le scoring R&D ne demande pas la qualité Voice & Tone (juste "GO/NO-GO + score"). Cache du prompt système (~80 % de l'input) = -90 % coût input cacheable. | 100 ap/j cap recommandé, ~10 $/mois |
-| **R&D news scoring H-EDGE-E** | `claude-haiku-4-5` batch + cache OBLIGATOIRES | Cf. edge-rnd-brief §H-EDGE-E : 100 appels/jour max, batch + cache obligatoires — sinon explosion coûts. | inclus dans 100 ap/j |
+| **Live (Phase 2-3)** | `claude-sonnet-4-6` (tag exact, pas `-latest` cf. règle alias) | Qualité de justification = levier critique frustration #1 Thomas ("pas assez d'éléments pour engager 1500 €"). Écart de coût Haiku→Sonnet en live = 0,44 $/mois — non significatif vs risque qualité. Tool use natif pour JSON 15 champs strict. | 22 appels/mois, 0,66 $/mois |
+| **R&D edge (Phase 1)** | `claude-haiku-4-5-20251001` + Batch API + Prompt Caching | 100-500 itérations/jour pendant exploration des 7 hypothèses (H-A à H-G). Le scoring R&D ne demande pas la qualité Voice & Tone (juste "GO/NO-GO + score"). Cache du prompt système (~80 % de l'input) = -90 % coût input cacheable. | 100 ap/j cap recommandé, ~10 $/mois |
+| **R&D news scoring H-EDGE-E** | `claude-haiku-4-5-20251001` batch + cache OBLIGATOIRES | Cf. edge-rnd-brief §H-EDGE-E : 100 appels/jour max, batch + cache obligatoires — sinon explosion coûts. | inclus dans 100 ap/j |
 
 **Pourquoi pas Opus 4.7** : 5× le coût Sonnet sans gain mesurable sur scoring + JSON 15 champs. Effort levels (`xhigh`) non pertinents pour un volume de 22 appels/mois — la latence aurait plus d'impact que le gain qualité.
 
@@ -150,7 +151,7 @@ type SignalScoringOutput = {
   backtest_ref: string;            // "#B-NNN" (echo input)
   ALERT_flag: "ALERT" | "SAFE" | "NO-TRADE"; // ALERT si euphorie/divergence détectée, SAFE sinon
   no_trade_reason: string | null;  // null si direction ACHAT/VENTE ; sinon raison no-trade
-  model_used: string;              // ex: "claude-sonnet-4-5-20250929"
+  model_used: string;              // ex: "claude-sonnet-4-6"
 };
 ```
 
@@ -266,13 +267,13 @@ Aucun signal émis aujourd'hui (règle : pas de signal sans justification).
 | Étape | Timeout | Modèle | Action si timeout |
 |---|---|---|---|
 | Préparation contexte (cache SQLite) | 5 s | — | DEGRADED MODE |
-| **Appel Claude (1ère tentative)** | **25 s** (v1.1, ex-45 s) | Sonnet 4.5 | **Fallback Haiku** (v1.1) |
+| **Appel Claude (1ère tentative)** | **25 s** (v1.1, ex-45 s) | Sonnet 4.6 | **Fallback Haiku** (v1.1) |
 | **Appel Claude (fallback Haiku)** | **10 s** (v1.1) | Haiku 4.5 | DEGRADED MODE |
 | Validation schema + envoi Telegram | < 2 s | — | log + retry une fois |
 
 **Justification fallback Haiku (v1.1, audit @ia self-critical)** : Sonnet P50 3-6 s mais **P95 matinal peut atteindre 15-20 s en charge mondiale 8h45-8h55 CET** (heure de pointe EU — pic d'usage API simultané sur tous les utilisateurs européens). Fallback Haiku 4.5 : P95 ~3 s, qualité 3.5/5 sur scoring (cf. §1.1) — **acceptable pour un signal exceptionnel**, supérieur à un DEGRADED MODE forcé pour cause de latence (silence) qui frustre Thomas.
 
-**Logique** : `Sonnet (timeout 25s) → fallback Haiku (timeout 10s) → DEGRADED MODE`. Le pipeline log `model_used` réel (`claude-haiku-4-5` si fallback déclenché) + flag `fallback_haiku=true` en SQLite + ALERT_flag forcé "ALERT" sur le signal Haiku (Thomas voit "ALERT — fallback modèle Haiku, qualité justification dégradée").
+**Logique** : `Sonnet (timeout 25s) → fallback Haiku (timeout 10s) → DEGRADED MODE`. Le pipeline log `model_used` réel (`claude-haiku-4-5-20251001` si fallback déclenché) + flag `fallback_haiku=true` en SQLite + ALERT_flag forcé "ALERT" sur le signal Haiku (Thomas voit "ALERT — fallback modèle Haiku, qualité justification dégradée").
 
 **Pourquoi PAS retry Sonnet** : si Sonnet timeout à 25s en heure de pointe, retry Sonnet va probablement re-timeout (charge globale Anthropic) — perte de temps avant cutoff 8h55. Préfère Haiku qui répond rapidement qu'un DEGRADED forcé. Coût additionnel d'un fallback Haiku : ~0,003 $/appel (négligeable, max ~0,07 $/mois si 22/22 appels en fallback).
 
@@ -343,7 +344,7 @@ Aucun signal émis aujourd'hui (règle : pas de signal sans justification).
   "backtest_ref": "#B-031",
   "ALERT_flag": "SAFE",
   "no_trade_reason": null,
-  "model_used": "claude-sonnet-4-5-20250929"
+  "model_used": "claude-sonnet-4-6"
 }
 ```
 
@@ -377,7 +378,7 @@ Aucun signal émis aujourd'hui (règle : pas de signal sans justification).
   "backtest_ref": "#B-031",
   "ALERT_flag": "NO-TRADE",
   "no_trade_reason": "Score max relevé 5,2/10 — en dessous du seuil 6,5.",
-  "model_used": "claude-sonnet-4-5-20250929"
+  "model_used": "claude-sonnet-4-6"
 }
 ```
 
@@ -407,7 +408,7 @@ Aucun signal émis aujourd'hui (règle : pas de signal sans justification).
 
 ## 7. Coût détaillé — verdict H4 confirmé
 
-### 7.1 Calculs live (Sonnet 4.5) — v1.1 cache hit rate corrigé
+### 7.1 Calculs live (Sonnet 4.6) — v1.1 cache hit rate corrigé [HYPOTHÈSE pricing : tarifs Sonnet 4.5 retenus, à actualiser si pricing 4.6 différent]
 
 **Correction post-audit @ia self-critical** : la fenêtre du cache `ephemeral` Anthropic est de **5 minutes**. En live, 22 calls/mois = **1 call/jour ouvré** à 8h45-8h55 CET. Chaque appel matinal arrive avec un cache **expiré depuis ~24h** → **cache hit rate live = 0 %**. Le calcul v1.0 qui estimait 0,66 $/mois supposait à tort un bénéfice cache — corrigé ci-dessous.
 
@@ -474,7 +475,7 @@ Cohérent avec le learning cross-projet "protocole migration modèle IA" (cf. ag
 1. **Lire la documentation API du nouveau modèle** — identifier paramètres obligatoires/breaking changes (ex: changement de format tool_use, nouveaux params `effort`).
 2. **Comparer les paramètres** — mapping ancien → nouveau. Tout param renommé/supprimé doit être tracé.
 3. **Tester sur les 5 cases TC-01 à TC-05** — `prompt-library.md` §6 (versioning) — utiliser les fixtures stockées en `tests/fixtures/ai/`. Si un output régresse → ne pas déployer.
-4. **Propager à TOUS les builders** — Grep `claude-sonnet-4-5` dans `src/lib/ai/` : doit retourner 0 occurrence après migration. Builders existants (Phase 2+) :
+4. **Propager à TOUS les builders** — Grep `claude-sonnet-4-5` ET `claude-sonnet-4-6` (l'ancien tag puis le tag courant) dans `src/lib/ai/` : doit retourner 0 occurrence du tag obsolète après migration. Builders existants (Phase 2+) :
    - `src/lib/ai/scoringClient.ts` (live signal)
    - `src/lib/ai/rndScoringClient.ts` (R&D Haiku)
    - `src/lib/ai/newsScoringClient.ts` (H-EDGE-E)
@@ -543,8 +544,8 @@ export type SignalOutput = z.infer<typeof SignalOutputSchema>;
   - `/home/user/TradingApp/docs/ia/ai-architecture.md` (ce fichier)
   - `/home/user/TradingApp/docs/ia/prompt-library.md` (livrable parallèle, prérequis bloquant Phase 2)
 - **Décisions prises** :
-  - Modèle live : `claude-sonnet-4-5-20250929` (tag exact, pas `-latest`).
-  - Modèle R&D : `claude-haiku-4-5` + Batch + Prompt Caching, cap `RND_DAILY_CALL_CAP=100`.
+  - Modèle live : `claude-sonnet-4-6` (tag exact, pas `-latest`).
+  - Modèle R&D : `claude-haiku-4-5-20251001` + Batch + Prompt Caching, cap `RND_DAILY_CALL_CAP=100`.
   - Tool use natif Anthropic pour forcer le JSON 15 champs strict.
   - ZDR Anthropic recommandé (action persona : email support).
   - Circuit breaker : 3 erreurs consécutives → 24h pause + alerte Telegram.
@@ -556,7 +557,7 @@ export type SignalOutput = z.infer<typeof SignalOutputSchema>;
   - **Prérequis bloquant Phase 2** : `prompt-library.md` validé par @testeur-persona-thomas avant que @fullstack code l'intégration.
   - **Action persona** : signer addendum ZDR Anthropic (email support).
   - **Code dans `src/lib/ai/` (à produire Phase 2 par @fullstack)** : `scoringClient.ts`, `rndScoringClient.ts`, `validateSignalOutput.ts`, `schemas/signalOutput.schema.ts`, `buildSignalContext.ts`. @ia produit les prompts + schemas, @fullstack les wrappe.
-  - **R&D edge Phase 1 (@data-analyst)** : utilise les prompts H-A à H-G de `prompt-library.md` §2, avec `claude-haiku-4-5` + cache prompt. Cap 100 ap/j à respecter.
+  - **R&D edge Phase 1 (@data-analyst)** : utilise les prompts H-A à H-G de `prompt-library.md` §2, avec `claude-haiku-4-5-20251001` + cache prompt. Cap 100 ap/j à respecter.
   - **Migration future** : si Sonnet 4.6+ sort, suivre protocole §8 (test sur TC-01 à TC-05 avant déploiement).
   - **Coordination @qa** : tests E2E doivent inclure TC-01 à TC-05 + cas DEGRADED MODE (timeout simulé).
 - **Actions Replit requises** :
@@ -565,8 +566,8 @@ export type SignalOutput = z.infer<typeof SignalOutputSchema>;
     - `CONFIDENCE_THRESHOLD=6.5` (à calibrer Phase 1)
     - `RND_DAILY_CALL_CAP=100` (cap appels Haiku/jour)
     - `MONTHLY_AI_BUDGET_EUR=10` (circuit breaker budget)
-    - `ANTHROPIC_MODEL_LIVE=claude-sonnet-4-5-20250929`
-    - `ANTHROPIC_MODEL_RND=claude-haiku-4-5`
+    - `ANTHROPIC_MODEL_LIVE=claude-sonnet-4-6`
+    - `ANTHROPIC_MODEL_RND=claude-haiku-4-5-20251001`
   - [ ] Packages à ajouter (Phase 2 @fullstack) : `@anthropic-ai/sdk`, `zod` (TS) ou `anthropic`, `pydantic` (Py).
   - [ ] Aucune migration DB requise par @ia (le code utilise les tables `signals`, `backtests` déjà spec'ées par @data-analyst + @product-manager).
   - [ ] Aucune modification `.replit`/`replit.nix` requise.

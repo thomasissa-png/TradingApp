@@ -51,8 +51,8 @@
 | 2 | `THOMAS_CHAT_ID` | Entier numérique (ex. `123456789`) | Ouvrir Telegram → ouvrir une conversation avec le bot créé (recherche son handle) → cliquer `/start` → ouvrir une convo avec `@userinfobot` → envoyer `/start` → copier le `Id` retourné. **Note** : si chat_id perdu après réinstall Telegram, refaire la procédure (cf. F22 user-flows.md). |
 | 3 | `TWELVEDATA_API_KEY` | Clé alphanumérique (~32 chars) | [twelvedata.com/account/api-keys](https://twelvedata.com/account/api-keys) → vérifier plan **Pro Individual 79 $/mois actif** (H2 PASS) → copier la clé existante OU regenerate. |
 | 4 | `ANTHROPIC_API_KEY` | Clé `sk-ant-api03-...` | [console.anthropic.com](https://console.anthropic.com) → API Keys → **Create Key** dédiée TradingApp (ne pas réutiliser une clé partagée avec d'autres projets). Définir un budget cap mensuel à 30 $ via "Workspace Limits" (sécurité). |
-| 5 | `ANTHROPIC_MODEL_LIVE` | `claude-sonnet-4-5-20250929` | Tag exact validé (cf. `lessons-learned.md` L002 — JAMAIS `-latest`). |
-| 6 | `ANTHROPIC_MODEL_RND` | `claude-haiku-4-5` | Modèle R&D batch + cache (cf. `ai-architecture.md`). |
+| 5 | `ANTHROPIC_MODEL_LIVE` | `claude-sonnet-4-6` | Alias minor-family validé Sonnet 4.6 (cf. `lessons-learned.md` L002 + L010 — JAMAIS `-latest` cross-family ; minor-family OK car capte 4.6.x stable). |
+| 6 | `ANTHROPIC_MODEL_RND` | `claude-haiku-4-5-20251001` | Tag exact daté Haiku 4.5 (L010 — modèle R&D batch + cache, cf. `ai-architecture.md`). |
 | 7 | `CONFIDENCE_THRESHOLD_PAPER` | `7.0` | Seuil signal en mode paper-trading (cf. `edge-scoring-model.md` v1.1 §4.2). |
 | 8 | `CONFIDENCE_THRESHOLD_LIVE` | `6.5` | Seuil signal en mode live, `[HYPOTHÈSE]` à recalibrer post-R&D. |
 | 9 | `RND_DAILY_CALL_CAP` | `100` | Plafond Claude Haiku R&D / jour (cf. `ai-architecture.md` §3.3). |

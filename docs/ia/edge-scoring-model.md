@@ -1,5 +1,6 @@
 <!-- Version: 2026-05-01T00:00 — @ia — Création initiale edge-scoring-model TradingApp -->
 <!-- Version: 2026-05-01T01:30 — @ia — v1.2 corrections post-audit self-critical (SC7 plausibilité, repondération D1 30→35 / D6 15→10, TC-06/07/08) -->
+<!-- Version: 2026-05-02T08:30 — @ia — correction L010 P0 : tag obsolète Sonnet 4.6 → Sonnet 4.6 (`claude-sonnet-4-6`) + Haiku 4.5 daté (`claude-haiku-4-5-20251001`). scoring-model-v1.2 inchangée (logique scoring identique, seul le tag modèle référencé). -->
 
 # Edge Scoring Model — TradingApp
 
@@ -12,11 +13,11 @@
 
 ## Résumé exécutif
 
-- **Approche hybride** : Claude (Sonnet 4.5 live, Haiku 4.5 R&D) génère un score brut 1.0-10.0 + raison structurée → **7 sanity checks déterministes ex-post (v1.2)** → score final + flag (ALERT / SAFE / NO-TRADE).
+- **Approche hybride** : Claude (Sonnet 4.6 live, Haiku 4.5 daté R&D) génère un score brut 1.0-10.0 + raison structurée → **7 sanity checks déterministes ex-post (v1.2)** → score final + flag (ALERT / SAFE / NO-TRADE).
 - **6 dimensions pondérées** (v1.2 — repondération D1/D6) : D1 force signal (**35 %**), D2 confluence indicateurs (15 %), D3 contexte news (15 %), D4 volatilité (15 %), D5 régime VIX/V2X (10 %), D6 référence backtest (**10 %**).
 - **7 sanity checks anti-overfitting / anti-euphorie** (v1.2) : SC1 cohérence direction, SC2 R/R ≥ 1.5, SC3 score > 9 → ALERT, SC4 % no-trade < 20 % → pénalité, SC5 langage spéculatif → plafond 6.0, SC6 diversité sous-jacents 30j → plafond 7.0 + ALERT, **SC7 plausibilité LLM vs déterministe (|écart| > 1.5) → plafond 7.0 + ALERT**.
 - **CONFIDENCE_THRESHOLD split paper/live** (v1.1) : `CONFIDENCE_THRESHOLD_PAPER = 7.0` (bootstrap conservateur 4-8 sem.), `CONFIDENCE_THRESHOLD_LIVE = 6.5` [HYPOTHÈSE — calibrable R&D]. Sélection runtime via `STRATEGY_ACTIVE` SQLite (US-11).
-- **Coût/signal Sonnet 4.5** : ~0,03 $ (cohérent ai-architecture §7 — verdict H4 PASS confortable).
+- **Coût/signal Sonnet 4.6** : ~0,03 $ (cohérent ai-architecture §7 — verdict H4 PASS confortable).
 - **Verdict modèle** : à valider par @testeur-backtest-edge avant Phase 2.
 
 ---
@@ -47,7 +48,7 @@ Ni LLM seul (risque hallucination + sur-confiance), ni calcul déterministe seul
                                  │
                                  ▼
                   ┌─────────────────────────────┐
-                  │ Claude Sonnet 4.5 (live)    │
+                  │ Claude Sonnet 4.6 (live)    │
                   │ ou Haiku 4.5 (R&D)          │
                   │ tool_use=emit_signal_scoring│
                   │ température 0.1             │
@@ -603,12 +604,12 @@ La calibration R&D §4.2 produit la valeur optimale de `CONFIDENCE_THRESHOLD_LIV
 
 - **Cible** : < 30 s par appel scoring.
 - **Marge US-05** : 45 s timeout − 30 s cible = **15 s de marge**.
-- Sonnet 4.5 P50 estimée 3-6 s pour 5k in / 1k out (cf. ai-architecture §1.1) → cible largement atteignable.
+- Sonnet 4.6 P50 estimée 3-6 s pour 5k in / 1k out (cf. ai-architecture §1.1) → cible largement atteignable.
 - Si latence P95 dépasse 30 s pendant 3 jours → alerte + audit (peut-être dégradation provider).
 
 ### 6.3 Coût par signal
 
-Calcul Sonnet 4.5 live avec prompt caching (-90 % sur ~80 % du prompt) :
+Calcul Sonnet 4.6 live avec prompt caching (-90 % sur ~80 % du prompt) :
 
 | Élément | Tokens | Tarif | Coût |
 |---|---|---|---|
@@ -637,7 +638,7 @@ Sans cache : ~0,03 $/signal (cohérent ai-architecture §7.1 — 0,66 $/mois ÷ 
 ### 7.1 Version du modèle de scoring
 
 - **Version actuelle** : `scoring-model-v1.2` (Phase 1b post-audit @ia self-critical — SC7 + repondération D1/D6 + TC-06/07/08).
-- **Couplage** : `scoring-model-v1.2` ↔ `prompt-version=signal-scoring-v1.1` (les prompts ne changent pas — SC7 est code-side, pas LLM-side) ↔ `model_used=claude-sonnet-4-5-20250929` (live, **tag exact inchangé** cf. L002) ou `claude-haiku-4-5` (R&D).
+- **Couplage** : `scoring-model-v1.2` ↔ `prompt-version=signal-scoring-v1.1` (les prompts ne changent pas — SC7 est code-side, pas LLM-side) ↔ `model_used=claude-sonnet-4-6` (live, **tag exact inchangé** cf. L002) ou `claude-haiku-4-5-20251001` (R&D).
 - **Stockage SQLite** : table `signals` colonnes `scoring_model_version`, `prompt_version`, `model_used` (cf. data-analyst kpi-framework SQL schema).
 
 ### 7.1bis Changelog
@@ -667,13 +668,13 @@ Sans cache : ~0,03 $/signal (cohérent ai-architecture §7.1 — 0,66 $/mois ÷ 
 1. **Lire la doc API du nouveau modèle** (si Sonnet 4.6 sort).
 2. **Comparer paramètres** (mapping ancien → nouveau).
 3. **Régression test sur les 5 cases TC-01 à TC-05** (fixtures `tests/fixtures/ai/`). Si un output régresse → ne pas déployer.
-4. **Propager à TOUS les builders** — Grep `claude-sonnet-4-5` dans `src/lib/ai/` doit retourner 0 occurrence après migration. Builders concernés : `scoringClient.ts`, `rndScoringClient.ts`, `newsScoringClient.ts`.
+4. **Propager à TOUS les builders** — Grep `claude-sonnet-4-5` (ancien tag obsolète) dans `src/lib/ai/` doit retourner 0 occurrence après migration. Tag courant `claude-sonnet-4-6`. Builders concernés : `scoringClient.ts`, `rndScoringClient.ts`, `newsScoringClient.ts`.
 5. **Bump PROMPT_VERSION + scoring-model-version** (sync obligatoire).
 6. **Documenter dans `model-selection.md`** (à créer si migration) + mise à jour ai-architecture §1.2.
 
 ### 7.4 Tag exact obligatoire (rappel L002)
 
-`claude-sonnet-4-5-20250929` (tag exact, **pas `-latest`**). Cohérent ai-architecture §1.2 + règle alias agent @ia. Un alias cross-family peut basculer de génération sans warning = régression silencieuse en production sur signal qui engage du capital réel.
+`claude-sonnet-4-6` (tag exact, **pas `-latest`**). Cohérent ai-architecture §1.2 + règle alias agent @ia. Un alias cross-family peut basculer de génération sans warning = régression silencieuse en production sur signal qui engage du capital réel.
 
 ---
 
@@ -735,7 +736,7 @@ Audit du modèle de scoring `scoring-model-v1.2` (Phase 1b corrections @reviewer
   - **7 sanity checks** (v1.2) : SC1 cohérence direction (bloquant), SC2 R/R ≥ 1.5 (bloquant si <1.0), SC3 score > 9 → ALERT, SC4 % no-trade 7j < 20 % → -1.0, SC5 spéculatif sans chiffre → plafond 6.0, SC6 diversité sous-jacents 30j (1/13) → plafond 7.0 + ALERT, **SC7 plausibilité |LLM − déterministe| > 1.5 → plafond 7.0 + ALERT (bloquant si >3.0 → NO-TRADE)**.
   - **CONFIDENCE_THRESHOLD split paper/live** (v1.1) : `_PAPER = 7.0` (verbatim Thomas, bootstrap conservateur 4-8 sem.), `_LIVE = 6.5` [HYPOTHÈSE — calibration R&D]. Sélection runtime via `STRATEGY_ACTIVE` SQLite (US-11). Procédure transition paper → live §4.1bis.
   - **Coût/signal** : ~0,02-0,03 $ avec cache (verdict H4 PASS confortable).
-  - **Versioning** : `scoring-model-v1.2` couplé à `prompt-version=signal-scoring-v1.1` (les prompts sont inchangés — SC7 est code-side) + `model_used=claude-sonnet-4-5-20250929` (tag exact L002).
+  - **Versioning** : `scoring-model-v1.2` couplé à `prompt-version=signal-scoring-v1.1` (les prompts sont inchangés — SC7 est code-side) + `model_used=claude-sonnet-4-6` (tag exact L002).
 - **Points d'attention** :
   - **Prérequis bloquant Phase 2** : audit @testeur-backtest-edge (4 points §8.2) avant que @fullstack code l'intégration.
   - **Calibration `CONFIDENCE_THRESHOLD`** : Phase 1 R&D obligatoire — valeur 6.5 a priori conservatrice mais à valider sur 5 ans backtest avec walk-forward 3 fenêtres.

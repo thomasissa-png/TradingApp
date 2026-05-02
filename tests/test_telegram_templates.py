@@ -48,7 +48,7 @@ def _signal_buy(asset: str = "DAX Turbo Call", edge: str = "H-A") -> ScoringSign
         backtest_ref="#B-031",
         ALERT_flag="ALERT",
         no_trade_reason=None,
-        model_used="claude-sonnet-4-5-20250929",
+        model_used="claude-sonnet-4-6",
     )
 
 
@@ -68,7 +68,7 @@ def _signal_sell(asset: str = "CAC40 Turbo Put", edge: str = "H-A") -> ScoringSi
         backtest_ref="#B-018",
         ALERT_flag="ALERT",
         no_trade_reason=None,
-        model_used="claude-sonnet-4-5-20250929",
+        model_used="claude-sonnet-4-6",
     )
 
 
@@ -88,7 +88,7 @@ def _signal_no_trade(reason: str = "Score 5,1 sous seuil 6,5") -> ScoringSignalO
         backtest_ref="#B-031",
         ALERT_flag="NO_TRADE",
         no_trade_reason=reason,
-        model_used="claude-sonnet-4-5-20250929",
+        model_used="claude-sonnet-4-6",
     )
 
 

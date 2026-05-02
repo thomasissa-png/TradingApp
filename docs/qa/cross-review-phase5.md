@@ -14,7 +14,7 @@ TradingApp est prêt à être déployé sur Replit en **mode `--mode=hello`** (m
 
 ## Résumé technique
 
-État cohérence inter-livrables : **G7 PASS** — persona Thomas, PFU 31,4 %, tag modèle `claude-sonnet-4-5-20250929`, 6 conditions GO Phase 2 v1.1, split `CONFIDENCE_THRESHOLD_PAPER=7.0`/`_LIVE=6.5`, 12 US US-01→US-12, 6 dimensions D1-D6 + 7 sanity checks SC1-SC7, 5 templates Telegram + cutoff 8h55/9h00, schéma SQLite 7 tables, REPLIT_ACTIONS configs : tous cohérents entre docs, code et tests. Blocages critiques : 0 BLOQUANT. **Recommandation : GO livraison `--mode=hello`** — bascule `--mode=signal` après validation R&D Phase 1.
+État cohérence inter-livrables : **G7 PASS** — persona Thomas, PFU 31,4 %, tag modèle `claude-sonnet-4-6`, 6 conditions GO Phase 2 v1.1, split `CONFIDENCE_THRESHOLD_PAPER=7.0`/`_LIVE=6.5`, 12 US US-01→US-12, 6 dimensions D1-D6 + 7 sanity checks SC1-SC7, 5 templates Telegram + cutoff 8h55/9h00, schéma SQLite 7 tables, REPLIT_ACTIONS configs : tous cohérents entre docs, code et tests. Blocages critiques : 0 BLOQUANT. **Recommandation : GO livraison `--mode=hello`** — bascule `--mode=signal` après validation R&D Phase 1.
 
 ---
 
@@ -60,7 +60,7 @@ TradingApp est prêt à être déployé sur Replit en **mode `--mode=hello`** (m
 |---|---|---|---|
 | (a) | Persona Thomas cohérent partout (capital 20-30 k€, fenêtre 8h45-8h55, RER, Bourse Direct) | ✅ PASS | personas.md (RER 8h48, capital 20-30 k€) + functional-specs §Persona L6 + brand-platform + runbook §journée 8h40-9h05 + scoring-model §1 + fixtures TC ai/inputs cohérents |
 | (b) | PFU 31,4 % cité partout où la fiscalité apparaît (cohérent L001) | ✅ PASS | project-context L45 + legal-audit + functional-specs L5 + edge-rnd-report L47 + kpi-framework formule P&L net + runbook §audit mensuel + rapport-mensuel-auto bloc P&L + US-09 pl_net_semaine. Grep "PFU 30" : 0 occurrence résiduelle. |
-| (c) | Tag modèle Anthropic exact `claude-sonnet-4-5-20250929` (cohérent L002) | ✅ PASS | ai-architecture v1.1 §1.2 + edge-scoring-model v1.2 §résumé + REPLIT_ACTIONS B.1 ligne 5 (`ANTHROPIC_MODEL_LIVE`) + `src/config.py` L41 (default exact) + validator `_no_alias_in_model_tag` L67-81 (refus `*-latest/-newest/-current`) + tests `test_config.py` (rejet alias). Aucun `-latest` cross-family. |
+| (c) | Tag modèle Anthropic exact `claude-sonnet-4-6` (cohérent L002) | ✅ PASS | ai-architecture v1.1 §1.2 + edge-scoring-model v1.2 §résumé + REPLIT_ACTIONS B.1 ligne 5 (`ANTHROPIC_MODEL_LIVE`) + `src/config.py` L41 (default exact) + validator `_no_alias_in_model_tag` L67-81 (refus `*-latest/-newest/-current`) + tests `test_config.py` (rejet alias). Aucun `-latest` cross-family. |
 | (d) | 6 conditions GO Phase 2 AND v1.1 cohérentes | ✅ PASS | edge-rnd-report v1.1 §1 (Sharpe OOS > 1,2 / PF > 1,5 / DD mensuel < 20 % / Robustesse ≥ 0,6 / WF 3/3 / nb_trades_OOS ≥ 50) + testeur-backtest-edge v1.1 (5 Edits L43-L208 vérifiés grep) + kpi-framework §6 GO Phase 2 + `src/backtester/verdict.py` 6 conditions AND. |
 | (e) | CONFIDENCE_THRESHOLD split paper 7.0 / live 6.5 cohérent | ✅ PASS | edge-scoring-model v1.2 §4.1 (split documenté) + functional-specs US-11 (bascule paper) + `src/config.py` L53-54 (`confidence_threshold_paper=7.0`, `confidence_threshold_live=6.5` defaults) + `src/scoring/threshold.py::select_threshold` (lookup SQLite + fallback Config) + REPLIT_ACTIONS B.1 lignes 7-8 + `src/scoring/threshold.py` lookup `strategy_state.mode`. |
 | (f) | 12 user stories US-01 à US-12 implémentées en code | ✅ PASS | US-01 ScoringEngine + 15 champs ScoringSignalOutput v1.3 ; US-02 NO-TRADE format strict 3L ; US-03 cutoff `>=` (B4) ; US-04 ERREUR DATA `format_data_error` ; US-05 DEGRADED MODE 3 variantes + `degraded_mode_signal` utilitaire ; US-06 cutoff 8h55 / 9h00 ORB H-C ; US-07 schema 7 tables + 4 col traçabilité ; US-08 `/trade` handler avec tag PAPER/LIVE (A2) ; US-09 `/journal-week` cron vendredi 18h ; US-10 `/continue` ; US-11 `/stop` paper-trading ; US-12 `/pause` + `/cancel-pause` overlap rejet (B1). e2e-test-plan-phase2 matrice G27 confirme 12/12 US testés. |
@@ -79,7 +79,7 @@ TradingApp est prêt à être déployé sur Replit en **mode `--mode=hello`** (m
 | H1 | Hébergement Replit Core 20 $/mois + Cron Deployment (pas Always-On) | ✅ **PASS** (persona 2026-05-01) | Tranché. REPLIT_ACTIONS A.1. |
 | H2 | Twelve Data Pro Individual 79 $/mois 1m intraday EU | ✅ **PASS** (persona 2026-05-01) | Tranché. Phase 1 R&D peut démarrer. |
 | H3 | Bourse Direct catalogue 13 sous-jacents turbos | ✅ **PASS** (persona 2026-05-01) | CAC40, DAX, EuroStoxx50, 5 blue chips FR, EUR/USD, GBP/USD, XAU/USD, Brent, gaz confirmés. |
-| H4 | Budget IA < 10 €/mois live | ✅ **PASS** | Sonnet 4.5 live = 0,66 $/mois (cache 0%) + Haiku 4.5 R&D ≈ 10 $/mois batch. |
+| H4 | Budget IA < 10 €/mois live | ✅ **PASS** | Sonnet 4.6 live = 0,66 $/mois (cache 0%) + Haiku 4.5 daté R&D ≈ 10 $/mois batch. [HYPOTHÈSE pricing : tarifs Sonnet 4.5 retenus, à actualiser si Sonnet 4.6 différent — L010] |
 | H-KPI | Heure cutoff turbo Bourse Direct = 18h00 CET | ✅ **PASS** (persona 2026-05-01) | Trigger SQLite signal n°5 calé 18h00 CET. |
 | H-ZDR | Activation Zero Data Retention Anthropic | ⏸️ **DIFFÉRÉE** (persona) | Pas de PII dans les prompts en l'état. Réévaluer si scope élargi. |
 | H-BUDGET | Budget total 90-145 €/mois R&D + 17-35 €/mois live croisière | ✅ **ACCEPTÉ** (conditionnel résultats R&D) | Décision structurante #4 : si edge robuste → OK, sinon no-go assumé. |
@@ -175,8 +175,8 @@ TradingApp est prêt à être déployé sur Replit en **mode `--mode=hello`** (m
   - [ ] `THOMAS_CHAT_ID` (numérique, via @userinfobot)
   - [ ] `TWELVEDATA_API_KEY` (Pro Individual 79 $/mois actif)
   - [ ] `ANTHROPIC_API_KEY` (clé dédiée TradingApp)
-  - [ ] `ANTHROPIC_MODEL_LIVE = claude-sonnet-4-5-20250929` (tag exact L002)
-  - [ ] `ANTHROPIC_MODEL_RND = claude-haiku-4-5`
+  - [ ] `ANTHROPIC_MODEL_LIVE = claude-sonnet-4-6` (tag exact L002)
+  - [ ] `ANTHROPIC_MODEL_RND = claude-haiku-4-5-20251001` (tag exact daté L010)
   - [ ] `CONFIDENCE_THRESHOLD_PAPER = 7.0`
   - [ ] `CONFIDENCE_THRESHOLD_LIVE = 6.5` (HYPOTHÈSE à recalibrer R&D)
   - [ ] `RND_DAILY_CALL_CAP = 100`
@@ -215,7 +215,7 @@ TradingApp est prêt à être déployé sur Replit en **mode `--mode=hello`** (m
 ### Phase D — Bascule `--mode=signal` (conditionnée GO Phase 1)
 
 - [ ] **CONFIDENCE_THRESHOLD_LIVE = 6.5** confirmé ou recalibré post-R&D physique (méthodologie §4.2 edge-scoring-model v1.2).
-- [ ] **Tag `claude-sonnet-4-5-20250929` toujours valide** (vérifier disponibilité Anthropic console — si modèle déprécié, suivre protocole migration modèle 6 étapes ai-architecture §1.2).
+- [ ] **Tag `claude-sonnet-4-6` toujours valide** (vérifier disponibilité Anthropic console — si modèle déprécié, suivre protocole migration modèle 6 étapes ai-architecture §1.2).
 - [ ] **`STRATEGY_ACTIVE = paper`** confirmé (bascule vers `live` UNIQUEMENT après 4-8 semaines paper-trading concluant).
 - [ ] **Bascule `--mode=signal` autorisée** : modifier le Cron Deployment `tradingapp-cron-daily` run command de `--mode=hello` à `--mode=signal`.
 - [ ] **Premier signal réel reçu** : message ACHAT/VENTE/NO-TRADE conforme format 6L+1 ou 3L. Vérifier visuel sur smartphone Thomas.
@@ -314,7 +314,7 @@ Conformément runbook §4 procédures incidents et kpi-framework §7 :
 
 ### Résumé pour mémo de reprise (1 paragraphe self-contained)
 
-> TradingApp v1 (mai 2026) — bot Telegram personnel pour Thomas (trader particulier France, capital 20-30 k€, turbos Bourse Direct, fenêtre 8h45-8h55 CET). Stack Python 3.12 pur sur Replit Core 20 $/mois (Cron Deployment, pas Always-On), Twelve Data Pro Individual 79 $/mois, Anthropic Sonnet 4.5 (`claude-sonnet-4-5-20250929` tag exact L002) live + Haiku 4.5 R&D batch. SQLite 7 tables (signals + 4 colonnes traçabilité scoring v1.4 + trades + journal_weeks + strategy_decisions + strategy_pauses + strategy_state + rnd_results). Pipeline scoring : 6 dimensions D1-D6 pondérées (35/15/15/15/10/10) + 7 sanity checks SC1-SC7 (dont SC7 plausibilité LLM vs déterministe — angle mort couvert). Split CONFIDENCE_THRESHOLD paper 7.0 / live 6.5 [hyp]. Phase 1 R&D séparée : 7 hypothèses (H-A à H-G), Wave 1 = H-C ORB + H-A Gap Follow, Wave 2 conditionnelle. Verdict GO Phase 2 = 6 conditions AND (Sharpe OOS > 1,2 / PF > 1,5 / DD mensuel < 20 % / Robustesse ≥ 0,6 / WF 3/3 / nb_trades_OOS ≥ 50). Mini-jalon J+7 (`--mode=hello`) prêt déploiement Replit immédiat. Bascule `--mode=signal` après GO R&D Phase 1 (30-90 j) + 4-8 sem paper-trading. 12 user stories US-01→US-12 implémentées (signal ACHAT/VENTE/NO-TRADE + ERREUR DATA + DEGRADED + cutoff + journal + /trade + /journal-week + /continue + /stop + /pause). 235/235 tests PASS, mypy 0, ruff 0. PFU 31,4 % partout (L001). 9/9 learnings propagés. Verdict @reviewer Phase 5 : GO LIVRAISON. Risque résiduel #1 : R&D no-go assumé (proba PASS ~55 %). Repo GitHub privé obligatoire (capital perso). Outil 100 % personnel, non commercialisé, AMF/MiFID II hors scope (Art. L321-1 CMF).
+> TradingApp v1 (mai 2026) — bot Telegram personnel pour Thomas (trader particulier France, capital 20-30 k€, turbos Bourse Direct, fenêtre 8h45-8h55 CET). Stack Python 3.12 pur sur Replit Core 20 $/mois (Cron Deployment, pas Always-On), Twelve Data Pro Individual 79 $/mois, Anthropic Sonnet 4.6 (`claude-sonnet-4-6` alias minor-family L002+L010) live + Haiku 4.5 daté (`claude-haiku-4-5-20251001`) R&D batch. SQLite 7 tables (signals + 4 colonnes traçabilité scoring v1.4 + trades + journal_weeks + strategy_decisions + strategy_pauses + strategy_state + rnd_results). Pipeline scoring : 6 dimensions D1-D6 pondérées (35/15/15/15/10/10) + 7 sanity checks SC1-SC7 (dont SC7 plausibilité LLM vs déterministe — angle mort couvert). Split CONFIDENCE_THRESHOLD paper 7.0 / live 6.5 [hyp]. Phase 1 R&D séparée : 7 hypothèses (H-A à H-G), Wave 1 = H-C ORB + H-A Gap Follow, Wave 2 conditionnelle. Verdict GO Phase 2 = 6 conditions AND (Sharpe OOS > 1,2 / PF > 1,5 / DD mensuel < 20 % / Robustesse ≥ 0,6 / WF 3/3 / nb_trades_OOS ≥ 50). Mini-jalon J+7 (`--mode=hello`) prêt déploiement Replit immédiat. Bascule `--mode=signal` après GO R&D Phase 1 (30-90 j) + 4-8 sem paper-trading. 12 user stories US-01→US-12 implémentées (signal ACHAT/VENTE/NO-TRADE + ERREUR DATA + DEGRADED + cutoff + journal + /trade + /journal-week + /continue + /stop + /pause). 235/235 tests PASS, mypy 0, ruff 0. PFU 31,4 % partout (L001). 9/9 learnings propagés. Verdict @reviewer Phase 5 : GO LIVRAISON. Risque résiduel #1 : R&D no-go assumé (proba PASS ~55 %). Repo GitHub privé obligatoire (capital perso). Outil 100 % personnel, non commercialisé, AMF/MiFID II hors scope (Art. L321-1 CMF).
 
 ---
 
@@ -338,6 +338,6 @@ Conformément runbook §4 procédures incidents et kpi-framework §7 :
 
 - **Mises à jour project-context.md** :
   - 1 ligne historique : `| @reviewer | 2026-05-01 | docs/qa/cross-review-phase5.md | Verdict GO LIVRAISON --mode=hello (mini-jalon J+7), bascule --mode=signal conditionnée GO Phase 1 R&D. 100% gates BLOQUANT+REQUIS PASS, 9/9 learnings propagés, 11/11 critères cohérence inter-livrables PASS, 6/6 décisions structurantes respectées. 5 hypothèses résiduelles documentées non-bloquantes (H-CONFIDENCE-LIVE, H-ARCH, H-HEYMAN, H-VIX, H-SLIPPAGE). | Phase 5 finale : 0 correction bloquante, 235/235 tests PASS, mypy 0, ruff 0. Top 3 risques résiduels documentés section 8. |`
-  - 1 ligne performance : `| @reviewer | 2026-05-01 | docs/qa/cross-review-phase5.md | 5 | 5 | 5 | 5 | 5 | Revue Phase 5 chirurgicale 8 sections : inventaire 28 livrables COMPLETS, 11/11 critères cohérence PASS (PFU 31,4 %, modèle Sonnet 4.5 tag exact, 6 conditions GO v1.1, split CONFIDENCE_THRESHOLD, 12 US, 6D+7SC, 5 templates, 7 tables SQLite), 9/9 learnings propagés, 16 hypothèses cataloguées, 11/11 gates BLOQUANT PASS + 19/19 REQUIS PASS + 10/10 GP PASS, checklist GO/NO-GO 4 phases (A-D) actionnable Thomas, monitoring J+7/J+30/J+90, escalade signal d'arrêt P0, mémo de reprise self-contained. Verdict GO LIVRAISON. |`
+  - 1 ligne performance : `| @reviewer | 2026-05-01 | docs/qa/cross-review-phase5.md | 5 | 5 | 5 | 5 | 5 | Revue Phase 5 chirurgicale 8 sections : inventaire 28 livrables COMPLETS, 11/11 critères cohérence PASS (PFU 31,4 %, modèle Sonnet 4.6 alias minor-family, 6 conditions GO v1.1, split CONFIDENCE_THRESHOLD, 12 US, 6D+7SC, 5 templates, 7 tables SQLite), 9/9 learnings propagés, 16 hypothèses cataloguées, 11/11 gates BLOQUANT PASS + 19/19 REQUIS PASS + 10/10 GP PASS, checklist GO/NO-GO 4 phases (A-D) actionnable Thomas, monitoring J+7/J+30/J+90, escalade signal d'arrêt P0, mémo de reprise self-contained. Verdict GO LIVRAISON. |`
 
 ---

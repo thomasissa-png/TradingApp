@@ -38,7 +38,7 @@ def _load_fixture(name: str) -> dict[str, Any]:
     return json.loads((FIXTURES_DIR / name).read_text(encoding="utf-8"))
 
 
-def _make_tool_use_response(input_data: dict[str, Any], model: str = "claude-sonnet-4-5-20250929") -> MagicMock:
+def _make_tool_use_response(input_data: dict[str, Any], model: str = "claude-sonnet-4-6") -> MagicMock:
     block = MagicMock()
     block.type = "tool_use"
     block.name = "emit_signal_scoring"

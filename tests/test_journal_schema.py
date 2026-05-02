@@ -83,7 +83,7 @@ def test_insert_signal_persists_raison_and_alert_flag(tmp_path: Path) -> None:
         backtest_ref="#B-031",
         ALERT_flag="ALERT",
         no_trade_reason=None,
-        model_used="claude-sonnet-4-5-20250929",
+        model_used="claude-sonnet-4-6",
     )
     with get_connection(tmp_path) as conn:
         rowid = insert_signal(conn, sig)

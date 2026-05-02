@@ -68,7 +68,7 @@ def _signal_buy(date_iso: str) -> ScoringSignalOutput:
         backtest_ref="#B-031",
         ALERT_flag="ALERT",
         no_trade_reason=None,
-        model_used="claude-sonnet-4-5-20250929",
+        model_used="claude-sonnet-4-6",
     )
 
 

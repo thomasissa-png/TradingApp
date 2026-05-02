@@ -34,7 +34,7 @@ def _make_tool_use_block(input_data: dict[str, Any]) -> MagicMock:
     return block
 
 
-def _make_response(input_data: dict[str, Any], model: str = "claude-sonnet-4-5-20250929") -> MagicMock:
+def _make_response(input_data: dict[str, Any], model: str = "claude-sonnet-4-6") -> MagicMock:
     resp = MagicMock()
     resp.content = [_make_tool_use_block(input_data)]
     resp.model = model
@@ -62,7 +62,7 @@ VALID_OUTPUT_SAMPLE = {
     "backtest_ref": "#B-031",
     "ALERT_flag": "SAFE",
     "no_trade_reason": None,
-    "model_used": "claude-sonnet-4-5-20250929",
+    "model_used": "claude-sonnet-4-6",
 }
 
 
@@ -101,7 +101,7 @@ def test_score_signal_live_sonnet_ok(config: Config, basic_context: dict[str, An
         assert isinstance(output, ScoringSignalOutput)
         assert output.direction == "BUY"
         assert output.score == 8.0
-        assert meta["model_used"] == "claude-sonnet-4-5-20250929"
+        assert meta["model_used"] == "claude-sonnet-4-6"
         assert meta["fallback_haiku"] is False
         assert meta["prompt_version"] == "signal-scoring-v1.1"
         # Verifier que tool_choice etait force
@@ -115,15 +115,15 @@ def test_score_signal_rnd_haiku_with_cache(config: Config, basic_context: dict[s
     """Mode R&D : Haiku, cache_control ephemeral active."""
     with patch("src.ai.client.anthropic.Anthropic") as mock_anthropic_cls:
         mock_client = MagicMock()
-        haiku_output = {**VALID_OUTPUT_SAMPLE, "model_used": "claude-haiku-4-5"}
-        mock_client.messages.create.return_value = _make_response(haiku_output, model="claude-haiku-4-5")
+        haiku_output = {**VALID_OUTPUT_SAMPLE, "model_used": "claude-haiku-4-5-20251001"}
+        mock_client.messages.create.return_value = _make_response(haiku_output, model="claude-haiku-4-5-20251001")
         mock_anthropic_cls.return_value = mock_client
 
         client = AnthropicClient(config)
         output, meta = client.score_signal(basic_context, mode="rnd")
 
         assert output.direction == "BUY"
-        assert meta["model_used"] == "claude-haiku-4-5"
+        assert meta["model_used"] == "claude-haiku-4-5-20251001"
         # Cache_control doit etre present sur le system block en mode R&D
         call_kwargs = mock_client.messages.create.call_args.kwargs
         system_blocks = call_kwargs["system"]
@@ -150,13 +150,13 @@ def test_fallback_haiku_on_sonnet_timeout(config: Config, basic_context: dict[st
     """Sonnet timeout -> fallback Haiku (pas de retry Sonnet en live)."""
     with patch("src.ai.client.anthropic.Anthropic") as mock_anthropic_cls:
         mock_client = MagicMock()
-        haiku_output = {**VALID_OUTPUT_SAMPLE, "model_used": "claude-haiku-4-5"}
+        haiku_output = {**VALID_OUTPUT_SAMPLE, "model_used": "claude-haiku-4-5-20251001"}
 
         # Premier appel (Sonnet) : timeout. Deuxieme (Haiku fallback) : OK.
         timeout_err = APITimeoutError(request=MagicMock())
         mock_client.messages.create.side_effect = [
             timeout_err,
-            _make_response(haiku_output, model="claude-haiku-4-5"),
+            _make_response(haiku_output, model="claude-haiku-4-5-20251001"),
         ]
         mock_anthropic_cls.return_value = mock_client
 
@@ -165,13 +165,13 @@ def test_fallback_haiku_on_sonnet_timeout(config: Config, basic_context: dict[st
 
         assert output.score == 8.0
         assert meta["fallback_haiku"] is True
-        assert meta["model_used"] == "claude-haiku-4-5"
+        assert meta["model_used"] == "claude-haiku-4-5-20251001"
         # Verifier que les 2 modeles ont ete appeles (Sonnet puis Haiku)
         assert mock_client.messages.create.call_count == 2
         first_call = mock_client.messages.create.call_args_list[0].kwargs
         second_call = mock_client.messages.create.call_args_list[1].kwargs
-        assert first_call["model"] == "claude-sonnet-4-5-20250929"
-        assert second_call["model"] == "claude-haiku-4-5"
+        assert first_call["model"] == "claude-sonnet-4-6"
+        assert second_call["model"] == "claude-haiku-4-5-20251001"
 
 
 def test_fallback_haiku_also_fails_raises_error(

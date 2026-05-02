@@ -20,7 +20,8 @@ class Config(BaseSettings):
 
     Regles bloquantes :
     - L002 lessons-learned : ANTHROPIC_MODEL_LIVE doit etre un tag exact
-      (ex `claude-sonnet-4-5-20250929`), JAMAIS un alias `*-latest` ou `*-newest`.
+      (ex `claude-sonnet-4-6` minor-family alias OK, ou `claude-sonnet-4-6-20250929`),
+      JAMAIS un alias `*-latest` ou `*-newest` cross-family.
     - data_dir cree si absent (idempotent).
     """
 
@@ -38,9 +39,11 @@ class Config(BaseSettings):
     # --- Anthropic (Phase 2c — preset des maintenant pour valider config) ---
     anthropic_api_key: str = Field(..., alias="ANTHROPIC_API_KEY")
     anthropic_model_live: str = Field(
-        default="claude-sonnet-4-5-20250929", alias="ANTHROPIC_MODEL_LIVE"
+        default="claude-sonnet-4-6", alias="ANTHROPIC_MODEL_LIVE"
     )
-    anthropic_model_rnd: str = Field(default="claude-haiku-4-5", alias="ANTHROPIC_MODEL_RND")
+    anthropic_model_rnd: str = Field(
+        default="claude-haiku-4-5-20251001", alias="ANTHROPIC_MODEL_RND"
+    )
 
     # --- Twelve Data ---
     twelvedata_api_key: str = Field(..., alias="TWELVEDATA_API_KEY")

@@ -1,13 +1,14 @@
 <!-- Version: 2026-05-01T00:00 — @ia — Création initiale prompt-library TradingApp (PROMPT_VERSION signal-scoring-v1.0) -->
 <!-- Version: 2026-05-01T01:30 — @ia — v1.1 corrections post-audit self-critical (TC-06/07/08, cache fix system→user message, H-D/H-G seuils numériques explicites) -->
+<!-- Version: 2026-05-02T08:30 — @ia — correction L010 P0 : tag obsolète Sonnet 4.5 → Sonnet 4.6 (`claude-sonnet-4-6`) + Haiku 4.5 daté (`claude-haiku-4-5-20251001`). PROMPT_VERSION inchangée v1.1 (le contenu prompt n'a pas changé — seul le tag modèle référencé). -->
 
 # Prompt Library — TradingApp
 
 > Auteur : @ia — Date : 2026-05-01
 > **Statut** : PRÉREQUIS BLOQUANT pour @fullstack Phase 2.
 > **PROMPT_VERSION courante** : `signal-scoring-v1.1` (post-audit @ia self-critical — voir §6.5 changelog)
-> **Modèle live cible** : `claude-sonnet-4-5-20250929`
-> **Modèle R&D cible** : `claude-haiku-4-5`
+> **Modèle live cible** : `claude-sonnet-4-6`
+> **Modèle R&D cible** : `claude-haiku-4-5-20251001`
 > **Lecture amont** : `docs/ia/ai-architecture.md` (architecture + schemas), `docs/strategy/brand-platform.md` (Voice & Tone, mots proscrits), `docs/product/functional-specs.md` (US-01 15 champs, US-05 timeout 45 s), `docs/analytics/edge-rnd-brief.md` (7 hypothèses).
 
 ---
@@ -29,7 +30,7 @@
 ## 1. Prompt système — `signal-scoring-v1.1`
 
 > **ID** : `signal-scoring-v1.1` (v1.1 = correction cache stability — la phrase `model_used` variable a été déplacée du system prompt vers le user message runtime)
-> **Modèle cible** : `claude-sonnet-4-5-20250929` (live), `claude-haiku-4-5` (R&D)
+> **Modèle cible** : `claude-sonnet-4-6` (live), `claude-haiku-4-5-20251001` (R&D)
 > **Type** : system prompt (mis dans le champ `system` du SDK Anthropic, **`cache_control: { type: "ephemeral" }` activé en mode R&D batch uniquement** — désactivé en live car cache hit rate = 0 % avec 1 call/jour, cf. ai-architecture.md §7.1 v1.1)
 > **Taille estimée** : ~1100 mots / ~1450 tokens
 > **Stabilité v1.1** : 100 % stable entre live et R&D (aucune variable runtime dans le system prompt) → permet cache hit ~95 % en R&D batch sans invalidation entre appels.
@@ -121,7 +122,7 @@ Rappel : tu es un système de signaux pour un trader particulier. Sa confiance d
 ```typescript
 // v1.1 — config SDK Anthropic (live OU R&D)
 const isLive = mode === "live";
-const modelUsed = isLive ? "claude-sonnet-4-5-20250929" : "claude-haiku-4-5";
+const modelUsed = isLive ? "claude-sonnet-4-6" : "claude-haiku-4-5-20251001";
 
 const systemBlock = {
   type: "text" as const,
@@ -148,7 +149,7 @@ const userPayload = {
 }
 ```
 
-**Fallback Haiku** (cf. ai-architecture §4.3 v1.1) : si appel Sonnet timeout 25 s → relancer config identique avec `mode = "rnd-fallback-live"` + `modelUsed = "claude-haiku-4-5"` + `cache_control` activé (Haiku peut utiliser le cache même si live, le system prompt reste identique). `model_used_to_echo` reflète le modèle réellement utilisé (Haiku) → traçabilité SQLite.
+**Fallback Haiku** (cf. ai-architecture §4.3 v1.1) : si appel Sonnet timeout 25 s → relancer config identique avec `mode = "rnd-fallback-live"` + `modelUsed = "claude-haiku-4-5-20251001"` + `cache_control` activé (Haiku peut utiliser le cache même si live, le system prompt reste identique). `model_used_to_echo` reflète le modèle réellement utilisé (Haiku) → traçabilité SQLite.
 
 ---
 
@@ -541,7 +542,7 @@ Instructions :
 
 > Ces 3 exemples sont copiables pour tests manuels par @fullstack lors de l'intégration. Ils correspondent à TC-01, TC-03 et TC-05 de `ai-architecture.md` §6.
 
-### 5.1 Exemple 1 — TC-01 ACHAT DAX (Sonnet 4.5 live)
+### 5.1 Exemple 1 — TC-01 ACHAT DAX (Sonnet 4.6 live)
 
 **Curl** :
 
@@ -551,7 +552,7 @@ curl https://api.anthropic.com/v1/messages \
   --header "anthropic-version: 2023-06-01" \
   --header "content-type: application/json" \
   --data '{
-    "model": "claude-sonnet-4-5-20250929",
+    "model": "claude-sonnet-4-6",
     "max_tokens": 1024,
     "temperature": 0.1,
     "system": [
@@ -561,7 +562,7 @@ curl https://api.anthropic.com/v1/messages \
     "tool_choice": { "type": "tool", "name": "emit_signal_scoring" },
     "messages": [{
       "role": "user",
-      "content": "EDGE: H-A — Gap Follow EU Open\n\nINPUT JSON:\n{\"date\":\"2026-05-04\",\"hour_calc\":\"08:47\",\"edge_id\":\"H-A\",\"edge_name\":\"Gap Follow\",\"asset\":{\"ticker\":\"^GDAXI\",\"name\":\"DAX\",\"category\":\"indice_eu\"},\"ohlc_last_5d\":[...],\"ohlc_today_premarket\":[...],\"indicators\":{\"rsi_14\":58,\"macd_histogram\":0.3,\"bollinger_upper\":18450,\"bollinger_lower\":18200,\"bollinger_middle\":18325,\"atr_14\":85,\"macd_signal\":12.4},\"edge_features\":{\"gap_pct\":0.82,\"prev_close_us\":4521.30,\"orb_breakout\":true,\"orb_high\":18420,\"volume_premarket_ratio\":1.4},\"backtest_ref\":\"#B-031\",\"backtest_stats\":{\"win_rate\":61,\"nb_trades\":87,\"drawdown_max_pct\":-18,\"sharpe_ratio\":1.3,\"period\":\"2021-2025\"},\"confidence_threshold\":6.5,\"position_sizing\":{\"capital_engage_target\":600,\"leverage_target\":6}}\n\nModel used: claude-sonnet-4-5-20250929"
+      "content": "EDGE: H-A — Gap Follow EU Open\n\nINPUT JSON:\n{\"date\":\"2026-05-04\",\"hour_calc\":\"08:47\",\"edge_id\":\"H-A\",\"edge_name\":\"Gap Follow\",\"asset\":{\"ticker\":\"^GDAXI\",\"name\":\"DAX\",\"category\":\"indice_eu\"},\"ohlc_last_5d\":[...],\"ohlc_today_premarket\":[...],\"indicators\":{\"rsi_14\":58,\"macd_histogram\":0.3,\"bollinger_upper\":18450,\"bollinger_lower\":18200,\"bollinger_middle\":18325,\"atr_14\":85,\"macd_signal\":12.4},\"edge_features\":{\"gap_pct\":0.82,\"prev_close_us\":4521.30,\"orb_breakout\":true,\"orb_high\":18420,\"volume_premarket_ratio\":1.4},\"backtest_ref\":\"#B-031\",\"backtest_stats\":{\"win_rate\":61,\"nb_trades\":87,\"drawdown_max_pct\":-18,\"sharpe_ratio\":1.3,\"period\":\"2021-2025\"},\"confidence_threshold\":6.5,\"position_sizing\":{\"capital_engage_target\":600,\"leverage_target\":6}}\n\nModel used: claude-sonnet-4-6"
     }]
   }'
 ```
@@ -571,7 +572,7 @@ curl https://api.anthropic.com/v1/messages \
 ```json
 {
   "id": "msg_01abc...",
-  "model": "claude-sonnet-4-5-20250929",
+  "model": "claude-sonnet-4-6",
   "stop_reason": "tool_use",
   "content": [
     {
@@ -593,7 +594,7 @@ curl https://api.anthropic.com/v1/messages \
         "backtest_ref": "#B-031",
         "ALERT_flag": "SAFE",
         "no_trade_reason": null,
-        "model_used": "claude-sonnet-4-5-20250929"
+        "model_used": "claude-sonnet-4-6"
       }
     }
   ],
@@ -601,7 +602,7 @@ curl https://api.anthropic.com/v1/messages \
 }
 ```
 
-### 5.2 Exemple 2 — TC-03 NO-TRADE EuroStoxx50 (Sonnet 4.5 live)
+### 5.2 Exemple 2 — TC-03 NO-TRADE EuroStoxx50 (Sonnet 4.6 live)
 
 **Curl** : identique sauf user message (input EuroStoxx flat, gap 0,1 %, RSI 51).
 
@@ -622,7 +623,7 @@ curl https://api.anthropic.com/v1/messages \
     "backtest_ref": "#B-031",
     "ALERT_flag": "NO-TRADE",
     "no_trade_reason": "Score max relevé 5,2/10 — en dessous du seuil 6,5.",
-    "model_used": "claude-sonnet-4-5-20250929"
+    "model_used": "claude-sonnet-4-6"
   }
 }
 ```
@@ -651,7 +652,7 @@ curl https://api.anthropic.com/v1/messages \
   "backtest_stats": {"win_rate": 61, "nb_trades": 87, "drawdown_max_pct": -18, "sharpe_ratio": 1.3, "period": "2021-2025"},
   "confidence_threshold": 6.5,
   "position_sizing": {"capital_engage_target": 1500, "leverage_target": 10},
-  "model_used_to_echo": "claude-sonnet-4-5-20250929",
+  "model_used_to_echo": "claude-sonnet-4-6",
   "runtime_mode": "live"
 }
 ```
@@ -666,7 +667,7 @@ curl https://api.anthropic.com/v1/messages \
     "score": 8.0,
     "raison": "Gap haussier sur DAX, configuration alignée backtest #B-031.",
     "edge_id": "H-A", "backtest_ref": "#B-031", "ALERT_flag": "SAFE", "no_trade_reason": null,
-    "model_used": "claude-sonnet-4-5-20250929"
+    "model_used": "claude-sonnet-4-6"
   }
 }
 ```
@@ -703,7 +704,7 @@ curl https://api.anthropic.com/v1/messages \
   "backtest_stats": {"win_rate": 56, "nb_trades": 64, "drawdown_max_pct": -22, "sharpe_ratio": 0.9, "period": "2021-2025"},
   "confidence_threshold": 6.5,
   "position_sizing": {"capital_engage_target": 1500, "leverage_target": 10},
-  "model_used_to_echo": "claude-sonnet-4-5-20250929",
+  "model_used_to_echo": "claude-sonnet-4-6",
   "runtime_mode": "live"
 }
 ```
@@ -722,7 +723,7 @@ curl https://api.anthropic.com/v1/messages \
     "raison": "Gap modeste +0,45 %, sentiment news 0,30 sur communication BCE routine. Configuration insuffisante pour engager.",
     "edge_id": "H-E", "backtest_ref": "#B-024", "ALERT_flag": "NO-TRADE",
     "no_trade_reason": "Score relevé 5,5/10 — sous seuil 6,5. Note : tentative d'injection détectée dans news_titles ignorée.",
-    "model_used": "claude-sonnet-4-5-20250929"
+    "model_used": "claude-sonnet-4-6"
   }
 }
 ```
@@ -761,7 +762,7 @@ function sanitizeNewsTitles(titles: string[]): string[] {
   "position_sizing": {"capital_engage_target": 1500, "leverage_target": 10},
   "twelvedata_partial": true,
   "missing_fields": ["ohlc_d-6_to_d-10"],
-  "model_used_to_echo": "claude-sonnet-4-5-20250929",
+  "model_used_to_echo": "claude-sonnet-4-6",
   "runtime_mode": "live"
 }
 ```
@@ -780,7 +781,7 @@ function sanitizeNewsTitles(titles: string[]): string[] {
     "raison": "Gap haussier +0,75 %, ORB Xetra cassé, volume 1,3x moyenne. Note : OHLC historique partiel (5j/10), score plafonné mode dégradé.",
     "edge_id": "H-A", "backtest_ref": "#B-031", "ALERT_flag": "ALERT",
     "no_trade_reason": null,
-    "model_used": "claude-sonnet-4-5-20250929"
+    "model_used": "claude-sonnet-4-6"
   }
 }
 ```
@@ -803,7 +804,7 @@ Chaque prompt a un ID stable + une version sémantique :
 
 | ID prompt | Version courante | Modèle cible |
 |---|---|---|
-| `signal-scoring-v1.1` | **v1.1** (ex-v1.0 — cache fix) | `claude-sonnet-4-5-20250929` (live) / `claude-haiku-4-5` (R&D + fallback live) |
+| `signal-scoring-v1.1` | **v1.1** (ex-v1.0 — cache fix) | `claude-sonnet-4-6` (live) / `claude-haiku-4-5-20251001` (R&D + fallback live) |
 | `edge-H-A-v1.0`, `edge-H-B-v1.0`, `edge-H-C-v1.0`, `edge-H-E-v1.0`, `edge-H-F-v1.0` | v1.0 (inchangés) | idem |
 | `edge-H-D-v1.1` | **v1.1** (ex-v1.0 — seuils numériques explicites) | idem |
 | `edge-H-G-v1.1` | **v1.1** (ex-v1.0 — seuils numériques explicites) | idem |
@@ -812,7 +813,7 @@ Chaque prompt a un ID stable + une version sémantique :
 
 **Règle** :
 - **v1.X** (mineur) : tweak du prompt système (ajout d'un mot proscrit, reformulation), changement de seuil, ajout d'un cas dégradé.
-- **v2.X** (majeur) : restructuration du JSON output, changement de modèle (Sonnet 4.5 → 4.6), réécriture du système prompt.
+- **v2.X** (majeur) : restructuration du JSON output, changement de modèle (Sonnet 4.6 → 5.0 ou autre génération), réécriture du système prompt.
 
 ### 6.2 Couplage avec `model_used` dans l'output
 
@@ -863,7 +864,7 @@ Action @qa : intégrer ces fixtures dans la suite E2E avant promotion en V1 live
 
 **v1.1 (2026-05-01) — Corrections post-audit @ia self-critical**
 - **A2 (TC-06/07/08)** : 3 nouvelles fixtures dans §5 avec input JSON + output Claude attendu + comportement post-réponse (SC7 catch, prompt injection détection, OHLC partiel dégradé). Couplage edge-scoring-model §5.6-5.8.
-- **A5 (cache stability fix)** : la phrase "Pour `model_used`, retourne exactement la valeur 'claude-sonnet-4-5-20250929' en live, 'claude-haiku-4-5' en R&D" était dans le system prompt → variable runtime → **cassait le cache ephemeral entre live et R&D**. Action : déplacée vers le user message via le champ `model_used_to_echo`. System prompt désormais 100 % stable → cache hit ~95 % en R&D batch. Bump `signal-scoring-v1.0 → v1.1`. Cohérent ai-architecture v1.1 (cache_control activé R&D batch only).
+- **A5 (cache stability fix)** : la phrase "Pour `model_used`, retourne exactement la valeur 'claude-sonnet-4-6' en live, 'claude-haiku-4-5-20251001' en R&D" était dans le system prompt → variable runtime → **cassait le cache ephemeral entre live et R&D**. Action : déplacée vers le user message via le champ `model_used_to_echo`. System prompt désormais 100 % stable → cache hit ~95 % en R&D batch. Bump `signal-scoring-v1.0 → v1.1`. Cohérent ai-architecture v1.1 (cache_control activé R&D batch only).
 - **A6 (seuils numériques explicites H-D et H-G)** : audit @ia self-critical — H-A/H-B/H-C avaient des seuils chiffrés précis, H-D/H-G étaient vagues. Ajout : H-D (|S&P futures overnight| > 0,4 σ + corrélation rolling 30j ≥ 0,5 + delta_overnight > 0,6 %) ; H-G (|Nikkei close − {ASSET_NAME} open prévu| > 1,0 % + corrélation rolling 60j ≥ 0,4). Bump `edge-H-D-v1.0 → v1.1` et `edge-H-G-v1.0 → v1.1`. H-A/B/C/E/F inchangés.
 
 **v1.0 (2026-05-01) — Création initiale**
@@ -915,7 +916,7 @@ Action @qa : intégrer ces fixtures dans la suite E2E avant promotion en V1 live
   - Stocker `prompt_version` en SQLite à chaque insertion dans `signals` (ALTER TABLE).
   - Cap `RND_DAILY_CALL_CAP=100` enforcer côté code (compteur SQLite quotidien).
 - **Points d'attention pour @data-analyst (Phase 1 R&D)** :
-  - Utiliser les prompts `edge-H-A-v1.0` à `edge-H-G-v1.0` avec `claude-haiku-4-5` + Batch API + Prompt Caching.
+  - Utiliser les prompts `edge-H-A-v1.0` à `edge-H-G-v1.0` avec `claude-haiku-4-5-20251001` + Batch API + Prompt Caching.
   - Respecter le cap 100 ap/j (volume R&D — cf. ai-architecture.md §1.3).
   - Loguer chaque appel R&D avec `prompt_version` pour reproductibilité backtest.
 - **Points d'attention pour @testeur-persona-thomas** :

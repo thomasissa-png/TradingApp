@@ -40,7 +40,7 @@ def _make_signal(**overrides: Any) -> ScoringSignalOutput:
         "backtest_ref": "#B-031",
         "ALERT_flag": "SAFE",
         "no_trade_reason": None,
-        "model_used": "claude-sonnet-4-5-20250929",
+        "model_used": "claude-sonnet-4-6",
     }
     base.update(overrides)
     return ScoringSignalOutput(**base)

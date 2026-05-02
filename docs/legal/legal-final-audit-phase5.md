@@ -53,7 +53,7 @@ Synthèse des 9 sections de `docs/legal/legal-audit.md` établi en Phase 0.
 
 **Audit conformité :**
 - Usage des données Twelve Data : consommation interne uniquement (100-500 appels/jour pendant R&D), plan Pro Individual confirmé (H2 PASS). Aucune redistribution des données. **CONFORME aux CGU Twelve Data.**
-- Appels Claude en R&D batch (100-500/jour Haiku 4.5) : prompts contenant OHLC publics + indicateurs calculés. Aucune PII. Budget R&D ~10 $/mois validé (H4 PASS). **CONFORME politique Anthropic.**
+- Appels Claude en R&D batch (100-500/jour Haiku 4.5 daté `claude-haiku-4-5-20251001`) : prompts contenant OHLC publics + indicateurs calculés. Aucune PII. Budget R&D ~10 $/mois validé (H4 PASS). **CONFORME politique Anthropic.**
 - Signaux R&D non diffusés à des tiers : la R&D produit des résultats backtest stockés localement en SQLite (`rnd_results`), jamais envoyés à un destinataire externe. **CONFORME périmètre 100 % personnel.**
 - Résultats backtest JSON persistés localement (non publiés, non partagés). **CONFORME.**
 

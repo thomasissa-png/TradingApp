@@ -14,5 +14,5 @@
   "backtest_ref": "#B-024",
   "ALERT_flag": "NO_TRADE",
   "no_trade_reason": "Score releve 5,5/10 — sous seuil 6,5.",
-  "model_used": "claude-sonnet-4-5-20250929"
+  "model_used": "claude-sonnet-4-6"
 }

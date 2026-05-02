@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+import time as time_module
 from datetime import datetime, time, timedelta
 from typing import Any
 
@@ -126,26 +127,45 @@ def _build_market_context(
     }
 
 
-def _select_best_signal(
+def _select_top_signals(
     signals: list[ScoringSignalOutput],
     threshold: float,
-) -> tuple[ScoringSignalOutput | None, float]:
-    """Sélectionne le meilleur signal éligible (BUY/SELL et score >= threshold).
+) -> tuple[list[ScoringSignalOutput], float]:
+    """Sélectionne les top 2 signaux éligibles (BUY/SELL et score >= threshold).
+
+    Décision persona 2026-05-01 : max 2 signaux par jour ouvré.
+    Tri par score DESC, cap à 2.
 
     Returns:
-        (best_signal_or_None, max_score_seen)
+        (top_signals_list_max_2, max_score_seen)
     """
     if not signals:
-        return None, 0.0
+        return [], 0.0
     max_score = max(s.score for s in signals)
     eligible = [
         s for s in signals
         if s.direction in ("BUY", "SELL") and s.score >= threshold
     ]
     if not eligible:
-        return None, max_score
-    best = max(eligible, key=lambda s: s.score)
-    return best, max_score
+        return [], max_score
+    top = sorted(eligible, key=lambda s: s.score, reverse=True)[:2]
+    return top, max_score
+
+
+def _select_best_signal(
+    signals: list[ScoringSignalOutput],
+    threshold: float,
+) -> tuple[ScoringSignalOutput | None, float]:
+    """Sélectionne le meilleur signal éligible (BUY/SELL et score >= threshold).
+
+    Conservé pour compatibilité tests unitaires existants.
+    En production, run_signal_mode utilise _select_top_signals.
+
+    Returns:
+        (best_signal_or_None, max_score_seen)
+    """
+    top, max_score = _select_top_signals(signals, threshold)
+    return (top[0] if top else None), max_score
 
 
 def _format_signal(signal: ScoringSignalOutput, paper_mode: bool) -> str:
@@ -229,6 +249,8 @@ def run_signal_mode(config: Config) -> int:
     engine = ScoringEngine(config, anthropic_client=anthropic_client)
     signals: list[ScoringSignalOutput] = []
     sanity_failures: list[list[str]] = []
+    top_signals: list[ScoringSignalOutput] = []
+    paper_mode: bool = False
 
     with get_connection(config.data_dir) as conn:
         # bootstrap recent signals pour SC4/SC6
@@ -275,42 +297,61 @@ def run_signal_mode(config: Config) -> int:
                 ping_healthchecks(config.healthchecks_ping_url, status="failure")
                 return EXIT_ERROR
 
-        # 5. Sélection best signal
+        # 5. Sélection top 2 signaux (décision persona 2026-05-01 — max 2/jour)
         threshold = config.confidence_threshold
-        best, max_score = _select_best_signal(signals, threshold)
+        top_signals, max_score = _select_top_signals(signals, threshold)
         paper_mode = get_strategy_mode(conn) == "paper"
 
         # 6. Format + envoi
-        if best is not None:
-            formatted = _format_signal(best, paper_mode=paper_mode)
-        elif signals:
+        if len(top_signals) == 0:
             # Aucun éligible — NO-TRADE avec contexte du meilleur score vu
-            best_no_trade = max(signals, key=lambda s: s.score)
-            formatted = format_no_trade(best_no_trade, max_score=max_score)
+            if signals:
+                best_no_trade = max(signals, key=lambda s: s.score)
+                formatted = format_no_trade(best_no_trade, max_score=max_score)
+                sent = _send(config, formatted)
+                if not sent:
+                    ping_healthchecks(config.healthchecks_ping_url, status="failure")
+                    return EXIT_ERROR
+            else:
+                # Aucun signal du tout (pipeline vide)
+                logger.error("no_signal_generated", reason="empty_engine_output")
+                ping_healthchecks(config.healthchecks_ping_url, status="failure")
+                return EXIT_ERROR
+        elif len(top_signals) == 1:
+            # 1 signal : envoi normal
+            formatted = _format_signal(top_signals[0], paper_mode=paper_mode)
+            sent = _send(config, formatted)
+            if not sent:
+                ping_healthchecks(config.healthchecks_ping_url, status="failure")
+                return EXIT_ERROR
         else:
-            # Aucun signal du tout (pipeline vide)
-            logger.error("no_signal_generated", reason="empty_engine_output")
-            ping_healthchecks(config.healthchecks_ping_url, status="failure")
-            return EXIT_ERROR
+            # 2 signaux : envoi successif séparé de 30 secondes (décision persona 2026-05-01)
+            sent_first = _send(config, _format_signal(top_signals[0], paper_mode=paper_mode))
+            time_module.sleep(30)
+            sent_second = _send(config, _format_signal(top_signals[1], paper_mode=paper_mode))
+            logger.info(
+                "multi_signal_sent",
+                nb=2,
+                scores=[top_signals[0].score, top_signals[1].score],
+                edges=[top_signals[0].edge_id, top_signals[1].edge_id],
+                delay_s=30,
+            )
+            if not sent_first or not sent_second:
+                ping_healthchecks(config.healthchecks_ping_url, status="failure")
+                return EXIT_ERROR
 
-        sent = _send(config, formatted)
-
-        # 7. INSERT signals (best ou tous — MVP : on insère tous pour traçabilité)
+        # 7. INSERT signals (tous — MVP : traçabilité complète)
         for sig, sanity in zip(signals, sanity_failures, strict=False):
             try:
                 insert_signal(conn, sig, sanity_check_failed=sanity)
             except sqlite3.Error as exc:
                 logger.error("insert_signal_failed", error=str(exc))
 
-        if not sent:
-            ping_healthchecks(config.healthchecks_ping_url, status="failure")
-            return EXIT_ERROR
-
     ping_healthchecks(config.healthchecks_ping_url, status="success")
     logger.info(
         "signal_mode_done",
         nb_signals=len(signals),
-        best_direction=best.direction if best else "NO_TRADE",
+        nb_sent=len(top_signals) if top_signals else 0,
         paper_mode=paper_mode,
     )
     return EXIT_OK

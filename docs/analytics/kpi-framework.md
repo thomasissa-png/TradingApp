@@ -144,6 +144,8 @@ Pct_no_trade = (nombre de jours "pas de trade" / nombre de jours ouvrés) × 100
 | < 20 % | Alerte — le bot force des signaux | Vérifier seuil de confiance, signal d'arrêt n°2 si 3 semaines consécutives sans no-trade |
 | > 80 % | Alerte — edge peut-être trop sur-paramétré | Revoir les paramètres, revue du seuil de confiance |
 
+**Règle comptage multi-signaux** (décision persona 2026-05-01) : si 2 signaux sont émis le même jour ouvré, ce jour compte comme **1 jour signal** dans le ratio % no-trade (pas 2). Un jour ouvré est soit "signal" (1 ou 2 messages envoyés), soit "no-trade" (0 message de trading).
+
 ### 3.3 Latence push Telegram
 
 ```
@@ -169,6 +171,40 @@ Taux_erreur_TD = (appels Twelve Data en échec / appels totaux) × 100  [sur 30 
 | < 5 % | Normal |
 | 5-15 % | Monitoring renforcé, vérifier rate limits (infra-audit.md section 2.3) |
 | > 15 % | Alerte Telegram P1 — risque de signaux incomplets |
+
+### 3.6 Taux multi-signaux (nouveau — décision persona 2026-05-01)
+
+```
+Taux_multi_signaux = (nb_jours_2_signaux_envoyés / nb_jours_signal) × 100
+```
+
+Où `nb_jours_signal` = jours avec au moins 1 message ACHAT/VENTE envoyé, et `nb_jours_2_signaux` = jours avec exactement 2 messages ACHAT/VENTE envoyés.
+
+| Valeur | Interprétation | Action |
+|--------|----------------|--------|
+| 0-10 % | Normal — multi-signaux rare, cas dominant = 1 signal/jour | RAS |
+| **10-30 %** | **Cible** — conviction multiple active (2 edges simultanément robustes) | RAS — surveiller exposition cumulée Thomas |
+| > 30 % | Alerte — trop fréquent, vérifier indépendance des edges (risque corrélation) | Revoir la corrélation entre edges H-A et H-C — peuvent-ils déclencher simultanément sur le même sous-jacent ? |
+
+**Query SQLite de calcul** :
+```sql
+WITH daily AS (
+    SELECT date,
+           SUM(CASE WHEN direction IN ('BUY','SELL') AND sent_to_telegram = 1 THEN 1 ELSE 0 END) AS nb_sent
+    FROM signals
+    WHERE date >= date('now', '-30 days')
+    GROUP BY date
+)
+SELECT
+    COUNT(CASE WHEN nb_sent >= 1 THEN 1 END)  AS nb_jours_signal,
+    COUNT(CASE WHEN nb_sent >= 2 THEN 1 END)  AS nb_jours_2_signaux,
+    ROUND(
+        100.0 * COUNT(CASE WHEN nb_sent >= 2 THEN 1 END)
+              / NULLIF(COUNT(CASE WHEN nb_sent >= 1 THEN 1 END), 0),
+        1
+    )  AS taux_multi_signaux_pct
+FROM daily;
+```
 
 ### 3.5 Taux d'erreur Claude
 
@@ -202,7 +238,7 @@ CREATE TABLE signals (
     score           REAL,                                   -- score de confiance Claude (1.0-10.0)
     scoring_model_version TEXT NOT NULL,                    -- ex : 'scoring-model-v1.0' (cf edge-scoring-model.md §7)
     prompt_version  TEXT NOT NULL,                          -- ex : 'signal-scoring-v1.0' (cf prompt-library.md §6)
-    model_used      TEXT NOT NULL,                          -- ex : 'claude-sonnet-4-5-20250929' (cf L002 — tag exact obligatoire, pas '-latest')
+    model_used      TEXT NOT NULL,                          -- ex : 'claude-sonnet-4-6' (cf L002+L010 — alias minor-family OU tag exact daté, JAMAIS '-latest' cross-family)
     sanity_check_failed TEXT NULL,                          -- liste des SC qui ont déclenché un plafonnage/NO-TRADE forcé, ex : 'SC2,SC4'. NULL si tous PASS.
     backtest_ref    TEXT,                                   -- ex : "B-031"
     no_trade_reason TEXT,                                   -- raison si NO_TRADE (ex : "score 5.1 < seuil 6.5")

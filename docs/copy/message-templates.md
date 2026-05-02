@@ -247,6 +247,50 @@ Score : 7,2/10
 
 ---
 
+## 2bis. Cas multi-signaux (max 2/jour) — validé persona 2026-05-01
+
+**Principe** : si 2 hypothèses actives déclenchent toutes deux un score ≥ seuil le même matin, le pipeline envoie 2 messages Telegram **successifs et autonomes**, séparés de 30 secondes (`time.sleep(30)` entre les 2 appels `send_message`). Chaque message est en format 6L+1 standard — aucun lien entre eux, aucune mention de l'autre signal.
+
+### Format d'envoi
+
+```
+[8h47:00] Message #1 — top score
+🟢 ACHAT  **DAX Turbo Call**
+Entrée : 4,05  |  SL : 3,84  |  Cible potentielle : 4,56
+Risque : 147 € max  |  Capital engagé : 607 €  |  Avant 9h00 CET — au-delà, ne pas exécuter
+Raison : breakout range 8h-8h15 Xetra à 17 342 — retest validé 8h22, volume +41% vs range
+Backtest : 65% sur 112 trades | DD max −15% | Réf. #B-009
+Score : 7,8/10
+
+[8h47:30] Message #2 — second score (30s après)
+🟢 ACHAT  **CAC40 Turbo Call**
+Entrée : 3,77  |  SL : 3,56  |  Cible potentielle : 4,21
+Risque : 147 € max  |  Capital engagé : 566 €  |  Avant 8h55 CET — au-delà, ne pas exécuter
+Raison : gap haussier CAC40 +0,9% vs clôture US — amplitude top 15% historique 250 ouvertures
+Backtest : 63% sur 81 trades | DD max −17% | Réf. #B-031
+Score : 7,4/10
+```
+
+### Règles copy multi-signaux
+
+- **Pas de lien ni concordance entre les 2 messages** — chacun est autonome et justifié par son propre edge. Thomas ne doit pas avoir à comparer les 2 pour décider.
+- **Pas de numérotation** ("Signal 1/2") — Thomas reçoit 2 alertes indépendantes, pas un lot.
+- **Thomas choisit** lequel des 2 trader (ou les 2) selon son capital disponible et son niveau de conviction du moment.
+- **Exposition max si Thomas exécute les 2 trades** : 1 500 € × 2 = 3 000 € réels + 30 000 € exposition virtuelle (levier ×10) — dans la tolérance déclarée persona (capital 20-30 k€).
+- **Ordre d'envoi** : score le plus élevé en premier (Thomas voit le signal le plus fort en notification push s'il en lit un seul).
+- **Fenêtre valide** : les 2 messages doivent être envoyés avant 8h55 CET (ou 9h00 pour les edges H-C ORB). Si le délai 30s ferait passer le 2e message après le cutoff → envoyer le premier uniquement.
+
+### Cas où le multi-signal NE s'applique PAS
+
+| Situation | Comportement |
+|---|---|
+| 1 seul edge ≥ seuil | 1 message normal (comportement inchangé) |
+| 0 edge ≥ seuil | NO-TRADE standard (US-02) |
+| 3 edges ≥ seuil (wave 2 future) | Top 2 seulement — 3e loggué SQLite, non envoyé |
+| 2e message dépasserait cutoff | 1 seul message envoyé (le top score) |
+
+---
+
 ## 3. Templates NO-TRADE — 4 variations
 
 [Framework : PAS inversé — le problème est nommé (condition bloquante), l'agitation est évitée (pas de dramatisation), la solution est le silence assumé]

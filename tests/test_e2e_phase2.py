@@ -77,7 +77,7 @@ def _signal(direction: str = "BUY", score: float = 7.5, edge_id: str = "H-A") ->
         backtest_ref="#B-031",
         ALERT_flag="ALERT" if direction != "NO_TRADE" else "NO_TRADE",
         no_trade_reason=None if direction != "NO_TRADE" else "Score sous seuil",
-        model_used="claude-sonnet-4-5-20250929",
+        model_used="claude-sonnet-4-6",
     )
 
 

@@ -12,7 +12,7 @@
 ## Résumé exécutif
 
 - **Objectif** : Définir les comportements V1 du bot Telegram de façon implémentable sans ambiguïté par @fullstack, testable sans question par @qa.
-- **Décisions clés** : 8 user stories couvrant les 6 états du signal (ACHAT, VENTE, NO-TRADE, ERREUR DATA, DEGRADED MODE + CUTOFF) ; format message Telegram 6 lignes max + 1 confiance ; seuil de confiance paramètre configurable (non fixé en dur) ; cutoff 8h55 CET strict ; journal SQLite obligatoire.
+- **Décisions clés** : 8 user stories couvrant les 6 états du signal (ACHAT/VENTE × 2 max, NO-TRADE, ERREUR DATA, DEGRADED MODE + CUTOFF) ; format message Telegram 6 lignes max + 1 confiance ; seuil de confiance paramètre configurable (non fixé en dur) ; cutoff 8h55 CET strict ; journal SQLite obligatoire ; max 2 signaux/jour (validé persona 2026-05-01) — 2 messages Telegram séparés de 30 secondes si 2 edges ≥ seuil simultanément.
 - **Dépendances** : H1 NEEDS-DECISION (hébergement), H2 NEEDS-DECISION (plan Twelve Data 1m), H3 [À VÉRIFIER PAR PERSONA — catalogue Bourse Direct], seuil de confiance [HYPOTHÈSE : 6,5/10 — à calibrer en R&D].
 
 ---
@@ -59,9 +59,10 @@ En tant que Thomas, je veux recevoir un signal structuré ACHAT ou VENTE sur Tel
 |---|---|---|
 | Défaut | Aucun message avant 8h45 — Telegram silencieux | Rien |
 | Loading | Pipeline en cours 8h40-8h45 (calcul interne, Thomas ne voit pas cet état) | N/A côté Thomas |
-| Vide | Edge calculé mais score < seuil → déclenche US-02 (NO-TRADE) | Voir US-02 |
+| Vide | Aucun edge ≥ seuil → déclenche US-02 (NO-TRADE) | Voir US-02 |
 | Erreur | Twelve Data fail → US-04 ; Claude timeout → US-05 | Voir US-04 / US-05 |
-| Succès | Message ACHAT ou VENTE reçu entre 8h45 et 8h55 CET | Template section 2 |
+| Succès (1 signal) | 1 message ACHAT ou VENTE reçu entre 8h45 et 8h55 CET | Template section 2 |
+| Succès (2 signaux) | 2 messages ACHAT/VENTE successifs, séparés de 30 secondes (top 2 scores) | 2× template section 2 ; chaque message autonome |
 
 #### Critères d'acceptance (Given/When/Then)
 
@@ -78,6 +79,8 @@ En tant que Thomas, je veux recevoir un signal structuré ACHAT ou VENTE sur Tel
 - [ ] GIVEN le pipeline calcule le signal à 8h54:59 CET, WHEN l'envoi Telegram réussit avant 8h55:00, THEN le signal est valide et envoyé.
 - [ ] GIVEN le pipeline calcule le signal à 8h55:01 CET (cutoff dépassé), WHEN le signal serait normalement envoyé, THEN le signal est invalidé (US-06 CUTOFF déclenchée), aucun message de trading envoyé.
 - [ ] GIVEN un double appel cron (edge case relance infra), WHEN un signal a déjà été envoyé ce jour, THEN le pipeline détecte l'existant en SQLite et n'envoie pas de second signal.
+- [ ] GIVEN 3 edges actifs (wave 1 + wave 2 future) avec scores 8.2, 7.6, 7.1 tous ≥ seuil, WHEN le pipeline sélectionne les top 2, THEN seuls les 2 meilleurs scores (8.2 + 7.6) sont envoyés — le 3e est loggué en SQLite mais non envoyé.
+- [ ] GIVEN 2 edges éligibles, WHEN le premier message Telegram réussit mais le second échoue, THEN l'échec est loggué, INSERT SQLite pour les 2 signaux (le signal envoyé compte), ping healthchecks failure.
 
 **Permissions :**
 - [ ] GIVEN une tentative d'envoi Telegram vers un chat_id différent du chat_id Thomas configuré, WHEN le pipeline tente l'envoi, THEN l'envoi est refusé (validation chat_id avant envoi).
@@ -85,10 +88,15 @@ En tant que Thomas, je veux recevoir un signal structuré ACHAT ou VENTE sur Tel
 **Données existantes :**
 - [ ] GIVEN backtest_ref=#B-031 absent de la table `backtests` SQLite, WHEN le pipeline tente d'émettre le signal, THEN le signal est bloqué, erreur loguée "backtest_ref introuvable", US-04 déclenchée.
 
+**Règle multi-signaux (validé persona 2026-05-01) :**
+- [ ] GIVEN pipeline jour ouvré, WHEN résultat final, THEN `nb_signaux_emis_par_jour <= 2` (invariant strict — jamais plus de 2 messages Telegram par jour).
+- [ ] GIVEN 2 signaux éligibles avec scoring séparé par edge, WHEN envoi multi-signaux, THEN chaque message est autonome (pas de référence croisée), séparés de `time.sleep(30)` entre les 2 appels `send_message`, loggué `multi_signal_sent=True` en SQLite.
+- [ ] GIVEN 2 signaux retenus, WHEN Thomas reçoit les 2 messages, THEN l'exposition totale max est 3 000 € réels (2 × 1 500 €) + 30 000 € exposition virtuelle levier ×10 — Thomas choisit d'exécuter 1 ou 2 trades sans obligation.
+
 #### Payload API (pipeline interne — pas d'API publique)
 - **Endpoint** : Telegram Bot API `POST /bot{TOKEN}/sendMessage`
 - **Authentification** : Token Bearer (variable d'environnement `TELEGRAM_BOT_TOKEN` — jamais en clair)
-- **Rate limit** : 1 message/jour (enforced en interne par vérification SQLite)
+- **Rate limit** : max 2 messages/jour (enforced en interne — top 2 edges ≥ seuil ; 3e signal et au-delà loggués en SQLite mais non envoyés)
 - **Request body** : `{ "chat_id": "{THOMAS_CHAT_ID}", "text": "[message template]", "parse_mode": "Markdown" }`
 - **Response succès** : `{ "ok": true, "result": { "message_id": ... } }` HTTP 200
 - **Response erreur** : `{ "ok": false, "description": "..." }` HTTP 4xx/5xx → logguer + déclencher US-04

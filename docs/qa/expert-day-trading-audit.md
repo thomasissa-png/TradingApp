@@ -287,10 +287,103 @@ Choix correct **pour un MVP** : pas de risque sécurité OAuth/API broker, pas d
 
 ## 4. Synthèse 3 experts + verdict consolidé
 
-[à remplir section 4]
+### 4.1 Tableau récapitulatif des notes
+
+| Critère | Quant Vétéran | Prop Trader ORB | Risk Manager Turbos | Moyenne |
+|---|---|---|---|---|
+| 1 — Méthodologie / Edge ORB / DD bloquant | 8,0 | 8,0 | 7,0 | **7,7** |
+| 2 — Hypothèses / Gap Follow / Sanity checks | 7,0 | 6,5 | 5,0 | **6,2** |
+| 3 — Coûts / Cutoff 8h55 / Cutoff 18h00 | 6,0 | 5,5 | 8,0 | **6,5** |
+| 4 — Sizing / Slippage 0,1 % / Levier 5-20 | 8,0 | 3,0 | 6,0 | **5,7** |
+| 5 — Anti-overfitting / Telegram 6L+1 / PFU | 8,5 | 7,5 | 9,0 | **8,3** |
+| 6 — Réf. académiques / Paper 4-8 sem / Stop-loss J+45 | 9,0 | 7,0 | 8,5 | **8,2** |
+| 7 — Scoring hybride / R&D 30-90j / Exécution manuelle | 6,5 | 8,0 | 7,5 | **7,3** |
+| **Note globale** | **7,6** | **6,5** | **7,3** | **7,1** |
+
+**Moyenne pondérée 3 experts** : **7,1/10**.
+
+**Pondération** : équipondérée car les 3 perspectives sont complémentaires non-substituables (statistique + exécution + risque). Si pondération par expertise pertinente sur stade actuel (R&D edge), Quant Vétéran 50 % + Prop Trader 30 % + Risk Manager 20 % donnerait **7,2/10** — quasi identique.
+
+### 4.2 5 recommandations prioritaires consolidées
+
+**P0 — bloquantes avant Phase 2 build** (3 experts d'accord) :
+
+1. **Calibrer le slippage réel turbos BD** sur 50 trades paper / 2 semaines avant tout backtest GO. Le 0,1 % budgété est faux d'un facteur 3-8×. **Sans cette étape, l'edge théorique peut être effacé en live**. (Expert 1, 2, 3 unanimes — note 3-6/10 sur ce critère.)
+
+2. **Ajouter SC8-SC11 turbo-spécifiques** au scoring : (a) distance knock-out ≥ 2× ATR, (b) theta financing < 0,05 %/j, (c) spread observé < 1,5 %, (d) liquidity 5d-avg > 10× position. Sans ces SC, **les SC1-SC7 actuels ratent le vrai risque structurel turbo**. (Expert 3 — note 5/10, expert 1 valide en cross-review.)
+
+**P1 — fortement recommandées avant Phase 2** (2 experts d'accord) :
+
+3. **Plafonner levier à 10 maximum** (pas 20). La borne haute 20 est dangereuse pour capital 20-30 k€ (risk-of-ruin 15-25 % sur 100 trades si win rate dérive). Levier 15-20 réservé à régime VIX < 12 (Expert 3 P0, expert 1 valide).
+
+4. **Clarifier les horaires d'exécution** : ORB 9h00-9h15 (Xetra/Euronext) avec cutoff 9h20-9h25. **Incompatible avec contrainte 9h05 Thomas** → **soit Thomas relâche à 9h25, soit retirer CAC/actions FR/commodities du panel matin** (laisser DAX uniquement). Le cutoff 8h55 actuel = 15-20 % d'exécutions dégradées (Expert 2 P0, expert 3 valide).
+
+**P2 — recommandée mais non bloquante** (1 expert principal) :
+
+5. **Retirer H-F (basis trading) et H-G (Asie→CAC) du panel des 7 hypothèses**. Edges morts depuis 2015 (HFT) ou non-intraday (Connolly-Wang journalier). Récupère 2/7 du budget multi-tests : Bonferroni α effectif passe de 0,0071 à 0,01 sur 5 H, **+40 % de puissance statistique** sur les hypothèses qui comptent (Expert 1).
+
+### 4.3 Risques résiduels NON mitigés
+
+Les 3 experts pointent des risques que le dispositif actuel **ne couvre pas** :
+
+| Risque résiduel | Pointé par | Sévérité | Pourquoi non mitigé |
+|---|---|---|---|
+| **Survivorship bias des sous-jacents** (panel 13 fixé en 2026, ex-CAC40 sortis non testés) | Quant Vétéran | Moyen | Pas mentionné dans §6 risks. Ajout simple : tester aussi 5 ex-titres CAC40 sortis 2021-2024 |
+| **Slippage réel turbo BD facteur 3-8×** vs hypothèse 0,1 % | 3 experts | Critique | R3 mitigation existe mais seuil 0,15 % trop bas → abandon systématique en paper. Recalibrer à 0,5 % avec abandon > 0,8 % |
+| **Knock-out turbo** non vérifié au moment du signal | Risk Manager | Critique | Aucun SC vérifie distance spot-barrière. **Risque n°1 turbo non couvert** |
+| **Cutoff 8h55 incompatible Euronext** (CAC ouvre 9h00) | Prop Trader ORB | Élevé | Architectural — cohérence persona vs horaires marché à arbitrer |
+| **Drift modèle LLM** (Sonnet 4.5 → 4.7 → 5.x) sur scoring backtesté | Quant Vétéran | Moyen | Backtest avec Haiku 4.5 ≠ live avec Sonnet 4.5/4.7. Pas de protocole re-backtest sur changement modèle. SC7 plausibilité aide mais ne suffit pas |
+| **Risque par trade > 2 % capital** sur levier 15-20 | Risk Manager | Élevé | Doc autorise "5-20 levier" sans plafond risque par trade explicite |
+| **Latence saisie manuelle BD mobile** 2-3 min vs prix signal unique | Prop Trader ORB + Risk Manager | Élevé | Doc impose prix unique, pas de plage d'entrée acceptable |
+
+### 4.4 Décision finale consolidée
+
+**Verdict 3 experts** : **GO conditionnel** (note 7,1/10 — au-dessus du seuil GO 7,0 mais avec conditions claires).
+
+**Niveau de confiance** : la note **7,1/10** signifie : "le projet est sérieusement conçu, méthodologiquement solide sur la statistique et la discipline, mais souffre de **3 angles morts opérationnels** (slippage turbo, knock-out, horaires) qui peuvent transformer un edge théorique solide en P&L net plat ou négatif".
+
+**Décision recommandée par les 3 experts** :
+
+- **NO-GO bot live immédiat** (3 experts unanimes) — les 3 disent "non" en l'état.
+- **GO Phase 2 build CONDITIONNEL** sur les 5 recommandations P0/P1 ci-dessus (§4.2). Les conditions P0 (1, 2) sont **bloquantes** : slippage réel + SC8-SC11. Les P1 (3, 4) sont **fortement requises** : plafond levier 10 + horaires clarifiés.
+- **GO paper-trading 6-8 sem** (vs 4-8 sem actuel) après build conditionnel, avec tracking slippage réel quotidien + KO distance par signal + drift LLM mensuel.
+- **GO live 50 % sizing target (10-15 k€)** si paper 6-8 sem montre Sharpe live ≥ 60 % Sharpe OOS + slippage médian < 0,5 % + zéro knock-out + DD < 12 %.
+- **GO live 100 % sizing (20-30 k€)** si 90 jours live à 50 % sizing montrent DD < 15 % + Sharpe rolling 30j ≥ 60 % Sharpe OOS.
+
+**Synthèse en une phrase** : *projet sérieux et discipliné sur la méthodologie, à risque réel sur l'instrumentation turbos retail — 4 conditions P0/P1 à lever avant build, paper-trading 6-8 sem obligatoire, scaling progressif 0 → 50 % → 100 % capital sur 6 mois.*
 
 ---
 
 ## 5. Mises à jour project-context.md
 
-[à remplir section 5]
+### 5.1 Ligne historique des interventions agents
+
+```
+| @general-purpose (3 experts day-trading externes) | 2026-05-02 | docs/qa/expert-day-trading-audit.md | Audit Phase 5b par 3 personas externes incarnés (Quant Vétéran SG/Citadel + Prop Trader ORB Topstep/DT + Risk Manager Turbos BNPP/Vontobel) — moyenne 7,1/10. Verdict consolidé : GO Phase 2 build CONDITIONNEL (P0 calibrer slippage réel + SC8-SC11 turbo, P1 plafond levier 10 + horaires clarifiés, P2 retirer H-F/H-G). NO-GO bot live immédiat unanime. Paper-trading 6-8 sem obligatoire, scaling 50→100 % capital sur 6 mois | Audit externe sans complaisance pour challenger les angles morts opérationnels (slippage turbo facteur 3-8×, knock-out non couvert SC1-SC7, cutoff 8h55 incompatible Euronext) avant Phase 2 — protège contre l'illusion de robustesse purement méthodologique sans validation instrument-spécifique |
+```
+
+### 5.2 Ligne performance des agents
+
+```
+| @general-purpose (3 experts day-trading) | 2026-05-02 | docs/qa/expert-day-trading-audit.md | 5 | 5 | 5 | 4 | 5 | 3 personas externes contrastés (statistique/exécution/risque), 7 critères chiffrés × 3 experts = 21 notes justifiées 1-2 lignes chacune, anecdotes praticien marquées [HYPOTHÈSE], 5 recos consolidées P0/P1/P2, 7 risques résiduels documentés, décision tranchée GO conditionnel. Note structure 4/5 car ~370 lignes vs cible ~350 (dépassement +6 % justifié par profondeur audit critère par critère) |
+```
+
+### 5.3 Auto-évaluation gates
+
+| Gate | Critère | Statut | Justification |
+|---|---|---|---|
+| G1 | Contexte lu avant action | PASS | project-context.md historique + personas.md + edge-rnd-report.md v1.1 + edge-scoring-model.md v1.2 + message-templates.md v1.2 lus en actions 1-5 |
+| G3 | Zéro invention de données | PASS | Anecdotes praticien marquées [HYPOTHÈSE — anecdote illustrative] systématiquement ; risk-of-ruin marqué [HYPOTHÈSE — calcul illustratif] ; pas d'invention de fait vérifiable |
+| G4 | Sources citées vérifiées | PASS | Crabel 1990, Brock 1992, Lou-Polk-Skouras 2019, Tetlock 2007, Hansen 2005, Pardo 2008, Lo 2002, Connolly-Wang 2003, Stoll-Whaley 1990, Knuteson 2020, Heston-Sadka 2008 — tous identifiés et cohérents avec edge-rnd-report.md |
+| G5 | Persona Thomas présent | PASS | Capital 20-30 k€, fenêtre 8h45-8h55, sizing 1500€ levier 10, contrainte mobile RER 9h05 cités systématiquement dans les 3 audits |
+| G6 | KPI North Star cité | PASS | P&L net mensuel PFU 31,4 % cité §3.5 (audit Risk Manager) + §4.4 (décision finale) |
+| G12 | Handoff structuré en fin | PASS | §4 synthèse + §4.4 décision tranchée + §5 lignes project-context + §5.3 auto-évaluation gates |
+| G13 | Estimations marquées | PASS | [HYPOTHÈSE] sur risk-of-ruin, anecdotes, slippage observé, latence mobile BD ; [ESTIMATION] non utilisé car les chiffres sont des opinions d'experts pas des projections statistiques |
+| G15 | Placeholders documentés | PASS | Pas de placeholders non documentés |
+| G17 | Naming convention | PASS | snake_case dans pseudo-code SC8-SC11, cohérent avec scoring-model |
+
+**Résultat auto-évaluation** : 9/9 gates PASS. Audit prêt pour @reviewer cross-review Phase 5b.
+
+---
+
+> **Fin du document.** Volumétrie : ~370 lignes (cible ~350, +6 % justifié par profondeur audit 21 critères chiffrés).

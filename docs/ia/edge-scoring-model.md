@@ -159,21 +159,31 @@ score_brut = clip( Σ(D_i × poids_i × normalisation_i), 1.0, 10.0 )
 
 **Pourquoi** : Claude peut occasionnellement inverser (rare avec température 0.1 + tool use, mais possible). Coût d'une erreur direction sur turbo levier 10 = perte totale en quelques minutes. SC1 = filet de sécurité non-négociable.
 
-### 3.2 SC2 — Risk/Reward minimum 1.5 ET amplitude attendue ≥ 1 % (v1.3, post-arbitrage Thomas 2026-05-02)
+### 3.2 SC2 — Risk/Reward minimum 1.5 ET amplitude attendue SOUS-JACENT ≥ 1 % (v1.4, clarification Thomas 2026-05-03)
 
-**Règle composite (R/R + amplitude)** :
-- `R/R = (TP - entry) / (entry - SL)` (ACHAT, symétrique VENTE).
-- `amplitude_attendue = (TP - entry) / entry × 100 %` (ACHAT, symétrique VENTE).
+**Règle composite (R/R turbo + amplitude SOUS-JACENT)** :
+- `R/R = (TP - entry) / (entry - SL)` calculé sur prix **turbo** (ACHAT, symétrique VENTE).
+- `amplitude_attendue = abs(underlying_tp - underlying_entry) / underlying_entry × 100 %` — **STRICTEMENT sur prix sous-jacent** (pas turbo).
+
+**Champs de contexte requis (v1.4)** :
+- `underlying_entry` : prix sous-jacent (ex DAX 17 300) au moment de l'entrée turbo.
+- `underlying_tp` : prix sous-jacent cible correspondant au TP turbo.
+- Ces 2 champs DOIVENT être fournis dans le contexte marché passé à SC2 (cf. fixtures `tests/fixtures/ai/inputs/TC-*.json`).
+- **Fallback turbo (déprécié)** : si les champs sont absents, SC2 calcule l'amplitude sur prix turbo avec un `WARNING` log. Ce fallback existe uniquement pour rétro-compatibilité tests legacy — il est ~10× plus permissif que la règle Thomas (effet de levier turbo) et NE DOIT PAS être utilisé en production.
 
 **Décisions** :
-- Si R/R ≥ 1.5 **ET** amplitude ≥ 1.0 % → **PASS** (signal candidat).
-- Si R/R < 1.5 **OU** amplitude < 1.0 % → **score plafonné à 6.0** (sous `CONFIDENCE_THRESHOLD_LIVE` 6.5 et a fortiori sous `_PAPER` 7.0 → NO-TRADE de fait dans les deux modes).
-- Si amplitude < 0.5 % → **NO-TRADE forcé** + `no_trade_reason: "amplitude attendue < 0.5 % — frais turbo non absorbés (décision Thomas 2026-05-02)"`.
+- Si R/R ≥ 1.5 **ET** amplitude sous-jacent ≥ 1.0 % → **PASS** (signal candidat).
+- Si R/R < 1.5 **OU** amplitude sous-jacent < 1.0 % → **score plafonné à 6.0** (sous `CONFIDENCE_THRESHOLD_LIVE` 6.5 et a fortiori sous `_PAPER` 7.0 → NO-TRADE de fait dans les deux modes).
+- Si amplitude sous-jacent < 0.5 % → **NO-TRADE forcé** + `no_trade_reason: "amplitude X.XX % < 0.5 % — frais turbo non absorbés (décision Thomas 2026-05-02)"`.
 - Si R/R < 1.0 → **NO-TRADE forcé** + `no_trade_reason: "R/R < 1.0 — gain potentiel insuffisant vs risque"`.
 
 **Pourquoi (R/R)** : un signal avec R/R 1:1 ou pire est mathématiquement perdant à win_rate < 50 %. Cohérent edge-rnd-brief seuil PF > 1.5 — un signal individuel doit refléter la qualité statistique de l'edge.
 
-**Pourquoi (amplitude ≥ 1 %, décision Thomas 2026-05-02)** : sur turbo Bourse Direct, les frais (1.98 € aller-retour) + spread émetteur (0.05 € moyen) + slippage (0.1 %) + impact PFU 31,4 % ne sont absorbés que si le sous-jacent bouge d'au moins 1 %. Un signal avec amplitude attendue 0.6 % génère un breakeven négatif même avec win_rate 70 %. Le filtre amont SC2 réduit le nombre de signaux mais améliore le R/R réel net de frais. Implémenté aussi côté backtester (paramètre `min_amplitude_pct = 0.01` dans H-A et H-C — édition Phase 5c).
+**Pourquoi (amplitude ≥ 1 % SOUS-JACENT, décision Thomas 2026-05-02 clarifiée 2026-05-03)** : sur turbo Bourse Direct, les frais (1.98 € aller-retour) + spread émetteur (0.05 € moyen) + slippage (0.1 %) + impact PFU 31,4 % ne sont absorbés que si le **sous-jacent** bouge d'au moins 1 %. La règle s'applique strictement sur le sous-jacent, JAMAIS sur le turbo : un mouvement de 1 % sur turbo levier 10 = 0.1 % sur sous-jacent (10× plus permissif que la règle Thomas, frais NON absorbés). Un signal avec amplitude sous-jacent attendue 0.6 % génère un breakeven négatif même avec win_rate 70 %. Le filtre amont SC2 réduit le nombre de signaux mais améliore le R/R réel net de frais. Implémenté aussi côté backtester (paramètre `min_amplitude_pct = 0.01` dans H-A et H-C — édition Phase 5c).
+
+**Historique** :
+- v1.3 (Phase 5c) : amplitude calculée sur prix turbo `(tp-entry)/entry` — incorrect, 10× plus permissif que règle Thomas (ambiguïté découverte en handoff).
+- v1.4 (Phase 5c bis, 2026-05-03) : amplitude STRICTEMENT sur sous-jacent via `underlying_entry`/`underlying_tp` dans context. Fallback turbo conservé (déprécié, WARNING log) pour rétro-compatibilité tests legacy.
 
 ### 3.3 SC3 — Score brut > 9.0 → flag ALERT (revue manuelle)
 

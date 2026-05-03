@@ -166,6 +166,79 @@ def test_sc2_amplitude_sell_below_1pct_plafond_6() -> None:
 
 
 # ---------------------------------------------------------------------------
+# SC2 v1.4 — Amplitude STRICTEMENT sur sous-jacent (clarification Thomas 2026-05-03)
+# ---------------------------------------------------------------------------
+
+
+def test_sc2_amplitude_underlying_below_1pct_no_trade() -> None:
+    """SC2 v1.4 : amplitude sous-jacent < 0.5 % -> NO_TRADE force.
+
+    DAX : underlying_entry=17300, underlying_tp=17350
+    -> amplitude = (17350-17300)/17300 = 0.289 % < 0.5 %
+    Meme si R/R turbo >= 1.5 (entry=3.42, sl=3.21, tp=3.85, R/R~2.05),
+    le filtre amplitude sur sous-jacent court-circuite -> NO_TRADE.
+    """
+    sig = _make_signal(entry=3.42, sl=3.21, tp=3.85, score=8.0)
+    context = {"underlying_entry": 17300.0, "underlying_tp": 17350.0}
+    result, triggered = apply_sc2(sig, context)
+    assert triggered == ["SC2"]
+    assert result.direction == "NO_TRADE"
+    assert result.no_trade_reason is not None
+    assert "amplitude" in result.no_trade_reason.lower()
+
+
+def test_sc2_amplitude_underlying_above_1pct_pass() -> None:
+    """SC2 v1.4 : amplitude sous-jacent >= 1 % ET R/R turbo >= 1.5 -> PASS sans triggered.
+
+    DAX : underlying_entry=17300, underlying_tp=17500
+    -> amplitude = 200/17300 = 1.156 % >= 1 %
+    Turbo : entry=3.42, sl=3.21, tp=3.85 -> R/R = 0.43/0.21 ~ 2.05 >= 1.5
+    -> Aucun plafond applique, score conserve.
+    """
+    sig = _make_signal(entry=3.42, sl=3.21, tp=3.85, score=8.0)
+    context = {"underlying_entry": 17300.0, "underlying_tp": 17500.0}
+    result, triggered = apply_sc2(sig, context)
+    assert triggered == []
+    assert result.direction == "BUY"
+    assert result.score == 8.0
+
+
+def test_sc2_amplitude_underlying_sell_below_05pct_no_trade() -> None:
+    """SC2 v1.4 cote SELL : amplitude sous-jacent (valeur absolue) < 0.5 % -> NO_TRADE."""
+    # CAC40 SELL : underlying_entry=8000, underlying_tp=7990
+    # -> abs(7990-8000)/8000 = 0.125 % < 0.5 %
+    sig = _make_signal(direction="SELL", entry=2.50, sl=2.65, tp=2.20, score=8.0)
+    context = {"underlying_entry": 8000.0, "underlying_tp": 7990.0}
+    result, triggered = apply_sc2(sig, context)
+    assert triggered == ["SC2"]
+    assert result.direction == "NO_TRADE"
+
+
+def test_sc2_amplitude_underlying_between_05_and_1pct_plafond_6() -> None:
+    """SC2 v1.4 : amplitude sous-jacent dans [0.5%, 1.0%[ ET R/R turbo >= 1.5 -> plafond 6.0."""
+    # underlying_entry=17300, underlying_tp=17430 -> 130/17300 = 0.751 % dans [0.5%, 1.0%[
+    sig = _make_signal(entry=3.42, sl=3.21, tp=3.85, score=8.0)  # R/R turbo ~2.05
+    context = {"underlying_entry": 17300.0, "underlying_tp": 17430.0}
+    result, triggered = apply_sc2(sig, context)
+    assert triggered == ["SC2"]
+    assert result.direction == "BUY"
+    assert result.score == 6.0
+
+
+def test_sc2_amplitude_fallback_turbo_when_underlying_absent() -> None:
+    """SC2 v1.4 : si underlying_entry/underlying_tp absents -> fallback turbo (deprecie).
+
+    Garantit retro-compatibilite : tests turbo existants (sans context underlying)
+    continuent de fonctionner avec calcul amplitude sur prix turbo.
+    """
+    # Memes prix que test_sc2_amplitude_above_1pct_pass : amplitude turbo 1.5 % -> PASS
+    sig = _make_signal(entry=100.0, sl=99.5, tp=101.5, score=8.0)
+    result, triggered = apply_sc2(sig, {})  # context vide -> fallback
+    assert triggered == []
+    assert result.score == 8.0
+
+
+# ---------------------------------------------------------------------------
 # SC3 — Score brut > 9.0 -> ALERT
 # ---------------------------------------------------------------------------
 

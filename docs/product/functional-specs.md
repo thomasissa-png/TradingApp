@@ -74,8 +74,8 @@ En tant que Thomas, je veux recevoir un signal structuré ACHAT ou VENTE sur Tel
 **Cas d'erreur :**
 - [ ] GIVEN score < seuil_confiance, WHEN le pipeline finit le calcul, THEN aucun message ACHAT/VENTE n'est envoyé — US-02 (NO-TRADE) est déclenchée à la place.
 - [ ] GIVEN sl ≥ entree sur un signal ACHAT, WHEN le pipeline tente d'envoyer, THEN le signal est bloqué en interne, aucun message Telegram envoyé, erreur loguée en SQLite avec motif "SL invalide", US-04 déclenchée.
-- [ ] **GIVEN un signal candidat avec amplitude attendue `(tp − entree) / entree × 100 < 1.0 %` (BUY) ou `(entree − tp) / entree × 100 < 1.0 %` (SELL), WHEN le pipeline évalue le signal, THEN le signal est forcé NO_TRADE (motif "amplitude attendue < 1 % — frais turbo non absorbés") — décision Thomas 2026-05-02 : viser uniquement mouvements ≥ 1 % sur sous-jacent pour absorber spread + frais BD + slippage turbo.**
-- [ ] **GIVEN un signal candidat avec amplitude attendue `< 0.5 %`, WHEN sanity check SC2 est appliqué, THEN NO_TRADE forcé sans appel LLM (filtre amont pour économiser tokens et éviter faux positifs).**
+- [ ] **GIVEN un signal candidat avec amplitude attendue sur SOUS-JACENT `abs(underlying_tp − underlying_entry) / underlying_entry × 100 < 1.0 %` (BUY ou SELL), WHEN le pipeline évalue le signal, THEN le score est plafonné à 6.0 (sous seuil confiance, NO_TRADE de fait) — décision Thomas 2026-05-02 clarifiée 2026-05-03 : viser uniquement mouvements ≥ 1 % sur SOUS-JACENT (pas turbo) pour absorber spread + frais BD + slippage turbo. Note : le bot calcule cette amplitude à partir des prix sous-jacent fournis dans le contexte marché (`underlying_entry`, `underlying_tp`), PAS à partir des prix turbo de Bourse Direct (qui seraient ~10× plus permissifs à cause du levier).**
+- [ ] **GIVEN un signal candidat avec amplitude sous-jacent `< 0.5 %`, WHEN sanity check SC2 est appliqué, THEN NO_TRADE forcé sans appel LLM (filtre amont pour économiser tokens et éviter faux positifs).**
 
 **Cas limites :**
 - [ ] GIVEN le pipeline calcule le signal à 8h54:59 CET, WHEN l'envoi Telegram réussit avant 8h55:00, THEN le signal est valide et envoyé.

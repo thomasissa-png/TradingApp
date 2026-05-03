@@ -1,12 +1,15 @@
-"""7 sanity checks deterministes ex-post (SC1-SC7) v1.2.
+"""7 sanity checks deterministes ex-post (SC1-SC7) v1.4.
 
-Source : docs/ia/edge-scoring-model.md v1.2 §3.
+Source : docs/ia/edge-scoring-model.md v1.4 §3.
 
 SC1 BLOQUANT : coherence direction/SL/TP -> NO_TRADE force si incoherent
-SC2 BLOQUANT : R/R >= 1.5 ET amplitude attendue >= 1.0 % (sinon plafond 6.0,
-                NO_TRADE force si R/R < 1.0 OU amplitude < 0.5 %)
+SC2 BLOQUANT : R/R >= 1.5 ET amplitude attendue SOUS-JACENT >= 1.0 % (sinon plafond 6.0,
+                NO_TRADE force si R/R < 1.0 OU amplitude sous-jacent < 0.5 %)
                 Decision Thomas 2026-05-02 : viser uniquement mouvements >= 1 %
-                sur sous-jacent pour absorber spread + frais BD + slippage turbo.
+                sur SOUS-JACENT (pas turbo) pour absorber spread + frais BD + slippage turbo.
+                v1.4 (2026-05-03) : amplitude STRICTEMENT calculee sur sous-jacent
+                (underlying_entry/underlying_tp dans context). Fallback turbo deprecie
+                avec WARNING log si champs absents (retro-compatibilite tests legacy).
 SC3 ALERT    : score brut > 9.0 -> ALERT_flag
 SC4 PENALITE : %no-trade 7j < 20% -> score -1.0 (BOOTSTRAP off si <7 signaux historiques)
 SC5 PLAFOND  : raison speculatif (pourrait/devrait/...) sans chiffre -> plafond 6.0
@@ -18,10 +21,13 @@ SC7 ALERT    : |score_LLM - score_deterministe| > 1.5 -> plafond 7.0 + ALERT
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
 from src.ai.tools import ScoringSignalOutput
+
+logger = logging.getLogger(__name__)
 
 # Universe Bourse Direct (3 indices EU + 10 actions FR) — cf project-context Thomas
 UNIVERSE_SIZE = 13
@@ -138,11 +144,17 @@ def apply_sc2(
     signal: ScoringSignalOutput,
     context: dict[str, Any],
 ) -> tuple[ScoringSignalOutput, list[str]]:
-    """SC2 v1.3 : R/R >= 1.5 ET amplitude attendue >= 1.0 % sinon plafond 6.0.
+    """SC2 v1.4 : R/R >= 1.5 ET amplitude attendue SOUS-JACENT >= 1.0 % sinon plafond 6.0.
 
-    NO_TRADE force si R/R < 1.0 OU amplitude attendue < 0.5 %.
-    Filtre amplitude (decision Thomas 2026-05-02) : viser uniquement mouvements
-    >= 1 % sur sous-jacent pour absorber spread + frais BD + slippage turbo.
+    NO_TRADE force si R/R < 1.0 OU amplitude sous-jacent < 0.5 %.
+    Filtre amplitude (decision Thomas 2026-05-02, clarifiee 2026-05-03) :
+    viser uniquement mouvements >= 1 % sur SOUS-JACENT (pas turbo) pour absorber
+    spread + frais BD + slippage turbo.
+
+    v1.4 : amplitude calculee sur prix sous-jacent fournis dans context :
+        - context["underlying_entry"] : prix sous-jacent au moment de l'entree turbo
+        - context["underlying_tp"]    : prix sous-jacent cible au TP turbo
+    Si ces champs sont absents -> fallback sur prix turbo (deprecie, WARNING log).
     """
     triggered: list[str] = []
 
@@ -173,8 +185,27 @@ def apply_sc2(
         return updated, triggered
 
     rr = reward / risk
-    # Amplitude attendue normalisee par entry (sens du mouvement directionnel)
-    amplitude_pct = reward / signal.entry if signal.entry > 0 else 0.0
+
+    # Amplitude attendue : STRICTEMENT sur sous-jacent (v1.4) si champs presents
+    underlying_entry = context.get("underlying_entry")
+    underlying_tp = context.get("underlying_tp")
+
+    if (
+        underlying_entry is not None
+        and underlying_tp is not None
+        and isinstance(underlying_entry, (int, float))
+        and isinstance(underlying_tp, (int, float))
+        and underlying_entry > 0
+    ):
+        # Valeur absolue : meme logique BUY (tp>entry) et SELL (tp<entry)
+        amplitude_pct = abs(underlying_tp - underlying_entry) / underlying_entry
+    else:
+        # Fallback turbo (deprecie) — retro-compatibilite tests legacy
+        logger.warning(
+            "SC2 v1.4 fallback : underlying_entry/underlying_tp absents du context, "
+            "calcul amplitude sur prix turbo (deprecie, ~10x plus permissif que regle Thomas)."
+        )
+        amplitude_pct = reward / signal.entry if signal.entry > 0 else 0.0
 
     # Cas 1 : amplitude < 0.5 % -> NO_TRADE force (frais turbo non absorbes)
     if amplitude_pct < AMPLITUDE_MIN_NO_TRADE_PCT:

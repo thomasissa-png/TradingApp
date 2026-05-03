@@ -38,5 +38,7 @@
   },
   "confidence_threshold": 6.5,
   "position_sizing": {"capital_engage_target": 1500, "leverage_target": 10},
-  "vix": 16.0
+  "vix": 16.0,
+  "underlying_entry": 18418,
+  "underlying_tp": 18610
 }

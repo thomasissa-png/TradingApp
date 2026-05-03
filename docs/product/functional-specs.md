@@ -3,7 +3,7 @@
 # Spécifications fonctionnelles — TradingApp V1
 
 > **KPI North Star** : P&L net mensuel après frais Bourse Direct (~0,99 € × 2 par trade) et fiscalité PFU 31,4 % (12,8 % IR + 18,6 % PS, taux 2025+ confirmé @legal).
-> **Persona** : Thomas — trader particulier, capital 20-30 k€, turbos levier 5-20, exécution manuelle Bourse Direct, fenêtre 8h40-9h05 CET.
+> **Persona** : Thomas — trader particulier, capital 20-30 k€, turbos levier 5-10 (max x10 validé Thomas 2026-05-02), exécution manuelle Bourse Direct, fenêtre 8h40-9h05 CET.
 > **Périmètre** : Bot Telegram, usage 100 % personnel, non redistribué.
 > Date : 2026-05-01 | Agent : @product-manager
 
@@ -74,6 +74,8 @@ En tant que Thomas, je veux recevoir un signal structuré ACHAT ou VENTE sur Tel
 **Cas d'erreur :**
 - [ ] GIVEN score < seuil_confiance, WHEN le pipeline finit le calcul, THEN aucun message ACHAT/VENTE n'est envoyé — US-02 (NO-TRADE) est déclenchée à la place.
 - [ ] GIVEN sl ≥ entree sur un signal ACHAT, WHEN le pipeline tente d'envoyer, THEN le signal est bloqué en interne, aucun message Telegram envoyé, erreur loguée en SQLite avec motif "SL invalide", US-04 déclenchée.
+- [ ] **GIVEN un signal candidat avec amplitude attendue `(tp − entree) / entree × 100 < 1.0 %` (BUY) ou `(entree − tp) / entree × 100 < 1.0 %` (SELL), WHEN le pipeline évalue le signal, THEN le signal est forcé NO_TRADE (motif "amplitude attendue < 1 % — frais turbo non absorbés") — décision Thomas 2026-05-02 : viser uniquement mouvements ≥ 1 % sur sous-jacent pour absorber spread + frais BD + slippage turbo.**
+- [ ] **GIVEN un signal candidat avec amplitude attendue `< 0.5 %`, WHEN sanity check SC2 est appliqué, THEN NO_TRADE forcé sans appel LLM (filtre amont pour économiser tokens et éviter faux positifs).**
 
 **Cas limites :**
 - [ ] GIVEN le pipeline calcule le signal à 8h54:59 CET, WHEN l'envoi Telegram réussit avant 8h55:00, THEN le signal est valide et envoyé.
@@ -1263,7 +1265,7 @@ Pistes V2 (à valider par R&D — pas de promesse) :
 |---|---|---|---|
 | G1 | Persona Thomas identifié dans toutes les US | PASS | "Thomas" nommé dans chaque US-01 à US-11, jamais "l'utilisateur" |
 | G3 | Zéro donnée inventée non marquée | PASS | Seuil confiance marqué [HYPOTHÈSE], H3 marqué [À VÉRIFIER PAR PERSONA] ; US-09/10/11 sans hypothèse non marquée |
-| G5 | Persona correspond exactement à project-context.md | PASS | Thomas, capital 20-30 k€, Bourse Direct, turbos 5-20, 8h45-8h55 CET |
+| G5 | Persona correspond exactement à project-context.md | PASS | Thomas, capital 20-30 k€, Bourse Direct, turbos 5-10 (max x10), 8h45-8h55 CET |
 | G6 | KPI North Star cité avec PFU 31,4 % | PASS | Résumé exécutif + US-01 JTBD + US-08 calcul pl_net + US-09 pl_net_semaine (règle fiscale PFU gains uniquement) |
 | G7 | Cohérence brand-platform + personas + user-flows.md + legal-audit | PASS | US-09 conforme Flow 4 user-flows.md (cron vendredi 18h, commande /journal-week, statut OK/ALERTE/ARRÊT) ; US-10 conforme Flow 5 (chemin a /continue, double confirmation si ≥ 2 KO, F20 mitigation) ; US-11 conforme Flow 5 (chemin b /stop = paper-trading pas arrêt définitif, F21 mitigation) ; PFU 31,4 % US-09 cohérent legal-audit L001 ; signaux d'arrêt R7 functional-specs §4 intégrés dans US-09 statut_semaine |
 | G12 | Chaque user story implémentable sans question @fullstack | PASS | US-09 : schéma `journal_weeks`, cron CRON_WEEKLY, calcul PFU, idempotence `journal_week_sent_at` ; US-10 : schéma `strategy_decisions`, double confirmation, timeout 24h ; US-11 : STRATEGY_ACTIVE SQLite, logique préfixe [PAPER TRADING], résumé hebdo adapté |

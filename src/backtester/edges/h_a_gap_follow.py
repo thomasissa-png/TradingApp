@@ -24,6 +24,9 @@ class H_A_GapFollow:
         tp_multiple : multiplicateur ATR/range pour TP (défaut 1.5)
         entry_delay_minutes : minutes après open avant entrée (défaut 5)
         open_hour_utc : heure ouverture marché en UTC (défaut 7 = 8h CET)
+        min_amplitude_pct : amplitude attendue minimale (tp-entry)/entry pour
+            generer un signal (defaut 0.01 = 1 %). Decision Thomas 2026-05-02 :
+            filtre frais turbo (spread + 1.98 € BD aller-retour + slippage).
     """
 
     edge_id: str = "H-A-GapFollow"
@@ -50,6 +53,7 @@ class H_A_GapFollow:
         tp_multiple = float(params.get("tp_multiple", 1.5))
         entry_delay = int(params.get("entry_delay_minutes", 5))
         open_hour_utc = int(params.get("open_hour_utc", 7))
+        min_amplitude_pct = float(params.get("min_amplitude_pct", 0.01))
 
         if df.empty:
             return _empty_signals_df()
@@ -69,6 +73,7 @@ class H_A_GapFollow:
                 entry_delay=entry_delay,
                 open_hour_utc=open_hour_utc,
                 signal_cutoff_utc=self.signal_cutoff_utc,
+                min_amplitude_pct=min_amplitude_pct,
             )
             signal["timestamp"] = pd.Timestamp(trade_date)
             signals.append(signal)
@@ -88,6 +93,7 @@ def _process_gap_day(
     entry_delay: int,
     open_hour_utc: int,
     signal_cutoff_utc: time,
+    min_amplitude_pct: float = 0.01,
 ) -> dict[str, object]:
     """Traite un jour : check gap vs prev_close puis entrée delayed."""
     if prev_close is None or prev_close <= 0:
@@ -121,6 +127,13 @@ def _process_gap_day(
         if entry <= sl:
             return _no_signal("Gap haussier mais entry repassé sous SL")
         tp = entry + (entry - sl) * tp_multiple
+        # Filtre amplitude attendue (decision Thomas 2026-05-02)
+        amplitude_pct = (tp - entry) / entry if entry > 0 else 0.0
+        if amplitude_pct < min_amplitude_pct:
+            return _no_signal(
+                f"Amplitude attendue {amplitude_pct:.2%} < seuil {min_amplitude_pct:.2%} "
+                "(frais turbo non absorbes)"
+            )
         return {
             "direction": "BUY",
             "entry": entry,
@@ -133,6 +146,13 @@ def _process_gap_day(
     if entry >= sl:
         return _no_signal("Gap baissier mais entry repassé au-dessus de SL")
     tp = entry - (sl - entry) * tp_multiple
+    # Filtre amplitude attendue (decision Thomas 2026-05-02)
+    amplitude_pct = (entry - tp) / entry if entry > 0 else 0.0
+    if amplitude_pct < min_amplitude_pct:
+        return _no_signal(
+            f"Amplitude attendue {amplitude_pct:.2%} < seuil {min_amplitude_pct:.2%} "
+            "(frais turbo non absorbes)"
+        )
     return {
         "direction": "SELL",
         "entry": entry,

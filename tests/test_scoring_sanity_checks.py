@@ -118,6 +118,53 @@ def test_sc2_no_trade_signal_skipped() -> None:
     assert result.score == 4.0
 
 
+def test_sc2_amplitude_below_1pct_plafond_6() -> None:
+    """SC2 v1.3 : amplitude attendue (tp-entry)/entry < 1 % -> plafond 6.0.
+
+    Decision Thomas 2026-05-02 : viser >= 1 % pour absorber frais turbo.
+    Exemple : entry=100, sl=99.0 (risk 1), tp=100.7 (reward 0.7 = 0.70 %)
+    R/R = 0.70 mais < 1.0 -> NO_TRADE force (cas 2 prevaut).
+    On teste donc amplitude < 1 % MAIS R/R >= 1.5 : entry=100, sl=99.6, tp=100.7
+    risk=0.4, reward=0.7, R/R=1.75, amplitude=0.7 % < 1 % -> plafond 6.0.
+    """
+    sig = _make_signal(entry=100.0, sl=99.6, tp=100.7, score=8.0)
+    result, triggered = apply_sc2(sig, {})
+    assert triggered == ["SC2"]
+    assert result.direction == "BUY"  # Pas force NO_TRADE (amplitude > 0.5 %)
+    assert result.score == 6.0
+
+
+def test_sc2_amplitude_below_05pct_no_trade() -> None:
+    """SC2 v1.3 : amplitude attendue < 0.5 % -> NO_TRADE force (frais non absorbes)."""
+    # entry=100, sl=99.8, tp=100.4 -> amplitude = 0.4 % < 0.5 % -> NO_TRADE
+    sig = _make_signal(entry=100.0, sl=99.8, tp=100.4, score=8.0)
+    result, triggered = apply_sc2(sig, {})
+    assert triggered == ["SC2"]
+    assert result.direction == "NO_TRADE"
+    assert result.no_trade_reason is not None
+    assert "amplitude" in result.no_trade_reason.lower()
+
+
+def test_sc2_amplitude_above_1pct_pass() -> None:
+    """SC2 v1.3 : amplitude >= 1 % ET R/R >= 1.5 -> pass sans triggered."""
+    # entry=100, sl=99.5, tp=101.5 -> risk=0.5, reward=1.5, R/R=3.0, amplitude=1.5 % -> PASS
+    sig = _make_signal(entry=100.0, sl=99.5, tp=101.5, score=8.0)
+    result, triggered = apply_sc2(sig, {})
+    assert triggered == []
+    assert result.direction == "BUY"
+    assert result.score == 8.0
+
+
+def test_sc2_amplitude_sell_below_1pct_plafond_6() -> None:
+    """SC2 v1.3 : meme logique cote SELL — amplitude (entry-tp)/entry < 1 % -> plafond 6.0."""
+    # SELL : entry=100, sl=100.4, tp=99.3 -> risk=0.4, reward=0.7, R/R=1.75, amplitude=0.7 %
+    sig = _make_signal(direction="SELL", entry=100.0, sl=100.4, tp=99.3, score=8.0)
+    result, triggered = apply_sc2(sig, {})
+    assert triggered == ["SC2"]
+    assert result.direction == "SELL"
+    assert result.score == 6.0
+
+
 # ---------------------------------------------------------------------------
 # SC3 — Score brut > 9.0 -> ALERT
 # ---------------------------------------------------------------------------

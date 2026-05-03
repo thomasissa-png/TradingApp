@@ -159,13 +159,21 @@ score_brut = clip( Σ(D_i × poids_i × normalisation_i), 1.0, 10.0 )
 
 **Pourquoi** : Claude peut occasionnellement inverser (rare avec température 0.1 + tool use, mais possible). Coût d'une erreur direction sur turbo levier 10 = perte totale en quelques minutes. SC1 = filet de sécurité non-négociable.
 
-### 3.2 SC2 — Risk/Reward minimum 1.5
+### 3.2 SC2 — Risk/Reward minimum 1.5 ET amplitude attendue ≥ 1 % (v1.3, post-arbitrage Thomas 2026-05-02)
 
-**Règle** : `(TP - entry) / (entry - SL) ≥ 1.5` pour ACHAT, et symétrique pour VENTE.
-- Si R/R < 1.5 → **score plafonné à 6.0** (sous `CONFIDENCE_THRESHOLD_LIVE` 6.5 et a fortiori sous `_PAPER` 7.0 → NO-TRADE de fait dans les deux modes, v1.1).
+**Règle composite (R/R + amplitude)** :
+- `R/R = (TP - entry) / (entry - SL)` (ACHAT, symétrique VENTE).
+- `amplitude_attendue = (TP - entry) / entry × 100 %` (ACHAT, symétrique VENTE).
+
+**Décisions** :
+- Si R/R ≥ 1.5 **ET** amplitude ≥ 1.0 % → **PASS** (signal candidat).
+- Si R/R < 1.5 **OU** amplitude < 1.0 % → **score plafonné à 6.0** (sous `CONFIDENCE_THRESHOLD_LIVE` 6.5 et a fortiori sous `_PAPER` 7.0 → NO-TRADE de fait dans les deux modes).
+- Si amplitude < 0.5 % → **NO-TRADE forcé** + `no_trade_reason: "amplitude attendue < 0.5 % — frais turbo non absorbés (décision Thomas 2026-05-02)"`.
 - Si R/R < 1.0 → **NO-TRADE forcé** + `no_trade_reason: "R/R < 1.0 — gain potentiel insuffisant vs risque"`.
 
-**Pourquoi** : un signal avec R/R 1:1 ou pire est mathématiquement perdant à win_rate < 50 %. Cohérent edge-rnd-brief seuil PF > 1.5 — un signal individuel doit refléter la qualité statistique de l'edge.
+**Pourquoi (R/R)** : un signal avec R/R 1:1 ou pire est mathématiquement perdant à win_rate < 50 %. Cohérent edge-rnd-brief seuil PF > 1.5 — un signal individuel doit refléter la qualité statistique de l'edge.
+
+**Pourquoi (amplitude ≥ 1 %, décision Thomas 2026-05-02)** : sur turbo Bourse Direct, les frais (1.98 € aller-retour) + spread émetteur (0.05 € moyen) + slippage (0.1 %) + impact PFU 31,4 % ne sont absorbés que si le sous-jacent bouge d'au moins 1 %. Un signal avec amplitude attendue 0.6 % génère un breakeven négatif même avec win_rate 70 %. Le filtre amont SC2 réduit le nombre de signaux mais améliore le R/R réel net de frais. Implémenté aussi côté backtester (paramètre `min_amplitude_pct = 0.01` dans H-A et H-C — édition Phase 5c).
 
 ### 3.3 SC3 — Score brut > 9.0 → flag ALERT (revue manuelle)
 
@@ -240,7 +248,7 @@ function applySC7(signal: SignalOutput, deterministicScore: number): SignalOutpu
 | SC | Test | Action si échec | Sévérité |
 |---|---|---|---|
 | SC1 | direction cohérente avec SL/TP | NO-TRADE forcé | Bloquant |
-| SC2 | R/R ≥ 1.5 | Score plafonné 6.0 ; R/R < 1.0 → NO-TRADE forcé | Bloquant |
+| SC2 (v1.3) | R/R ≥ 1.5 ET amplitude ≥ 1 % | Plafond 6.0 si R/R<1.5 OU amplitude<1 % ; NO-TRADE si R/R<1.0 OU amplitude<0.5 % | Bloquant |
 | SC3 | score brut ≤ 9.0 | Flag ALERT (revue manuelle) | Avertissement |
 | SC4 | % no-trade 7j ≥ 20 % | Score -1.0 | Pénalité |
 | SC5 | conditionnel chiffré dans raison | Score plafonné 6.0 | Pénalité |

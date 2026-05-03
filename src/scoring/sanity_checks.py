@@ -3,7 +3,10 @@
 Source : docs/ia/edge-scoring-model.md v1.2 §3.
 
 SC1 BLOQUANT : coherence direction/SL/TP -> NO_TRADE force si incoherent
-SC2 BLOQUANT : R/R >= 1.5 (plafond 6.0 si <1.5, NO_TRADE force si <1.0)
+SC2 BLOQUANT : R/R >= 1.5 ET amplitude attendue >= 1.0 % (sinon plafond 6.0,
+                NO_TRADE force si R/R < 1.0 OU amplitude < 0.5 %)
+                Decision Thomas 2026-05-02 : viser uniquement mouvements >= 1 %
+                sur sous-jacent pour absorber spread + frais BD + slippage turbo.
 SC3 ALERT    : score brut > 9.0 -> ALERT_flag
 SC4 PENALITE : %no-trade 7j < 20% -> score -1.0 (BOOTSTRAP off si <7 signaux historiques)
 SC5 PLAFOND  : raison speculatif (pourrait/devrait/...) sans chiffre -> plafond 6.0
@@ -22,6 +25,15 @@ from src.ai.tools import ScoringSignalOutput
 
 # Universe Bourse Direct (3 indices EU + 10 actions FR) — cf project-context Thomas
 UNIVERSE_SIZE = 13
+
+# Filtre amplitude attendue (SC2 v1.3 — decision Thomas 2026-05-02)
+# < AMPLITUDE_MIN_NO_TRADE_PCT : NO_TRADE force (frais turbo non absorbes du tout)
+# < AMPLITUDE_MIN_PASS_PCT     : plafond 6.0 (mouvement insuffisant pour TP confortable)
+AMPLITUDE_MIN_NO_TRADE_PCT = 0.005  # 0.5 %
+AMPLITUDE_MIN_PASS_PCT = 0.010      # 1.0 %
+
+# Plafond levier turbo (Risk Manager audit Phase 5b validation Thomas 2026-05-02)
+LEVERAGE_MAX = 10
 
 # Patterns langage speculatif (SC5) — cf edge-scoring-model §3.5
 _SPECULATIVE_PATTERNS = re.compile(
@@ -126,7 +138,12 @@ def apply_sc2(
     signal: ScoringSignalOutput,
     context: dict[str, Any],
 ) -> tuple[ScoringSignalOutput, list[str]]:
-    """SC2 : R/R >= 1.5 sinon plafond 6.0 ; < 1.0 -> NO_TRADE force."""
+    """SC2 v1.3 : R/R >= 1.5 ET amplitude attendue >= 1.0 % sinon plafond 6.0.
+
+    NO_TRADE force si R/R < 1.0 OU amplitude attendue < 0.5 %.
+    Filtre amplitude (decision Thomas 2026-05-02) : viser uniquement mouvements
+    >= 1 % sur sous-jacent pour absorber spread + frais BD + slippage turbo.
+    """
     triggered: list[str] = []
 
     if signal.direction == "NO_TRADE" or signal.entry is None or signal.sl is None or signal.tp is None:
@@ -156,7 +173,29 @@ def apply_sc2(
         return updated, triggered
 
     rr = reward / risk
+    # Amplitude attendue normalisee par entry (sens du mouvement directionnel)
+    amplitude_pct = reward / signal.entry if signal.entry > 0 else 0.0
 
+    # Cas 1 : amplitude < 0.5 % -> NO_TRADE force (frais turbo non absorbes)
+    if amplitude_pct < AMPLITUDE_MIN_NO_TRADE_PCT:
+        triggered.append("SC2")
+        updated = signal.model_copy(
+            update={
+                "direction": "NO_TRADE",
+                "entry": None,
+                "sl": None,
+                "tp": None,
+                "score": min(signal.score, 1.0),
+                "ALERT_flag": "NO_TRADE",
+                "no_trade_reason": (
+                    f"SC2 amplitude {amplitude_pct * 100:.2f}% < 0.5% — "
+                    "frais turbo non absorbes (decision Thomas 2026-05-02)"
+                ),
+            }
+        )
+        return updated, triggered
+
+    # Cas 2 : R/R < 1.0 -> NO_TRADE force
     if rr < 1.0:
         triggered.append("SC2")
         updated = signal.model_copy(
@@ -174,7 +213,8 @@ def apply_sc2(
         )
         return updated, triggered
 
-    if rr < 1.5:
+    # Cas 3 : R/R < 1.5 OU amplitude < 1.0 % -> plafond 6.0
+    if rr < 1.5 or amplitude_pct < AMPLITUDE_MIN_PASS_PCT:
         triggered.append("SC2")
         updated = signal.model_copy(update={"score": min(signal.score, 6.0)})
         return updated, triggered

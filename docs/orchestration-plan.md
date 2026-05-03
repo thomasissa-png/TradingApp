@@ -11,7 +11,7 @@
 
 ## Résumé exécutif
 
-- **Objectif projet** : Bot Telegram qui envoie 1 signal turbo justifié + backtesté par jour ouvré 8h45-8h55 CET, exécutable manuellement chez Bourse Direct par Thomas (capital 20-30 k€, levier 5-20).
+- **Objectif projet** : Bot Telegram qui envoie 1 signal turbo justifié + backtesté par jour ouvré 8h45-8h55 CET, exécutable manuellement chez Bourse Direct par Thomas (capital 20-30 k€, levier 5-10 max x10 validé Thomas 2026-05-02).
 - **Décisions clés (cadrage)** :
   1. R&D edge AVANT tout code de prod — la Phase 2 (build) ne démarre QUE si Phase 1 R&D edge a identifié ≥ 1 candidat avec backtest 5 ans positif.
   2. Pas de UI web (Telegram pur) → adaptations design/qa/seo.
@@ -195,7 +195,7 @@ Contexte projet (résumé pré-digéré) :
 - Nom : TradingApp (provisoire)
 - Secteur : Day-trading turbos personnel — fenêtre EU 8h45-9h CET
 - Stade : Idée
-- Persona : Thomas, trader particulier expérimenté, France, capital dédié 20-30 k€, levier 5-20 turbos, taille position 1000-2000 €, exécution manuelle Bourse Direct, dispo 8h45-9h chaque jour ouvré.
+- Persona : Thomas, trader particulier expérimenté, France, capital dédié 20-30 k€, levier 5-10 turbos (max x10 validé Thomas 2026-05-02), taille position 1000-2000 €, exécution manuelle Bourse Direct, dispo 8h45-9h chaque jour ouvré.
 - Frustrations (verbatims) : « pas assez d'éléments pour engager 1500 € avec levier 10 », « pas envie d'ouvrir un dashboard tous les matins », « un seul signal clair par jour ouvré, pas dix indicateurs qui se contredisent », « préfère un no-trade honnête à une reco forcée ».
 - Promesse : 1 signal turbo/jour ouvré 8h45-8h55 CET, justifié (entrée + SL + TP + raison + score + ref backtest) et backtesté 5 ans, sur Telegram, exécutable < 5 min Bourse Direct.
 - 3 mots brand : Justifié · Concis · Backtesté
@@ -285,7 +285,7 @@ ANTI-TIMEOUT : écris le fichier IMMÉDIATEMENT après lecture. Write d'abord, E
 **prompt** :
 
 ```
-Contexte : TradingApp, bot Telegram 1 signal/jour ouvré 8h45-8h55 CET, justification + backtest, exécution manuelle Bourse Direct, persona Thomas (capital 20-30 k€, turbos levier 5-20).
+Contexte : TradingApp, bot Telegram 1 signal/jour ouvré 8h45-8h55 CET, justification + backtest, exécution manuelle Bourse Direct, persona Thomas (capital 20-30 k€, turbos levier 5-10 max x10).
 
 Lire AVANT : docs/strategy/brand-platform.md, docs/strategy/personas.md (produits par @creative-strategy), docs/infra/infra-audit.md (verdicts H1/H2/H4), project-context.md (héritage Finance, décisions structurantes).
 

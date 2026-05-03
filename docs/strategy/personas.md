@@ -16,7 +16,7 @@
 **Statut** : actif en emploi (CDI cadre ou indépendant) — le trading n'est pas son activité principale
 **Revenus** : classe moyenne supérieure, revenu disponible pour le capital dédié
 **Capital dédié trading** : 20-30 k€ — séparé du reste de son patrimoine, montant qu'il accepte de perdre sans impact sur son niveau de vie
-**Levier utilisé** : 5-20 sur turbos (choix du turbo selon la configuration du signal)
+**Levier utilisé** : 5-10 sur turbos — max x10 validé Thomas 2026-05-02 (plafond strict imposé par audit Risk Manager turbos, choix du turbo selon la configuration du signal)
 **Taille de position typique** : 1 000-2 000 € par trade
 **Broker** : Bourse Direct, compte-titre ordinaire (CTO)
 **Produits tradés** : turbos (warrants à levier intégré) sur sous-jacents EU — indices (CAC40, DAX, EuroStoxx50), actions françaises large cap, FX (EUR/USD), commodities (or, brent, gaz)

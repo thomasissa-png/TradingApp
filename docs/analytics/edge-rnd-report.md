@@ -117,6 +117,11 @@ frais_total_par_trade = (
 
 ## 3. Détail des 7 hypothèses
 
+> **Filtre commun à TOUTES les hypothèses (ajouté Phase 5c, 2026-05-02)** :
+> `min_amplitude_attendue = 1.0 %` sur sous-jacent — un signal n'est généré que si `(TP - entry) / entry × 100 ≥ 1.0 %` (BUY) ou symétrique (SELL).
+> **Justification** : sur turbo Bourse Direct, les frais (1.98 € BD aller-retour + 0.05 € spread + 0.1 % slippage) ne sont absorbés que si le sous-jacent bouge ≥ 1 %. Décision Thomas 2026-05-02 post-arbitrage Risk Manager turbos.
+> **Impact estimé sur les hypothèses** : nombre de signaux divisé par 1.5-2× (réduit setups marginaux), R/R réel net de frais amélioré de +20-40 % (frais devenant marginaux vs reward). Sharpe a priori : potentiellement amélioré (R/R net meilleur), à confirmer en backtest physique. Implémenté en code : `min_amplitude_pct = 0.01` paramètre par défaut dans `H_A_GapFollow` et `H_C_ORB`.
+
 ### H-A — Gap Follow EU Open
 
 **Logique** : si un sous-jacent ouvre en gap haussier (> seuil %) par rapport à la clôture J-1, la dynamique directionnelle se poursuit dans les premières minutes. Un gap accompagné de volume élevé confirme la participation des institutionnels. Signal : achat turbo Call dès l'ouverture (8h01 Xetra / 9h01 Euronext), sortie à fenêtre fixe ou sur TP/SL ATR-based.

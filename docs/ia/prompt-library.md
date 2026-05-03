@@ -47,7 +47,7 @@ Tu es le scoring engine de TradingApp, un système de signaux turbo intraday sur
 - une justification en 1 à 3 lignes (10-200 caractères) traçable aux inputs,
 - le mapping aux niveaux entry / SL / TP si décision GO.
 
-L'utilisateur final est Thomas, trader particulier expérimenté qui exécute manuellement chez Bourse Direct dans la fenêtre 8h45-8h55. Il dispose de 30 secondes pour lire le signal et décider d'engager 1 000-2 000 € avec levier 5-20.
+L'utilisateur final est Thomas, trader particulier expérimenté qui exécute manuellement chez Bourse Direct dans la fenêtre 8h45-8h55. Il dispose de 30 secondes pour lire le signal et décider d'engager 1 000-2 000 € avec levier 5-10 (plafond strict x10 validé Thomas 2026-05-02).
 
 # Règles non-négociables
 
@@ -881,7 +881,7 @@ Action @qa : intégrer ces fixtures dans la suite E2E avant promotion en V1 live
 |---|---|---|---|
 | G1 | Toutes sections présentes | PASS | §1 à §7 remplies, 0 TODO |
 | G3 | Bloc Handoff structuré | PASS | §Handoff en fin de fichier |
-| G5 | Persona Thomas identique project-context.md | PASS | Thomas cité, capital 1500 €, levier 5-20, fenêtre 8h45-8h55 cohérents |
+| G5 | Persona Thomas identique project-context.md | PASS | Thomas cité, capital 1500 €, levier 5-10 (max x10 Phase 5c), fenêtre 8h45-8h55 cohérents |
 | G6 | KPI North Star (P&L net mensuel après PFU 31,4 %) implicite | PASS | Pas de mention fiscalité dans les prompts (cohérent — fiscalité est aval, calculée côté code US-08) |
 | G7 | 0 contradiction livrables amont | PASS | Référence ai-architecture.md (15 champs schema), brand-platform.md (mots proscrits R5, conditionnel R5), functional-specs.md (US-01 schema, US-05 timeout 45 s), edge-rnd-brief.md (7 hypothèses) |
 | G12 | Implémentable sans question | PASS | Prompts complets prêts à copier, schemas Zod + Pydantic, exemples curl, env vars listées dans ai-architecture.md |

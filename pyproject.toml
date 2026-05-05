@@ -18,7 +18,7 @@ dependencies = [
     "pydantic>=2.6.0",
     "pydantic-settings>=2.2.0",
     "python-dotenv>=1.0.0",
-    "workalendar>=17.0.0",
+    "holidays>=0.45",
     "requests>=2.31.0",
     "pytz>=2024.1",
 ]
@@ -57,7 +57,7 @@ strict = true
 warn_unused_ignores = true
 warn_return_any = true
 disallow_untyped_defs = true
-ignore_missing_imports = true  # vectorbt, workalendar, twelvedata pas tous typed
+ignore_missing_imports = true  # vectorbt, holidays, twelvedata pas tous typed
 exclude = ["data/", "build/", "dist/"]
 
 [tool.pytest.ini_options]

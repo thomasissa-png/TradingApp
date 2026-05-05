@@ -1,8 +1,13 @@
-"""Calendrier France — wrapper workalendar.
+"""Calendrier France — wrapper holidays.
 
-Note 14 juillet : `workalendar.europe.France` inclut les 11 jours feries legaux
+Note : `holidays.France()` inclut les 11 jours feries legaux
 (1er janvier, lundi de Paques, 1er mai, 8 mai, Ascension, lundi de Pentecote,
 14 juillet, 15 aout, 1er novembre, 11 novembre, 25 decembre).
+
+Phase 5c bis : migration workalendar -> holidays. workalendar tire pymeeus
+en dependance transitive (via convertdate) qui ne build pas sur Replit.
+holidays>=0.45 n'a pas cette dependance et couvre les memes jours feries FR
+y compris les mobiles (Paques, Pentecote, Ascension).
 """
 
 from __future__ import annotations
@@ -10,12 +15,12 @@ from __future__ import annotations
 from datetime import date, datetime
 from functools import lru_cache
 
-from workalendar.europe import France
+import holidays
 
 
 @lru_cache(maxsize=1)
-def _calendar() -> France:
-    return France()
+def _calendar() -> holidays.HolidayBase:
+    return holidays.France()
 
 
 def is_working_day_fr(d: date | datetime | None = None) -> bool:
@@ -24,23 +29,27 @@ def is_working_day_fr(d: date | datetime | None = None) -> bool:
         d = date.today()
     if isinstance(d, datetime):
         d = d.date()
-    return bool(_calendar().is_working_day(d))
+    # weekday() : 0=lundi, 4=vendredi, 5=samedi, 6=dimanche
+    if d.weekday() >= 5:
+        return False
+    return d not in _calendar()
 
 
-# Mapping noms jours feries FR (workalendar retourne les libelles en anglais).
+# Mapping noms jours feries FR (holidays.France() retourne les libelles en francais natifs).
 # Phase 2f (A3 audit @testeur-persona-thomas) : message courtoisie skip jour ferie.
+# On normalise vers des libelles courts standardises (sans accents pour compat Telegram).
 _HOLIDAY_FR_NAMES: dict[str, str] = {
-    "New year": "1er janvier",
-    "Easter Monday": "Lundi de Paques",
-    "Labour Day": "1er mai (Fete du travail)",
-    "Victory in Europe Day": "8 mai (Victoire 1945)",
-    "Ascension Day": "Ascension",
-    "Whit Monday": "Lundi de Pentecote",
-    "Bastille Day": "14 juillet (Fete nationale)",
-    "Assumption of Mary to Heaven": "15 aout (Assomption)",
-    "All Saints Day": "Toussaint",
-    "Armistice Day": "11 novembre (Armistice 1918)",
-    "Christmas Day": "Noel",
+    "Jour de l'an": "1er janvier",
+    "Lundi de Pâques": "Lundi de Paques",
+    "Fête du Travail": "1er mai (Fete du travail)",
+    "Fête de la Victoire": "8 mai (Victoire 1945)",
+    "Ascension": "Ascension",
+    "Lundi de Pentecôte": "Lundi de Pentecote",
+    "Fête nationale": "14 juillet (Fete nationale)",
+    "Assomption": "15 aout (Assomption)",
+    "Toussaint": "Toussaint",
+    "Armistice": "11 novembre (Armistice 1918)",
+    "Noël": "Noel",
 }
 
 
@@ -49,14 +58,14 @@ def get_holiday_name_fr(d: date | datetime | None = None) -> str | None:
 
     Returns:
         Libelle francais court (ex "14 juillet (Fete nationale)") ou None.
-        Weekend renvoie None (ce n'est pas un ferie au sens workalendar).
+        Weekend renvoie None (ce n'est pas un ferie au sens calendrier legal).
     """
     if d is None:
         d = date.today()
     if isinstance(d, datetime):
         d = d.date()
-    for h_date, h_name in _calendar().holidays(d.year):
-        if h_date == d:
-            name_str = str(h_name)
-            return _HOLIDAY_FR_NAMES.get(name_str, name_str)
-    return None
+    name = _calendar().get(d)
+    if name is None:
+        return None
+    name_str = str(name)
+    return _HOLIDAY_FR_NAMES.get(name_str, name_str)

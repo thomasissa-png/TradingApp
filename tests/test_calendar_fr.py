@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 import pytz
 
-from src.scheduler.calendar_fr import is_working_day_fr
+from src.scheduler.calendar_fr import get_holiday_name_fr, is_working_day_fr
 from src.scheduler.cron import is_in_signal_window, is_market_day_fr
 
 PARIS = pytz.timezone("Europe/Paris")
@@ -30,6 +30,14 @@ def test_saturday_is_not_working_day() -> None:
 def test_christmas_2026_is_not_working_day() -> None:
     """25 decembre — ferie."""
     assert is_working_day_fr(date(2026, 12, 25)) is False
+
+
+def test_1er_mai_2026_is_holiday() -> None:
+    """1er mai 2026 = Fete du Travail -> ferie + nom FR retourne."""
+    assert is_working_day_fr(date(2026, 5, 1)) is False
+    name = get_holiday_name_fr(date(2026, 5, 1))
+    assert name is not None
+    assert "1er mai" in name
 
 
 def test_is_market_day_fr_on_weekday() -> None:

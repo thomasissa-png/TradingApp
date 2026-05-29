@@ -62,7 +62,7 @@ Pour toute règle/learning ajouté en fin de session, une obsolète doit être s
 4. Handoff structuré obligatoire en fin de livrable
 5. Mettre à jour l'historique des interventions après chaque livrable
 6. Respecter les règles anti-timeout (commandement 3)
-7. Objectif qualité : 100% gates PASS (32 gates G1-G32, voir `_gates.md`)
+7. Objectif qualité : 100% gates PASS (9 gates dont G_PROOF, voir `_gates.md`)
 8. UTF-8 dans le code (é, è, à — jamais `\u00E9`)
 9. Zéro mention de concurrent par nom dans les livrables client-facing
 10. Emails client-facing = brouillons obligatoires (jamais envoi direct)
@@ -103,7 +103,7 @@ Agents dans `.claude/agents/`. Multi-domaine → @orchestrator. Tâche ciblée �
 ## Références
 
 - Protocoles communs, conventions de chemin, mémoire organisationnelle : `_base-agent-protocol.md`
-- Gates binaires G1-G32 + GP/GC + verdicts : `_gates.md`
+- Gates binaires (9 gates : G1, G3, G5, G7, G12, G13, G15, G17, G_PROOF) + verdicts : `_gates.md`
 - Protocole de test du framework : `_base-agent-protocol.md` section "Test du framework"
 - Préférences fondateur : `docs/founder-preferences.md`
 - Historique des sessions : `CHANGELOG.md`

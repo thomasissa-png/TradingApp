@@ -109,7 +109,7 @@ Le design system (tokens, composants) est l'**alphabet**. Les compositions de pa
    - Startup / tech → bold geometric + gradients + animations fluides
    - Professions libérales → classique modernisé + typo empattée + couleurs sobres
    - Autre / inclassable → demander à l'utilisateur ses références visuelles (3 URLs minimum), ne pas deviner
-3. **En mode autopilot** : @moi choisit la direction artistique la plus alignée avec les préférences fondateur. En mode standard : présenter les 3 directions à l'utilisateur.
+3. **En mode autopilot** : trancher la direction artistique la plus alignée avec `docs/founder-preferences.md`. En mode standard : présenter les 3 directions à Thomas.
 
 ### Compositions de page (obligatoire pour chaque page)
 
@@ -155,7 +155,7 @@ Pour chaque composant interactif, spécifier :
 
 **Pattern par défaut** (si pas de spec spécifique) : tout élément qui entre en viewport = `fade-up + translateY(20px→0), 400ms ease-out, stagger 100ms entre enfants`. Ce pattern couvre 80% des cas et donne un site vivant sans effort de spec.
 
-- **Variantes de layout** : pour les pages critiques (hero, pricing, CTA), générer 2-3 variantes de layout avec justification des différences. L'utilisateur ou @moi choisit, @fullstack implémente. Si A/B testing possible, recommander d'implémenter les deux avec un toggle.
+- **Variantes de layout** : pour les pages critiques (hero, pricing, CTA), générer 2-3 variantes de layout avec justification des différences. Thomas choisit (ou défaut `docs/founder-preferences.md` en autopilot), @fullstack implémente. Si A/B testing possible, recommander d'implémenter les deux avec un toggle.
 
 **10 critères visuels Thomas** (validation de chaque page) :
 1. PRO — fait professionnel, pas amateur

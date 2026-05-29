@@ -226,15 +226,12 @@ L'orchestrateur fonctionne en boucle itérative, pas en planification unique. Ch
 - **Vérification boucle visuelle** (après Phase 2 uniquement) : Glob `tests/screenshots/*.png`. Si vide ou absent ET que du code frontend existe dans `src/` → relancer @fullstack avec instruction d'exécuter la boucle visuelle. Les baselines sont requises pour la gate G26 et pour la revue UX post-implémentation.
 - **Vérification build** (après Phase 2 et tout commit code) : exécuter `npx tsc --noEmit && npx next lint && npm run build` (Règle n°6 CLAUDE.md). Si FAIL → BLOQUER, corriger avant de continuer. Vérifier aussi que le hook Husky pre-commit est installé (`.husky/pre-commit` existe). Si absent et que `src/` existe → demander à @fullstack de l'installer (voir _base-agent-protocol.md section "Setup pre-commit hook"). C'est le filet de sécurité automatique — 40% des commits étaient des fix post-commit avant cette règle. **Futurs projets CF** : ajouter `npx @cloudflare/next-on-pages@1` au build check pour valider compatibilité edge.
 
-### 4. CHECKPOINT @moi — Compte rendu de phase (obligatoire)
+### 4. CHECKPOINT @reviewer — Compte rendu de phase (obligatoire)
 
-Après chaque phase terminée, invoquer `@moi` en mode "compte rendu de phase" :
-1. @moi évalue les livrables + décisions de la phase (template dans moi.md section "Shadow Mode")
-2. @moi produit un verdict par livrable (VALIDÉ / À CORRIGER / BLOQUÉ) avec niveau de confiance (HAUTE / MOYENNE / BASSE)
-3. **En Shadow Mode (Phase 1 — mode actuel)** : présenter le compte rendu à Thomas AVANT de continuer. Thomas annote ACCORD/DÉSACCORD sur chaque décision. Chaque désaccord = enrichissement de @moi.
-4. **En Autopilot assisté (Phase 2)** : @moi décide et l'orchestrateur continue. Thomas review en async. Si désaccord → rollback et correction.
-5. **En Autopilot complet (Phase 3)** : @moi gère, rapport de fin de session uniquement.
-6. L'orchestrateur reporte le score de fidélité dans le tableau "Score de fidélité @moi" de project-context.md (c'est l'orchestrateur qui écrit, pas @moi).
+Après chaque phase terminée, invoquer `@reviewer` en mode "compte rendu de phase" :
+1. @reviewer évalue les livrables + décisions de la phase (gates G1-G13 + G_PROOF, voir `_gates.md`)
+2. @reviewer produit un verdict par livrable (VALIDÉ / À CORRIGER / BLOQUÉ) avec niveau de confiance (HAUTE / MOYENNE / BASSE)
+3. Présenter le compte rendu à Thomas AVANT de continuer. Thomas tranche les arbitrages et annote ACCORD/DÉSACCORD sur chaque décision (Thomas décide, l'orchestrateur exécute — pas de RL automatique).
 
 ### 5. NEXT — Passer à la phase suivante ou conclure
 
@@ -459,7 +456,7 @@ Invoquer `testeur-persona` sur les livrables Phase 0 + Phase 1 :
 
 **Checkpoint validation specs (OBLIGATOIRE entre Phase 1 et Phase 2) :**
 Avant de lancer la Phase 2, vérifier que les specs sont implémentables sans ambiguïté :
-1. Invoquer `@moi` en mode quick-check sur `docs/product/functional-specs.md` : "Est-ce que @fullstack peut coder ça sans poser une seule question ?" Si non → retour à @product-manager pour clarifier.
+1. Invoquer `@reviewer` en mode quick-check sur `docs/product/functional-specs.md` : "Est-ce que @fullstack peut coder ça sans poser une seule question ?" (gate G12 — implémentable sans question). Si non → retour à @product-manager pour clarifier.
 2. Vérifier que chaque user story a : Given/When/Then, 5 états UI, critères de validation binaires, events analytics.
 3. Vérifier que chaque écran interactif a ≥ 5 scénarios persona concrets (pas juste des états techniques — des histoires avec le persona nommé, des données réalistes, un contexte d'usage).
 4. Si le projet utilise de l'IA générative : `docs/ia/prompt-library.md` DOIT exister avec des test cases (input → output attendu) AVANT que @fullstack code. Séquence obligatoire : @ia produit prompt-library.md → validation → PUIS @fullstack implémente. Pas en parallèle.

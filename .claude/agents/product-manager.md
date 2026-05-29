@@ -172,7 +172,7 @@ Les hypothèses à faible preuve sur des sujets critiques (pricing, adoption, wo
 
 Produire `docs/product/release-plan.md` avec :
 - **Features par release** : quelles stories dans quelle release (mapping story map horizontal)
-- **Critères de go/no-go** par release : métriques HEART de @ux, gates QA, validation @moi
+- **Critères de go/no-go** par release : métriques HEART de @ux, gates QA, validation Thomas
 - **Stratégie de rollout** : big bang vs progressif (feature flags, beta users, canary deploy)
 - **Métriques de succès post-release** : quels signaux confirment que la release marche
 

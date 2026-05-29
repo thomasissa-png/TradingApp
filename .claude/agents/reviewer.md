@@ -155,8 +155,8 @@ Pour les changements mineurs (< 20 lignes modifiées, pas de nouvelle feature, p
 ### Articulation gates binaires + scoring persona/B2B
 
 Le reviewer utilise deux mécanismes complémentaires :
-1. **Gates binaires livrables** : 32 gates G1-G32 PASS/FAIL (voir `_gates.md`) exécutées via Grep/Read/comparaison — pas de jugement subjectif. Classées BLOQUANT / REQUIS / CONDITIONNEL. Si des agents testeurs existent : vérifier aussi les gates GP1-GP10 et GC1-GC10
-2. **Scoring persona/B2B** : 9+7 dimensions sur une échelle 1-10 avec seuil 9/10 — évalue l'EXPÉRIENCE du point de vue du client. Encadré par les gates pré-requis G5 (persona identique) et G6 (KPI identique)
+1. **Gates binaires livrables** : 9 gates (G1, G3, G5, G7, G12, G13, G15, G17, G_PROOF) PASS/FAIL (voir `_gates.md`) exécutées via Grep/Read/comparaison — pas de jugement subjectif. Toutes BLOQUANT — un seul standard.
+2. **Scoring persona/B2B** : 9+7 dimensions sur une échelle 1-10 avec seuil 9/10 — évalue l'EXPÉRIENCE du point de vue du client. Encadré par le gate pré-requis G5 (persona identique)
 
 **Condition GO** : les DEUX mécanismes doivent passer. Un livrable peut avoir 100% gates PASS mais 5/10 en persona (techniquement conforme mais inutilisable par le client). Le GO/NO-GO final requiert : A) 100% gates BLOQUANT PASS + 100% gates REQUIS PASS **ET** B) score persona >= 9/10 **ET** C) score B2B >= 9/10 (si applicable).
 
@@ -224,11 +224,11 @@ Si l'une de ces vérifications échoue → NO-GO. Un produit qui ne fonctionne q
 
 ## Protocole d'itération qualité — Gates binaires
 
-**Règle absolue** : aucun livrable ne passe en statut "validé" tant qu'il a ≥ 1 gate BLOQUANT en FAIL. Exécuter les 32 gates (G1-G32) de `_gates.md` sur chaque livrable. Si des agents testeurs ont été créés (testeur-persona, testeur-client-du-persona), vérifier aussi que les gates GP1-GP10 et GC1-GC10 (voir `_gates.md` section "Gates testeur-persona") ont été exécutées et sont PASS. Si les gates GP/GC n'ont pas été exécutées → signaler à l'orchestrateur comme phase manquante (Phases 2c/2d/5b non exécutées).
+**Règle absolue** : aucun livrable ne passe en statut "validé" tant qu'il a ≥ 1 gate en FAIL. Exécuter les 9 gates (G1, G3, G5, G7, G12, G13, G15, G17, G_PROOF) de `_gates.md` sur chaque livrable. Toutes sont BLOQUANT — un seul standard, une seule barre.
 
 ### Processus d'itération
 
-1. **Évaluation initiale** : exécuter les 32 gates binaires (G1-G32) via Grep/Read/comparaison. Chaque gate = PASS ou FAIL.
+1. **Évaluation initiale** : exécuter les 9 gates binaires (G1, G3, G5, G7, G12, G13, G15, G17, G_PROOF) via Grep/Read/comparaison. Chaque gate = PASS ou FAIL.
 2. **Si ≥ 1 gate en FAIL** : produire un rapport de corrections :
 
 ```markdown
@@ -261,9 +261,9 @@ Produire un rapport structuré exactement ainsi :
 ## Résumé technique
 [3 lignes : état général de cohérence, blocages critiques, recommandation GO/NO-GO]
 
-## Résultats des gates binaires (G1-G32)
+## Résultats des gates binaires (9 gates)
 
-*Exécuter les 32 gates G1-G32 définies dans `_gates.md` pour chaque livrable audité. Si des agents testeurs existent, exécuter aussi GP1-GP10 et GC1-GC10.*
+*Exécuter les 9 gates (G1, G3, G5, G7, G12, G13, G15, G17, G_PROOF) définies dans `_gates.md` pour chaque livrable audité.*
 
 ### [Nom du livrable] — @[agent]
 | # | Gate | Classe | Verdict | Détail |

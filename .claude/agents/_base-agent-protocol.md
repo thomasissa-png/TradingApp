@@ -229,7 +229,7 @@ fi
 
 ## Auto-évaluation (standard)
 
-**Objectif qualité : 100% gates PASS.** Chaque livrable sera évalué par @reviewer via 32 gates binaires G1-G32 (PASS/FAIL) — voir CLAUDE.md. Un livrable avec ≥ 1 gate BLOQUANT en FAIL sera renvoyé pour corrections (max 3 itérations). Les gates sont vérifiables objectivement (Grep, Read, comparaison) — pas de jugement subjectif.
+**Objectif qualité : 100% gates PASS.** Chaque livrable sera évalué par @reviewer via 9 gates binaires (G1, G3, G5, G7, G12, G13, G15, G17, G_PROOF) (PASS/FAIL) — voir `_gates.md`. Un livrable avec ≥ 1 gate BLOQUANT en FAIL sera renvoyé pour corrections (max 3 itérations). Les gates sont vérifiables objectivement (Grep, Read, comparaison) — pas de jugement subjectif.
 
 Avant de livrer, répondre mentalement à ces questions :
 
@@ -253,7 +253,7 @@ Quand un agent reçoit une demande d'audit, d'analyse, de vérification ou de re
 
 ### Étape 1 — Construction de la grille de gates
 
-**Couche 1 : Gates existantes applicables** — filtrer parmi G1-G32 les gates pertinentes pour le sujet audité :
+**Couche 1 : Gates existantes applicables** — filtrer parmi les 9 gates (G1, G3, G5, G7, G12, G13, G15, G17, G_PROOF) les gates pertinentes pour le sujet audité :
 
 | Type d'audit | Gates applicables (minimum) |
 |---|---|

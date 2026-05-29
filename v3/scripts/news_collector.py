@@ -22,8 +22,11 @@ import requests
 from config import (
     DEDUP_CACHE_SIZE,
     DEDUP_JACCARD_THRESHOLD,
+    EARLY_SIGNAL_FEEDS,
     HTTP_TIMEOUT,
     RSS_FEEDS,
+    STRUCTURED_QUERIES,
+    STRUCTURED_SOURCES,
     TITLES_CACHE_DB,
     USER_AGENT,
 )
@@ -334,9 +337,185 @@ def collect_rss_phase21() -> dict:
     }
 
 
+# ============================================================
+# Fetch JSON (GNews + NewsAPI) — Phase 2.2
+# ============================================================
+
+def _fetch_gnews(query: str, api_key: str, base_url: str) -> list:
+    """GNews API : https://gnews.io/docs/v4
+    Réponse : {"articles": [{"title", "description", "url", "publishedAt", "source": {"name"}}, ...]}
+    """
+    params = {
+        "q": query,
+        "lang": "en",
+        "max": 25,
+        "apikey": api_key,
+    }
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        r = requests.get(base_url, params=params, headers=headers, timeout=HTTP_TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning("GNews fetch failed for query '%s': %s", query, e)
+        return []
+
+    items = []
+    for art in data.get("articles", []) or []:
+        try:
+            pub_raw = art.get("publishedAt") or ""
+            try:
+                pub_dt = datetime.fromisoformat(pub_raw.replace("Z", "+00:00"))
+            except ValueError:
+                pub_dt = datetime.now(timezone.utc)
+            items.append(NewsItem(
+                title=(art.get("title") or "").strip(),
+                url=art.get("url", ""),
+                source="gnews",
+                published=pub_dt,
+                summary=(art.get("description") or "").strip(),
+            ))
+        except Exception as e:
+            logger.warning("GNews entry parse failed: %s", e)
+    logger.info("GNews query='%s': %d items", query[:40], len(items))
+    return items
+
+
+def _fetch_newsapi(query: str, api_key: str, base_url: str) -> list:
+    """NewsAPI.org : https://newsapi.org/docs/endpoints/everything
+    Réponse : {"articles": [{"title", "description", "url", "publishedAt", "source": {"name"}}, ...]}
+    """
+    params = {
+        "q": query,
+        "language": "en",
+        "pageSize": 25,
+        "sortBy": "publishedAt",
+        "apiKey": api_key,
+    }
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        r = requests.get(base_url, params=params, headers=headers, timeout=HTTP_TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning("NewsAPI fetch failed for query '%s': %s", query, e)
+        return []
+
+    if data.get("status") and data.get("status") != "ok":
+        logger.warning("NewsAPI returned status=%s message=%s",
+                       data.get("status"), data.get("message"))
+        return []
+
+    items = []
+    for art in data.get("articles", []) or []:
+        try:
+            pub_raw = art.get("publishedAt") or ""
+            try:
+                pub_dt = datetime.fromisoformat(pub_raw.replace("Z", "+00:00"))
+            except ValueError:
+                pub_dt = datetime.now(timezone.utc)
+            items.append(NewsItem(
+                title=(art.get("title") or "").strip(),
+                url=art.get("url", ""),
+                source="newsapi",
+                published=pub_dt,
+                summary=(art.get("description") or "").strip(),
+            ))
+        except Exception as e:
+            logger.warning("NewsAPI entry parse failed: %s", e)
+    logger.info("NewsAPI query='%s': %d items", query[:40], len(items))
+    return items
+
+
+def _collect_structured() -> list:
+    """Poll GNews + NewsAPI sur toutes les STRUCTURED_QUERIES.
+    Clé absente → skip propre (log + 0 item, zéro invention).
+    """
+    raw = []
+    for name, kind, env_key, base_url in STRUCTURED_SOURCES:
+        api_key = os.environ.get(env_key, "").strip()
+        if not api_key:
+            logger.info("Structured source %s: no API key (%s) → skip", name, env_key)
+            continue
+        for query in STRUCTURED_QUERIES:
+            if kind == "gnews":
+                raw.extend(_fetch_gnews(query, api_key, base_url))
+            elif kind == "newsapi":
+                raw.extend(_fetch_newsapi(query, api_key, base_url))
+            else:
+                logger.warning("Unknown structured kind: %s", kind)
+    return raw
+
+
+# ============================================================
+# Collecte unifiée — Phase 2.2
+# ============================================================
+
+def collect_all() -> dict:
+    """Poll mainstream + early-signal + structured (GNews/NewsAPI).
+    Dédup cross-source via cache SQLite + Jaccard.
+    Pré-filtre finance (blacklist puis whitelist).
+    Dégradation gracieuse : un feed KO log WARNING + skip, ne casse pas la run.
+    """
+    _ensure_db()
+    recent_titles = _get_recent_titles()
+
+    raw = []
+
+    # 1) RSS mainstream (hors Reuters mort)
+    for name, url, _interval in RSS_FEEDS:
+        if name.startswith("reuters_"):
+            continue
+        try:
+            raw.extend(_fetch_rss(name, url))
+        except Exception as e:
+            logger.warning("RSS mainstream %s crashed: %s — skip", name, e)
+
+    # 2) RSS early-signal (sources officielles)
+    for name, url, _interval in EARLY_SIGNAL_FEEDS:
+        try:
+            raw.extend(_fetch_rss(name, url))
+        except Exception as e:
+            logger.warning("RSS early-signal %s crashed: %s — skip", name, e)
+
+    # 3) Sources structurées (GNews + NewsAPI)
+    try:
+        raw.extend(_collect_structured())
+    except Exception as e:
+        logger.warning("Structured collect crashed: %s — skip", e)
+
+    # Dédup cross-source
+    deduped = []
+    for item in raw:
+        if not item.title:
+            continue
+        if _is_dup(item.title, recent_titles):
+            continue
+        deduped.append(item)
+        _add_title(item)
+        recent_titles.insert(0, item.title)
+        recent_titles = recent_titles[:DEDUP_CACHE_SIZE]
+
+    # Blacklist d'abord, whitelist ensuite
+    filtered = [it for it in deduped if is_finance_relevant(it.title, it.summary)]
+    skipped = len(deduped) - len(filtered)
+
+    logger.info(
+        "collect_all: raw=%d → deduped=%d → finance_relevant=%d (skipped %d)",
+        len(raw), len(deduped), len(filtered), skipped,
+    )
+
+    return {
+        "raw": raw,
+        "deduped": deduped,
+        "filtered": filtered,
+        "skipped_non_finance": skipped,
+    }
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    result = collect_rss_phase21()
+    result = collect_all()
     print(f"\n=== {len(result['raw'])} raw → {len(result['deduped'])} deduped → "
           f"{len(result['filtered'])} finance ({result['skipped_non_finance']} skipped) ===\n")
     for item in result["filtered"][:10]:

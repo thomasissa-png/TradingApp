@@ -29,7 +29,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).parent))
 
 from extractor import Extractor  # noqa: E402
-from news_collector import collect_rss_phase21  # noqa: E402
+from news_collector import collect_all  # noqa: E402
 from repo_publisher import RepoPublisher  # noqa: E402
 
 
@@ -46,7 +46,7 @@ logger = logging.getLogger("agent_news")
 
 
 HEALTHCHECKS_URL = os.environ.get("HEALTHCHECKS_URL", "").strip()
-MAX_EXTRACTIONS_PER_CYCLE = int(os.environ.get("MAX_EXTRACTIONS_PER_CYCLE", "50"))
+MAX_EXTRACTIONS_PER_CYCLE = int(os.environ.get("MAX_EXTRACTIONS_PER_CYCLE", "80"))
 
 
 def _ping_healthchecks(suffix: str = "") -> None:
@@ -67,7 +67,7 @@ def run_one_cycle(publisher: RepoPublisher, extractor: Extractor) -> dict:
     started = time.monotonic()
     logger.info("=== Cycle start (Europe/Paris : %s) ===", _now_paris())
 
-    result = collect_rss_phase21()
+    result = collect_all()
     raw = result["raw"]
     deduped = result["deduped"]
     filtered = result["filtered"]

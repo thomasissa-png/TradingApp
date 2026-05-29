@@ -36,10 +36,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r v3/requirements.txt
 
-      - name: Run bulletin (STUB)
+      - name: Run bulletin
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           HEALTHCHECKS_URL: ${{ secrets.HEALTHCHECKS_URL }}

@@ -1,0 +1,382 @@
+# triggers-and-windows.yml
+# Codification des triplets binaires et des fenêtres d'activation
+# Lu par : ingestion (pour classer les events) + scoring_analyste (contributions triplet/gate)
+# Source de vérité pour les listes de mots-clés et fenêtres temporelles
+# Version : 1 — Date : 2026-05-27 (importé du vault Bourse/Actifs/)
+
+# ============================================================
+# RÈGLES GÉNÉRALES
+# ============================================================
+# - Listes de mots-clés **fermées** : event qui ne match rien → valeur_triplet = 0
+# - Mots-clés **FR + EN** (sources mixtes)
+# - Recherche **case-insensitive** + word-boundary (pas de match partiel sub-string)
+# - Fenêtres d'activation en **CET** par défaut
+# - Hors fenêtre : poids effectif = 0, contribution = 0 (pas n/a, vraiment 0)
+
+cac_40:
+  tension_politique_fr:
+    type: triplet
+    long_keywords:
+      - "accord budget"
+      - "vote de confiance"
+      - "stabilité gouvernementale"
+      - "loi de finances adoptée"
+      - "Lecornu confirmé"
+      - "rating relevé"
+    short_keywords:
+      - "motion de censure"
+      - "dissolution"
+      - "dégradation rating"
+      - "rating dégradé"
+      - "downgrade"
+      - "shutdown"
+      - "blocage budget"
+      - "rejet loi de finances"
+      - "démission gouvernement"
+      - "crise politique"
+    horizon_lookback_jours: 7
+
+# S&P 500 — pas de triplet binaire (tout en numérique)
+
+nasdaq:
+  sentiment_ia_megacaps:
+    type: triplet
+    long_keywords:
+      - "NVDA beat"
+      - "Nvidia beat"
+      - "NVDA beats earnings"
+      - "MSFT beat"
+      - "Microsoft beat"
+      - "GOOGL beat"
+      - "Alphabet beat"
+      - "AAPL beat"
+      - "Apple beat"
+      - "AMZN beat"
+      - "Amazon beat"
+      - "META beat"
+      - "TSLA beat"
+      - "Tesla beat"
+      - "guidance raised"
+      - "guidance haussière"
+      - "guidance relevée"
+      - "outlook raised"
+    short_keywords:
+      - "NVDA miss"
+      - "Nvidia miss"
+      - "MSFT miss"
+      - "Microsoft miss"
+      - "GOOGL miss"
+      - "AAPL miss"
+      - "AMZN miss"
+      - "META miss"
+      - "TSLA miss"
+      - "guidance lowered"
+      - "guidance abaissée"
+      - "guidance cut"
+      - "outlook cut"
+      - "profit warning"
+      - "avertissement sur résultats"
+    horizon_lookback_jours: 7
+
+vix:
+  tension_geopolitique_active:
+    type: triplet
+    long_keywords:   # LONG VIX (= vol up)
+      - "frappes"
+      - "airstrikes"
+      - "escalade"
+      - "escalation"
+      - "blocus"
+      - "blockade"
+      - "conflit armé"
+      - "armed conflict"
+      - "invasion"
+      - "rupture diplomatique"
+      - "diplomatic rupture"
+    short_keywords:  # SHORT VIX (= vol down)
+      - "cessez-le-feu"
+      - "ceasefire"
+      - "accord de paix"
+      - "peace deal"
+      - "désescalade"
+      - "de-escalation"
+      - "retrait des forces"
+      - "force withdrawal"
+    horizon_lookback_jours: 3
+
+# EUR/USD — pas de triplet binaire (tout en numérique FedWatch/COT/spreads)
+
+petrole:
+  geopol_iran:
+    type: triplet
+    long_keywords:   # LONG pétrole
+      - "frappes Iran"
+      - "Iran strikes"
+      - "blocus Ormuz"
+      - "Strait of Hormuz blocked"
+      - "détroit d'Ormuz fermé"
+      - "sanctions Iran"
+      - "escalade Iran"
+      - "Iran escalation"
+      - "Iran retaliation"
+      - "tankers attaqués"
+      - "tankers attacked"
+    short_keywords:  # SHORT pétrole
+      - "accord Iran"
+      - "Iran deal"
+      - "JCPOA"
+      - "cessez-le-feu Iran"
+      - "Iran ceasefire"
+      - "retrait sanctions"
+      - "sanctions lifted"
+      - "désescalade Iran"
+      - "détente Iran"
+    horizon_lookback_jours: 7
+
+  opec_politique:
+    type: triplet
+    long_keywords:   # LONG pétrole (cut = offre serrée)
+      - "OPEC cut"
+      - "OPEC+ cut"
+      - "OPEC réduction"
+      - "production cut"
+      - "OPEC extension"
+      - "extension cut"
+      - "OPEC compliance"
+    short_keywords:  # SHORT pétrole (hike = offre lâche)
+      - "OPEC hike"
+      - "OPEC+ hike"
+      - "OPEC augmentation"
+      - "production increase"
+      - "OPEC dispute"
+      - "OPEC désaccord"
+      - "OPEC defection"
+    horizon_lookback_jours: 30
+
+  eia_crude_surprise:
+    type: numerique
+    fenetre_activation:
+      jour_publi: "mercredi 16h30 CET"
+      jour_active: "mercredi 16h30 → vendredi 16h30 CET"
+      hors_fenetre: "poids effectif = 0"
+
+  api_bulletin_surprise:
+    type: numerique
+    fenetre_activation:
+      jour_publi: "mardi 22h30 CET"
+      jour_active: "mardi 22h30 → mercredi 16h30 CET"
+      hors_fenetre: "poids effectif = 0"
+
+or:
+  tension_geopolitique:
+    type: triplet
+    long_keywords:
+      - "guerre"
+      - "war"
+      - "escalade"
+      - "escalation"
+      - "sanctions majeures"
+      - "major sanctions"
+      - "terrorisme"
+      - "terrorism"
+      - "frappes"
+      - "airstrikes"
+    short_keywords:
+      - "cessez-le-feu"
+      - "ceasefire"
+      - "accord de paix"
+      - "peace deal"
+      - "désescalade"
+      - "de-escalation"
+    horizon_lookback_jours: 7
+
+  demande_indienne_saisonniere:
+    type: calendrier
+    long_periode:
+      - "octobre → novembre (Diwali)"
+      - "octobre → décembre (saison mariages)"
+    short_periode:
+      - "janvier → mai (off-season)"
+    neutre_periode:
+      - "juin → septembre"
+
+argent:
+  demande_photovoltaique_et_mining_strikes:
+    type: triplet_composite
+    long_keywords:   # LONG argent
+      - "Silver Institute outlook strong"
+      - "demande photovoltaïque"
+      - "photovoltaic demand"
+      - "solar demand"
+      - "strike Mexique"
+      - "strike Mexico mining"
+      - "strike Pérou"
+      - "strike Peru mining"
+      - "grève mining argent"
+      - "silver mining strike"
+    short_keywords:
+      - "Silver Institute outlook weak"
+      - "photovoltaic demand decline"
+      - "fin de grève mining"
+      - "mining strike resolved"
+      - "production normalisée"
+      - "supply normalization"
+    horizon_lookback_jours: 30
+
+cuivre:
+  mining_strikes_chili_perou:
+    type: triplet
+    long_keywords:   # LONG cuivre
+      - "Codelco strike"
+      - "Codelco grève"
+      - "Las Bambas blockade"
+      - "Las Bambas blocage"
+      - "Antofagasta strike"
+      - "strike copper Chile"
+      - "strike copper Peru"
+      - "Chile mining strike"
+      - "Peru mining strike"
+      - "blocage mine cuivre"
+    short_keywords:
+      - "Codelco reprise"
+      - "strike resolved"
+      - "accord syndicats"
+      - "union agreement"
+      - "reprise production"
+      - "production resumed"
+    horizon_lookback_jours: 30
+
+  news_construction_infrastructure:
+    type: triplet
+    long_keywords:   # LONG cuivre
+      - "stimulus Chine"
+      - "China stimulus"
+      - "plan infrastructure"
+      - "infrastructure plan"
+      - "Belt and Road"
+      - "real estate stimulus China"
+      - "stimulus immobilier Chine"
+      - "infrastructure spending"
+    short_keywords:
+      - "infrastructure cut"
+      - "stimulus annulé"
+      - "China property crisis"
+      - "crise immobilière Chine"
+      - "construction slowdown"
+    horizon_lookback_jours: 30
+
+  caixin_pmi_chine:
+    type: numerique
+    fenetre_activation:
+      jour_publi: "1er jour ouvré du mois ~01h45 CET"
+      jour_active: "jour de publi → +7 jours"
+      hors_fenetre: "poids effectif = 0"
+
+cafe:
+  maladies_cabosses:
+    type: triplet
+    long_keywords:   # LONG café
+      - "rouille du café"
+      - "coffee rust"
+      - "Hemileia vastatrix"
+      - "broca"
+      - "infestation café"
+      - "leaf rust outbreak"
+      - "epidemic coffee"
+    short_keywords:
+      - "récolte saine"
+      - "healthy harvest"
+      - "fin outbreak café"
+      - "rust contained"
+    horizon_lookback_jours: 30
+
+  cycle_bresil_biannuel:
+    type: calendrier
+    description: "Cycle production Brésil alterné : année paire = on (forte production), année impaire = off (faible)"
+    long_periode:
+      - "années impaires (off cycle)"
+    short_periode:
+      - "années paires (on cycle)"
+    note: "à reconfirmer chaque année avec CONAB Brésil"
+
+cacao:
+  eudr_impact:
+    type: triplet
+    long_keywords:   # LONG cacao (tension supply chain)
+      - "EUDR échéance"
+      - "EUDR deadline"
+      - "EUDR enforcement"
+      - "deforestation regulation"
+      - "supply chain disruption EUDR"
+      - "EUDR rupture"
+      - "traceability bottleneck"
+    short_keywords:
+      - "EUDR report"
+      - "EUDR postponed"
+      - "EUDR delay"
+      - "exemption EUDR"
+      - "EUDR implementation smooth"
+    horizon_lookback_jours: 60
+
+  maladies_cabosses_cacao:
+    type: triplet
+    long_keywords:
+      - "Black Pod"
+      - "Swollen Shoot"
+      - "cocoa pod borer"
+      - "outbreak cacao"
+      - "infestation cacao"
+      - "maladie cacao"
+    short_keywords:
+      - "récolte saine cacao"
+      - "healthy cocoa harvest"
+      - "outbreak contained cocoa"
+    horizon_lookback_jours: 30
+
+  grindings:
+    type: numerique
+    fenetre_activation:
+      jour_publi: "fin de mois suivant le Q (NCA mi-jan, mi-avril, mi-juil, mi-oct)"
+      jour_active: "jour de publi → +14 jours"
+      hors_fenetre: "poids effectif = 0"
+
+ble:
+  geopol_mer_noire:
+    type: triplet
+    long_keywords:   # LONG blé
+      - "blocus mer Noire"
+      - "Black Sea blockade"
+      - "rupture corridor"
+      - "corridor breakdown"
+      - "sanctions Russie blé"
+      - "Russia wheat sanctions"
+      - "guerre Ukraine"
+      - "Ukraine war escalation"
+      - "drones port Odessa"
+    short_keywords:
+      - "accord corridor"
+      - "Black Sea agreement"
+      - "reconduction corridor"
+      - "corridor extended"
+      - "détente mer Noire"
+      - "Ukraine grain corridor"
+    horizon_lookback_jours: 14
+
+  wasde:
+    type: numerique
+    fenetre_activation:
+      jour_publi: "~10 du mois 18h00 CET"
+      jour_active: "jour de publi → +7 jours"
+      hors_fenetre: "poids effectif = 0"
+
+  nass_crop_progress:
+    type: numerique
+    fenetre_activation:
+      jour_publi: "lundi 22h00 CET (saison avril-novembre)"
+      jour_active: "lundi 22h → vendredi 22h"
+      hors_fenetre: "poids effectif = 0 (saison morte décembre-mars)"
+
+# ============================================================
+# CHANGELOG
+# ============================================================
+# v1 (2026-05-27) — Création. 11 triplets binaires + 7 critères à fenêtre d'activation.

@@ -2,53 +2,111 @@
 # Source de vérité du moteur de scoring (Analyste).
 
 ```yaml
-last_update: '2026-05-29T13:11:28.388432+00:00'
+last_update: '2026-05-29T13:22:15.302856+00:00'
 argent:
+  caixin_pmi_manuf:
+    valeur_normalisee: 0.0
+    ts: '2026-05-29T13:22:15.302856+00:00'
+    note: hors fenêtre
   gate_regime_extreme:
     valeur: false
-    ts: '2026-05-29T13:11:28.388462+00:00'
+    ts: '2026-05-29T13:22:15.302856+00:00'
 ble:
+  geopolitique_mer_noire:
+    valeur: 0
+    ts: '2026-05-29T13:22:15.302856+00:00'
   gate_regime_extreme:
     valeur: false
-    ts: '2026-05-29T13:11:28.388487+00:00'
+    ts: '2026-05-29T13:22:15.302856+00:00'
 cac40:
+  tension_politique_fr:
+    valeur: 0
+    ts: '2026-05-29T13:22:15.302856+00:00'
   gate_regime_extreme:
     valeur: false
-    ts: '2026-05-29T13:11:28.388502+00:00'
+    ts: '2026-05-29T13:22:15.302856+00:00'
 cacao:
+  eudr:
+    valeur: 0
+    ts: '2026-05-29T13:22:15.302856+00:00'
+  maladies_cabosses:
+    valeur: 0
+    ts: '2026-05-29T13:22:15.302856+00:00'
   gate_regime_extreme:
     valeur: false
-    ts: '2026-05-29T13:11:28.388515+00:00'
+    ts: '2026-05-29T13:22:15.302856+00:00'
 cafe:
+  maladies_cabosses_rouille:
+    valeur: 0
+    ts: '2026-05-29T13:22:15.302856+00:00'
+  cycle_bresil_biannuel:
+    valeur: -1
+    ts: '2026-05-29T13:22:15.302856+00:00'
   gate_regime_extreme:
     valeur: false
-    ts: '2026-05-29T13:11:28.388527+00:00'
+    ts: '2026-05-29T13:22:15.302856+00:00'
 cuivre:
+  caixin_pmi_manuf:
+    valeur_normalisee: 0.0
+    ts: '2026-05-29T13:22:15.302856+00:00'
+    note: hors fenêtre
+  mining_strikes_chili_perou:
+    valeur: 0
+    ts: '2026-05-29T13:22:15.302856+00:00'
+  news_construction_infra:
+    valeur: 0
+    ts: '2026-05-29T13:22:15.302856+00:00'
   gate_regime_extreme:
     valeur: false
-    ts: '2026-05-29T13:11:28.388539+00:00'
+    ts: '2026-05-29T13:22:15.302856+00:00'
 eurusd:
   gate_regime_extreme:
     valeur: false
-    ts: '2026-05-29T13:11:28.388557+00:00'
+    ts: '2026-05-29T13:22:15.302856+00:00'
 nasdaq:
+  sentiment_ia_megacaps:
+    valeur: 0
+    ts: '2026-05-29T13:22:15.302856+00:00'
   gate_regime_extreme:
     valeur: false
-    ts: '2026-05-29T13:11:28.388568+00:00'
+    ts: '2026-05-29T13:22:15.302856+00:00'
 or:
+  tension_geopolitique:
+    valeur: 0
+    ts: '2026-05-29T13:22:15.302856+00:00'
+  demande_indienne_saisonniere:
+    valeur: -1
+    ts: '2026-05-29T13:22:15.302856+00:00'
   gate_regime_extreme:
     valeur: false
-    ts: '2026-05-29T13:11:28.388579+00:00'
+    ts: '2026-05-29T13:22:15.302856+00:00'
 petrole:
+  api_weekly_surprise:
+    valeur_normalisee: 0.0
+    ts: '2026-05-29T13:22:15.302856+00:00'
+    note: hors fenêtre
+  tension_geopol_moyen_orient:
+    valeur: 0
+    ts: '2026-05-29T13:22:15.302856+00:00'
+  opec_production_policy:
+    valeur: 0
+    ts: '2026-05-29T13:22:15.302856+00:00'
+  caixin_pmi_manuf:
+    valeur_normalisee: 0.0
+    ts: '2026-05-29T13:22:15.302856+00:00'
+    note: hors fenêtre
   gate_evenement_extreme:
     valeur: false
-    ts: '2026-05-29T13:11:28.388639+00:00'
+    ts: '2026-05-29T13:22:15.302856+00:00'
 sp500:
   gate_regime_extreme:
     valeur: false
-    ts: '2026-05-29T13:11:28.388656+00:00'
+    ts: '2026-05-29T13:22:15.302856+00:00'
 vix:
+  tension_geopolitique_active:
+    valeur: 0
+    ts: '2026-05-29T13:22:15.302856+00:00'
   gate_evenement_macro_imminent:
     valeur: false
-    ts: '2026-05-29T13:11:28.388668+00:00'
+    ts: '2026-05-29T13:22:15.302856+00:00'
 ```

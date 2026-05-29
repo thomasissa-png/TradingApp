@@ -332,13 +332,165 @@ def test_fetch_twelve_series_with_mock(monkeypatch):
 
 
 def test_fetch_cftc_with_mock(monkeypatch):
+    """Dataset CFTC Socrata jun7-fc8e (Legacy COT) → noncomm_positions_* (pas m_money_*)."""
     fake = [
-        {"report_date_as_yyyy_mm_dd": "2026-05-21T00:00:00", "m_money_positions_long_all": "100", "m_money_positions_short_all": "50"},
-        {"report_date_as_yyyy_mm_dd": "2026-05-14T00:00:00", "m_money_positions_long_all": "120", "m_money_positions_short_all": "60"},
+        {"report_date_as_yyyy_mm_dd": "2026-05-21T00:00:00", "noncomm_positions_long_all": "100", "noncomm_positions_short_all": "50"},
+        {"report_date_as_yyyy_mm_dd": "2026-05-14T00:00:00", "noncomm_positions_long_all": "120", "noncomm_positions_short_all": "60"},
     ]
     monkeypatch.setattr(cc, "http_get_json", lambda url, params=None, timeout=15: fake)
-    nets = cc.fetch_cftc_managed_money_nets("CRUDE OIL, LIGHT SWEET-WTI - NEW YORK MERCANTILE EXCHANGE")
+    nets = cc.fetch_cftc_managed_money_nets("CRUDE OIL, LIGHT SWEET-WTI - ICE FUTURES EUROPE")
     assert nets == [60.0, 50.0]  # oldest→newest
+
+
+# ---------------------------------------------------------------------------
+# Nouveaux fetchers (incrément 5) — Twelve RSI, spread, ratio, alpha ; Open-Meteo zone
+# ---------------------------------------------------------------------------
+
+def test_cftc_markets_table_complete():
+    """Table CFTC_MARKETS doit couvrir les 9 critères CFTC des fiches."""
+    expected = {
+        "cftc_cot_crude_nets", "cftc_cot_nets", "cftc_cot_copper_nets",
+        "cftc_cot_silver", "cftc_cot_wheat", "cftc_cot_cocoa",
+        "cftc_cot_coffee", "cftc_cot_eur_nets", "cftc_cot_vix_nets",
+    }
+    assert expected.issubset(set(cc.CFTC_MARKETS.keys()))
+
+
+def test_twelve_zscore_dispatch_simple_symbol(monkeypatch, now_fixed):
+    """dxy_trend_20j → série Twelve → zscore calculé."""
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
+    # 30 closes croissants : la dernière est l'extrême → z>0 capé
+    fake_series = {
+        "status": "ok",
+        "values": [{"datetime": f"2026-04-{i:02d}", "close": str(100.0 + i)} for i in range(1, 31)],
+    }
+    monkeypatch.setattr(cc, "http_get_json", lambda url, params=None, timeout=15: fake_series)
+    crit = {"cle_courante": "dxy_trend_20j", "normalisation": "zscore",
+            "source": "Twelve Data", "zscore_window": 20, "zscore_div": 2, "cap": 1.0}
+    val = cc.build_critere_value("petrole", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    assert "valeur_normalisee" in val
+    assert val["valeur_normalisee"] > 0  # tendance haussière
+
+
+def test_twelve_rsi_dispatch(monkeypatch, now_fixed):
+    """rsi_14j_gspc → endpoint /rsi → valeur lineaire 0-100."""
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
+    fake_rsi = {"status": "ok", "values": [{"datetime": "2026-05-28", "rsi": "65.4"}]}
+    monkeypatch.setattr(cc, "http_get_json", lambda url, params=None, timeout=15: fake_rsi)
+    crit = {"cle_courante": "rsi_14j_gspc", "normalisation": "lineaire",
+            "source": "Twelve Data", "centre": 50, "echelle": 20, "cap": 1.0}
+    val = cc.build_critere_value("sp500", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    assert val["valeur"] == 65.4
+
+
+def test_twelve_spread_zscore(monkeypatch, now_fixed):
+    """spread_brent_wti → 2 séries → diff → zscore."""
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
+
+    def fake_get(url, params=None, timeout=15):
+        sym = params.get("symbol", "")
+        if "BZ" in sym:
+            return {"status": "ok", "values": [
+                {"datetime": f"2026-04-{i:02d}", "close": str(80.0 + i * 0.5)} for i in range(1, 31)
+            ]}
+        if "CL" in sym:
+            return {"status": "ok", "values": [
+                {"datetime": f"2026-04-{i:02d}", "close": str(77.0 + i * 0.4)} for i in range(1, 31)
+            ]}
+        return None
+    monkeypatch.setattr(cc, "http_get_json", fake_get)
+    crit = {"cle_courante": "spread_brent_wti", "normalisation": "zscore",
+            "source": "Twelve Data (calculé)", "zscore_window": 20, "zscore_div": 2, "cap": 1.0}
+    val = cc.build_critere_value("petrole", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    assert "valeur_normalisee" in val
+    # Spread BZ-CL = (80+0.5i)-(77+0.4i) = 3+0.1i → croissant → z>0
+    assert val["valeur_normalisee"] > 0
+
+
+def test_twelve_ratio_lineaire(monkeypatch, now_fixed):
+    """ratio_gold_silver lineaire → XAU/XAG."""
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
+    # Le ratio est demandé en zscore dans la fiche, mais le test couvre le helper lineaire.
+    fake_series = {"status": "ok", "values": [{"datetime": "2026-05-28", "close": "2000"}]}
+    monkeypatch.setattr(cc, "http_get_json", lambda url, params=None, timeout=15: fake_series)
+    # On vérifie juste que le helper ratio renvoie quelque chose de cohérent
+    ratio = cc._twelve_ratio_lineaire("XAU/USD", "XAG/USD")
+    assert ratio == 1.0  # 2000 / 2000 = 1 (mock identique)
+
+
+def test_cftc_parsing_socrata_payload(monkeypatch):
+    """Parsing payload Socrata réaliste : ISO date + champs string, ordre desc."""
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
+    fake = [
+        {"report_date_as_yyyy_mm_dd": "2026-05-19T00:00:00.000",
+         "noncomm_positions_long_all": "198358", "noncomm_positions_short_all": "49698"},
+        {"report_date_as_yyyy_mm_dd": "2026-05-12T00:00:00.000",
+         "noncomm_positions_long_all": "212267", "noncomm_positions_short_all": "47093"},
+        {"report_date_as_yyyy_mm_dd": "2026-05-05T00:00:00.000",
+         "noncomm_positions_long_all": "203487", "noncomm_positions_short_all": "46986"},
+    ]
+    monkeypatch.setattr(cc, "http_get_json", lambda url, params=None, timeout=15: fake)
+    nets = cc.fetch_cftc_managed_money_nets("GOLD - COMMODITY EXCHANGE INC.")
+    assert nets is not None
+    assert len(nets) == 3
+    # oldest→newest : 2026-05-05 → 2026-05-19
+    assert nets[0] == 203487 - 46986  # = 156501
+    assert nets[-1] == 198358 - 49698  # = 148660
+
+
+def test_open_meteo_zone_routing(monkeypatch, now_fixed):
+    """meteo_ci_ghana_precip_30j → lat 6.5 lon -3.0 → anomalie calculée."""
+    captured_params = []
+
+    def fake_get(url, params=None, timeout=15):
+        captured_params.append(dict(params or {}))
+        # Premier appel = fenêtre récente, deuxième = climato
+        return {"daily": {"precipitation_sum": [1.0, 2.0, 3.0, 4.0, 5.0] * 20}}
+    monkeypatch.setattr(cc, "http_get_json", fake_get)
+    crit = {"cle_courante": "meteo_ci_ghana_precip_30j", "normalisation": "zscore",
+            "source": "Open-Meteo", "zscore_div": 2, "cap": 1.0}
+    val = cc.build_critere_value("cacao", crit, {}, {}, [], now_fixed)
+    # Avec série constante répétée, mean récent == mean climato → z=0 → omis (std=0)
+    # Mais on vérifie que les bons lat/lon ont été passés
+    assert len(captured_params) >= 1
+    assert captured_params[0]["latitude"] == 6.5
+    assert captured_params[0]["longitude"] == -3.0
+
+
+def test_mapping_non_monotone_vix_centre():
+    """VIX entre 14 et 25 → +cap. VIX < 14 → tend vers -cap (complacence)."""
+    assert cc._mapping_non_monotone_vix(18.0, low=14, high=25, cap=1.0) == 1.0
+    # VIX = 7 (très bas) → -cap
+    val = cc._mapping_non_monotone_vix(7.0, low=14, high=25, cap=1.0)
+    assert val == -1.0
+    # VIX = 40 (très haut) → -cap
+    val2 = cc._mapping_non_monotone_vix(40.0, low=14, high=25, cap=1.0)
+    assert val2 == -1.0
+
+
+def test_eia_series_routing(monkeypatch, now_fixed):
+    """cushing_stocks utilise série W_EPC0_SAX_YCUOK_MBBL."""
+    monkeypatch.setenv("EIA_API_KEY", "fake")
+    captured = []
+
+    def fake_get(url, params=None, timeout=15):
+        captured.append((url, dict(params or {})))
+        # Génère 60 points pour permettre le zscore
+        return {"response": {"data": [
+            {"period": f"2026-W{i:02d}", "value": 400.0 + i} for i in range(1, 60)
+        ]}}
+    monkeypatch.setattr(cc, "http_get_json", fake_get)
+    # Pas de fenêtre pour cushing_stocks → on est dans le flux normal
+    crit = {"cle_courante": "cushing_stocks", "normalisation": "zscore",
+            "source": "EIA API", "zscore_window": 52, "zscore_div": 2, "cap": 1.0}
+    val = cc.build_critere_value("petrole", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    assert "valeur_normalisee" in val
+    # Series ID Cushing doit être dans les facets
+    assert any("W_EPC0_SAX_YCUOK_MBBL" in str(p) for _, p in captured)
 
 
 def test_compute_zscore_cap():

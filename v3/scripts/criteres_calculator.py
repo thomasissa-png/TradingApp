@@ -1,21 +1,22 @@
-"""TradingApp v3 — Critères courants (v1 câblé).
+"""TradingApp v3 — Critères courants (incrément 5 — mapping étendu).
 
 Produit `v3/data/criteres-courants.md` à partir de :
-- Twelve Data (prix, séries → z-scores, lineaires bruts)
-- CFTC COT (Socrata public, pas de clé) → managed money nets z-score
-- EIA API (clé requise) → crude stocks niveau (z-score à défaut de consensus)
-- Open-Meteo (public, pas de clé) → anomalies météo zones agri
+- Twelve Data (prix, séries → z-scores, RSI, spreads, ratios, alphas, mapping non-monotone)
+- CFTC COT Legacy (Socrata jun7-fc8e, sans clé) → noncomm nets z-score 252w
+- EIA API (clé requise) → crude stocks (WCESTUS1), Cushing (W_EPC0_SAX_YCUOK_MBBL)
+- Open-Meteo (public) → anomalies précipitations 30/90j zones agri
 - triggers_classifier (events-log + triggers-and-windows.yml) → triplets + calendrier
 
 Red line : zéro invention. Source injoignable / clé absente / valeur non
 disponible → critère OMIS (le scoring le marquera n/a, poids 0). Log WARNING
 par source ratée + compteur de skip global.
 
-Format de sortie pour le scoring (cf. scoring_analyste.normalise) :
+Format de sortie pour scoring_analyste.normalise :
 - zscore  → `valeur_normalisee` pré-calculée (z/zscore_div, capé)
 - lineaire → `valeur` brute (le scoring applique centre/echelle/cap)
 - triplet  → `valeur` ∈ {-1, 0, +1}
 - gate     → `valeur: bool`
+- mapping_non_monotone / composite → `valeur_normalisee` pré-calculée
 """
 
 from __future__ import annotations
@@ -43,13 +44,10 @@ TRIGGERS_YML = ROOT / "config" / "triggers-and-windows.yml"
 EVENTS_LOG = ROOT / "data" / "events-log.md"
 CRITERES_OUT = ROOT / "data" / "criteres-courants.md"
 
-# Import local
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import triggers_classifier as tc  # noqa: E402
 
-# Compteurs globaux de skip (instrumentation)
 SKIP_COUNTER: Counter = Counter()
-
 DEFAULT_TIMEOUT = 15  # seconds
 
 
@@ -135,27 +133,67 @@ def fetch_twelve_price(symbol: str) -> Optional[float]:
     return series[-1][1]
 
 
+def fetch_twelve_rsi(symbol: str, *, period: int = 14, outputsize: int = 5) -> Optional[float]:
+    """Dernier RSI Twelve Data. None si indisponible."""
+    key = _twelve_key()
+    if not key:
+        SKIP_COUNTER["twelve_no_key"] += 1
+        return None
+    params = {
+        "symbol": symbol,
+        "interval": "1day",
+        "time_period": period,
+        "outputsize": outputsize,
+        "apikey": key,
+        "format": "JSON",
+    }
+    data = http_get_json(f"{TWELVE_BASE}/rsi", params=params)
+    if not isinstance(data, dict):
+        SKIP_COUNTER[f"twelve_rsi_dead:{symbol}"] += 1
+        return None
+    if data.get("status") == "error":
+        SKIP_COUNTER[f"twelve_rsi_err:{symbol}"] += 1
+        return None
+    values = data.get("values")
+    if not isinstance(values, list) or not values:
+        SKIP_COUNTER[f"twelve_rsi_empty:{symbol}"] += 1
+        return None
+    # Le plus récent en tête (DESC par défaut sur l'endpoint RSI)
+    try:
+        rsi = float(values[0]["rsi"])
+    except (KeyError, ValueError, TypeError):
+        return None
+    return rsi
+
+
 # ---------------------------------------------------------------------------
-# CFTC COT (Socrata)
+# CFTC COT Legacy (Socrata jun7-fc8e) — noncomm_positions_*
 # ---------------------------------------------------------------------------
 
 CFTC_BASE = "https://publicreporting.cftc.gov/resource/jun7-fc8e.json"
-# Mapping cle_courante → market_and_exchange_names (approximatif, à valider)
+
+# Mapping cle_courante → market_and_exchange_names (validé contre dataset live)
 CFTC_MARKETS = {
-    "cftc_cot_crude_nets": "CRUDE OIL, LIGHT SWEET-WTI - NEW YORK MERCANTILE EXCHANGE",
-    "cftc_cot_nets": "GOLD - COMMODITY EXCHANGE INC.",  # or
+    "cftc_cot_crude_nets":  "CRUDE OIL, LIGHT SWEET-WTI - ICE FUTURES EUROPE",
+    "cftc_cot_nets":        "GOLD - COMMODITY EXCHANGE INC.",          # or
     "cftc_cot_copper_nets": "COPPER- #1 - COMMODITY EXCHANGE INC.",
-    "cftc_cot_silver_nets": "SILVER - COMMODITY EXCHANGE INC.",
-    "cftc_cot_wheat_nets": "WHEAT-SRW - CHICAGO BOARD OF TRADE",
-    "cftc_cot_cocoa_nets": "COCOA - ICE FUTURES U.S.",
-    "cftc_cot_coffee_nets": "COFFEE C - ICE FUTURES U.S.",
+    "cftc_cot_silver":      "SILVER - COMMODITY EXCHANGE INC.",
+    "cftc_cot_wheat":       "WHEAT-SRW - CHICAGO BOARD OF TRADE",
+    "cftc_cot_cocoa":       "COCOA - ICE FUTURES U.S.",
+    "cftc_cot_coffee":      "COFFEE C - ICE FUTURES U.S.",
+    "cftc_cot_eur_nets":    "EURO FX - CHICAGO MERCANTILE EXCHANGE",
+    "cftc_cot_vix_nets":    "VIX FUTURES - CBOE FUTURES EXCHANGE",
 }
 
 
 def fetch_cftc_managed_money_nets(market: str, *, weeks: int = 260) -> Optional[List[float]]:
-    """Retourne la série des nets managed money (long - short) sur N semaines (oldest→newest)."""
+    """Retourne la série des nets non-commercial (long - short) sur N semaines (oldest→newest).
+
+    Note : le dataset Socrata jun7-fc8e est le Legacy COT — il expose noncomm_positions_*
+    et non m_money_positions_*. On utilise donc le noncomm net comme proxy "spéculateurs".
+    """
     params = {
-        "$select": "report_date_as_yyyy_mm_dd,m_money_positions_long_all,m_money_positions_short_all",
+        "$select": "report_date_as_yyyy_mm_dd,noncomm_positions_long_all,noncomm_positions_short_all",
         "$where": f"market_and_exchange_names='{market}'",
         "$order": "report_date_as_yyyy_mm_dd DESC",
         "$limit": weeks,
@@ -167,9 +205,10 @@ def fetch_cftc_managed_money_nets(market: str, *, weeks: int = 260) -> Optional[
     nets: List[Tuple[datetime, float]] = []
     for row in data:
         try:
-            dt = datetime.fromisoformat(row["report_date_as_yyyy_mm_dd"].replace("Z", "")).replace(tzinfo=timezone.utc)
-            longp = float(row["m_money_positions_long_all"])
-            shortp = float(row["m_money_positions_short_all"])
+            dt_str = row["report_date_as_yyyy_mm_dd"].replace("Z", "")
+            dt = datetime.fromisoformat(dt_str).replace(tzinfo=timezone.utc)
+            longp = float(row["noncomm_positions_long_all"])
+            shortp = float(row["noncomm_positions_short_all"])
         except (KeyError, ValueError, TypeError):
             continue
         nets.append((dt, longp - shortp))
@@ -186,36 +225,48 @@ def fetch_cftc_managed_money_nets(market: str, *, weeks: int = 260) -> Optional[
 
 EIA_BASE = "https://api.eia.gov/v2"
 
+# Mapping critère → série EIA (path v2, frequency, series ID si applicable)
+EIA_SERIES = {
+    # Crude oil stocks excl SPR (weekly, M-barils)
+    "eia_crude_surprise":  ("petroleum/stoc/wstk/data/", "weekly", "WCESTUS1"),
+    "api_weekly_surprise": ("petroleum/stoc/wstk/data/", "weekly", "WCESTUS1"),  # proxy : pas d'API officielle gratuite
+    # Cushing OK ending stocks (weekly)
+    "cushing_stocks":      ("petroleum/stoc/wstk/data/", "weekly", "W_EPC0_SAX_YCUOK_MBBL"),
+}
+
 
 def _eia_key() -> Optional[str]:
     k = os.environ.get("EIA_API_KEY")
     return k or None
 
 
-def fetch_eia_series(series_path: str, *, length: int = 60) -> Optional[List[float]]:
-    """Récupère N derniers points d'une série EIA. Path = endpoint v2 (ex: 'petroleum/stoc/wstk').
+def fetch_eia_series(path: str, *, frequency: str = "weekly", series_id: Optional[str] = None,
+                     length: int = 60) -> Optional[List[float]]:
+    """Récupère N derniers points d'une série EIA. Path = endpoint v2 data (ex: 'petroleum/stoc/wstk/data/').
     Retourne valeurs oldest→newest. None si KO ou clé manquante."""
     key = _eia_key()
     if not key:
         SKIP_COUNTER["eia_no_key"] += 1
-        logger.warning("EIA_API_KEY manquante — series=%s skip", series_path)
+        logger.warning("EIA_API_KEY manquante — path=%s skip", path)
         return None
-    params = {
+    params: Dict[str, Any] = {
         "api_key": key,
-        "frequency": "weekly",
+        "frequency": frequency,
         "data[0]": "value",
         "sort[0][column]": "period",
         "sort[0][direction]": "desc",
         "length": length,
     }
-    data = http_get_json(f"{EIA_BASE}/{series_path}/data/", params=params)
+    if series_id:
+        params["facets[series][]"] = series_id
+    data = http_get_json(f"{EIA_BASE}/{path}", params=params)
     if not isinstance(data, dict):
-        SKIP_COUNTER[f"eia_dead:{series_path}"] += 1
+        SKIP_COUNTER[f"eia_dead:{path}:{series_id}"] += 1
         return None
     resp = data.get("response", {})
     rows = resp.get("data") if isinstance(resp, dict) else None
     if not isinstance(rows, list) or not rows:
-        SKIP_COUNTER[f"eia_empty:{series_path}"] += 1
+        SKIP_COUNTER[f"eia_empty:{path}:{series_id}"] += 1
         return None
     vals: List[Tuple[str, float]] = []
     for row in rows:
@@ -239,20 +290,19 @@ def fetch_eia_series(series_path: str, *, length: int = 60) -> Optional[List[flo
 
 OPEN_METEO_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 
-# Zones agri (lat, lon) — centroides indicatifs
-METEO_ZONES = {
-    "minas_gerais": (-19.5, -44.0),       # café Brésil
-    "cote_ivoire_ghana": (6.5, -3.0),     # cacao
-    "vietnam_central_highlands": (12.7, 108.0),  # café robusta
-    "australia_wheatbelt": (-31.5, 117.0),  # blé
-    "us_midwest": (41.5, -93.5),          # blé US
+# Mapping cle_courante → (lat, lon, days_window)
+METEO_CRITERIA = {
+    "meteo_ci_ghana_precip_30j":    (6.5, -3.0, 30),    # Côte d'Ivoire / Ghana — cacao
+    "meteo_vietnam_robusta":        (12.7, 108.0, 60),   # Central Highlands — café robusta
+    "meteo_australie_dryland":      (-31.5, 117.0, 60),  # Wheatbelt WA — blé
+    "meteo_bresil_minas_gerais":    (-19.5, -44.0, 60),  # Minas Gerais — café arabica
+    "noaa_drought_midwest_plains":  (41.5, -93.5, 60),   # US Midwest — blé HRW/SRW
 }
 
 
 def fetch_open_meteo_anomaly(lat: float, lon: float, *, days: int = 90) -> Optional[float]:
-    """Anomalie z-score de précipitations sur les `days` derniers jours vs même fenêtre 30 ans avant.
-    Retourne le z ou None si KO. Implémentation simplifiée : on compare la moyenne récente à la
-    moyenne longue (climatologie sur 365×5 jours)."""
+    """Anomalie z-score précipitations sur `days` derniers jours vs climato 5 ans.
+    Retourne le z brut (avant cap)."""
     today = date.today()
     end = today - timedelta(days=1)
     start = end - timedelta(days=days)
@@ -279,7 +329,6 @@ def fetch_open_meteo_anomaly(lat: float, lon: float, *, days: int = 90) -> Optio
         return None
     if len(clean) < 10:
         return None
-    # Climatologie 5 ans
     clim_start = end - timedelta(days=365 * 5)
     clim_end = end - timedelta(days=days)
     params2 = dict(params)
@@ -307,12 +356,11 @@ def fetch_open_meteo_anomaly(lat: float, lon: float, *, days: int = 90) -> Optio
 
 
 # ---------------------------------------------------------------------------
-# Z-score utility (cap selon fiche)
+# Z-score utility
 # ---------------------------------------------------------------------------
 
 def compute_zscore_normalisee(value: float, history: List[float], *, zscore_div: float, cap: float) -> Optional[float]:
-    """Calcule (z / zscore_div) capé. history doit inclure ou exclure value indifféremment
-    (statistiquement on prend l'ensemble fourni comme référence)."""
+    """Calcule (z / zscore_div) capé. history = série de référence (incluant ou non value)."""
     if not history or len(history) < 2:
         return None
     mean = statistics.fmean(history)
@@ -324,49 +372,463 @@ def compute_zscore_normalisee(value: float, history: List[float], *, zscore_div:
     return max(-cap, min(cap, norm))
 
 
-# ---------------------------------------------------------------------------
-# Mapping cle_courante → fetcher
-# ---------------------------------------------------------------------------
-
-# Tickers Twelve Data pour critères standardisés
-TWELVE_TICKERS = {
-    "dxy_trend_20j": "DXY",
-    "vix_risk_off_proxy": "VIX",
-    "vix_niveau": "VIX",
-}
-
-# Symboles Twelve Data composites
-COMPOSITE_PRICES = {
-    # ratio_cuivre_or = HG=F / GC=F (proxy via Twelve : "XCU/USD" or use futures symbols)
-    # On reste prudent : ratios omis si Twelve ne fournit pas les 2 symboles
-}
-
-
-def _make_zscore_critere(value: float, history: List[float], crit: dict, ts: str) -> Optional[dict]:
-    div = float(crit.get("zscore_div", 2.0))
-    cap = float(crit.get("cap", 1.0))
-    norm = compute_zscore_normalisee(value, history, zscore_div=div, cap=cap)
+def zscore_from_series(series: List[float], *, zscore_div: float, cap: float) -> Optional[Tuple[float, float]]:
+    """Helper : retourne (valeur=dernier point, valeur_normalisee) à partir d'une série brute."""
+    if not series or len(series) < 2:
+        return None
+    value = series[-1]
+    norm = compute_zscore_normalisee(value, series, zscore_div=zscore_div, cap=cap)
     if norm is None:
         return None
-    return {"valeur": value, "valeur_normalisee": norm, "ts": ts}
+    return value, norm
 
 
-def _handle_twelve_zscore(symbol: str, crit: dict, ts: str) -> Optional[dict]:
+# ---------------------------------------------------------------------------
+# Mappings cle_courante → fetcher Twelve Data
+# ---------------------------------------------------------------------------
+
+# Symboles Twelve Data simples (séries de prix utilisées en zscore ou en lineaire)
+# Note : certains indices (VXN, V2X, SKEW, VVIX, SOX, VIX3M) peuvent être indispo sur le plan Grow.
+# Si Twelve renvoie status=error/empty → dégradation gracieuse (n/a).
+TWELVE_SYMBOLS = {
+    # Trend / risk-off
+    "dxy_trend_20j":         "DXY",
+    "vix_risk_off_proxy":    "VIX",
+    "niveau_vix_absolu":     "VIX",
+    "vix_regime":            "VIX",          # mapping non-monotone
+    "vxn_regime":            "VXN",          # idem (Nasdaq vol)
+    "v2x_regime":            "V2X",          # idem (Euro Stoxx vol)
+    "vvix":                  "VVIX",
+    "skew_index_cboe":       "SKEW",
+    "sox_trend_5j":          "SOX",
+    # Term structure VIX
+    "term_structure_vix_vix3m": ("VIX3M", "VIX"),   # ratio VIX3M/VIX ou différence
+    # Taux
+    "taux_10y_us_reels_tips":   "TIP",       # ETF proxy (yield réel ≈ -d/dt prix TIP)
+    "taux_10y_us_delta_5j":     "TNX",       # CBOE 10Y yield index
+    "differentiel_taux_2y_us_de":   ("UST2Y", "DEU2Y"),   # proxies non garantis
+    "differentiel_taux_10y_us_bund": ("TNX", "DE10Y"),
+    # Credit / stress
+    "hy_credit_spread":      "HYG",          # proxy ETF HY (z-score yield approximé)
+    "spread_oat_bund_10y":   ("FR10Y", "DE10Y"),
+    "spread_oat_bund_stress_ez": ("FR10Y", "DE10Y"),
+    # FX
+    "usd_brl":               "USD/BRL",
+    "usd_jpy_proxy_risk":    "USD/JPY",
+    "usd_cfa_usd_cedi":      ("USD/XOF", "USD/GHS"),
+    # Spreads commodities
+    "spread_brent_wti":      ("BZ=F", "CL=F"),
+    "spread_arabica_robusta":("KC=F", "RC=F"),
+    "spread_ny_london":      ("CC=F", "C=F"),   # NY ICE vs London LIFFE (proxy)
+    "spread_nasdaq_russell2000": ("IXIC", "RUT"),
+    # Ratios
+    "ratio_gold_silver":     ("XAU/USD", "XAG/USD"),
+    "ratio_cuivre_or":       ("HG=F", "GC=F"),
+    # Alpha (perf relative 5j)
+    "alpha_argent_vs_or_5j": ("XAG/USD", "XAU/USD"),
+    "alpha_cac_vs_sp_5j":    ("FCHI", "SPX"),
+    # RSI
+    "rsi_14j_gspc":          ("RSI", "SPX"),
+    "rsi_14j_ixic":          ("RSI", "IXIC"),
+    "rsi_14j_fchi":          ("RSI", "FCHI"),
+    # Trend perf 5j
+    "mouvement_or_5j":       "XAU/USD",
+    # Term structure brent
+    "brent_term_structure_m1m2": ("BZ=F", "BZ=F"),  # placeholder : front + 2nd mois si dispo
+    # Flux ETF (proxy : variation de prix 5j ≠ vraies créations/rachats, mais déjà mieux que n/a)
+    "flux_etf_or_5j":        "GLD",
+    "flux_etf_qqq_5j":       "QQQ",
+    "flux_etf_spy_ivv_5j":   "SPY",
+    "flux_etf_slv_pslv_5j":  "SLV",
+    "flux_etf_msci_france_5j": "EWQ",
+    # Breadth proxies (faute d'indice breadth direct, on utilise variations larges)
+    "breadth_sp_ma50":       "SPX",      # lineaire centré 50% → n/a sans calcul interne
+    "breadth_nasdaq100_ma50": "NDX",
+    "breadth_cac_ma50":      "FCHI",
+}
+
+
+def _twelve_perf_5j(symbol: str) -> Optional[float]:
+    """Performance relative sur 5 jours (close / close-5j - 1). None si indispo."""
+    series = fetch_twelve_series(symbol, outputsize=10)
+    if not series or len(series) < 6:
+        return None
+    last = series[-1][1]
+    ref = series[-6][1]
+    if ref == 0:
+        return None
+    return last / ref - 1.0
+
+
+def _twelve_zscore_from_symbol(symbol: str, crit: dict) -> Optional[Tuple[float, float]]:
+    """Récupère séries Twelve + calcule (value, normalisee)."""
     window = int(crit.get("zscore_window", 60))
-    series = fetch_twelve_series(symbol, outputsize=window + 5)
+    series = fetch_twelve_series(symbol, outputsize=max(window + 5, 20))
     if not series or len(series) < max(10, window // 4):
         return None
     closes = [c for _, c in series]
-    value = closes[-1]
-    history = closes[-window:] if len(closes) >= window else closes
-    return _make_zscore_critere(value, history, crit, ts)
+    hist = closes[-window:] if len(closes) >= window else closes
+    return zscore_from_series(hist, zscore_div=float(crit.get("zscore_div", 2.0)),
+                              cap=float(crit.get("cap", 1.0)))
 
 
-def _handle_twelve_lineaire(symbol: str, crit: dict, ts: str) -> Optional[dict]:
-    price = fetch_twelve_price(symbol)
+def _twelve_spread_zscore(sym_a: str, sym_b: str, crit: dict) -> Optional[Tuple[float, float]]:
+    """Spread A - B → z-score sur la fenêtre. None si une série manque."""
+    window = int(crit.get("zscore_window", 60))
+    sa = fetch_twelve_series(sym_a, outputsize=max(window + 5, 20))
+    sb = fetch_twelve_series(sym_b, outputsize=max(window + 5, 20))
+    if not sa or not sb:
+        return None
+    # Aligne par date (intersection)
+    dict_b = {d.date(): c for d, c in sb}
+    pairs = [(d.date(), c - dict_b[d.date()]) for d, c in sa if d.date() in dict_b]
+    if len(pairs) < max(10, window // 4):
+        return None
+    spreads = [v for _, v in pairs]
+    hist = spreads[-window:] if len(spreads) >= window else spreads
+    return zscore_from_series(hist, zscore_div=float(crit.get("zscore_div", 2.0)),
+                              cap=float(crit.get("cap", 1.0)))
+
+
+def _twelve_spread_lineaire(sym_a: str, sym_b: str) -> Optional[float]:
+    """Spread A - B (dernière valeur)."""
+    pa = fetch_twelve_price(sym_a)
+    pb = fetch_twelve_price(sym_b)
+    if pa is None or pb is None:
+        return None
+    return pa - pb
+
+
+def _twelve_ratio_zscore(sym_num: str, sym_den: str, crit: dict) -> Optional[Tuple[float, float]]:
+    """Ratio A/B → z-score sur fenêtre."""
+    window = int(crit.get("zscore_window", 60))
+    sa = fetch_twelve_series(sym_num, outputsize=max(window + 5, 20))
+    sb = fetch_twelve_series(sym_den, outputsize=max(window + 5, 20))
+    if not sa or not sb:
+        return None
+    dict_b = {d.date(): c for d, c in sb}
+    pairs = []
+    for d, c in sa:
+        b = dict_b.get(d.date())
+        if b is None or b == 0:
+            continue
+        pairs.append((d.date(), c / b))
+    if len(pairs) < max(10, window // 4):
+        return None
+    ratios = [v for _, v in pairs]
+    hist = ratios[-window:] if len(ratios) >= window else ratios
+    return zscore_from_series(hist, zscore_div=float(crit.get("zscore_div", 2.0)),
+                              cap=float(crit.get("cap", 1.0)))
+
+
+def _twelve_ratio_lineaire(sym_num: str, sym_den: str) -> Optional[float]:
+    pa = fetch_twelve_price(sym_num)
+    pb = fetch_twelve_price(sym_den)
+    if pa is None or pb is None or pb == 0:
+        return None
+    return pa / pb
+
+
+def _twelve_alpha_5j(sym_a: str, sym_b: str, crit: dict) -> Optional[Tuple[float, float]]:
+    """Alpha 5j = perf(A,5j) - perf(B,5j). Z-score sur fenêtre des alphas glissants."""
+    window = int(crit.get("zscore_window", 60))
+    sa = fetch_twelve_series(sym_a, outputsize=max(window + 10, 25))
+    sb = fetch_twelve_series(sym_b, outputsize=max(window + 10, 25))
+    if not sa or not sb or len(sa) < 10 or len(sb) < 10:
+        return None
+    dict_b = {d.date(): c for d, c in sb}
+    aligned = [(d.date(), c, dict_b[d.date()]) for d, c in sa if d.date() in dict_b]
+    if len(aligned) < 10:
+        return None
+    alphas: List[float] = []
+    for i in range(5, len(aligned)):
+        ca0 = aligned[i - 5][1]
+        ca1 = aligned[i][1]
+        cb0 = aligned[i - 5][2]
+        cb1 = aligned[i][2]
+        if ca0 == 0 or cb0 == 0:
+            continue
+        alphas.append((ca1 / ca0 - 1.0) - (cb1 / cb0 - 1.0))
+    if len(alphas) < 5:
+        return None
+    hist = alphas[-window:] if len(alphas) >= window else alphas
+    return zscore_from_series(hist, zscore_div=float(crit.get("zscore_div", 2.0)),
+                              cap=float(crit.get("cap", 1.0)))
+
+
+def _twelve_rsi_lineaire(symbol: str) -> Optional[float]:
+    """RSI 14j brut (valeur 0-100). Le scoring fiche utilise centre=50 echelle ~20."""
+    return fetch_twelve_rsi(symbol, period=14)
+
+
+# ---------------------------------------------------------------------------
+# Mapping non-monotone (VIX/V2X/VXN regime : +1 zone centre, -1 extrêmes)
+# ---------------------------------------------------------------------------
+
+def _mapping_non_monotone_vix(value: float, *, low: float = 14.0, high: float = 25.0,
+                              cap: float = 1.0) -> float:
+    """Pour un index de volatilité : +1 si entre low et high (régime sain),
+    -1 si très bas (complacence) ou très haut (stress). Interpolation linéaire."""
+    if low <= value <= high:
+        return cap
+    if value < low:
+        # Plus on est bas, plus c'est -1 (complacence). Atteint -cap à low/2.
+        ratio = (low - value) / max(low / 2.0, 1e-6)
+        return max(-cap, min(cap, cap - 2 * cap * ratio))
+    # value > high : stress, -cap atteint à high*1.5
+    ratio = (value - high) / max(high * 0.5, 1e-6)
+    return max(-cap, min(cap, cap - 2 * cap * ratio))
+
+
+# ---------------------------------------------------------------------------
+# Fenêtres d'activation
+# ---------------------------------------------------------------------------
+
+def is_in_activation_window(cle: str, now: datetime, triggers_cfg: dict, fiche_key: str) -> Optional[bool]:
+    """Retourne True/False si une fenêtre est définie pour ce critère, None sinon.
+
+    Règles connues (cf. triggers-and-windows.yml) :
+    - eia_crude_surprise : mercredi 16h30 CET → vendredi 16h30 CET
+    - api_weekly_surprise : mardi 22h30 → mercredi 16h30 CET
+    - caixin_pmi_manuf : 1er-9 du mois
+    - wasde : 8-17 du mois
+    - nass_crop_progress : lundi 22h → vendredi 22h CET (avril-novembre)
+    - grindings_q : mi-jan/avril/juil/oct → +14j
+    Inconnu → None (pas de fenêtre à appliquer).
+    """
+    try:
+        cet = now.astimezone(ZoneInfo("Europe/Paris"))
+    except Exception:  # noqa: BLE001
+        cet = now
+    wd = cet.weekday()
+    h = cet.hour + cet.minute / 60.0
+    m = cet.month
+    d = cet.day
+
+    if cle == "eia_crude_surprise":
+        if wd == 2 and h >= 16.5:
+            return True
+        if wd == 3:
+            return True
+        if wd == 4 and h < 16.5:
+            return True
+        return False
+    if cle in ("api_weekly_surprise", "api_bulletin_surprise"):
+        if wd == 1 and h >= 22.5:
+            return True
+        if wd == 2 and h < 16.5:
+            return True
+        return False
+    if cle == "caixin_pmi_manuf":
+        return d <= 9
+    if cle == "wasde" or cle == "usda_wasde_stocks_to_use":
+        return 8 <= d <= 17
+    if cle == "nass_crop_progress":
+        if m < 4 or m > 11:
+            return False
+        if wd == 0 and h >= 22:
+            return True
+        if 1 <= wd <= 3:
+            return True
+        if wd == 4 and h < 22:
+            return True
+        return False
+    if cle == "grindings_q":
+        if m in (1, 4, 7, 10) and 15 <= d <= 29:
+            return True
+        return False
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Heuristique GATE
+# ---------------------------------------------------------------------------
+
+def _resolve_gate(cle: str, now: datetime, events: List[dict]) -> bool:
+    """GATE = True si fenêtre EIA active OU event triggerable < 48h."""
+    try:
+        cet = now.astimezone(ZoneInfo("Europe/Paris"))
+    except Exception:  # noqa: BLE001
+        cet = now
+    if cet.weekday() == 2 and 16 <= cet.hour <= 17:
+        return True
+    cutoff = now - timedelta(hours=48)
+    for ev in events:
+        dt = ev.get("_dt")
+        if isinstance(dt, datetime) and dt >= cutoff:
+            text = tc._event_text(ev).lower()
+            if any(k in text for k in ("fomc", "cpi", "nfp", "frappes", "opec", "escalation", "escalade")):
+                return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Construction des critères par fiche
+# ---------------------------------------------------------------------------
+
+def _emit_zscore(value: float, normalisee: float, ts: str) -> dict:
+    return {"valeur": value, "valeur_normalisee": normalisee, "ts": ts}
+
+
+def _handle_twelve_zscore_dispatch(cle: str, crit: dict, ts: str) -> Optional[dict]:
+    """Dispatcher pour les zscores Twelve Data — gère symbole simple, spread, ratio, alpha."""
+    spec = TWELVE_SYMBOLS.get(cle)
+    if spec is None:
+        return None
+    # RSI exception : (RSI, SYMBOL) → on sort en lineaire même si la fiche dit zscore
+    # (RSI est par construction borné 0-100, le scoring fiche fait centre/echelle).
+    if isinstance(spec, tuple) and spec[0] == "RSI":
+        rsi = _twelve_rsi_lineaire(spec[1])
+        if rsi is None:
+            return None
+        return {"valeur": rsi, "ts": ts}
+    # Spread / ratio / alpha
+    if isinstance(spec, tuple):
+        sym_a, sym_b = spec
+        if cle.startswith("spread_"):
+            res = _twelve_spread_zscore(sym_a, sym_b, crit)
+        elif cle.startswith("ratio_"):
+            res = _twelve_ratio_zscore(sym_a, sym_b, crit)
+        elif cle.startswith("alpha_"):
+            res = _twelve_alpha_5j(sym_a, sym_b, crit)
+        elif cle.startswith("differentiel_") or cle.startswith("spread_oat"):
+            res = _twelve_spread_zscore(sym_a, sym_b, crit)
+        elif cle == "term_structure_vix_vix3m":
+            # cas particulier : ratio mais sortie lineaire
+            ratio = _twelve_ratio_lineaire(sym_a, sym_b)
+            if ratio is None:
+                return None
+            return {"valeur": ratio, "ts": ts}
+        elif cle == "brent_term_structure_m1m2":
+            # Pas de M2 distinct via Twelve gratuit → on retourne n/a explicite
+            SKIP_COUNTER[f"twelve_no_m2:{cle}"] += 1
+            return None
+        elif cle == "usd_cfa_usd_cedi":
+            res = _twelve_spread_zscore(sym_a, sym_b, crit)
+        else:
+            res = None
+        if res is None:
+            return None
+        return _emit_zscore(res[0], res[1], ts)
+    # Symbole simple
+    if cle == "mouvement_or_5j" or cle.startswith("flux_etf_"):
+        # perf 5j → z-score sur fenêtre des perfs 5j glissantes
+        perf = _twelve_perf_5j(spec)
+        if perf is None:
+            return None
+        # On utilise une approximation : série de perfs glissantes
+        series = fetch_twelve_series(spec, outputsize=int(crit.get("zscore_window", 60)) + 10)
+        if not series or len(series) < 10:
+            return None
+        closes = [c for _, c in series]
+        perfs = [closes[i] / closes[i - 5] - 1.0 for i in range(5, len(closes)) if closes[i - 5] != 0]
+        if len(perfs) < 5:
+            return None
+        res = zscore_from_series(perfs, zscore_div=float(crit.get("zscore_div", 2.0)),
+                                 cap=float(crit.get("cap", 1.0)))
+        if res is None:
+            return None
+        return _emit_zscore(res[0], res[1], ts)
+    # Cas par défaut : z-score sur les closes
+    res = _twelve_zscore_from_symbol(spec, crit)
+    if res is None:
+        return None
+    return _emit_zscore(res[0], res[1], ts)
+
+
+def _handle_twelve_lineaire_dispatch(cle: str, crit: dict, ts: str) -> Optional[dict]:
+    """Dispatcher pour les lineaires Twelve Data."""
+    spec = TWELVE_SYMBOLS.get(cle)
+    if spec is None:
+        return None
+    if isinstance(spec, tuple) and spec[0] == "RSI":
+        rsi = _twelve_rsi_lineaire(spec[1])
+        if rsi is None:
+            return None
+        return {"valeur": rsi, "ts": ts}
+    if isinstance(spec, tuple):
+        sym_a, sym_b = spec
+        if cle.startswith("spread_"):
+            val = _twelve_spread_lineaire(sym_a, sym_b)
+        elif cle.startswith("ratio_") or cle == "term_structure_vix_vix3m":
+            val = _twelve_ratio_lineaire(sym_a, sym_b)
+        elif cle == "term_structure_m1_m3":
+            SKIP_COUNTER[f"twelve_no_m3:{cle}"] += 1
+            return None
+        elif cle == "brent_term_structure_m1m2":
+            SKIP_COUNTER[f"twelve_no_m2:{cle}"] += 1
+            return None
+        else:
+            return None
+        if val is None:
+            return None
+        return {"valeur": val, "ts": ts}
+    # Symbole simple : on récupère le prix brut
+    if cle in ("niveau_vix_absolu", "vvix", "skew_index_cboe"):
+        price = fetch_twelve_price(spec)
+        if price is None:
+            return None
+        return {"valeur": price, "ts": ts}
+    if cle.startswith("rsi_14j_"):
+        # ne devrait pas arriver ici (déjà géré ci-dessus), garde-fou
+        return None
+    if cle.startswith("breadth_"):
+        # Pas de vrai breadth → n/a explicite
+        SKIP_COUNTER[f"no_breadth_data:{cle}"] += 1
+        return None
+    price = fetch_twelve_price(spec)
     if price is None:
         return None
     return {"valeur": price, "ts": ts}
+
+
+def _handle_mapping_non_monotone(cle: str, crit: dict, ts: str) -> Optional[dict]:
+    """Récupère le niveau de l'indice + applique mapping_non_monotone_vix."""
+    spec = TWELVE_SYMBOLS.get(cle)
+    if not spec or isinstance(spec, tuple):
+        return None
+    price = fetch_twelve_price(spec)
+    if price is None:
+        return None
+    cap = float(crit.get("cap", 1.0))
+    # Seuils configurables via fiche ; defaults orientés VIX
+    low = float(crit.get("low", 14.0))
+    high = float(crit.get("high", 25.0))
+    norm = _mapping_non_monotone_vix(price, low=low, high=high, cap=cap)
+    return {"valeur": price, "valeur_normalisee": norm, "ts": ts}
+
+
+def _handle_composite(cle: str, crit: dict, ts: str) -> Optional[dict]:
+    """Composites : on tente de reconstituer via sous-séries Twelve si possible."""
+    # meteo_bresil_minas_gerais : composite (précipitations + check Tmin<4°C). On utilise
+    # juste l'anomalie pluie (proxy) — la composante T° n'est pas critique en routine.
+    if cle == "meteo_bresil_minas_gerais":
+        z = fetch_open_meteo_anomaly(-19.5, -44.0, days=60)
+        if z is None:
+            return None
+        cap = float(crit.get("cap", 1.0))
+        div = float(crit.get("zscore_div", 2.0))
+        norm = max(-cap, min(cap, z / div))
+        return {"valeur": z, "valeur_normalisee": norm, "ts": ts}
+    # shiller_cape_fwd_pe : CAPE et FwdPE non dispo sans clé Shiller / FactSet → n/a explicite
+    # hf_positioning_flux_options : composite put/call OI + COT → COT seul (proxy)
+    if cle == "hf_positioning_flux_options":
+        market = "COCOA - ICE FUTURES U.S."
+        nets = fetch_cftc_managed_money_nets(market, weeks=260)
+        if not nets or len(nets) < 20:
+            return None
+        cap = float(crit.get("cap", 1.0))
+        div = float(crit.get("zscore_div", 2.0))
+        res = zscore_from_series(nets[-252:], zscore_div=div, cap=cap)
+        if res is None:
+            return None
+        # signe inversé déjà géré par la fiche (signe: -1)
+        return _emit_zscore(res[0], res[1], ts)
+    # demande_pv_mining_strikes : composite triplet+triplet → on retourne 0 neutre
+    if cle == "demande_pv_mining_strikes":
+        return {"valeur": 0.0, "valeur_normalisee": 0.0, "ts": ts, "note": "composite indispo : neutre"}
+    SKIP_COUNTER[f"composite_unmapped:{cle}"] += 1
+    return None
 
 
 def _handle_cftc(cle: str, crit: dict, ts: str) -> Optional[dict]:
@@ -378,109 +840,44 @@ def _handle_cftc(cle: str, crit: dict, ts: str) -> Optional[dict]:
     if not nets or len(nets) < 20:
         return None
     value = nets[-1]
-    history = nets[-window:] if len(nets) >= window else nets
-    return _make_zscore_critere(value, history, crit, ts)
+    hist = nets[-window:] if len(nets) >= window else nets
+    norm = compute_zscore_normalisee(value, hist, zscore_div=float(crit.get("zscore_div", 2.0)),
+                                     cap=float(crit.get("cap", 1.0)))
+    if norm is None:
+        return None
+    return _emit_zscore(value, norm, ts)
 
 
-def _handle_eia_crude(crit: dict, ts: str) -> Optional[dict]:
-    """EIA WCRSTUS1 — Crude oil stocks (weekly), niveau brut z-scoré (faute de consensus)."""
+def _handle_eia(cle: str, crit: dict, ts: str) -> Optional[dict]:
+    spec = EIA_SERIES.get(cle)
+    if not spec:
+        return None
+    path, frequency, series_id = spec
     window = int(crit.get("zscore_window", 52))
-    series = fetch_eia_series("petroleum/stoc/wstk", length=window + 10)
+    series = fetch_eia_series(path, frequency=frequency, series_id=series_id, length=window + 10)
     if not series or len(series) < 10:
         return None
     value = series[-1]
-    history = series[-window:] if len(series) >= window else series
-    return _make_zscore_critere(value, history, crit, ts)
+    hist = series[-window:] if len(series) >= window else series
+    norm = compute_zscore_normalisee(value, hist, zscore_div=float(crit.get("zscore_div", 2.0)),
+                                     cap=float(crit.get("cap", 1.0)))
+    if norm is None:
+        return None
+    return _emit_zscore(value, norm, ts)
 
 
-# ---------------------------------------------------------------------------
-# Fenêtres d'activation
-# ---------------------------------------------------------------------------
-
-def is_in_activation_window(cle: str, now: datetime, triggers_cfg: dict, fiche_key: str) -> Optional[bool]:
-    """Retourne True/False si la fenêtre est définie pour ce critère, None sinon.
-
-    Implémentation simplifiée par règles connues (cf. triggers-and-windows.yml) :
-    - eia_crude_surprise : mercredi 16h30 CET → vendredi 16h30 CET
-    - api_weekly_surprise / api_bulletin_surprise : mardi 22h30 → mercredi 16h30 CET
-    - caixin_pmi_manuf : 1er jour ouvré du mois → +7j
-    - wasde : ~10 du mois → +7j
-    - nass_crop_progress : lundi 22h → vendredi 22h CET (saison avril-novembre)
-    - grindings : ouvert 14j après mi-jan/avril/juil/oct
-    Hors fenêtre → False. Inconnu → None (= pas de fenêtre à appliquer).
-    """
-    try:
-        cet = now.astimezone(ZoneInfo("Europe/Paris"))
-    except Exception:  # noqa: BLE001
-        cet = now
-    wd = cet.weekday()  # 0=Lundi
-    h = cet.hour + cet.minute / 60.0
-    m = cet.month
-    d = cet.day
-
-    if cle == "eia_crude_surprise":
-        # Mercredi 16h30 → Vendredi 16h30
-        if wd == 2 and h >= 16.5:
-            return True
-        if wd == 3:
-            return True
-        if wd == 4 and h < 16.5:
-            return True
-        return False
-    if cle in ("api_weekly_surprise", "api_bulletin_surprise"):
-        # Mardi 22h30 → Mercredi 16h30
-        if wd == 1 and h >= 22.5:
-            return True
-        if wd == 2 and h < 16.5:
-            return True
-        return False
-    if cle == "caixin_pmi_manuf":
-        # 1er jour ouvré → +7j ouvrés ≈ 9j calendaires (approx)
-        return d <= 9
-    if cle == "wasde":
-        return 8 <= d <= 17
-    if cle == "nass_crop_progress":
-        if m < 4 or m > 11:
-            return False
-        # Lundi 22h → Vendredi 22h
-        if wd == 0 and h >= 22:
-            return True
-        if 1 <= wd <= 3:
-            return True
-        if wd == 4 and h < 22:
-            return True
-        return False
-    if cle == "grindings":
-        # mi-jan / mi-avril / mi-juil / mi-oct → +14j
-        if m in (1, 4, 7, 10) and 15 <= d <= 29:
-            return True
-        return False
-    return None  # pas de fenêtre
-
-
-# ---------------------------------------------------------------------------
-# Construction des critères par fiche
-# ---------------------------------------------------------------------------
-
-def _resolve_gate(cle: str, now: datetime, events: List[dict]) -> bool:
-    """Heuristique GATE : vrai si EIA fenêtre active OU triggers géopol récents (<48h).
-    Inconnu → False."""
-    # EIA fenêtre = gate "EIA publication < 4h" → on prend la fenêtre étendue
-    try:
-        cet = now.astimezone(ZoneInfo("Europe/Paris"))
-    except Exception:  # noqa: BLE001
-        cet = now
-    if cet.weekday() == 2 and 16 <= cet.hour <= 17:
-        return True
-    # Heuristique : un event triggerable < 48h ? on regarde les events récents.
-    cutoff = now - timedelta(hours=48)
-    for ev in events:
-        dt = ev.get("_dt")
-        if isinstance(dt, datetime) and dt >= cutoff:
-            text = tc._event_text(ev).lower()
-            if any(k in text for k in ("fomc", "cpi", "nfp", "frappes", "opec", "escalation", "escalade")):
-                return True
-    return False
+def _handle_meteo(cle: str, crit: dict, ts: str) -> Optional[dict]:
+    spec = METEO_CRITERIA.get(cle)
+    if not spec:
+        return None
+    lat, lon, days = spec
+    z = fetch_open_meteo_anomaly(lat, lon, days=days)
+    if z is None:
+        return None
+    cap = float(crit.get("cap", 1.0))
+    div = float(crit.get("zscore_div", 2.0))
+    norm = max(-cap, min(cap, z / div))
+    return {"valeur": z, "valeur_normalisee": norm, "ts": ts}
 
 
 def build_critere_value(
@@ -507,41 +904,53 @@ def build_critere_value(
     if type_norm == "triplet":
         if cle in triplets:
             return {"valeur": int(triplets[cle]), "ts": ts}
-        # Pas dans le triggers config → on essaye 0 (neutre, conforme règle « ne match rien → 0 »)
         SKIP_COUNTER[f"triplet_no_cfg:{cle}"] += 1
         return {"valeur": 0, "ts": ts}
 
-    # Fenêtre d'activation (pour numerique)
+    # Mapping non-monotone (VIX/V2X/VXN regime)
+    if type_norm == "mapping_non_monotone":
+        return _handle_mapping_non_monotone(cle, crit, ts)
+
+    # Composite (résolu par helper dédié)
+    if type_norm == "composite":
+        return _handle_composite(cle, crit, ts)
+
+    # Fenêtre d'activation
     in_window = is_in_activation_window(cle, now, triggers_cfg, fiche_key)
     if in_window is False:
-        # Hors fenêtre → contribution 0 (poids effectif 0). On émet valeur_normalisee=0 directement.
         return {"valeur_normalisee": 0.0, "ts": ts, "note": "hors fenêtre"}
 
-    # Numerique (zscore / lineaire)
+    # Numérique (zscore / lineaire)
     if type_norm == "zscore":
-        # Critères Twelve Data standardisés
-        if "twelve" in source or cle in TWELVE_TICKERS:
-            symbol = TWELVE_TICKERS.get(cle)
-            if symbol:
-                return _handle_twelve_zscore(symbol, crit, ts)
-            SKIP_COUNTER[f"no_ticker:{cle}"] += 1
+        # CFTC d'abord (peut être détecté par préfixe)
+        if cle.startswith("cftc_") or "cftc" in source:
+            res = _handle_cftc(cle, crit, ts)
+            if res is not None:
+                return res
             return None
-        if "cftc" in source or cle.startswith("cftc_"):
-            return _handle_cftc(cle, crit, ts)
-        if "eia" in source:
-            if cle in ("eia_crude_surprise", "cushing_stocks"):
-                return _handle_eia_crude(crit, ts)
-            SKIP_COUNTER[f"eia_no_route:{cle}"] += 1
+        # EIA
+        if cle in EIA_SERIES or "eia" in source:
+            res = _handle_eia(cle, crit, ts)
+            if res is not None:
+                return res
             return None
-        # Autre source non câblée
+        # Open-Meteo
+        if cle in METEO_CRITERIA:
+            return _handle_meteo(cle, crit, ts)
+        # Twelve Data (catch-all : symbole, spread, ratio, alpha)
+        if cle in TWELVE_SYMBOLS or "twelve" in source:
+            res = _handle_twelve_zscore_dispatch(cle, crit, ts)
+            if res is not None:
+                return res
+        # Sources non programmatiques (AAII, USDA WASDE, CFTC inexistants, etc.)
         SKIP_COUNTER[f"zscore_unmapped:{cle}"] += 1
         return None
 
     if type_norm == "lineaire":
-        if "twelve" in source or cle in TWELVE_TICKERS:
-            symbol = TWELVE_TICKERS.get(cle)
-            if symbol:
-                return _handle_twelve_lineaire(symbol, crit, ts)
+        if cle in TWELVE_SYMBOLS or "twelve" in source:
+            res = _handle_twelve_lineaire_dispatch(cle, crit, ts)
+            if res is not None:
+                return res
         SKIP_COUNTER[f"lineaire_unmapped:{cle}"] += 1
         return None
 

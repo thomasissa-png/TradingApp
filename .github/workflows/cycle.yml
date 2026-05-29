@@ -1,14 +1,14 @@
 name: cycle-decision
 
-# Objectif : 2 snapshots décisionnels complets par jour (~7h et ~19h Paris, ~12h d'écart).
+# Objectif : 3 snapshots décisionnels complets par jour (~7h, ~12h, ~18h Paris).
 # Un cycle atomique enchaîne : ingest news → calcul critères + bulletin + briefing → mesure perf,
 # puis commit unique. Pas de polling continu (inutile pour un horizon 1-30 j, et préserve les
-# quotas GNews/NewsAPI : 2 runs/j × 6 requêtes = 12/j, sous le free tier 100/j).
+# quotas GNews/NewsAPI : 3 runs/j × 6 requêtes = 18/j, sous le free tier 100/j).
 #
-# Cron UTC (pas de DST auto) : 05h & 17h UTC = 07h & 19h Paris été (CEST) / 06h & 18h hiver (CET).
+# Cron UTC (pas de DST auto) : 05h/10h/16h UTC = 07h/12h/18h Paris été (CEST) / 06h/11h/17h hiver (CET).
 on:
   schedule:
-    - cron: "0 5,17 * * *"
+    - cron: "0 5,10,16 * * *"
   workflow_dispatch: {}
 
 permissions:

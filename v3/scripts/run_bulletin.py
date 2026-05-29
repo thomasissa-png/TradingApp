@@ -1,18 +1,14 @@
-"""TradingApp v3 — Bulletin runner (STUB Incrément 1)
+"""TradingApp v3 — Bulletin runner.
 
-À ce stade : NE SCORE PAS. Imprime un placeholder et écrit un bulletin stub
-dans v3/data/bulletins/ pour valider que le workflow tourne, commit et push.
+Orchestre :
+1. criteres_calculator.run()  (SCAFFOLD — fetchs externes stubbés)
+2. scoring_analyste.run()     (moteur déterministe, zéro LLM)
 
-Les vrais modules viennent dans les incréments suivants :
-- v3/scripts/criteres_calculator.py     (agrège events + prix → criteres-courants.md)
-- v3/scripts/scoring_analyste.py        (12 fiches × 3 horizons → 36 cellules LONG/SHORT)
-- v3/scripts/journaliste.py             (mesure conclusions échues, taux + Brier)
-
-Dépendances bloquantes :
-- 12 fiches actifs (YAML/MD) dans v3/config/fiches/ — pas encore lues
-- triggers-and-windows.yml — classement des critères événementiels
-- Les "criteres-courants" requièrent prix Twelve Data + events-log enrichi
+Échec à n'importe quelle étape => exit code non-nul, pas de bulletin
+inventé. La fraîcheur (last_update > 1h) bloque le bulletin (red line).
 """
+
+from __future__ import annotations
 
 import logging
 import os
@@ -27,36 +23,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger("run_bulletin")
 
+# Permet l'import quand lancé depuis racine repo ou depuis v3/scripts
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
-BULLETINS_DIR = Path(os.environ.get("BULLETINS_DIR", "v3/data/bulletins"))
+import criteres_calculator  # noqa: E402
+import scoring_analyste  # noqa: E402
 
 
 def main() -> int:
-    now_paris = datetime.now(ZoneInfo("Europe/Paris"))
-    date_str = now_paris.strftime("%Y-%m-%d")
-    logger.info("=== Bulletin runner STUB (%s Europe/Paris) ===", now_paris.isoformat())
+    now = datetime.now(ZoneInfo("Europe/Paris"))
+    logger.info("=== Bulletin runner (%s Europe/Paris) ===", now.isoformat())
 
-    print("scoring engine TODO — criteres_calculator + scoring_analyste à implémenter")
-    print(f"  date cible : {date_str}")
-    print("  étapes prévues :")
-    print("   1. lire v3/data/events-log.md (Phase 2.1 ✅)")
-    print("   2. lire prix Twelve Data (TWELVE_DATA_API_KEY)")
-    print("   3. agréger → criteres-courants.md")
-    print("   4. scorer 12 fiches × 3 horizons → 36 cellules LONG/SHORT")
-    print("   5. écrire v3/data/bulletins/bulletin-YYYY-MM-DD.md")
-    print("   6. (mode shadow) ne PAS envoyer Telegram")
+    # Étape 1 — critères courants
+    try:
+        cc_path = criteres_calculator.run()
+        logger.info("criteres-courants OK : %s", cc_path)
+    except Exception as e:
+        logger.error("criteres_calculator KO : %s", e)
+        return 2
 
-    # Écrit un stub-bulletin pour valider l'aller-retour git/commit du workflow
-    BULLETINS_DIR.mkdir(parents=True, exist_ok=True)
-    stub_path = BULLETINS_DIR / f"bulletin-{date_str}.md"
-    stub_path.write_text(
-        f"# Bulletin {date_str} — STUB\n\n"
-        f"Généré à {now_paris.isoformat()}.\n\n"
-        f"Scoring engine non implémenté (incrément 1 : squelette uniquement).\n"
-        f"Voir v3/scripts/run_bulletin.py pour la roadmap.\n",
-        encoding="utf-8",
-    )
-    logger.info("Stub bulletin écrit : %s", stub_path)
+    # Étape 2 — scoring
+    try:
+        out_path, results = scoring_analyste.run(now=now)
+    except Exception as e:
+        logger.error("scoring_analyste KO : %s", e)
+        return 3
+
+    logger.info("Bulletin écrit : %s (%d actifs)", out_path, len(results))
+    print(f"OK : {out_path}")
     return 0
 
 

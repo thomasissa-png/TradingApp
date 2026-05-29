@@ -102,20 +102,21 @@ def _make_event(date_str: str, trigger: str, l2: str = "") -> dict:
 def test_classify_long_match(triggers_cfg, now_fixed):
     events = [_make_event("2026-05-28", "frappes Iran sur Ormuz", "Iran")]
     res = tc.classify_all(events=events, today=now_fixed, triggers_cfg=triggers_cfg)
-    assert res.get("petrole", {}).get("geopol_iran") == 1
+    # cle_courante émis = "tension_geopol_moyen_orient" (alias YAML→fiche)
+    assert res.get("petrole", {}).get("tension_geopol_moyen_orient") == 1
 
 
 def test_classify_short_match(triggers_cfg, now_fixed):
     events = [_make_event("2026-05-28", "cessez-le-feu Iran annoncé", "Iran")]
     res = tc.classify_all(events=events, today=now_fixed, triggers_cfg=triggers_cfg)
-    assert res.get("petrole", {}).get("geopol_iran") == -1
+    assert res.get("petrole", {}).get("tension_geopol_moyen_orient") == -1
 
 
 def test_classify_no_match(triggers_cfg, now_fixed):
     events = [_make_event("2026-05-28", "marché calme, rien de neuf", "")]
     res = tc.classify_all(events=events, today=now_fixed, triggers_cfg=triggers_cfg)
     # Tous les triplets doivent valoir 0
-    assert res.get("petrole", {}).get("geopol_iran") == 0
+    assert res.get("petrole", {}).get("tension_geopol_moyen_orient") == 0
     assert res.get("vix", {}).get("tension_geopolitique_active") == 0
 
 
@@ -124,7 +125,7 @@ def test_classify_lookback_window(triggers_cfg, now_fixed):
     old_dt = (now_fixed - timedelta(days=60)).date().isoformat()
     events = [_make_event(old_dt, "frappes Iran", "Iran")]
     res = tc.classify_all(events=events, today=now_fixed, triggers_cfg=triggers_cfg)
-    assert res["petrole"]["geopol_iran"] == 0
+    assert res["petrole"]["tension_geopol_moyen_orient"] == 0
 
 
 def test_classify_long_and_short_keeps_most_recent(triggers_cfg, now_fixed):
@@ -133,7 +134,7 @@ def test_classify_long_and_short_keeps_most_recent(triggers_cfg, now_fixed):
         _make_event("2026-05-20", "frappes Iran", "Iran"),         # plus ancien: LONG
     ]
     res = tc.classify_all(events=events, today=now_fixed, triggers_cfg=triggers_cfg)
-    assert res["petrole"]["geopol_iran"] == -1
+    assert res["petrole"]["tension_geopol_moyen_orient"] == -1
 
 
 def test_classify_calendrier_or_diwali():
@@ -166,6 +167,206 @@ def test_classify_word_boundary(triggers_cfg, now_fixed):
     events = [_make_event("2026-05-28", "warm weather in Iowa", "")]
     res = tc.classify_all(events=events, today=now_fixed, triggers_cfg=triggers_cfg)
     assert res["or"]["tension_geopolitique"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Routing event→critère HYBRIDE (audit chantier 2)
+# ---------------------------------------------------------------------------
+
+def _make_event_full(date_str: str, trigger: str, cours: str = "",
+                     l2: str = "", category: str = "") -> dict:
+    return {
+        "date": date_str,
+        "l1": "",
+        "l2": l2,
+        "trigger": trigger,
+        "cours": cours,
+        "source": "test",
+        "news_zone": "Moyen-Orient",
+        "category": category,
+        "_dt": datetime.fromisoformat(date_str).replace(tzinfo=timezone.utc),
+    }
+
+
+def test_audit_iran_extended_ceasefire_routes_to_petrole(triggers_cfg, now_fixed):
+    """Cas réel de l'audit chantier 2.
+
+    Event : trigger="Report of breakthrough in US-Iran talks with extended ceasefire",
+            cours="Brent (BZ=F), WTI (CL=F)", category="geopolitical".
+    Avant : aucun routage (mot-clé attendu "Iran ceasefire" ne matche pas "extended ceasefire").
+    Après : route sur petrole.tension_geopol_moyen_orient = -1 (détente) via :
+      1. cours="Brent (BZ=F)" → mappe à actif "petrole"
+      2. category="geopolitical" → scope OK
+      3. tokens-AND : "iran ceasefire" → tous tokens ("iran", "ceasefire") présents
+         dans le trigger → match SHORT → -1.
+    """
+    ev = _make_event_full(
+        "2026-05-28",
+        "Report of breakthrough in US-Iran talks with extended ceasefire subject to Trump's approval, causing oil prices to fall.",
+        cours="Brent (BZ=F), WTI (CL=F)",
+        l2="Pétrole-EIA",
+        category="geopolitical",
+    )
+    res = tc.classify_all(events=[ev], today=now_fixed, triggers_cfg=triggers_cfg)
+    assert res["petrole"]["tension_geopol_moyen_orient"] == -1
+
+
+def test_audit_iran_escalation_via_cours_routes_long(triggers_cfg, now_fixed):
+    """Event escalade Iran avec cours Brent → +1 (LONG pétrole)."""
+    ev = _make_event_full(
+        "2026-05-29",
+        "Iran retaliation: missile strikes target Israel, Brent up sharply",
+        cours="Brent (BZ=F)",
+        l2="Iran-Moyen-Orient",
+        category="geopolitical",
+    )
+    res = tc.classify_all(events=[ev], today=now_fixed, triggers_cfg=triggers_cfg)
+    assert res["petrole"]["tension_geopol_moyen_orient"] == 1
+
+
+def test_routing_hors_actif_via_cours_inutilisé(triggers_cfg, now_fixed):
+    """Event ciblant un autre actif (Tesla) ne doit pas alimenter Pétrole geopol."""
+    ev = _make_event_full(
+        "2026-05-28",
+        "Tesla beats earnings, guidance raised",
+        cours="Tesla (TSLA)",
+        l2="Automotive",
+        category="earnings",
+    )
+    res = tc.classify_all(events=[ev], today=now_fixed, triggers_cfg=triggers_cfg)
+    assert res["petrole"]["tension_geopol_moyen_orient"] == 0
+
+
+def test_routing_bon_actif_sans_cue_directionnel(triggers_cfg, now_fixed):
+    """Event qui cible Brent + geopolitical mais sans cue LONG/SHORT clair → 0."""
+    ev = _make_event_full(
+        "2026-05-28",
+        "Oil markets monitor Middle East developments closely",
+        cours="Brent (BZ=F)",
+        l2="Pétrole-EIA",
+        category="geopolitical",
+    )
+    res = tc.classify_all(events=[ev], today=now_fixed, triggers_cfg=triggers_cfg)
+    assert res["petrole"]["tension_geopol_moyen_orient"] == 0
+
+
+def test_routing_or_geopol_ne_pollue_pas_petrole(triggers_cfg, now_fixed):
+    """Event Or (cours XAU) avec cue 'war' ne doit PAS alimenter petrole.geopol_iran."""
+    ev = _make_event_full(
+        "2026-05-28",
+        "Gold rallies on global war fears",
+        cours="Gold (GC=F)",
+        l2="Or-Geopolitique",
+        category="geopolitical",
+    )
+    res = tc.classify_all(events=[ev], today=now_fixed, triggers_cfg=triggers_cfg)
+    # Or geopol : LONG (war keyword)
+    assert res["or"]["tension_geopolitique"] == 1
+    # Petrole geopol Iran : pas d'Iran/Ormuz/etc → 0
+    assert res["petrole"]["tension_geopol_moyen_orient"] == 0
+
+
+def test_routing_category_filter_blocks_off_topic(triggers_cfg, now_fixed):
+    """Event Brent mais category=earnings (off-topic) ne route pas sur geopol."""
+    ev = _make_event_full(
+        "2026-05-28",
+        "Some Iran-related corporate news with ceasefire mention",
+        cours="Brent (BZ=F)",
+        l2="Earnings-Corporate",
+        category="earnings",  # pas geopolitical → bloqué
+    )
+    res = tc.classify_all(events=[ev], today=now_fixed, triggers_cfg=triggers_cfg)
+    assert res["petrole"]["tension_geopol_moyen_orient"] == 0
+
+
+def test_routing_opec_via_cours_petrole(triggers_cfg, now_fixed):
+    """Event OPEC cut + cours Brent → petrole.opec_production_policy = +1."""
+    ev = _make_event_full(
+        "2026-05-15",
+        "OPEC+ cut production by 1mbpd to support prices",
+        cours="Brent (BZ=F)",
+        l2="OPEC",
+        category="commodity",
+    )
+    res = tc.classify_all(events=[ev], today=now_fixed, triggers_cfg=triggers_cfg)
+    assert res["petrole"]["opec_production_policy"] == 1
+
+
+def test_routing_nasdaq_megacap_via_ticker(triggers_cfg, now_fixed):
+    """Event NVDA beat + ticker dans cours → nasdaq.sentiment_ia_megacaps = +1."""
+    ev = _make_event_full(
+        "2026-05-28",
+        "Nvidia beat consensus, guidance raised on AI demand",
+        cours="Nvidia (NVDA)",
+        l2="Semi-conducteurs",
+        category="earnings",
+    )
+    res = tc.classify_all(events=[ev], today=now_fixed, triggers_cfg=triggers_cfg)
+    assert res["nasdaq"]["sentiment_ia_megacaps"] == 1
+
+
+def test_routing_lookback_respecte(triggers_cfg, now_fixed):
+    """Event Iran escalation hors fenêtre (lookback 7j) → 0."""
+    old_dt = (now_fixed - timedelta(days=30)).date().isoformat()
+    ev = _make_event_full(
+        old_dt,
+        "Iran retaliation strikes Hormuz",
+        cours="Brent (BZ=F)",
+        l2="Iran",
+        category="geopolitical",
+    )
+    res = tc.classify_all(events=[ev], today=now_fixed, triggers_cfg=triggers_cfg)
+    assert res["petrole"]["tension_geopol_moyen_orient"] == 0
+
+
+def test_calendrier_intacts_meme_avec_events(triggers_cfg):
+    """Les critères calendrier ne sont pas affectés par les events."""
+    # Mars → off-season Or
+    now = datetime(2026, 3, 15, tzinfo=timezone.utc)
+    ev = _make_event_full("2026-03-14", "random", cours="Brent (BZ=F)",
+                          category="geopolitical")
+    res = tc.classify_all(events=[ev], today=now, triggers_cfg=triggers_cfg)
+    assert res["or"]["demande_indienne_saisonniere"] == -1
+
+
+def test_emit_keys_alignes_avec_fiches(triggers_cfg, now_fixed):
+    """Les clés émises doivent correspondre aux `cle_courante` des fiches."""
+    res = tc.classify_all(events=[], today=now_fixed, triggers_cfg=triggers_cfg)
+    # Alias YAML→fiche : vérifier que les bonnes clés sont émises
+    assert "tension_geopol_moyen_orient" in res.get("petrole", {})
+    assert "opec_production_policy" in res.get("petrole", {})
+    assert "geopolitique_mer_noire" in res.get("ble", {})
+    assert "eudr" in res.get("cacao", {})
+    assert "maladies_cabosses" in res.get("cacao", {})
+    assert "maladies_cabosses_rouille" in res.get("cafe", {})
+    assert "demande_pv_mining_strikes" in res.get("argent", {})
+    assert "news_construction_infra" in res.get("cuivre", {})
+
+
+def test_phrase_matching_robuste_tokens_and(triggers_cfg, now_fixed):
+    """Test direct du matching robuste : tokens AND non-adjacents."""
+    # "Iran ceasefire" doit matcher "ceasefire ... Iran" même séparé
+    ev = _make_event_full(
+        "2026-05-29",
+        "Vance says US and Iran very close to deal; framework of ceasefire extension agreed",
+        cours="Pétrole brut (CL=F)",
+        l2="Iran-Moyen-Orient",
+        category="geopolitical",
+    )
+    res = tc.classify_all(events=[ev], today=now_fixed, triggers_cfg=triggers_cfg)
+    assert res["petrole"]["tension_geopol_moyen_orient"] == -1
+
+
+def test_word_boundary_war_ne_matche_pas_warm():
+    """Sanity : 'war' ne doit pas matcher 'warm'."""
+    assert not tc._phrase_matches("warm weather in iowa", "war")
+    assert tc._phrase_matches("global war fears", "war")
+
+
+def test_phrase_match_accents():
+    """Sanity : accents normalisés des deux côtés."""
+    assert tc._phrase_matches("cessez-le-feu iran", "cessez-le-feu")
+    assert tc._phrase_matches("desescalade au moyen-orient", "désescalade")
 
 
 def test_classify_empty_events(triggers_cfg, now_fixed):

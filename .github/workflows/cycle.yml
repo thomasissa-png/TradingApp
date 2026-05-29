@@ -1,25 +1,27 @@
-name: ingest-news
+name: cycle-decision
 
-# Cron UTC. Cible : toutes les 30 min entre 7h-20h CET, lun-ven.
-# En CET (UTC+1 hiver / UTC+2 été), 7-20 CET ≈ 5-19 UTC (hiver) ou 5-18 UTC (été).
-# On élargit volontairement de 5h à 19h UTC pour couvrir les deux régimes ;
-# la fenêtre 7-20 CET est gérée côté Python si besoin.
+# Objectif : 2 snapshots décisionnels complets par jour (~7h et ~19h Paris, ~12h d'écart).
+# Un cycle atomique enchaîne : ingest news → calcul critères + bulletin + briefing → mesure perf,
+# puis commit unique. Pas de polling continu (inutile pour un horizon 1-30 j, et préserve les
+# quotas GNews/NewsAPI : 2 runs/j × 6 requêtes = 12/j, sous le free tier 100/j).
+#
+# Cron UTC (pas de DST auto) : 05h & 17h UTC = 07h & 19h Paris été (CEST) / 06h & 18h hiver (CET).
 on:
   schedule:
-    - cron: "*/30 5-19 * * 1-5"
+    - cron: "0 5,17 * * *"
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
 concurrency:
-  group: ingest-news
+  group: cycle-decision
   cancel-in-progress: false
 
 jobs:
-  collect:
+  cycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,20 +40,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r v3/requirements.txt
 
-      - name: Run agent_news (one-shot)
+      - name: 1. Ingest news (RSS + early-signal + GNews/NewsAPI + extraction DeepSeek)
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           HEALTHCHECKS_URL: ${{ secrets.HEALTHCHECKS_URL }}
           LOG_LEVEL: INFO
-        working-directory: ${{ github.workspace }}
         run: python v3/scripts/agent_news.py
 
-      - name: Commit and push data updates
+      - name: 2. Bulletin (critères + scoring + briefing)
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+          USDA_API_KEY: ${{ secrets.USDA_API_KEY }}
+          GIE_AGSI_API_KEY: ${{ secrets.GIE_AGSI_API_KEY }}
+          LOG_LEVEL: INFO
+        run: python v3/scripts/run_bulletin.py
+
+      - name: 3. Mesure perf (Journaliste — conclusions échues + prix d'émission)
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          LOG_LEVEL: INFO
+        run: python v3/scripts/run_journaliste.py
+
+      - name: Commit and push snapshot
         run: |
           git config user.name  "tradingapp-bot"
           git config user.email "tradingapp-bot@users.noreply.github.com"
@@ -60,8 +75,7 @@ jobs:
             echo "No data changes to commit."
             exit 0
           fi
-          git commit -m "chore(ingest): events-log update [skip ci]"
-          # Push avec retry simple en cas de course
+          git commit -m "chore(cycle): decision snapshot [skip ci]"
           for i in 1 2 3; do
             git pull --rebase origin "${GITHUB_REF_NAME}" || true
             if git push origin HEAD:"${GITHUB_REF_NAME}"; then

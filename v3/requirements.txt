@@ -1,0 +1,24 @@
+# TradingApp v3 — dependencies (Phase 2.1, GitHub Actions runtime)
+# Python 3.11+
+
+# HTTP + RSS
+requests==2.31.0
+feedparser==6.0.10
+
+# Parsing HTML (utilisé par feedparser pour certains feeds malformés)
+beautifulsoup4==4.12.2
+lxml==5.0.0
+
+# Configuration
+pyyaml==6.0.1
+python-dotenv==1.0.0
+
+# LLM extraction — OpenAI SDK compatible avec DeepSeek
+openai==1.55.0
+
+# Logging
+structlog==24.1.0
+
+# NB: Drive API supprimé (remplacé par git-as-storage)
+# NB: schedule supprimé (remplacé par GitHub Actions cron)
+# NB: sqlite intégré à la stdlib Python — pas besoin de sqlite-utils en prod

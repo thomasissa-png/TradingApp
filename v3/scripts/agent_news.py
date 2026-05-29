@@ -84,14 +84,17 @@ def run_one_cycle(publisher: RepoPublisher, extractor: Extractor) -> dict:
         )
         filtered = filtered[:MAX_EXTRACTIONS_PER_CYCLE]
 
-    # Extraction
+    # Extraction.
+    # NB: extractor.is_enabled() retourne False si pas d'API key OU si hard cap.
+    # En cours de batch, un hard cap franchi → ExtractedEvent.error contient
+    # "disabled" → on bascule en raw pour les suivants.
     lines = []
     errors = 0
-    if extractor.is_enabled() and not extractor.is_hard_capped():
+    if extractor.is_enabled():
         for item in filtered:
             extracted = extractor.extract(item.title, item.summary)
-            if extracted.error and "hard cap" in extracted.error:
-                # Bascule fallback raw pour le reste du batch
+            if extracted.error and "disabled" in extracted.error:
+                # Hard cap franchi en cours de batch → raw
                 lines.append(item.as_event_log_line_raw())
             elif extracted.error:
                 errors += 1
@@ -99,9 +102,7 @@ def run_one_cycle(publisher: RepoPublisher, extractor: Extractor) -> dict:
             else:
                 lines.append(item.as_event_log_line_extracted(extracted))
     else:
-        # Mode brut (extracteur désactivé OU hard cap déjà atteint)
-        reason = "disabled" if not extractor.is_enabled() else "hard cap reached"
-        logger.warning("Extractor %s → écriture en mode brut", reason)
+        logger.warning("Extractor désactivé (no key ou hard cap) → écriture en mode brut")
         for item in filtered:
             lines.append(item.as_event_log_line_raw())
 

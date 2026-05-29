@@ -15,10 +15,12 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from config import EVENTS_LOG_PATH as DEFAULT_EVENTS_LOG_PATH
+
 logger = logging.getLogger(__name__)
 
 
-EVENTS_LOG_PATH = Path(os.environ.get("EVENTS_LOG_PATH", "v3/data/events-log.md"))
+EVENTS_LOG_PATH = Path(os.environ.get("EVENTS_LOG_PATH", str(DEFAULT_EVENTS_LOG_PATH)))
 
 
 HEADER = (

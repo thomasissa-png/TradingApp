@@ -24,6 +24,7 @@ from config import (
     DEDUP_JACCARD_THRESHOLD,
     HTTP_TIMEOUT,
     RSS_FEEDS,
+    TITLES_CACHE_DB,
     USER_AGENT,
 )
 
@@ -188,7 +189,7 @@ def is_finance_relevant(title: str, summary: str = "") -> bool:
 # Cache dédup SQLite (sous v3/data/)
 # ============================================================
 
-DB_PATH = Path(os.environ.get("DEDUP_DB_PATH", "v3/data/titles_cache.db"))
+DB_PATH = Path(os.environ.get("DEDUP_DB_PATH", str(TITLES_CACHE_DB)))
 
 
 def _ensure_db():

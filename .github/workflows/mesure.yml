@@ -1,7 +1,7 @@
 name: mesure-quotidienne
 
 # Le Journaliste mesure chaque jour la qualité prédictive du bulletin.
-# Cron UTC : 17h00 UTC ≈ 19h00 CET hiver / 19h00 CEST été.
+# Cron UTC (pas de DST) : 17h00 UTC = 19h00 Paris été (CEST) / 18h00 Paris hiver (CET).
 # Stamp prix d'émission du jour + mesure des échéances 24h / 7j / 1m.
 on:
   schedule:

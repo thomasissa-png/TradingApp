@@ -1,10 +1,12 @@
 name: bulletin-quotidien
 
-# Cron UTC : 04h30 UTC ≈ 06h30 CET hiver / 06h30 CEST été.
-# (Dérive ±1h selon DST acceptée — bulletin reste lisible humainement à 7h CET.)
+# Cron UTC (GitHub Actions ne gère que l'UTC, pas le DST français).
+# 05h00 UTC = 07h00 Paris en été (CEST) / 06h00 Paris en hiver (CET).
+# Objectif : bulletin PRÊT pour 7h Paris toute l'année (un peu en avance l'hiver, ce qui convient
+# puisqu'on lit un fichier commité). Dérive DST ±1h inévitable avec un cron UTC unique.
 on:
   schedule:
-    - cron: "30 4 * * *"
+    - cron: "0 5 * * *"
   workflow_dispatch: {}
 
 permissions:

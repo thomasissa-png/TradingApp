@@ -1,0 +1,135 @@
+# EUR/USD — fiche de positionnement v2
+# Converti depuis _SOURCE-fiches-md.md selon SCHEMA-fiche.md + template petrole.yml.
+# Conclusion LONG = EUR/USD monte (USD faiblit).
+# Échelles linéaires dérivées des seuils énoncés → à calibrer (poids v0 éditoriaux).
+actif: "EUR/USD"
+ticker_principal: "EUR=X"
+famille: "fx"
+news_zone: "Global"
+version: 2
+seuils_reussite_pct:
+  "24h": 0.25
+  "7j": 0.7
+  "1m": 1.8
+
+criteres:
+  - id: 1
+    nom: "Différentiel taux 2Y US-DE"
+    source: "FRED / Twelve Data (calculé)"
+    cle_courante: "differentiel_taux_2y_us_de"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : se resserre (BCE+hawkish) => LONG EUR
+    poids: 12
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 1.0 }
+    effet_long: "Se resserre (BCE+hawkish)"
+    effet_short: "S'élargit (Fed+hawkish)"
+
+  - id: 2
+    nom: "Différentiel taux 10Y US-Bund"
+    source: "FRED / Twelve Data (calculé)"
+    cle_courante: "differentiel_taux_10y_us_bund"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : se resserre => LONG EUR
+    poids: 6
+    pertinence: { "24h": 0.3, "7j": 0.7, "1m": 1.0 }
+    effet_long: "Se resserre"
+    effet_short: "S'élargit"
+
+  - id: 3
+    nom: "DXY trend 20j"
+    source: "Twelve Data"
+    cle_courante: "dxy_trend_20j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : DXY baisse (z<-1) => LONG EUR
+    poids: 9
+    pertinence: { "24h": 0.7, "7j": 1.0, "1m": 0.8 }
+    effet_long: "DXY baisse (z<-1)"
+    effet_short: "DXY monte (z>+1)"
+
+  - id: 4
+    nom: "USD/JPY (proxy risk)"
+    source: "Twelve Data"
+    cle_courante: "usd_jpy_proxy_risk"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : USD/JPY baisse => LONG EUR
+    poids: 4
+    pertinence: { "24h": 0.7, "7j": 0.8, "1m": 0.5 }
+    effet_long: "USD/JPY baisse"
+    effet_short: "USD/JPY monte"
+
+  - id: 5
+    nom: "FedWatch proba"
+    source: "CME FedWatch"
+    cle_courante: "fedwatch_proba"
+    normalisation: "lineaire"
+    centre: 0.5                  # proba ; cut>70% / hike>70% autour de 0,5 ; à calibrer
+    echelle: 0.2
+    cap: 1.0
+    signe: 1
+    poids: 6
+    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 0.9 }
+    effet_long: "Proba cut Fed >70%"
+    effet_short: "Proba hike >70% OU aucun cut"
+
+  - id: 6
+    nom: "CFTC COT EUR nets"
+    source: "CFTC (vendredi)"
+    cle_courante: "cftc_cot_eur_nets"
+    normalisation: "zscore"
+    zscore_window: 252
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : nets SHORT extreme => LONG EUR (squeeze)
+    poids: 5
+    pertinence: { "24h": 0.2, "7j": 0.6, "1m": 0.9 }
+    effet_long: "Nets SHORT extreme"
+    effet_short: "Nets LONG extreme"
+
+  - id: 7
+    nom: "Spread OAT-Bund (stress EZ)"
+    source: "Twelve Data (calculé)"
+    cle_courante: "spread_oat_bund_stress_ez"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : se resserre => LONG EUR
+    poids: 4
+    pertinence: { "24h": 0.4, "7j": 0.7, "1m": 0.6 }
+    effet_long: "Se resserre"
+    effet_short: "S'élargit"
+
+  - id: 8
+    nom: "Balance commerciale EZ"
+    source: "Eurostat (mensuel)"
+    cle_courante: "balance_commerciale_ez"
+    normalisation: "zscore"
+    zscore_window: 12            # 12 mois
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 3
+    pertinence: { "24h": 0.1, "7j": 0.3, "1m": 0.9 }
+    effet_long: "Surplus hausse (z>+1)"
+    effet_short: "Baisse/déficit (z<-1)"
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 9
+    nom: "GATE régime extrême"
+    source: "events-log + calendrier"
+    cle_courante: "gate_regime_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "FOMC/ECB rate decision <24h OU NFP US ce vendredi OU CPI US <24h"

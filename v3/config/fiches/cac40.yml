@@ -1,0 +1,117 @@
+# CAC 40 — fiche de positionnement v2
+# Converti depuis _SOURCE-fiches-md.md selon SCHEMA-fiche.md + template petrole.yml.
+# Échelles linéaires dérivées des seuils énoncés → à calibrer (poids v0 éditoriaux).
+actif: "CAC 40"
+ticker_principal: "^FCHI"
+famille: "indices"
+news_zone: "EU-FR"
+version: 2
+seuils_reussite_pct:
+  "24h": 0.5
+  "7j": 1.2
+  "1m": 3.0
+
+criteres:
+  - id: 1
+    nom: "V2X régime"
+    source: "Twelve Data"
+    cle_courante: "v2x_regime"
+    normalisation: "mapping_non_monotone"   # non-monotone : +1 au centre, -1 aux extrêmes ; échelle à calibrer
+    centre_optimal: 16
+    cap: 1.0
+    signe: 1
+    poids: 8
+    pertinence: { "24h": 0.8, "7j": 0.5, "1m": 0.2 }
+    effet_long: "V2X=16 (calme sain)"
+    effet_short: "V2X>30 OU <11"
+
+  - id: 2
+    nom: "Spread OAT-Bund 10Y (bp)"
+    source: "Twelve Data (calculé)"
+    cle_courante: "spread_oat_bund_10y"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : resserrement (z<-1) => LONG
+    poids: 10
+    pertinence: { "24h": 0.4, "7j": 0.9, "1m": 1.0 }
+    effet_long: "Spread resserre vs 60j (z<-1)"
+    effet_short: "Spread élargit (z>+1)"
+
+  - id: 3
+    nom: "Alpha CAC vs S&P 5j"
+    source: "Twelve Data (calculé)"
+    cle_courante: "alpha_cac_vs_sp_5j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 6
+    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 0.6 }
+    effet_long: "CAC out-perf >+1%"
+    effet_short: "CAC under-perf >-1%"
+
+  - id: 4
+    nom: "Breadth CAC (%>MA50)"
+    source: "Twelve Data (calculé)"
+    cle_courante: "breadth_cac_ma50"
+    normalisation: "lineaire"
+    centre: 50.0
+    echelle: 35.0                # >65 / <30 autour de 50 → demi-span 35 ; à calibrer
+    cap: 1.0
+    signe: 1
+    poids: 6
+    pertinence: { "24h": 0.9, "7j": 0.7, "1m": 0.4 }
+    effet_long: "Breadth >65%"
+    effet_short: "Breadth <30%"
+
+  - id: 5
+    nom: "Flux ETF MSCI France 5j net"
+    source: "Twelve Data / fournisseur flux"
+    cle_courante: "flux_etf_msci_france_5j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 0.7 }
+    effet_long: "Entrées >+1σ"
+    effet_short: "Sorties <-1σ"
+
+  - id: 6
+    nom: "Tension politique FR"
+    source: "events-log L2=France-politique"
+    cle_courante: "tension_politique_fr"
+    normalisation: "triplet"     # +1 accord budget/stabilité / 0 / -1 motion/dissolution/dégradation/shutdown
+    cap: 1.0
+    signe: 1
+    poids: 3
+    pertinence: { "24h": 0.5, "7j": 0.8, "1m": 0.5 }
+    effet_long: "Accord budget/stabilité"
+    effet_short: "Motion/dissolution/dégradation rating/shutdown"
+
+  - id: 7
+    nom: "RSI 14j ^FCHI"
+    source: "Twelve Data (calculé)"
+    cle_courante: "rsi_14j_fchi"
+    normalisation: "lineaire"
+    centre: 50.0
+    echelle: 25.0                # RSI 30/75 autour de 50 → demi-span ~25 ; à calibrer
+    cap: 1.0
+    signe: -1                    # inversé : RSI=30 oversold => LONG
+    poids: 2
+    pertinence: { "24h": 0.8, "7j": 0.4, "1m": 0.2 }
+    effet_long: "RSI=30 oversold"
+    effet_short: "RSI>75"
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 8
+    nom: "GATE régime extrême"
+    source: "events-log + calendrier"
+    cle_courante: "gate_regime_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "V2X>40 OU FOMC/BCE/CPI US/NFP <24h OU géopol Iran-Europe actif"

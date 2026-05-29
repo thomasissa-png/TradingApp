@@ -315,9 +315,9 @@ def test_run_full_petrole(tmp_path, petrole, fiches_dir):
     assert "Pétrole (Brent)" in txt
     # GATE actif visible
     assert "GATE ACTIF" in txt or "⚑" in txt
-    # 1 actif (seule fiche dispo)
-    assert len(results) == 1
-    r = results[0]
+    # le moteur charge toutes les fiches dispo ; on cible le résultat Pétrole
+    assert any(r.fiche_key == "petrole" for r in results)
+    r = next(r for r in results if r.fiche_key == "petrole")
     # Score > 0 (3 critères LONG, signe +1, valeurs positives)
     assert r.scores["7j"] > 0
     assert r.conclusions["7j"] == "LONG"

@@ -1,0 +1,146 @@
+# Argent — fiche de positionnement v2
+# Converti depuis _SOURCE-fiches-md.md selon SCHEMA-fiche.md + template petrole.yml.
+# Échelles linéaires dérivées des seuils énoncés → à calibrer (poids v0 éditoriaux).
+actif: "Argent"
+ticker_principal: "SI=F"
+famille: "métaux-précieux"
+news_zone: "Global"
+version: 2
+seuils_reussite_pct:
+  "24h": 0.8
+  "7j": 2.0
+  "1m": 5.0
+
+criteres:
+  - id: 1
+    nom: "Taux 10Y US réels (TIPS)"
+    source: "FRED (DFII10)"
+    cle_courante: "taux_10y_us_reels_tips"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : TIPS baisse (z<-1) => LONG
+    poids: 8
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 1.0 }
+    effet_long: "TIPS baisse (z<-1)"
+    effet_short: "TIPS monte (z>+1)"
+
+  - id: 2
+    nom: "Mouvement de l'or 5j"
+    source: "Twelve Data (calculé)"
+    cle_courante: "mouvement_or_5j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 7
+    pertinence: { "24h": 0.8, "7j": 0.9, "1m": 0.7 }
+    effet_long: "Or >+2% 5j"
+    effet_short: "Or <-2% 5j"
+
+  - id: 3
+    nom: "Ratio Gold/Silver"
+    source: "Twelve Data (calculé)"
+    cle_courante: "ratio_gold_silver"
+    normalisation: "lineaire"
+    centre: 75.0
+    echelle: 12.0                # >85 / <60 autour de 75 → demi-span ~12 ; à calibrer
+    cap: 1.0
+    signe: -1                    # inversé : ratio>85 (argent sous-éval) => LONG
+    poids: 7
+    pertinence: { "24h": 0.3, "7j": 0.7, "1m": 1.0 }
+    effet_long: "Ratio>85 (argent sous-éval)"
+    effet_short: "Ratio<60 (cher)"
+
+  - id: 4
+    nom: "Alpha Argent-vs-Or 5j"
+    source: "Twelve Data (calculé)"
+    cle_courante: "alpha_argent_vs_or_5j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.4, "7j": 0.8, "1m": 0.6 }
+    effet_long: "Argent out-perf >+2%"
+    effet_short: "Argent under-perf >-2%"
+
+  - id: 5
+    nom: "Caixin PMI Chine manuf"
+    source: "Caixin (mensuel)"
+    cle_courante: "caixin_pmi_manuf"
+    normalisation: "lineaire"
+    centre: 50.0
+    echelle: 1.0                 # >51 / <49 autour de 50 → demi-span ~1 ; à calibrer
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }
+    effet_long: "PMI>51"
+    effet_short: "PMI<49"
+
+  - id: 6
+    nom: "CFTC COT Silver"
+    source: "CFTC (vendredi)"
+    cle_courante: "cftc_cot_silver"
+    normalisation: "zscore"
+    zscore_window: 252
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : nets SHORT extreme => LONG (squeeze)
+    poids: 5
+    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 1.0 }
+    effet_long: "Nets SHORT extreme"
+    effet_short: "Nets LONG extreme"
+
+  - id: 7
+    nom: "Inventaires COMEX Silver"
+    source: "COMEX"
+    cle_courante: "inventaires_comex_silver"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : baisse (z<-1) => LONG
+    poids: 4
+    pertinence: { "24h": 0.4, "7j": 0.9, "1m": 0.8 }
+    effet_long: "Baisse (z<-1)"
+    effet_short: "Hausse (z>+1)"
+
+  - id: 8
+    nom: "Flux ETF SLV+PSLV 5j net"
+    source: "Twelve Data / fournisseur flux"
+    cle_courante: "flux_etf_slv_pslv_5j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 4
+    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 0.7 }
+    effet_long: "Entrées >+1σ"
+    effet_short: "Sorties <-1σ"
+
+  - id: 9
+    nom: "Demande photovoltaïque + mining strikes"
+    source: "events-log + rapports industrie"
+    cle_courante: "demande_pv_mining_strikes"
+    normalisation: "composite"   # triplet composite : demande PV (haussière/baisse) combinée aux strikes Mexique/Pérou — valeur pré-résolue {-1,0,+1}
+    cap: 1.0
+    signe: 1
+    poids: 3
+    pertinence: { "24h": 0.2, "7j": 0.5, "1m": 1.0 }
+    effet_long: "Demande PV haussière OU strike Mexique/Pérou"
+    effet_short: "Demande PV baisse OU stocks normalisés"
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 10
+    nom: "GATE régime extrême"
+    source: "events-log + calendrier"
+    cle_courante: "gate_regime_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "FOMC/CPI US <24h OU NFP vendredi OU Silver Institute report <14j"

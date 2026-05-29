@@ -1,0 +1,145 @@
+# Nasdaq — fiche de positionnement v2
+# Converti depuis _SOURCE-fiches-md.md selon SCHEMA-fiche.md + template petrole.yml.
+# Échelles linéaires dérivées des seuils énoncés → à calibrer (poids v0 éditoriaux).
+actif: "Nasdaq"
+ticker_principal: "^IXIC"
+famille: "indices"
+news_zone: "US"
+version: 2
+seuils_reussite_pct:
+  "24h": 0.7
+  "7j": 1.5
+  "1m": 4.0
+
+criteres:
+  - id: 1
+    nom: "Taux 10Y US réels (TIPS)"
+    source: "FRED (DFII10)"
+    cle_courante: "taux_10y_us_reels_tips"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : TIPS baisse (z<-1) => LONG
+    poids: 11
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 1.0 }
+    effet_long: "TIPS baisse (z<-1)"
+    effet_short: "TIPS monte (z>+1)"
+
+  - id: 2
+    nom: "VXN régime"
+    source: "Twelve Data"
+    cle_courante: "vxn_regime"
+    normalisation: "mapping_non_monotone"   # non-monotone : +1 au centre, -1 aux extrêmes ; échelle à calibrer
+    centre_optimal: 20
+    cap: 1.0
+    signe: 1
+    poids: 7
+    pertinence: { "24h": 0.9, "7j": 0.6, "1m": 0.3 }
+    effet_long: "VXN=18-22"
+    effet_short: "VXN>35 OU <14"
+
+  - id: 3
+    nom: "SOX trend 5j"
+    source: "Twelve Data"
+    cle_courante: "sox_trend_5j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 7
+    pertinence: { "24h": 0.9, "7j": 0.9, "1m": 0.5 }
+    effet_long: "SOX hausse (z>+1)"
+    effet_short: "SOX baisse (z<-1)"
+
+  - id: 4
+    nom: "Breadth Nasdaq 100 (%>MA50)"
+    source: "Twelve Data (calculé)"
+    cle_courante: "breadth_nasdaq100_ma50"
+    normalisation: "lineaire"
+    centre: 50.0
+    echelle: 25.0                # >60 / <25 autour de 50 → demi-span ~25 ; à calibrer
+    cap: 1.0
+    signe: 1
+    poids: 6
+    pertinence: { "24h": 0.9, "7j": 0.7, "1m": 0.4 }
+    effet_long: "Breadth >60%"
+    effet_short: "Breadth <25%"
+
+  - id: 5
+    nom: "Concentration top 7"
+    source: "Twelve Data (calculé)"
+    cle_courante: "concentration_top7"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : concentration baisse (rotation) => LONG
+    poids: 5
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 0.9 }
+    effet_long: "Concentration baisse (rotation)"
+    effet_short: ">52% top 7 (overheated)"
+
+  - id: 6
+    nom: "Sentiment IA / méga-caps"
+    source: "events-log L1=Tech-IA (7j)"
+    cle_courante: "sentiment_ia_megacaps"
+    normalisation: "triplet"     # +1 beat+guidance haussière / 0 / -1 miss OU correction guidance
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.8, "7j": 0.9, "1m": 0.5 }
+    effet_long: "Beat earnings + guidance haussière"
+    effet_short: "Miss OU correction guidance"
+
+  - id: 7
+    nom: "Flux ETF QQQ 5j net"
+    source: "Twelve Data / fournisseur flux"
+    cle_courante: "flux_etf_qqq_5j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 0.7 }
+    effet_long: "Entrées >+1σ"
+    effet_short: "Sorties <-1σ"
+
+  - id: 8
+    nom: "Spread Nasdaq-Russell 2000"
+    source: "Twelve Data (calculé)"
+    cle_courante: "spread_nasdaq_russell2000"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : Russell out-perf (breadth saine) => LONG
+    poids: 4
+    pertinence: { "24h": 0.5, "7j": 0.8, "1m": 0.7 }
+    effet_long: "Russell out-perf (breadth saine)"
+    effet_short: "Nasdaq out-perf très large"
+
+  - id: 9
+    nom: "RSI 14j ^IXIC"
+    source: "Twelve Data (calculé)"
+    cle_courante: "rsi_14j_ixic"
+    normalisation: "lineaire"
+    centre: 50.0
+    echelle: 25.0                # RSI 30/75 → demi-span ~25 ; à calibrer
+    cap: 1.0
+    signe: -1                    # inversé : RSI=30 => LONG
+    poids: 2
+    pertinence: { "24h": 0.8, "7j": 0.4, "1m": 0.2 }
+    effet_long: "RSI=30"
+    effet_short: "RSI>75"
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 10
+    nom: "GATE régime extrême"
+    source: "events-log + calendrier"
+    cle_courante: "gate_regime_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "VXN>40 OU FOMC/CPI <24h OU earnings méga-cap cette semaine"

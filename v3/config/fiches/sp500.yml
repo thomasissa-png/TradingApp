@@ -1,0 +1,145 @@
+# S&P 500 — fiche de positionnement v2
+# Converti depuis _SOURCE-fiches-md.md selon SCHEMA-fiche.md + template petrole.yml.
+# Échelles linéaires dérivées des seuils énoncés → à calibrer (poids v0 éditoriaux).
+actif: "S&P 500"
+ticker_principal: "^GSPC"
+famille: "indices"
+news_zone: "US"
+version: 2
+seuils_reussite_pct:
+  "24h": 0.4
+  "7j": 1.0
+  "1m": 2.5
+
+criteres:
+  - id: 1
+    nom: "VIX régime"
+    source: "Twelve Data"
+    cle_courante: "vix_regime"
+    normalisation: "mapping_non_monotone"   # non-monotone : +1 au centre, -1 aux extrêmes ; échelle à calibrer
+    centre_optimal: 15
+    cap: 1.0
+    signe: 1
+    poids: 8
+    pertinence: { "24h": 0.9, "7j": 0.6, "1m": 0.3 }
+    effet_long: "VIX=14-16 sain"
+    effet_short: "VIX>28 OU <11"
+
+  - id: 2
+    nom: "Taux 10Y US delta 5j"
+    source: "Twelve Data"
+    cle_courante: "taux_10y_us_delta_5j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : taux baisse (z<-1) => LONG
+    poids: 9
+    pertinence: { "24h": 0.4, "7j": 0.9, "1m": 1.0 }
+    effet_long: "Taux baisse (z<-1)"
+    effet_short: "Taux monte (z>+1)"
+
+  - id: 3
+    nom: "HY credit spread (ICE BofA HY OAS)"
+    source: "FRED (ICE BofA HY OAS)"
+    cle_courante: "hy_credit_spread"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : resserrement (z<-1) => LONG
+    poids: 7
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.9 }
+    effet_long: "Spread resserre (z<-1)"
+    effet_short: "Spread élargit (z>+1)"
+
+  - id: 4
+    nom: "Breadth S&P (%>MA50)"
+    source: "Twelve Data (calculé)"
+    cle_courante: "breadth_sp_ma50"
+    normalisation: "lineaire"
+    centre: 50.0
+    echelle: 35.0                # >65 / <30 autour de 50 → demi-span 35 ; à calibrer
+    cap: 1.0
+    signe: 1
+    poids: 7
+    pertinence: { "24h": 0.9, "7j": 0.8, "1m": 0.5 }
+    effet_long: "Breadth >65%"
+    effet_short: "Breadth <30%"
+
+  - id: 5
+    nom: "DXY trend 20j"
+    source: "Twelve Data"
+    cle_courante: "dxy_trend_20j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : DXY baisse => LONG
+    poids: 5
+    pertinence: { "24h": 0.3, "7j": 0.7, "1m": 0.9 }
+    effet_long: "DXY baisse"
+    effet_short: "DXY monte"
+
+  - id: 6
+    nom: "Flux ETF SPY+IVV 5j net"
+    source: "Twelve Data / fournisseur flux"
+    cle_courante: "flux_etf_spy_ivv_5j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 0.7 }
+    effet_long: "Entrées >+1σ"
+    effet_short: "Sorties <-1σ"
+
+  - id: 7
+    nom: "AAII bull-bear"
+    source: "AAII (hebdomadaire)"
+    cle_courante: "aaii_bull_bear"
+    normalisation: "zscore"
+    zscore_window: 252           # 252 semaines
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé contrarian : Bears>Bulls => LONG
+    poids: 4
+    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 0.5 }
+    effet_long: "Bears>Bulls +1σ (contrarian)"
+    effet_short: "Bulls>Bears +1σ"
+
+  - id: 8
+    nom: "Shiller CAPE / Forward P/E"
+    source: "multpl / fournisseur valorisation"
+    cle_courante: "shiller_cape_fwd_pe"
+    normalisation: "composite"   # percentile 252j, signe INVERSÉ, max des deux (CAPE, FwdPE) — valeur pré-normalisée fournie
+    cap: 1.0
+    signe: -1                    # inversé : valorisation basse => LONG
+    poids: 4
+    pertinence: { "24h": 0.1, "7j": 0.3, "1m": 1.0 }
+    effet_long: "CAPE<25 OU FwdPE<16"
+    effet_short: "CAPE>35 OU FwdPE>22"
+
+  - id: 9
+    nom: "RSI 14j ^GSPC"
+    source: "Twelve Data (calculé)"
+    cle_courante: "rsi_14j_gspc"
+    normalisation: "lineaire"
+    centre: 50.0
+    echelle: 25.0                # RSI 30/75 → demi-span ~25 ; à calibrer
+    cap: 1.0
+    signe: -1                    # inversé : RSI=30 => LONG
+    poids: 2
+    pertinence: { "24h": 0.8, "7j": 0.4, "1m": 0.2 }
+    effet_long: "RSI=30"
+    effet_short: "RSI>75"
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 10
+    nom: "GATE régime extrême"
+    source: "events-log + calendrier"
+    cle_courante: "gate_regime_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "VIX>35 OU FOMC/CPI US/NFP <24h OU earnings méga-cap (NVDA/MSFT/AAPL/GOOGL/AMZN/META/TSLA) cette semaine"

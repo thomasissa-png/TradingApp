@@ -1,0 +1,130 @@
+# Cuivre — fiche de positionnement v2
+# Converti depuis _SOURCE-fiches-md.md selon SCHEMA-fiche.md + template petrole.yml.
+# Échelles linéaires dérivées des seuils énoncés → à calibrer (poids v0 éditoriaux).
+actif: "Cuivre"
+ticker_principal: "HG=F"
+famille: "métaux-industriels"
+news_zone: "Global"
+version: 2
+seuils_reussite_pct:
+  "24h": 0.8
+  "7j": 2.0
+  "1m": 5.0
+
+criteres:
+  - id: 1
+    nom: "Caixin PMI Chine manuf"
+    source: "Caixin (mensuel)"
+    cle_courante: "caixin_pmi_manuf"
+    normalisation: "lineaire"
+    centre: 50.0
+    echelle: 1.3                 # >52 / <48 ; facteur ×1,5 → echelle réduite (~1,3 pt) ; à calibrer
+    cap: 1.0
+    signe: 1
+    poids: 12
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }
+    effet_long: "PMI>52"
+    effet_short: "PMI<48"
+
+  - id: 2
+    nom: "Inventaires LME+SHFE (trend 5j)"
+    source: "LME + SHFE"
+    cle_courante: "inventaires_lme_shfe_5j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : inventaires baissent (z<-1) => LONG
+    poids: 8
+    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 0.9 }
+    effet_long: "Inventaires baissent (z<-1)"
+    effet_short: "Inventaires montent (z>+1)"
+
+  - id: 3
+    nom: "Mining strikes Chili/Pérou"
+    source: "events-log"
+    cle_courante: "mining_strikes_chili_perou"
+    normalisation: "triplet"     # +1 grève active/annonce 30j / 0 / -1 production normale
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.7, "7j": 0.9, "1m": 0.5 }
+    effet_long: "Grève active/annonce 30j"
+    effet_short: "Production normale"
+
+  - id: 4
+    nom: "DXY trend 20j"
+    source: "Twelve Data"
+    cle_courante: "dxy_trend_20j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : DXY baisse => LONG
+    poids: 6
+    pertinence: { "24h": 0.3, "7j": 0.7, "1m": 0.8 }
+    effet_long: "DXY baisse"
+    effet_short: "DXY monte"
+
+  - id: 5
+    nom: "CFTC COT Copper nets"
+    source: "CFTC (vendredi)"
+    cle_courante: "cftc_cot_copper_nets"
+    normalisation: "zscore"
+    zscore_window: 252
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : nets SHORT extreme => LONG (squeeze)
+    poids: 5
+    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 1.0 }
+    effet_long: "Nets SHORT extreme"
+    effet_short: "Nets LONG extreme"
+
+  - id: 6
+    nom: "Term structure M1-M3"
+    source: "Twelve Data (contrats)"
+    cle_courante: "term_structure_m1_m3"
+    normalisation: "lineaire"
+    centre: 0.0
+    echelle: 75.0                # USD/T ; backwardation >50 / contango >100 → demi-span ~75 ; à calibrer
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.2, "7j": 0.9, "1m": 0.7 }
+    effet_long: "Backwardation >50 USD/T"
+    effet_short: "Contango >100 USD/T"
+
+  - id: 7
+    nom: "News construction/infra US-Chine"
+    source: "events-log"
+    cle_courante: "news_construction_infra"
+    normalisation: "triplet"     # +1 stimulus/plan infra 30j / 0 / -1 annulation/réduction
+    cap: 1.0
+    signe: 1
+    poids: 4
+    pertinence: { "24h": 0.2, "7j": 0.5, "1m": 0.9 }
+    effet_long: "Stimulus/plan infra 30j"
+    effet_short: "Annulation/réduction"
+
+  - id: 8
+    nom: "Ratio Cuivre/Or"
+    source: "Twelve Data (calculé)"
+    cle_courante: "ratio_cuivre_or"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 3
+    pertinence: { "24h": 0.4, "7j": 0.7, "1m": 0.6 }
+    effet_long: "Hausse (z>+1, growth)"
+    effet_short: "Baisse (z<-1, safe haven)"
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 9
+    nom: "GATE régime extrême"
+    source: "events-log + calendrier"
+    cle_courante: "gate_regime_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "Caixin PMI <24h OU FOMC <24h OU stimulus Chine annoncé 48h"

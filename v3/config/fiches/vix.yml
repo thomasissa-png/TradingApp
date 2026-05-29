@@ -1,0 +1,133 @@
+# VIX — fiche de positionnement v2
+# Converti depuis _SOURCE-fiches-md.md selon SCHEMA-fiche.md + template petrole.yml.
+# Conclusion LONG = VIX va MONTER. Cible réussite ~52% (instrument bruyant).
+# Échelles linéaires dérivées des seuils énoncés → à calibrer (poids v0 éditoriaux).
+actif: "VIX"
+ticker_principal: "^VIX"
+famille: "volatilité"
+news_zone: "US"
+version: 2
+seuils_reussite_pct:           # en % de variation du VIX
+  "24h": 5.0
+  "7j": 10.0
+  "1m": 15.0
+
+criteres:
+  - id: 1
+    nom: "Niveau VIX absolu"
+    source: "Twelve Data"
+    cle_courante: "niveau_vix_absolu"
+    normalisation: "lineaire"
+    centre: 20.0
+    echelle: 10.0                # <13 / >32 autour de 20 → demi-span ~10 ; à calibrer
+    cap: 1.0
+    signe: -1                    # inversé : VIX<13 => LONG (rebond attendu)
+    poids: 10
+    pertinence: { "24h": 0.9, "7j": 0.8, "1m": 0.5 }
+    effet_long: "VIX<13 (rebond attendu)"
+    effet_short: "VIX>32 (baisse attendue)"
+
+  - id: 2
+    nom: "Term structure VIX/VIX3M"
+    source: "Twelve Data (calculé)"
+    cle_courante: "term_structure_vix_vix3m"
+    normalisation: "lineaire"
+    centre: 0.95
+    echelle: 0.1                 # >1,05 / <0,85 autour de 0,95 → demi-span ~0,1 ; à calibrer
+    cap: 1.0
+    signe: 1
+    poids: 8
+    pertinence: { "24h": 0.8, "7j": 1.0, "1m": 0.6 }
+    effet_long: "Ratio>1,05 (backwardation)"
+    effet_short: "Ratio<0,85 (contango fort)"
+
+  - id: 3
+    nom: "Put/Call ratio CBOE 5j moy"
+    source: "CBOE"
+    cle_courante: "put_call_ratio_cboe_5j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : P/C>1,2 (panique=peak fear) => LONG VIX (rebond ? contrarian)
+    poids: 6
+    pertinence: { "24h": 0.6, "7j": 0.9, "1m": 0.4 }
+    effet_long: "P/C>1,2 (panique=peak fear)"
+    effet_short: "P/C<0,7 (complacency)"
+
+  - id: 4
+    nom: "SKEW Index CBOE"
+    source: "CBOE"
+    cle_courante: "skew_index_cboe"
+    normalisation: "lineaire"
+    centre: 135.0
+    echelle: 15.0                # >150 / <120 autour de 135 → demi-span ~15 ; à calibrer
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.4, "7j": 0.8, "1m": 0.3 }
+    effet_long: "SKEW>150"
+    effet_short: "SKEW<120"
+
+  - id: 5
+    nom: "VVIX"
+    source: "CBOE"
+    cle_courante: "vvix"
+    normalisation: "lineaire"
+    centre: 95.0
+    echelle: 15.0                # >110 / <80 autour de 95 → demi-span ~15 ; à calibrer
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.7, "7j": 0.6, "1m": 0.3 }
+    effet_long: "VVIX>110"
+    effet_short: "VVIX<80"
+
+  - id: 6
+    nom: "Gap RV-IV (réalisée 20j vs implicite)"
+    source: "Twelve Data (calculé)"
+    cle_courante: "gap_rv_iv"
+    normalisation: "lineaire"
+    centre: 0.0
+    echelle: 5.0                 # ±5 pts énoncé → demi-span 5 ; à calibrer
+    cap: 1.0
+    signe: -1                    # inversé : IV>>RV +5pts => LONG VIX
+    poids: 5
+    pertinence: { "24h": 0.5, "7j": 0.7, "1m": 0.3 }
+    effet_long: "IV>>RV +5pts"
+    effet_short: "RV>>IV +5pts"
+
+  - id: 7
+    nom: "CFTC COT VIX nets"
+    source: "CFTC (vendredi)"
+    cle_courante: "cftc_cot_vix_nets"
+    normalisation: "zscore"
+    zscore_window: 252
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : nets SHORT extreme => LONG VIX (squeeze)
+    poids: 5
+    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 0.9 }
+    effet_long: "Nets SHORT extreme"
+    effet_short: "Nets LONG extreme"
+
+  - id: 8
+    nom: "Tension géopolitique active"
+    source: "events-log L1=Géopolitique (3j)"
+    cle_courante: "tension_geopolitique_active"
+    normalisation: "triplet"     # +1 event actif / 0 / -1 détente
+    cap: 1.0
+    signe: 1
+    poids: 4
+    pertinence: { "24h": 0.9, "7j": 0.6, "1m": 0.3 }
+    effet_long: "Event L1=Géopolitique actif 3j"
+    effet_short: "Détente"
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 9
+    nom: "GATE événement macro imminent"
+    source: "events-log + calendrier"
+    cle_courante: "gate_evenement_macro_imminent"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "FOMC/CPI US/NFP/ECB rate decision <24-48h"

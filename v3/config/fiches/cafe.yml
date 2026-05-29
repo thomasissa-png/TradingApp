@@ -1,0 +1,128 @@
+# Café (Arabica) — fiche de positionnement v2
+# Converti depuis _SOURCE-fiches-md.md selon SCHEMA-fiche.md + template petrole.yml.
+# Échelles linéaires dérivées des seuils énoncés → à calibrer (poids v0 éditoriaux).
+actif: "Café (Arabica)"
+ticker_principal: "KC=F"
+famille: "agri-softs"
+news_zone: "BR + VN"
+version: 2
+seuils_reussite_pct:
+  "24h": 1.0
+  "7j": 3.0
+  "1m": 7.0
+
+criteres:
+  - id: 1
+    nom: "Météo Brésil Minas Gerais (gel/sécheresse)"
+    source: "NOAA / météo + check T min"
+    cle_courante: "meteo_bresil_minas_gerais"
+    normalisation: "composite"   # zscore 60j précipitations + check T min<4°C — valeur pré-normalisée fournie
+    cap: 1.0
+    signe: 1
+    poids: 11
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 1.0 }
+    effet_long: "Gel imminent OU sécheresse persistante"
+    effet_short: "Pluies normales/abondantes"
+
+  - id: 2
+    nom: "Stocks ICE Arabica certifiés (trend 20j)"
+    source: "ICE"
+    cle_courante: "stocks_ice_arabica_certifies_20j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : stocks baissent (z<-1) => LONG
+    poids: 9
+    pertinence: { "24h": 0.3, "7j": 0.9, "1m": 1.0 }
+    effet_long: "Stocks baissent (z<-1)"
+    effet_short: "Stocks montent (z>+1)"
+
+  - id: 3
+    nom: "USD/BRL"
+    source: "Twelve Data"
+    cle_courante: "usd_brl"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : USD/BRL baisse (real fort) => LONG
+    poids: 6
+    pertinence: { "24h": 0.4, "7j": 0.8, "1m": 0.9 }
+    effet_long: "USD/BRL baisse (real fort)"
+    effet_short: "USD/BRL monte (real faible)"
+
+  - id: 4
+    nom: "CFTC COT Coffee"
+    source: "CFTC (vendredi)"
+    cle_courante: "cftc_cot_coffee"
+    normalisation: "zscore"
+    zscore_window: 252
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : nets SHORT extreme => LONG (squeeze)
+    poids: 5
+    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 1.0 }
+    effet_long: "Nets SHORT extreme"
+    effet_short: "Nets LONG extreme"
+
+  - id: 5
+    nom: "Maladies cabosses/rouille"
+    source: "events-log"
+    cle_courante: "maladies_cabosses_rouille"
+    normalisation: "triplet"     # +1 outbreak 30j / 0 / -1 aucun
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.3, "7j": 0.7, "1m": 1.0 }
+    effet_long: "Outbreak 30j"
+    effet_short: "Aucun"
+
+  - id: 6
+    nom: "Cycle Brésil bi-annuel"
+    source: "calendrier CONAB"
+    cle_courante: "cycle_bresil_biannuel"
+    normalisation: "triplet"     # +1 année off (prod faible) / 0 / -1 année on (prod forte)
+    cap: 1.0
+    signe: 1
+    poids: 4
+    pertinence: { "24h": 0.1, "7j": 0.3, "1m": 0.9 }
+    effet_long: "Année « off » (prod faible)"
+    effet_short: "Année « on » (prod forte)"
+
+  - id: 7
+    nom: "Spread Arabica-Robusta"
+    source: "Twelve Data (calculé)"
+    cle_courante: "spread_arabica_robusta"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 4
+    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 0.7 }
+    effet_long: "Se resserre (z<-1)"
+    effet_short: "S'élargit (z>+1)"
+
+  - id: 8
+    nom: "Météo Vietnam (Robusta)"
+    source: "NOAA / météo"
+    cle_courante: "meteo_vietnam_robusta"
+    normalisation: "zscore"
+    zscore_window: 60            # précipitations
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : sécheresse (z<-1 précip) => LONG
+    poids: 4
+    pertinence: { "24h": 0.2, "7j": 0.6, "1m": 0.9 }
+    effet_long: "Sécheresse"
+    effet_short: "Pluies normales"
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 9
+    nom: "GATE régime extrême"
+    source: "events-log + calendrier"
+    cle_courante: "gate_regime_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "Gel actif Brésil (T<0°C) OU CONAB <48h OU saison récolte avril-sept"

@@ -1,0 +1,142 @@
+# Cacao — fiche de positionnement v2
+# Converti depuis _SOURCE-fiches-md.md selon SCHEMA-fiche.md + template petrole.yml.
+# Échelles linéaires dérivées des seuils énoncés → à calibrer (poids v0 éditoriaux).
+actif: "Cacao"
+ticker_principal: "CC=F"
+famille: "agri-softs"
+news_zone: "CI + GH"
+version: 2
+seuils_reussite_pct:
+  "24h": 1.5
+  "7j": 4.0
+  "1m": 10.0
+
+criteres:
+  - id: 1
+    nom: "Météo CI + Ghana (anomalie précip 30j)"
+    source: "NOAA / météo"
+    cle_courante: "meteo_ci_ghana_precip_30j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 11
+    pertinence: { "24h": 0.3, "7j": 0.9, "1m": 0.7 }
+    effet_long: "Sécheresse harmattan OU pluies excessives"
+    effet_short: "Pluies normales"
+
+  - id: 2
+    nom: "Arrivées port Abidjan+San Pedro (trend 20j)"
+    source: "ports CI"
+    cle_courante: "arrivees_port_abidjan_sanpedro_20j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : arrivées baissent (z<-1) => LONG
+    poids: 9
+    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 0.9 }
+    effet_long: "Arrivées baissent (z<-1)"
+    effet_short: "Arrivées montent (z>+1)"
+
+  - id: 3
+    nom: "Hedge fund positioning + flux options ICE"
+    source: "ICE + CFTC"
+    cle_courante: "hf_positioning_flux_options"
+    normalisation: "composite"   # composite zscore put/call OI + zscore COT, signe INVERSÉ — valeur pré-normalisée fournie
+    cap: 1.0
+    signe: -1                    # inversé : OI puts>>calls + COT nets SHORT => LONG
+    poids: 7
+    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 1.0 }
+    effet_long: "OI puts>>calls + COT nets SHORT"
+    effet_short: "OI calls>>puts + COT nets LONG"
+
+  - id: 4
+    nom: "CFTC COT Cocoa"
+    source: "CFTC (vendredi)"
+    cle_courante: "cftc_cot_cocoa"
+    normalisation: "zscore"
+    zscore_window: 252
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : nets SHORT extreme => LONG (squeeze)
+    poids: 6
+    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 1.0 }
+    effet_long: "Nets SHORT extreme"
+    effet_short: "Nets LONG extreme"
+
+  - id: 5
+    nom: "Grindings Q (broyages)"
+    source: "associations (ECA/NCA/CAA)"
+    cle_courante: "grindings_q"
+    normalisation: "zscore"
+    zscore_window: 12            # trimestres publiés
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # direct
+    poids: 5
+    pertinence: { "24h": 0.1, "7j": 0.3, "1m": 1.0 }
+    effet_long: "> consensus"
+    effet_short: "< consensus"
+
+  - id: 6
+    nom: "EU Deforestation Regulation (EUDR)"
+    source: "events-log (phase EUDR)"
+    cle_courante: "eudr"
+    normalisation: "triplet"     # +1 échéance proche tension supply / 0 / -1 implémentation sans rupture
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 0.9 }
+    effet_long: "Échéance proche, tension supply"
+    effet_short: "Implémentation sans rupture"
+
+  - id: 7
+    nom: "Spread NY-London (CC=F vs C-=F)"
+    source: "Twelve Data (calculé)"
+    cle_courante: "spread_ny_london"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 4
+    pertinence: { "24h": 0.5, "7j": 0.9, "1m": 0.6 }
+    effet_long: "S'élargit (squeeze NY)"
+    effet_short: "Se resserre"
+
+  - id: 8
+    nom: "Maladies cabosses (Black Pod, Swollen Shoot)"
+    source: "events-log"
+    cle_courante: "maladies_cabosses"
+    normalisation: "triplet"     # +1 outbreak 30j / 0 / -1 aucun
+    cap: 1.0
+    signe: 1
+    poids: 4
+    pertinence: { "24h": 0.2, "7j": 0.5, "1m": 0.9 }
+    effet_long: "Outbreak 30j"
+    effet_short: "Aucun"
+
+  - id: 9
+    nom: "USD/CFA + USD/Cedi"
+    source: "Twelve Data (moy pondérée)"
+    cle_courante: "usd_cfa_usd_cedi"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : monnaies fortes (z<-1) => LONG
+    poids: 3
+    pertinence: { "24h": 0.3, "7j": 0.6, "1m": 0.7 }
+    effet_long: "Monnaies fortes (z<-1)"
+    effet_short: "Monnaies faibles"
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 10
+    nom: "GATE régime extrême"
+    source: "events-log + calendrier"
+    cle_courante: "gate_regime_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "Harmattan actif (déc-mars) OU ICCO <48h OU grindings <7j OU EUDR échéance <30j"

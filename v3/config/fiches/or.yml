@@ -1,0 +1,130 @@
+# Or — fiche de positionnement v2
+# Converti depuis _SOURCE-fiches-md.md selon SCHEMA-fiche.md + template petrole.yml.
+# Échelles linéaires dérivées des seuils énoncés → à calibrer (poids v0 éditoriaux).
+actif: "Or"
+ticker_principal: "GC=F"
+famille: "métaux-précieux"
+news_zone: "Global"
+version: 2
+seuils_reussite_pct:
+  "24h": 0.5
+  "7j": 1.3
+  "1m": 3.0
+
+criteres:
+  - id: 1
+    nom: "Taux 10Y US réels (TIPS)"
+    source: "FRED (DFII10)"
+    cle_courante: "taux_10y_us_reels_tips"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : TIPS baisse (z<-1) => LONG
+    poids: 12
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 1.0 }
+    effet_long: "TIPS baisse (z<-1)"
+    effet_short: "TIPS monte (z>+1)"
+
+  - id: 2
+    nom: "Achats PBoC + CB émergentes (12m cumulés vs 24m précédents)"
+    source: "WGC (mensuel)"
+    cle_courante: "achats_pboc_cb_emergentes"
+    normalisation: "zscore"
+    zscore_window: 60            # 60 mois
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 9
+    pertinence: { "24h": 0.1, "7j": 0.3, "1m": 1.0 }
+    effet_long: "Accumulation >+1σ"
+    effet_short: "Sortie/ralentissement"
+
+  - id: 3
+    nom: "DXY trend 20j"
+    source: "Twelve Data"
+    cle_courante: "dxy_trend_20j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : DXY baisse (z<-1) => LONG
+    poids: 8
+    pertinence: { "24h": 0.6, "7j": 0.9, "1m": 0.8 }
+    effet_long: "DXY baisse (z<-1)"
+    effet_short: "DXY monte (z>+1)"
+
+  - id: 4
+    nom: "CFTC COT nets"
+    source: "CFTC (vendredi)"
+    cle_courante: "cftc_cot_nets"
+    normalisation: "zscore"
+    zscore_window: 252
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : nets SHORT extreme => LONG (squeeze)
+    poids: 6
+    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 1.0 }
+    effet_long: "Nets SHORT extreme"
+    effet_short: "Nets LONG extreme"
+
+  - id: 5
+    nom: "Flux ETF or agrégés 5j net"
+    source: "WGC / fournisseur flux"
+    cle_courante: "flux_etf_or_5j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 0.7 }
+    effet_long: "Entrées >+1σ"
+    effet_short: "Sorties <-1σ"
+
+  - id: 6
+    nom: "Tension géopolitique"
+    source: "events-log L1=Géopolitique"
+    cle_courante: "tension_geopolitique"
+    normalisation: "triplet"     # +1 escalade 7j / 0 / -1 détente
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.8, "7j": 0.5, "1m": 0.3 }
+    effet_long: "Escalade 7j (guerre/sanctions/terrorisme)"
+    effet_short: "Détente"
+
+  - id: 7
+    nom: "Demande indienne saisonnière"
+    source: "calendrier"
+    cle_courante: "demande_indienne_saisonniere"
+    normalisation: "triplet"     # +1 Diwali/mariages / 0 / -1 off-season
+    cap: 1.0
+    signe: 1
+    poids: 3
+    pertinence: { "24h": 0.1, "7j": 0.3, "1m": 0.9 }
+    effet_long: "Diwali (oct-nov) OU mariages (oct-déc)"
+    effet_short: "Off-season (jan-mai)"
+
+  - id: 8
+    nom: "VIX (risk-off proxy)"
+    source: "Twelve Data"
+    cle_courante: "vix_risk_off_proxy"
+    normalisation: "lineaire"
+    centre: 18.0
+    echelle: 4.0                 # >22 / <14 autour de 18 → demi-span ~4 ; à calibrer
+    cap: 1.0
+    signe: 1
+    poids: 3
+    pertinence: { "24h": 0.7, "7j": 0.5, "1m": 0.2 }
+    effet_long: "VIX>22"
+    effet_short: "VIX<14"
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 9
+    nom: "GATE régime extrême"
+    source: "events-log + calendrier"
+    cle_courante: "gate_regime_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "FOMC/CPI US <24h OU NFP vendredi OU WGC report <7j"

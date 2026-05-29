@@ -1,0 +1,146 @@
+# Blé — fiche de positionnement v2
+# Converti depuis _SOURCE-fiches-md.md selon SCHEMA-fiche.md + template petrole.yml.
+# Échelles linéaires dérivées des seuils énoncés → à calibrer (poids v0 éditoriaux).
+actif: "Blé"
+ticker_principal: "ZW=F"
+famille: "agri"
+news_zone: "US + EU + Mer Noire + AU"
+version: 2
+seuils_reussite_pct:
+  "24h": 0.8
+  "7j": 2.5
+  "1m": 6.0
+
+criteres:
+  - id: 1
+    nom: "USDA WASDE stocks-to-use mondial (delta)"
+    source: "USDA WASDE (mensuel)"
+    cle_courante: "usda_wasde_stocks_to_use"
+    normalisation: "zscore"
+    zscore_window: 12            # 12 publications
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : ratio baisse (offre serrée) => LONG
+    poids: 11
+    pertinence: { "24h": 0.1, "7j": 0.5, "1m": 1.0 }
+    effet_long: "Ratio baisse (offre serrée)"
+    effet_short: "Ratio monte (oversupply)"
+
+  - id: 2
+    nom: "NOAA drought % Midwest+Plains D2+"
+    source: "NOAA US Drought Monitor"
+    cle_courante: "noaa_drought_midwest_plains"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # direct : >40% drought (z>+1) => LONG
+    poids: 9
+    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 1.0 }
+    effet_long: ">40% drought (z>+1)"
+    effet_short: "<10% (z<-1)"
+
+  - id: 3
+    nom: "Géopolitique mer Noire"
+    source: "events-log"
+    cle_courante: "geopolitique_mer_noire"
+    normalisation: "triplet"     # +1 escalade 14j / 0 / -1 détente
+    cap: 1.0
+    signe: 1
+    poids: 8
+    pertinence: { "24h": 0.7, "7j": 0.9, "1m": 0.7 }
+    effet_long: "Escalade (blocus/rupture corridor/sanctions) 14j"
+    effet_short: "Détente (accord/reconduction)"
+
+  - id: 4
+    nom: "NASS Crop Progress % good/excellent"
+    source: "USDA NASS"
+    cle_courante: "nass_crop_progress"
+    normalisation: "zscore"
+    zscore_window: 5             # même semaine 5 ans
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : <50% (z<-1) => LONG
+    poids: 6
+    pertinence: { "24h": 0.2, "7j": 0.9, "1m": 0.8 }
+    effet_long: "<50% (z<-1)"
+    effet_short: ">70% (z>+1)"
+
+  - id: 5
+    nom: "Demande chinoise (imports USDA FAS)"
+    source: "USDA FAS"
+    cle_courante: "demande_chinoise_imports"
+    normalisation: "zscore"
+    zscore_window: 12            # 12 mois
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # direct
+    poids: 5
+    pertinence: { "24h": 0.1, "7j": 0.3, "1m": 1.0 }
+    effet_long: "> consensus"
+    effet_short: "< consensus"
+
+  - id: 6
+    nom: "CFTC COT Wheat"
+    source: "CFTC (vendredi)"
+    cle_courante: "cftc_cot_wheat"
+    normalisation: "zscore"
+    zscore_window: 252
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : nets SHORT extreme => LONG (squeeze)
+    poids: 5
+    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 1.0 }
+    effet_long: "Nets SHORT extreme"
+    effet_short: "Nets LONG extreme"
+
+  - id: 7
+    nom: "Météo Australie (dryland)"
+    source: "BoM / météo (NSW/VIC/WA)"
+    cle_courante: "meteo_australie_dryland"
+    normalisation: "zscore"
+    zscore_window: 60            # précipitations
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : sécheresse (z<-1 précip) => LONG
+    poids: 5
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }
+    effet_long: "Sécheresse persistante"
+    effet_short: "Normales/favorables"
+
+  - id: 8
+    nom: "Égypte GASC tenders"
+    source: "GASC"
+    cle_courante: "egypte_gasc_tenders"
+    normalisation: "zscore"
+    zscore_window: 12            # 12 tenders
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # direct
+    poids: 4
+    pertinence: { "24h": 0.5, "7j": 0.9, "1m": 0.6 }
+    effet_long: "Tender massif + prix élevé"
+    effet_short: "Annulation OU prix très bas"
+
+  - id: 9
+    nom: "DXY trend 20j"
+    source: "Twelve Data"
+    cle_courante: "dxy_trend_20j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : DXY baisse => LONG
+    poids: 4
+    pertinence: { "24h": 0.3, "7j": 0.7, "1m": 0.8 }
+    effet_long: "DXY baisse"
+    effet_short: "DXY monte"
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 10
+    nom: "GATE régime extrême"
+    source: "events-log + calendrier"
+    cle_courante: "gate_regime_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "USDA WASDE <7j OU saison récolte US (mai-août)/AU (nov-jan) OU mouvement corridor mer Noire 48h"

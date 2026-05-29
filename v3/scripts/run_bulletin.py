@@ -29,6 +29,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import criteres_calculator  # noqa: E402
+import journaliste  # noqa: E402
 import scoring_analyste  # noqa: E402
 
 
@@ -52,6 +53,15 @@ def main() -> int:
         return 3
 
     logger.info("Bulletin écrit : %s (%d actifs)", out_path, len(results))
+
+    # Étape 3 — stamp des prix d'émission du jour (pour mesure ultérieure
+    # par le Journaliste). Best-effort : si Twelve Data dead, on ne bloque
+    # pas le bulletin (la cellule passera en "suivi-interrompu" à la mesure).
+    try:
+        journaliste.stamp_prix_emission(now.date())
+    except Exception as e:  # noqa: BLE001
+        logger.warning("stamp_prix_emission KO (non bloquant) : %s", e)
+
     print(f"OK : {out_path}")
     return 0
 

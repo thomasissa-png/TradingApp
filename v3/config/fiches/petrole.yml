@@ -1,0 +1,159 @@
+# Pétrole (Brent) — fiche de positionnement v2
+# Converti depuis Bourse/Actifs/Pétrole.md (vault, v2 2026-05-27). Template canonique.
+# Échelles linéaires (echelle) dérivées des seuils long/short de la fiche → à calibrer (poids v0 éditoriaux).
+actif: "Pétrole (Brent)"
+ticker_principal: "BZ=F"
+famille: "énergie"
+news_zone: "Global"
+version: 2
+seuils_reussite_pct:        # |delta| % dans le sens prédit pour compter une conclusion VRAIE
+  "24h": 1.0
+  "7j": 2.5
+  "1m": 6.0
+
+criteres:
+  - id: 1
+    nom: "EIA Crude surprise (vs consensus)"
+    source: "EIA API"
+    cle_courante: "eia_crude_surprise"
+    normalisation: "zscore"
+    zscore_window: 52
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 10
+    pertinence: { "24h": 1.0, "7j": 0.8, "1m": 0.3 }
+    effet_long: "Stocks tirage > 2σ vs consensus (bullish brut)"
+    effet_short: "Stocks build > 2σ vs consensus"
+
+  - id: 2
+    nom: "API Weekly Statistical Bulletin surprise"
+    source: "API publication (mardi 22h30 CET)"
+    cle_courante: "api_weekly_surprise"
+    normalisation: "zscore"
+    zscore_window: 52
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 8
+    pertinence: { "24h": 0.9, "7j": 0.3, "1m": 0.1 }
+    effet_long: "API tirage > consensus (pré-indicateur EIA)"
+    effet_short: "API build > consensus"
+
+  - id: 3
+    nom: "Tension géopolitique Moyen-Orient"
+    source: "events-log L2=Iran-Moyen-Orient"
+    cle_courante: "tension_geopol_moyen_orient"
+    normalisation: "triplet"     # +1 escalade / 0 / -1 détente (triggers-and-windows.yml)
+    cap: 1.0
+    signe: 1
+    poids: 7
+    pertinence: { "24h": 0.9, "7j": 0.7, "1m": 0.2 }
+    effet_long: "Escalade 7j (frappes, blocus, sanctions)"
+    effet_short: "Détente (accord, cessez-le-feu)"
+
+  - id: 4
+    nom: "CFTC COT — managed money nets"
+    source: "CFTC (vendredi)"
+    cle_courante: "cftc_cot_crude_nets"
+    normalisation: "zscore"
+    zscore_window: 252
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : nets short extreme => LONG (squeeze)
+    poids: 7
+    pertinence: { "24h": 0.2, "7j": 0.8, "1m": 1.0 }
+    effet_long: "Nets SHORT extreme (squeeze potentiel)"
+    effet_short: "Nets LONG extreme (positions à déboucler)"
+
+  - id: 5
+    nom: "OPEC+ politique production"
+    source: "events-log L2=OPEC"
+    cle_courante: "opec_production_policy"
+    normalisation: "triplet"     # +1 cut / 0 / -1 hike ou dispute
+    cap: 1.0
+    signe: 1
+    poids: 6
+    pertinence: { "24h": 0.4, "7j": 0.9, "1m": 1.0 }
+    effet_long: "Cut de production annoncé (30j)"
+    effet_short: "Hike production OU dispute interne"
+
+  - id: 6
+    nom: "Term structure Brent (M1-M2)"
+    source: "Twelve Data (contrats)"
+    cle_courante: "brent_term_structure_m1m2"
+    normalisation: "lineaire"
+    centre: 0.0
+    echelle: 0.5                 # USD ; seuil ±0,5 USD énoncé fiche → à calibrer
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.8 }
+    effet_long: "Backwardation > 0,5 USD (demande spot forte)"
+    effet_short: "Contango > 0,5 USD (oversupply)"
+
+  - id: 7
+    nom: "DXY trend 20j"
+    source: "Twelve Data"
+    cle_courante: "dxy_trend_20j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : DXY baisse => LONG pétrole
+    poids: 5
+    pertinence: { "24h": 0.3, "7j": 0.7, "1m": 0.9 }
+    effet_long: "DXY baisse (matières premières en USD favorisées)"
+    effet_short: "DXY monte"
+
+  - id: 8
+    nom: "Stocks Cushing (hub Brent-WTI)"
+    source: "EIA API"
+    cle_courante: "cushing_stocks"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : Cushing baisse (z<-1) => LONG
+    poids: 4
+    pertinence: { "24h": 0.6, "7j": 1.0, "1m": 0.5 }
+    effet_long: "Stocks Cushing baissent (z < -1, demande forte WTI)"
+    effet_short: "Stocks Cushing montent (z > +1)"
+
+  - id: 9
+    nom: "Spread Brent-WTI"
+    source: "Twelve Data (calculé)"
+    cle_courante: "spread_brent_wti"
+    normalisation: "lineaire"
+    centre: 3.0                  # USD (parité historique ~3)
+    echelle: 2.0                 # long>5 / short<1 autour de 3 → demi-span ~2 USD ; à calibrer
+    cap: 1.0
+    signe: 1
+    poids: 4
+    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 0.7 }
+    effet_long: "Spread > 5 USD (offre US lâche, Brent demand fort)"
+    effet_short: "Spread < 1 USD (équilibre régional)"
+
+  - id: 10
+    nom: "Caixin PMI Chine manuf."
+    source: "Caixin / NBS (mensuel)"
+    cle_courante: "caixin_pmi_manuf"
+    normalisation: "lineaire"
+    centre: 50.0
+    echelle: 1.0                 # >51 / <49 autour de 50 → demi-span ~1 pt ; à calibrer
+    cap: 1.0
+    signe: 1
+    poids: 4
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }
+    effet_long: "PMI > 51 (expansion demande)"
+    effet_short: "PMI < 49 (contraction)"
+
+  # ⚠️ GATE — sémantique non définie dans Analyste.md. Traité en DRAPEAU (n'entre pas dans le score)
+  # tant que Thomas n'a pas tranché (voir SCHEMA-fiche.md § GATE). N'a pas de poids numérique.
+  - id: 11
+    nom: "GATE — événement extrême"
+    source: "events-log + calendrier"
+    cle_courante: "gate_evenement_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "OPEC meeting < 7j OU frappes/escalade Iran < 48h OU FOMC < 24h OU EIA Crude publication < 4h"

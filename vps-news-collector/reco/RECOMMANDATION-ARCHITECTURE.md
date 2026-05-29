@@ -43,9 +43,11 @@
 
 Avantage : simplicité maximale au départ (le moins de pièces mobiles), option LLM préservée, et c'est **la data du shadow qui tranche**, pas une opinion a priori.
 
-## Décisions à valider par Thomas
+## Décisions validées (Thomas, 29/05/2026)
 
-1. GitHub Actions + git-as-storage comme stack — OK ?
-2. v1 sans LLM (option @elon) avec ré-activation conditionnelle pendant shadow — OK, ou tu préfères garder DeepSeek dès la v1 (option @ia) ?
-3. Valeur du kill criterion (seuil Brier à J+60) ?
-4. Repo public (minutes Actions illimitées) ou privé (quota 2 000 min/mois, marge fine) ?
+1. ✅ **GitHub Actions + git-as-storage** comme stack.
+2. ✅ **LLM gardé en v1, optimisé** (option @ia) : DeepSeek `deepseek-chat`, schéma 11→7 champs, pré-filtre durci (~85-90 %), garde-fous coût (soft 15 €/hard 25 €) → ~2-3 €/mois.
+3. ✅ **KPI = ceux de `Bourse.md`** : taux de réussite > 55 %/cellule, Brier < 0,25. Gating shadow→actif par cellule (> 55 % → actif ; < 55 % → reste shadow, Manager retravaille les poids, Thomas valide). Pas de seuil séparé à inventer.
+4. ✅ **Repo public** (minutes Actions illimitées, intraday /30min conservé).
+
+> ⚠️ Note : le repo `thomasissa-png/TradingApp` est marqué « à supprimer » dans `Bourse.md`. Le code v3 est construit dans un dossier `v3/` séparable (migrable vers un repo neuf à tout moment).

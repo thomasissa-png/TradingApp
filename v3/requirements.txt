@@ -15,6 +15,9 @@ python-dotenv==1.0.0
 
 # LLM extraction — OpenAI SDK compatible avec DeepSeek
 openai==1.55.0
+# httpx épinglé < 0.28 : openai 1.55 passe `proxies=` à httpx, retiré en 0.28+
+# (sinon TypeError: Client.__init__() got an unexpected keyword argument 'proxies')
+httpx==0.27.2
 
 # Logging
 structlog==24.1.0

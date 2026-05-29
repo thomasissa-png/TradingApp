@@ -105,9 +105,16 @@ class Extractor:
             self.client = None
             return
 
-        from openai import OpenAI
         base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        try:
+            from openai import OpenAI
+            self.client = OpenAI(api_key=api_key, base_url=base_url)
+        except Exception as e:
+            # Incompat SDK/httpx ou autre -> dégradation gracieuse en mode brut
+            # plutôt que de tuer l'ingestion (red line : échec visible mais non bloquant).
+            logger.error("Init client DeepSeek échouée (%s) -> extracteur désactivé (mode brut)", e)
+            self.client = None
+            return
         self.model = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 
         self.total_calls = 0

@@ -1,0 +1,31 @@
+# TradingApp v3 — news_collector dependencies (Phase 2.1)
+# Python 3.11+
+
+# Polling RSS et HTTP
+requests==2.31.0
+feedparser==6.0.10
+
+# Parsing HTML
+beautifulsoup4==4.12.2
+lxml==5.0.0
+
+# Google Drive API
+google-api-python-client==2.110.0
+google-auth==2.25.0
+google-auth-oauthlib==1.2.0
+
+# Configuration
+pyyaml==6.0.1
+python-dotenv==1.0.0
+
+# Persistence locale (cache dédup)
+sqlite-utils==3.36
+
+# Orchestration
+schedule==1.2.0
+
+# LLM extraction — OpenAI SDK compatible avec DeepSeek
+openai==1.55.0
+
+# Logging structuré
+structlog==24.1.0

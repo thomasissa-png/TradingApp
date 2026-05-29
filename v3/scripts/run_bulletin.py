@@ -28,6 +28,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+import briefing  # noqa: E402
 import criteres_calculator  # noqa: E402
 import journaliste  # noqa: E402
 import scoring_analyste  # noqa: E402
@@ -53,6 +54,15 @@ def main() -> int:
         return 3
 
     logger.info("Bulletin écrit : %s (%d actifs)", out_path, len(results))
+
+    # Étape 2bis — Briefing du jour (synthèse news à impact, déterministe, zéro
+    # LLM). Best-effort : si échec, le bulletin reste valide.
+    try:
+        briefing_md = briefing.build_briefing(today=now.date())
+        briefing.prepend_to_bulletin(out_path, briefing_md)
+        logger.info("Briefing du jour inséré dans le bulletin")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("briefing KO (non bloquant) : %s", e)
 
     # Étape 3 — stamp des prix d'émission du jour (pour mesure ultérieure
     # par le Journaliste). Best-effort : si Twelve Data dead, on ne bloque

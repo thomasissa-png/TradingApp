@@ -47,7 +47,8 @@ Avantage : simplicité maximale au départ (le moins de pièces mobiles), option
 
 1. ✅ **GitHub Actions + git-as-storage** comme stack.
 2. ✅ **LLM gardé en v1, optimisé** (option @ia) : DeepSeek `deepseek-chat`, schéma 11→7 champs, pré-filtre durci (~85-90 %), garde-fous coût (soft 15 €/hard 25 €) → ~2-3 €/mois.
-3. ✅ **KPI = ceux de `Bourse.md`** : taux de réussite > 55 %/cellule, Brier < 0,25. Gating shadow→actif par cellule (> 55 % → actif ; < 55 % → reste shadow, Manager retravaille les poids, Thomas valide). Pas de seuil séparé à inventer.
+3. ✅ **Target taux de réussite = > 70 %/cellule** (Thomas, 29/05), Brier < 0,25. Gating shadow→actif par cellule : une cellule passe en actif quand elle tient le target ; en dessous → reste shadow, le Manager retravaille les poids, Thomas valide.
+   ⚠️ `Bourse.md` (vault) écrit encore « > 55 % » — à aligner sur 70 % (voir action ci-dessous).
 4. ✅ **Repo public** (minutes Actions illimitées, intraday /30min conservé).
 
 > ⚠️ Note : le repo `thomasissa-png/TradingApp` est marqué « à supprimer » dans `Bourse.md`. Le code v3 est construit dans un dossier `v3/` séparable (migrable vers un repo neuf à tout moment).

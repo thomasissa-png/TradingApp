@@ -172,7 +172,7 @@ class TestSelectNonOverlapping:
             _make_measure(jr.OUTCOME_VRAI, echeance=date(2026, 1, 3), horizon="24h"),
         ]
         result = jr.select_non_overlapping(ms, "24h")
-        assert len(result) == 3  # 24h step=1j, toutes indépendantes
+        assert len(result) == 2  # NC exclue → seuls les 2 VRAI restent
 
     def test_vide_si_aucune_terminee(self):
         ms = [_make_measure(jr.OUTCOME_NC, horizon="24h")]

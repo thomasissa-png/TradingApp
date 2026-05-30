@@ -351,13 +351,22 @@ def parse_events_log(path: Path = EVENTS_LOG) -> List[dict]:
 # Décodage impacts (sans dépendance dure à extractor.py pour la rétro-compat)
 # ---------------------------------------------------------------------------
 
+# NEUTRAL est gardé dans le set d'acceptation pour la rétro-compat parsing
+# (anciennes lignes events-log écrites en v2.0 qui contenaient des NEUTRAL).
+# La logique de routage (_ia_direction_for) les traite désormais comme "pas de
+# signal IA" → ils ne bloquent PAS le fallback keyword (fix bug v2 → v2.1).
 _VALID_DIRECTIONS_TC = {"LONG", "SHORT", "NEUTRAL"}
 _VALID_ASSETS_TC = set(IA_ASSET_TO_ACTIF.keys())
+_VALID_CONF_BUCKETS_TC = {"high", "medium", "low"}
 
 
 def _decode_impacts_str(encoded: str) -> List[Dict[str, Any]]:
     """Décodage tolérant 'ASSET:DIR:CONF;...' → [{asset,direction,confidence}].
-    Entrées hors-énum silencieusement ignorées."""
+
+    - confidence v2.1 : bucket str {high, medium, low}.
+    - Rétro-compat : entier 0-100 mappé en bucket (>=66 high, >=33 medium, sinon low).
+    - Entrées hors-énum silencieusement ignorées.
+    """
     if not encoded or not isinstance(encoded, str):
         return []
     out: List[Dict[str, Any]] = []
@@ -372,10 +381,17 @@ def _decode_impacts_str(encoded: str) -> List[Dict[str, Any]]:
         direction = parts[1].strip().upper()
         if asset not in _VALID_ASSETS_TC or direction not in _VALID_DIRECTIONS_TC:
             continue
-        try:
-            confidence = int(parts[2].strip()) if len(parts) >= 3 and parts[2].strip() else 0
-        except ValueError:
-            confidence = 0
+        confidence: Any = "low"
+        if len(parts) >= 3 and parts[2].strip():
+            raw_conf = parts[2].strip().lower()
+            if raw_conf in _VALID_CONF_BUCKETS_TC:
+                confidence = raw_conf
+            else:
+                try:
+                    n = max(0.0, min(100.0, float(raw_conf)))
+                    confidence = "high" if n >= 66 else ("medium" if n >= 33 else "low")
+                except ValueError:
+                    confidence = "low"
         out.append({"asset": asset, "direction": direction, "confidence": confidence})
     return out
 
@@ -548,28 +564,48 @@ def _any_keyword_matches(text: str, keywords: List[str]) -> bool:
 # Résolution triplet : routage + direction
 # ---------------------------------------------------------------------------
 
-def _ia_direction_for(ev: dict, actif_key: str) -> Optional[str]:
-    """Retourne 'LONG' / 'SHORT' / 'NEUTRAL' si l'IA a marqué cet actif dans
-    `impacts[]`, sinon None.
+# Poids confidence bucket → tie-break (cf. départage LONG/SHORT IA)
+_CONF_WEIGHT = {"high": 3, "medium": 2, "low": 1}
 
-    Si plusieurs impacts ciblent le même actif (rare), on garde celui de
-    confidence max. NEUTRAL est traité comme un vrai signal "0", pas comme None.
+
+def _ia_direction_for(ev: dict, actif_key: str) -> Optional[str]:
+    """Retourne 'LONG' / 'SHORT' si l'IA a explicitement marqué une direction
+    tradable pour cet actif dans `impacts[]`, sinon None.
+
+    Règle v2.1 : NEUTRAL n'est plus un signal IA (le prompt v2.1 interdit
+    NEUTRAL — un actif sans direction claire n'est plus listé). Pour la
+    rétro-compat avec d'anciennes lignes contenant `NEUTRAL`, on le traite
+    comme "pas de signal IA" → None → le fallback keyword peut s'activer.
+
+    Si plusieurs impacts LONG/SHORT ciblent le même actif (rare), on garde
+    celui de confidence bucket max (high > medium > low).
     """
     impacts = ev.get("_impacts") or []
     if not impacts:
         return None
     best_dir: Optional[str] = None
-    best_conf = -1
+    best_weight = -1
     for imp in impacts:
         asset = imp.get("asset")
         if not asset:
             continue
         if IA_ASSET_TO_ACTIF.get(asset) != actif_key:
             continue
-        conf = int(imp.get("confidence") or 0)
-        if conf > best_conf:
-            best_conf = conf
-            best_dir = imp.get("direction")
+        direction = imp.get("direction")
+        if direction not in ("LONG", "SHORT"):
+            continue  # NEUTRAL / autre → ignoré pour ne pas bloquer le fallback
+        conf = imp.get("confidence")
+        if isinstance(conf, str):
+            weight = _CONF_WEIGHT.get(conf.lower(), 1)
+        elif isinstance(conf, (int, float)):
+            # Rétro-compat ancien schéma 0-100
+            n = max(0.0, min(100.0, float(conf)))
+            weight = 3 if n >= 66 else (2 if n >= 33 else 1)
+        else:
+            weight = 1
+        if weight > best_weight:
+            best_weight = weight
+            best_dir = direction
     return best_dir
 
 
@@ -585,19 +621,26 @@ def _resolve_triplet(
     """Résout un triplet en mode HYBRIDE :
 
     1. **IA-first** : si un event récent dans la fenêtre a un `impacts[]` qui
-       cible cet actif, on prend sa direction (LONG=+1, SHORT=-1, NEUTRAL=0).
+       cible cet actif avec une direction tradable (LONG/SHORT), on prend cette
+       direction. NEUTRAL ou absence de l'actif dans impacts[] ne compte PAS
+       comme un signal IA (correction du bug v2 : ces events ne doivent pas
+       bloquer le fallback keyword).
        Le scope catégorie + domaine reste vérifié pour éviter qu'un event
        Brent off-topic (ex: earnings) pollue un critère géopolitique.
        Départage : matérialité descendante puis date descendante.
 
-    2. **Fallback keyword** (rétro-compat ancien schéma sans impacts, ou IA off) :
-       pour les events SANS `_impacts`, on applique l'ancien matching mots-clés
-       (LONG/SHORT) avec le même routage scope.
+    2. **Fallback keyword** : pour les events où l'IA n'a pas marqué de
+       direction LONG/SHORT pour cet actif (ancien schéma, NEUTRAL, ou IA
+       n'ayant simplement pas listé cet actif), on applique le matching
+       mots-clés (LONG/SHORT) avec le même routage scope.
 
     Règles communes :
     - Fenêtre [now - lookback, now]
     - Long et Short conflictuels (même event ou même date) : matérialité puis
       récence
+    - Priorité IA : si au moins UN event a un signal IA LONG/SHORT pour cet
+      actif, on tranche en IA-only (le fallback keyword est court-circuité
+      pour éviter qu'un keyword secondaire écrase un signal IA explicite).
     """
     if not long_keywords and not short_keywords and not _criterion_has_ia_route(actif_key, cle):
         # Critère sans keywords ni route IA possible : 0 neutre.
@@ -606,10 +649,13 @@ def _resolve_triplet(
     cutoff = now - timedelta(days=lookback_days)
     candidates = _candidates_for(events, actif_key, cle)
 
-    # -------- 1) IA-first : un event avec direction IA pour cet actif --------
+    # -------- 1) IA-first : un event avec direction IA LONG/SHORT --------
     ia_long: Optional[Tuple[datetime, int]] = None  # (dt, materiality_weight)
     ia_short: Optional[Tuple[datetime, int]] = None
     ia_seen_any = False
+    # On suit aussi les events où l'IA s'est "exprimée pour cet actif" mais en
+    # direction non-tradable (NEUTRAL legacy) : ils ne déclenchent rien et
+    # doivent rester éligibles au fallback keyword.
     for ev in candidates:
         dt = ev.get("_dt")
         if not isinstance(dt, datetime):
@@ -618,6 +664,8 @@ def _resolve_triplet(
             continue
         direction = _ia_direction_for(ev, actif_key)
         if direction is None:
+            # Pas de signal IA exploitable pour cet actif (NEUTRAL ou non-listé).
+            # On NE marque PAS ia_seen_any → le fallback keyword reste ouvert.
             continue
         ia_seen_any = True
         mat = (ev.get("materiality") or "").strip().lower()
@@ -628,9 +676,8 @@ def _resolve_triplet(
         elif direction == "SHORT":
             if ia_short is None or (weight, dt) > (ia_short[1], ia_short[0]):
                 ia_short = (dt, weight)
-        # NEUTRAL : ne touche ni long ni short (mais contribue à ia_seen_any=True)
     if ia_seen_any:
-        # Au moins un event IA cible cet actif dans la fenêtre → on tranche en IA-only.
+        # Au moins un event IA tradable cible cet actif → on tranche en IA-only.
         if ia_long and not ia_short:
             return 1
         if ia_short and not ia_long:
@@ -640,18 +687,15 @@ def _resolve_triplet(
             if (ia_long[1], ia_long[0]) >= (ia_short[1], ia_short[0]):
                 return 1
             return -1
-        # Que des NEUTRAL → 0
+        # Cas théorique (jamais atteint : ia_seen_any implique au moins un side)
         return 0
 
-    # -------- 2) Fallback keyword (ancien schéma, ou IA n'a rien marqué) -----
+    # -------- 2) Fallback keyword (IA n'a rien marqué d'exploitable) -----
     if not long_keywords and not short_keywords:
         return 0
     last_long: Optional[datetime] = None
     last_short: Optional[datetime] = None
     for ev in candidates:
-        # On évite de re-traiter les events ayant déjà des impacts IA (cohérence)
-        if ev.get("_impacts"):
-            continue
         dt = ev.get("_dt")
         if not isinstance(dt, datetime):
             continue

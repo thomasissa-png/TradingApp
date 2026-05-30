@@ -1,12 +1,13 @@
-"""Tests Extractor v2 (chantier prompt directionnel).
+"""Tests Extractor v2.1 (prompt directionnel nettoyé).
 
 Couvre :
 - Parsing défensif du nouveau schéma (impacts[], énums normalisées).
 - Rejet des asset hors-liste (zéro invention).
-- Tolérance bullish/bearish vs LONG/SHORT.
-- Encode/decode impacts compact 'ASSET:DIR:CONF;...'.
-- Format de ligne events-log v2 (14 colonnes).
-- Rétro-compat decode (entrées vides / partielles).
+- Tolérance bullish/bearish vs LONG/SHORT, REJET de NEUTRAL (impact non listé).
+- Confidence en bucket {high, medium, low} avec rétro-compat entier 0-100.
+- Encode/decode impacts compact 'ASSET:DIR:BUCKET;...'.
+- Format de ligne events-log v2 (14 colonnes — `latence` toujours vide).
+- Rétro-compat decode (entrées vides / partielles / ancien schéma numérique).
 
 Pas d'appel réseau : on teste les fonctions pures + mock du SDK.
 """
@@ -45,21 +46,22 @@ import news_collector as nc  # noqa: E402
 
 def test_parse_impacts_valid():
     raw = [
-        {"asset": "BRENT", "direction": "LONG", "confidence": 85},
-        {"asset": "GOLD", "direction": "LONG", "confidence": 70},
+        {"asset": "BRENT", "direction": "LONG", "confidence": "high"},
+        {"asset": "GOLD", "direction": "LONG", "confidence": "medium"},
     ]
     out = ex._parse_impacts(raw)
     assert len(out) == 2
     assert out[0].asset == "BRENT"
     assert out[0].direction == "LONG"
-    assert out[0].confidence == 85
+    assert out[0].confidence == "high"
+    assert out[1].confidence == "medium"
 
 
 def test_parse_impacts_rejects_unknown_asset():
     """Zéro invention : asset hors-liste -> rejeté silencieusement."""
     raw = [
-        {"asset": "DOGECOIN", "direction": "LONG", "confidence": 90},  # rejeté
-        {"asset": "BRENT", "direction": "LONG", "confidence": 80},     # OK
+        {"asset": "DOGECOIN", "direction": "LONG", "confidence": "high"},  # rejeté
+        {"asset": "BRENT", "direction": "LONG", "confidence": "high"},     # OK
     ]
     out = ex._parse_impacts(raw)
     assert len(out) == 1
@@ -67,30 +69,72 @@ def test_parse_impacts_rejects_unknown_asset():
 
 
 def test_parse_impacts_tolerates_bullish_bearish():
-    """Rétro-compat : si DeepSeek glisse vers bullish/bearish historique."""
+    """Rétro-compat : si DeepSeek glisse vers bullish/bearish historique.
+
+    v2.1 : 'neutral' n'est plus une direction valide → impact rejeté
+    (un actif sans direction tradable ne doit pas figurer dans impacts[]).
+    """
     raw = [
-        {"asset": "BRENT", "direction": "bullish", "confidence": 80},
-        {"asset": "SP500", "direction": "bearish", "confidence": 70},
-        {"asset": "VIX", "direction": "neutral", "confidence": 50},
+        {"asset": "BRENT", "direction": "bullish", "confidence": "high"},
+        {"asset": "SP500", "direction": "bearish", "confidence": "medium"},
+        {"asset": "VIX", "direction": "neutral", "confidence": "low"},  # rejeté
     ]
     out = ex._parse_impacts(raw)
-    assert len(out) == 3
+    assert len(out) == 2
     assert out[0].direction == "LONG"
     assert out[1].direction == "SHORT"
-    assert out[2].direction == "NEUTRAL"
 
 
-def test_parse_impacts_confidence_high_medium_low():
-    """Confidence en string énumération -> mappé numériquement."""
+def test_parse_impacts_rejects_neutral_direction():
+    """v2.1 : NEUTRAL retiré du prompt → impact rejeté à la parse."""
+    raw = [
+        {"asset": "BRENT", "direction": "NEUTRAL", "confidence": "high"},
+        {"asset": "GOLD", "direction": "LONG", "confidence": "high"},
+    ]
+    out = ex._parse_impacts(raw)
+    assert len(out) == 1
+    assert out[0].asset == "GOLD"
+
+
+def test_parse_impacts_confidence_buckets():
+    """Confidence en bucket string : renvoyée telle quelle (lowercase)."""
     raw = [
         {"asset": "BRENT", "direction": "LONG", "confidence": "high"},
-        {"asset": "GOLD", "direction": "LONG", "confidence": "medium"},
+        {"asset": "GOLD", "direction": "LONG", "confidence": "MEDIUM"},
         {"asset": "VIX", "direction": "LONG", "confidence": "low"},
     ]
     out = ex._parse_impacts(raw)
-    assert out[0].confidence == 80
-    assert out[1].confidence == 50
-    assert out[2].confidence == 25
+    assert out[0].confidence == "high"
+    assert out[1].confidence == "medium"
+    assert out[2].confidence == "low"
+
+
+def test_parse_impacts_confidence_legacy_integer():
+    """Rétro-compat : confidence entier 0-100 → mappé en bucket."""
+    raw = [
+        {"asset": "BRENT", "direction": "LONG", "confidence": 85},   # high
+        {"asset": "GOLD", "direction": "LONG", "confidence": 50},    # medium
+        {"asset": "VIX", "direction": "LONG", "confidence": 20},     # low
+        {"asset": "SP500", "direction": "SHORT", "confidence": 66},  # high (borne)
+        {"asset": "EURUSD", "direction": "LONG", "confidence": 33},  # medium (borne)
+    ]
+    out = ex._parse_impacts(raw)
+    assert out[0].confidence == "high"
+    assert out[1].confidence == "medium"
+    assert out[2].confidence == "low"
+    assert out[3].confidence == "high"
+    assert out[4].confidence == "medium"
+
+
+def test_parse_impacts_confidence_garbage_defaults_low():
+    """Confidence inintelligible → bucket 'low' (degradation gracieuse)."""
+    raw = [
+        {"asset": "BRENT", "direction": "LONG", "confidence": "yolo"},
+        {"asset": "GOLD", "direction": "LONG", "confidence": None},
+        {"asset": "VIX", "direction": "LONG"},  # absent
+    ]
+    out = ex._parse_impacts(raw)
+    assert all(imp.confidence == "low" for imp in out)
 
 
 def test_parse_impacts_garbage_input():
@@ -114,18 +158,18 @@ def test_norm_enum_strict():
 
 def test_encode_impacts_roundtrip():
     impacts = [
-        ex.Impact(asset="BRENT", direction="LONG", confidence=85),
-        ex.Impact(asset="GOLD", direction="LONG", confidence=70),
-        ex.Impact(asset="SP500", direction="SHORT", confidence=60),
+        ex.Impact(asset="BRENT", direction="LONG", confidence="high"),
+        ex.Impact(asset="GOLD", direction="LONG", confidence="medium"),
+        ex.Impact(asset="SP500", direction="SHORT", confidence="low"),
     ]
     encoded = ex.encode_impacts(impacts)
-    assert encoded == "BRENT:LONG:85;GOLD:LONG:70;SP500:SHORT:60"
+    assert encoded == "BRENT:LONG:high;GOLD:LONG:medium;SP500:SHORT:low"
 
     decoded = ex.decode_impacts(encoded)
     assert len(decoded) == 3
     assert decoded[0]["asset"] == "BRENT"
     assert decoded[0]["direction"] == "LONG"
-    assert decoded[0]["confidence"] == 85
+    assert decoded[0]["confidence"] == "high"
 
 
 def test_encode_impacts_empty():
@@ -139,7 +183,7 @@ def test_decode_impacts_skips_bad_entries():
     # Format 'Brent (BZ=F)' n'est pas un encodage impacts → 0 résultats
     assert ex.decode_impacts("Brent (BZ=F)") == []
     # Mix valide + corrompu : on garde le valide
-    out = ex.decode_impacts("BRENT:LONG:80;GARBAGE;GOLD:SHORT:30")
+    out = ex.decode_impacts("BRENT:LONG:high;GARBAGE;GOLD:SHORT:low")
     assert len(out) == 2
     assert out[0]["asset"] == "BRENT"
     assert out[1]["asset"] == "GOLD"
@@ -148,7 +192,15 @@ def test_decode_impacts_skips_bad_entries():
 
 def test_decode_impacts_default_confidence():
     out = ex.decode_impacts("BRENT:LONG")
-    assert out == [{"asset": "BRENT", "direction": "LONG", "confidence": 0}]
+    assert out == [{"asset": "BRENT", "direction": "LONG", "confidence": "low"}]
+
+
+def test_decode_impacts_legacy_numeric_confidence():
+    """Rétro-compat décodage : entier 0-100 dans la ligne events-log v2.0."""
+    out = ex.decode_impacts("BRENT:LONG:85;GOLD:LONG:50;VIX:LONG:10")
+    assert out[0]["confidence"] == "high"
+    assert out[1]["confidence"] == "medium"
+    assert out[2]["confidence"] == "low"
 
 
 # ---------------------------------------------------------------------------
@@ -175,13 +227,11 @@ def test_extract_full_flow(monkeypatch, tmp_path):
         "subcat": "Iran-Moyen-Orient",
         "trigger": "Frappes iraniennes",
         "news_zone": "Moyen-Orient",
-        "latence": "intraday",
         "reliability": "confirmed",
         "materiality": "high",
-        "already_priced": False,
         "impacts": [
-            {"asset": "BRENT", "direction": "LONG", "confidence": 85},
-            {"asset": "GOLD", "direction": "LONG", "confidence": 70},
+            {"asset": "BRENT", "direction": "LONG", "confidence": "high"},
+            {"asset": "GOLD", "direction": "LONG", "confidence": "medium"},
         ],
     })
     e.model = "deepseek-chat"
@@ -202,6 +252,10 @@ def test_extract_full_flow(monkeypatch, tmp_path):
     assert len(out.impacts) == 2
     assert out.impacts[0].asset == "BRENT"
     assert out.impacts[0].direction == "LONG"
+    assert out.impacts[0].confidence == "high"
+    # Garde-fou : les champs morts ne sont plus exposés
+    assert not hasattr(out, "latence")
+    assert not hasattr(out, "already_priced")
 
 
 def test_extract_normalizes_bad_enums(monkeypatch, tmp_path):
@@ -236,7 +290,8 @@ def test_extract_normalizes_bad_enums(monkeypatch, tmp_path):
 
 def test_event_log_line_extracted_v2():
     """La ligne markdown produite par news_collector doit avoir 14 colonnes
-    et encoder impacts en compact."""
+    (colonne `latence` conservée vide pour ne pas casser les parsers) et
+    encoder impacts en compact avec buckets confidence."""
     item = nc.NewsItem(
         title="Iran retaliates",
         url="https://example.com",
@@ -246,25 +301,27 @@ def test_event_log_line_extracted_v2():
     )
     e = ex.ExtractedEvent(
         impacts=[
-            ex.Impact(asset="BRENT", direction="LONG", confidence=85),
-            ex.Impact(asset="GOLD", direction="LONG", confidence=70),
+            ex.Impact(asset="BRENT", direction="LONG", confidence="high"),
+            ex.Impact(asset="GOLD", direction="LONG", confidence="medium"),
         ],
         category="geopolitical",
         subcat="Iran-Moyen-Orient",
         trigger="Frappes iraniennes",
         news_zone="Moyen-Orient",
-        latence="intraday",
         reliability="confirmed",
         materiality="high",
     )
     line = item.as_event_log_line_extracted(e)
-    # 14 colonnes (pipes externes inclus = 15 pipes)
+    # 14 colonnes (pipes externes inclus = 15 pipes) — INCHANGÉ
     assert line.count("|") == 15
-    assert "BRENT:LONG:85;GOLD:LONG:70" in line
+    assert "BRENT:LONG:high;GOLD:LONG:medium" in line
     assert "geopolitical" in line
-    assert "high" in line
     assert "confirmed" in line
     assert "Iran-Moyen-Orient" in line  # subcat dans L2
+    # Colonne latence présente mais vide (pos 6 dans la ligne)
+    parts = [p.strip() for p in line.strip("|").split("|")]
+    assert len(parts) == 14
+    assert parts[5] == ""  # latence vide
 
 
 def test_event_log_line_raw_v2():

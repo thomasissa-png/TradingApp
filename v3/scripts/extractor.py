@@ -1,14 +1,19 @@
-"""TradingApp v3 — Extractor DeepSeek (schéma directionnel v2).
+"""TradingApp v3 — Extractor DeepSeek (schéma directionnel v2.1).
 
-Refonte chantier prompt v2 (cf. v3/ANALYSE-PROMPT-ia.md) :
-- Le LLM produit un signal DIRECTIONNEL (LONG/SHORT/NEUTRAL) par actif impacté,
-  pas juste une description.
+Refonte chantier prompt v2 (cf. v3/ANALYSE-PROMPT-ia.md) + nettoyage v2.1
+(cf. v3/ANALYSE-PROMPT-v2-ia.md) :
+- Le LLM produit un signal DIRECTIONNEL (LONG/SHORT) par actif impacté.
+  Impact neutre/incertain → NE PAS lister l'actif (impacts:[]). NEUTRAL retiré.
 - `impacts[]` remplace `cours` mono-actif (un event peut toucher Brent + Or + VIX).
 - `materiality` + `reliability` permettent de filtrer signal vs bruit.
 - Taxonomie fusionnée : 1 `category` (~10 valeurs) + `subcat` libre.
+- `confidence` par impact = bucket {high, medium, low} (fausse précision 0-100
+  supprimée). Parsing défensif : entier reçu → mapping bucket.
 - 3 few-shots ancrent le jugement (escalade géopol multi-actifs, news
   non-tradable, rumeur M&A).
 - Parsing défensif : énums hors-bornes → normalisées ou rejetées.
+- Champs morts retirés : `already_priced` (jamais consommé), `latence` (jamais
+  consommée par la chaîne aval).
 
 API DeepSeek = OpenAI-compatible. Modèle : deepseek-chat. temperature=0.
 
@@ -50,8 +55,11 @@ TRADABLE_ASSETS: Tuple[str, ...] = (
 )
 _ASSETS_SET = set(TRADABLE_ASSETS)
 
-DIRECTIONS: Tuple[str, ...] = ("LONG", "SHORT", "NEUTRAL")
+DIRECTIONS: Tuple[str, ...] = ("LONG", "SHORT")
 _DIR_SET = set(DIRECTIONS)
+
+CONFIDENCE_BUCKETS: Tuple[str, ...] = ("high", "medium", "low")
+_CONF_SET = set(CONFIDENCE_BUCKETS)
 
 CATEGORIES: Tuple[str, ...] = (
     "geopolitical", "macro", "central_bank", "earnings", "commodity",
@@ -65,8 +73,8 @@ _REL_SET = set(RELIABILITIES)
 MATERIALITIES: Tuple[str, ...] = ("high", "medium", "low")
 _MAT_SET = set(MATERIALITIES)
 
-LATENCES: Tuple[str, ...] = ("intraday", "overnight", "weekend", "jours")
-_LAT_SET = set(LATENCES)
+# Version du prompt — bumper à chaque évolution sémantique du schéma.
+PROMPT_VERSION = "v2.1"
 
 
 # ============================================================
@@ -76,8 +84,8 @@ _LAT_SET = set(LATENCES)
 @dataclass
 class Impact:
     asset: str                # ∈ TRADABLE_ASSETS
-    direction: str            # ∈ DIRECTIONS
-    confidence: int = 0       # 0-100
+    direction: str            # ∈ DIRECTIONS = {LONG, SHORT}
+    confidence: str = "low"   # ∈ CONFIDENCE_BUCKETS = {high, medium, low}
 
     def to_dict(self) -> Dict[str, Any]:
         return {"asset": self.asset, "direction": self.direction, "confidence": self.confidence}
@@ -85,16 +93,14 @@ class Impact:
 
 @dataclass
 class ExtractedEvent:
-    # Nouveau schéma directionnel
+    # Schéma directionnel v2.1 (nettoyé)
     impacts: List[Impact] = field(default_factory=list)
     category: str = "other"
     subcat: str = ""
     trigger: str = ""
     news_zone: str = ""
-    latence: str = ""
     reliability: str = ""
     materiality: str = "low"
-    already_priced: bool = False
     # Méta
     error: str = ""
     tokens_in: int = 0
@@ -121,14 +127,12 @@ SCHEMA :
   "subcat": "<sous-thème précis, ex: 'Iran-Moyen-Orient', 'Fed-FOMC'. Vide si incertain.>",
   "trigger": "<fait déclencheur factuel, max 200 chars>",
   "news_zone": "<US | EU | EU-FR | BR | CN | RU | UA | AU | Moyen-Orient | Global>",
-  "latence": "<intraday | overnight | weekend | jours>",
   "reliability": "<confirmed | reported | rumor>",
   "materiality": "<high | medium | low>",
-  "already_priced": <true | false>,
   "impacts": [
     { "asset": "<id de la liste fermée>",
-      "direction": "<LONG | SHORT | NEUTRAL>",
-      "confidence": <entier 0-100> }
+      "direction": "<LONG | SHORT>",
+      "confidence": "<high | medium | low>" }
   ]
 }
 
@@ -136,14 +140,18 @@ RÈGLES :
 1. AUCUNE INVENTION. Doute -> impacts:[], materiality:"low".
 2. impacts = SEULEMENT des actifs de la liste fermée réellement et directionnellement
    impactés. Un event peut en toucher plusieurs (ex: escalade géopol -> GOLD LONG,
-   BRENT LONG, VIX LONG, SP500 SHORT). Aucun actif clair -> impacts:[].
-3. direction = sens du PRIX de l'actif (hausse=LONG, baisse=SHORT, neutre=NEUTRAL).
-   Raisonne sur l'effet réel, ignore le ton du titre.
-4. reliability : fait officiel="confirmed" ; presse/source citée="reported" ;
+   BRENT LONG, VIX LONG, SP500 SHORT). Aucun actif clair OU impact incertain/neutre
+   sur un actif -> NE PAS lister l'actif (impacts peut être [] ou ne contenir que
+   les actifs au sens clair).
+3. direction = sens du PRIX de l'actif : hausse=LONG, baisse=SHORT.
+   Pas de "neutre" : si tu ne sais pas trancher, n'inclus pas l'actif. Raisonne
+   sur l'effet réel, ignore le ton du titre.
+4. confidence = "high" si la direction est très probable et bien étayée ;
+   "medium" si plausible mais avec incertitude ; "low" si signal faible/contestable.
+5. reliability : fait officiel="confirmed" ; presse/source citée="reported" ;
    "selon des sources"/spéculation="rumor".
-5. materiality : "high" seulement si surprise/ampleur notable ; "medium" si signal
+6. materiality : "high" seulement si surprise/ampleur notable ; "medium" si signal
    crédible mais attendu ; "low" si bruit ou déjà connu.
-6. already_priced=true si la news est une confirmation d'attendu déjà connu du marché.
 7. News non-tradable (sport, lifestyle, opinion, people) -> category:"other",
    impacts:[], materiality:"low".
 8. Titre EN ou FR : raisonne, réponds toujours dans ce schéma.
@@ -161,15 +169,13 @@ FEW_SHOTS: List[Tuple[str, str]] = [
             "subcat": "Iran-Moyen-Orient",
             "trigger": "Frappes iraniennes sur bases US, escalade militaire",
             "news_zone": "Moyen-Orient",
-            "latence": "intraday",
             "reliability": "confirmed",
             "materiality": "high",
-            "already_priced": False,
             "impacts": [
-                {"asset": "BRENT",  "direction": "LONG",  "confidence": 85},
-                {"asset": "GOLD",   "direction": "LONG",  "confidence": 75},
-                {"asset": "VIX",    "direction": "LONG",  "confidence": 70},
-                {"asset": "SP500",  "direction": "SHORT", "confidence": 60},
+                {"asset": "BRENT",  "direction": "LONG",  "confidence": "high"},
+                {"asset": "GOLD",   "direction": "LONG",  "confidence": "high"},
+                {"asset": "VIX",    "direction": "LONG",  "confidence": "medium"},
+                {"asset": "SP500",  "direction": "SHORT", "confidence": "medium"},
             ],
         }, ensure_ascii=False),
     ),
@@ -181,14 +187,12 @@ FEW_SHOTS: List[Tuple[str, str]] = [
             "subcat": "",
             "trigger": "Mariage royal britannique, audience TV record",
             "news_zone": "EU",
-            "latence": "jours",
             "reliability": "confirmed",
             "materiality": "low",
-            "already_priced": False,
             "impacts": [],
         }, ensure_ascii=False),
     ),
-    # (c) Rumeur M&A -> reliability:rumor, materiality:medium
+    # (c) Rumeur M&A -> reliability:rumor, materiality:medium, confidence:low
     (
         "TITRE : Sources say Microsoft in early talks to acquire AI startup Anthropic",
         json.dumps({
@@ -196,12 +200,10 @@ FEW_SHOTS: List[Tuple[str, str]] = [
             "subcat": "Big Tech M&A",
             "trigger": "Rumeur d'acquisition d'Anthropic par Microsoft (early talks)",
             "news_zone": "US",
-            "latence": "jours",
             "reliability": "rumor",
             "materiality": "medium",
-            "already_priced": False,
             "impacts": [
-                {"asset": "NASDAQ", "direction": "LONG", "confidence": 40},
+                {"asset": "NASDAQ", "direction": "LONG", "confidence": "low"},
             ],
         }, ensure_ascii=False),
     ),
@@ -254,25 +256,51 @@ def _norm_enum(value: Any, allowed: set, default: str = "") -> str:
     return default
 
 
-def _parse_confidence(value: Any) -> int:
-    """Confidence numérique 0-100. Accepte aussi 'high/medium/low' en fallback."""
-    if isinstance(value, (int, float)):
-        return max(0, min(100, int(value)))
+def _parse_confidence(value: Any) -> str:
+    """Confidence en bucket {high, medium, low}.
+
+    - String dans l'énum → renvoyée telle quelle (lowercase).
+    - Entier ou float (compat ancien schéma 0-100) → mappé en bucket :
+      >=66 → high, >=33 → medium, sinon → low.
+    - String numérique → idem après cast.
+    - Tout le reste → "low" (degradation gracieuse).
+    """
+    if isinstance(value, bool):  # bool est subclass de int → traité en premier
+        return "low"
     if isinstance(value, str):
         s = value.strip().lower()
-        # Si DeepSeek glisse vers l'énumération textuelle malgré la consigne
-        mapping = {"high": 80, "medium": 50, "low": 25}
-        if s in mapping:
-            return mapping[s]
+        if s in _CONF_SET:
+            return s
+        # Peut-être une string numérique
         try:
-            return max(0, min(100, int(float(s))))
+            num = float(s)
         except ValueError:
-            return 0
-    return 0
+            return "low"
+        return _bucket_from_number(num)
+    if isinstance(value, (int, float)):
+        return _bucket_from_number(float(value))
+    return "low"
+
+
+def _bucket_from_number(num: float) -> str:
+    """Mapping numérique → bucket (compat ancien schéma 0-100)."""
+    n = max(0.0, min(100.0, num))
+    if n >= 66:
+        return "high"
+    if n >= 33:
+        return "medium"
+    return "low"
 
 
 def _parse_impacts(raw: Any) -> List[Impact]:
-    """Parse impacts[] avec validation stricte : asset hors-liste => rejet de l'entrée."""
+    """Parse impacts[] avec validation stricte.
+
+    - Asset hors-liste fermée → impact rejeté (zéro invention).
+    - Direction NEUTRAL/inconnue → impact rejeté (le prompt v2.1 interdit NEUTRAL :
+      un actif "neutre" ne doit simplement pas figurer dans impacts[]).
+    - Tolérance rétro-compat sur 'bullish/bearish' (mappés LONG/SHORT) et entiers
+      de confidence (mappés en bucket).
+    """
     if not isinstance(raw, list):
         return []
     out: List[Impact] = []
@@ -292,21 +320,12 @@ def _parse_impacts(raw: Any) -> List[Impact]:
                     direction = "LONG"
                 elif dl in ("bearish", "sell", "short"):
                     direction = "SHORT"
-                elif dl in ("neutral", "flat"):
-                    direction = "NEUTRAL"
+                # "neutral"/"flat"/"NEUTRAL" → rejet (impact non listé)
             if not direction:
                 continue
         confidence = _parse_confidence(item.get("confidence"))
         out.append(Impact(asset=asset, direction=direction, confidence=confidence))
     return out
-
-
-def _parse_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in ("true", "1", "yes", "oui")
-    return False
 
 
 # ============================================================
@@ -431,10 +450,8 @@ class Extractor:
                 subcat=str(data.get("subcat") or "")[:80],
                 trigger=str(data.get("trigger") or title)[:250],
                 news_zone=str(data.get("news_zone") or "")[:30],
-                latence=_norm_enum(data.get("latence"), _LAT_SET, default=""),
                 reliability=_norm_enum(data.get("reliability"), _REL_SET, default=""),
                 materiality=_norm_enum(data.get("materiality"), _MAT_SET, default="low"),
-                already_priced=_parse_bool(data.get("already_priced")),
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
                 duration_ms=duration_ms,
@@ -470,10 +487,10 @@ class Extractor:
 # ============================================================
 
 def encode_impacts(impacts: List[Impact]) -> str:
-    """Encodage compact : 'ASSET:DIR:CONF;ASSET:DIR:CONF'.
+    """Encodage compact : 'ASSET:DIR:BUCKET;ASSET:DIR:BUCKET'.
 
-    Exemple : 'BRENT:LONG:85;GOLD:LONG:75;VIX:LONG:70;SP500:SHORT:60'
-    Vide si impacts=[].
+    Exemple : 'BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:medium;SP500:SHORT:medium'
+    Vide si impacts=[]. Direction NEUTRAL ou bucket invalide → impact ignoré.
     """
     if not impacts:
         return ""
@@ -483,13 +500,19 @@ def encode_impacts(impacts: List[Impact]) -> str:
             continue
         if imp.direction not in _DIR_SET:
             continue
-        parts.append(f"{imp.asset}:{imp.direction}:{int(imp.confidence)}")
+        bucket = imp.confidence if imp.confidence in _CONF_SET else "low"
+        parts.append(f"{imp.asset}:{imp.direction}:{bucket}")
     return ";".join(parts)
 
 
 def decode_impacts(encoded: str) -> List[Dict[str, Any]]:
     """Décodage tolérant. Retourne liste de dicts {asset, direction, confidence}.
-    Entrées invalides silencieusement ignorées (rétro-compat avec lignes vides)."""
+
+    - confidence : bucket {high, medium, low}. Rétro-compat ancien schéma 0-100 :
+      un entier est mappé en bucket (>=66 high, >=33 medium, sinon low).
+    - Entrées invalides silencieusement ignorées.
+    - NEUTRAL (ancien schéma) ignoré (l'IA n'émet plus NEUTRAL en v2.1).
+    """
     if not encoded or not isinstance(encoded, str):
         return []
     out: List[Dict[str, Any]] = []
@@ -504,10 +527,16 @@ def decode_impacts(encoded: str) -> List[Dict[str, Any]]:
         direction = parts[1].strip().upper()
         if asset not in _ASSETS_SET or direction not in _DIR_SET:
             continue
-        try:
-            confidence = int(parts[2].strip()) if len(parts) >= 3 and parts[2].strip() else 0
-        except ValueError:
-            confidence = 0
+        confidence = "low"
+        if len(parts) >= 3 and parts[2].strip():
+            raw_conf = parts[2].strip().lower()
+            if raw_conf in _CONF_SET:
+                confidence = raw_conf
+            else:
+                try:
+                    confidence = _bucket_from_number(float(raw_conf))
+                except ValueError:
+                    confidence = "low"
         out.append({"asset": asset, "direction": direction, "confidence": confidence})
     return out
 

@@ -1,0 +1,2 @@
+Run test-extraction — 2026-05-30T13:53:49Z
+Modifier ce fichier (ou son timestamp) et pousser relance le test DeepSeek sur toutes les news.

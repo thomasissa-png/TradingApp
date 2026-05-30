@@ -264,6 +264,17 @@ def _add_title(item: "NewsItem"):
     conn.close()
 
 
+def mark_title_seen(item: "NewsItem") -> None:
+    """API publique : marque définitivement un titre comme vu (dédup committée).
+
+    À appeler par les callers (ex: agent_news) UNIQUEMENT après traitement réussi.
+    Sur erreur d'extraction LLM → NE PAS appeler → le titre reste candidat au
+    prochain cycle (idempotence, cf. audit-ia §1).
+    """
+    _ensure_db()
+    _add_title(item)
+
+
 # ============================================================
 # Dédup Jaccard
 # ============================================================
@@ -327,8 +338,15 @@ def _fetch_rss(name: str, url: str) -> list:
     return items
 
 
-def collect_rss_phase21() -> dict:
-    """Poll RSS_FEEDS (sauf Reuters mort), dédup, blacklist+whitelist finance."""
+def collect_rss_phase21(commit_seen: bool = True) -> dict:
+    """Poll RSS_FEEDS (sauf Reuters mort), dédup, blacklist+whitelist finance.
+
+    commit_seen=True (défaut) : un titre dédupliqué est immédiatement marqué vu en DB
+    (comportement historique, ne casse pas les anciens callers / tests).
+    commit_seen=False : la dédup utilise les titres déjà vus pour filtrer, mais
+    NE marque PAS les nouveaux comme vus — le caller doit appeler `mark_title_seen()`
+    après traitement réussi (idempotence sur erreur d'extraction LLM, cf. audit-ia §1).
+    """
     _ensure_db()
     recent_titles = _get_recent_titles()
 
@@ -343,7 +361,8 @@ def collect_rss_phase21() -> dict:
         if _is_dup(item.title, recent_titles):
             continue
         deduped.append(item)
-        _add_title(item)
+        if commit_seen:
+            _add_title(item)
         recent_titles.insert(0, item.title)
         recent_titles = recent_titles[:DEDUP_CACHE_SIZE]
 
@@ -478,11 +497,19 @@ def _collect_structured() -> list:
 # Collecte unifiée — Phase 2.2
 # ============================================================
 
-def collect_all() -> dict:
+def collect_all(commit_seen: bool = True) -> dict:
     """Poll mainstream + early-signal + structured (GNews/NewsAPI).
     Dédup cross-source via cache SQLite + Jaccard.
     Pré-filtre finance (blacklist puis whitelist).
     Dégradation gracieuse : un feed KO log WARNING + skip, ne casse pas la run.
+
+    commit_seen=True (défaut, rétro-compat) : un titre dédupliqué est immédiatement
+    marqué vu en DB SQLite.
+    commit_seen=False : la dédup filtre contre les titres déjà vus mais NE marque
+    PAS les nouveaux comme vus. Le caller (ex: agent_news.run_one_cycle) doit
+    appeler `mark_title_seen(item)` après extraction réussie pour fermer la boucle.
+    Sur erreur LLM → ne pas marquer → l'item revient au prochain cycle (idempotence,
+    cf. audit-ia §1 "Idempotence non garantie sur erreur LLM").
     """
     _ensure_db()
     recent_titles = _get_recent_titles()
@@ -519,7 +546,11 @@ def collect_all() -> dict:
         if _is_dup(item.title, recent_titles):
             continue
         deduped.append(item)
-        _add_title(item)
+        if commit_seen:
+            _add_title(item)
+        # Mémoire locale recent_titles : on bloque les doublons INTRA-cycle même
+        # si commit_seen=False (sinon 2 dépêches identiques dans le même batch
+        # passeraient toutes les deux).
         recent_titles.insert(0, item.title)
         recent_titles = recent_titles[:DEDUP_CACHE_SIZE]
 

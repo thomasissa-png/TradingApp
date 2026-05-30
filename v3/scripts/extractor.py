@@ -406,12 +406,22 @@ class Extractor:
             )
 
     def _build_messages(self, title: str, snippet: str) -> List[Dict[str, str]]:
+        """Construit le tableau messages.
+
+        ORDRE CRITIQUE pour le prompt caching DeepSeek (cf. audit-ia §5) :
+        le préfixe [system + few-shots] (~1k tokens) DOIT être STRICTEMENT stable
+        d'un appel à l'autre. DeepSeek facture les cache hits ~10× moins cher
+        sur l'input préfixe identique. Toute mutation (rotation few-shots, version
+        de prompt embarquée dynamiquement, etc.) casserait le cache.
+        Le seul contenu variable est le DERNIER message user (titre+snippet).
+        """
         msgs: List[Dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         # Few-shots injectés en alternance user/assistant pour ancrer le jugement.
+        # Préfixe stable → cache hit DeepSeek implicite.
         for user_msg, assistant_msg in FEW_SHOTS:
             msgs.append({"role": "user", "content": user_msg})
             msgs.append({"role": "assistant", "content": assistant_msg})
-        # Vraie news
+        # Vraie news : seul contenu variable (en queue, n'altère pas le cache préfixe).
         user_content = f"TITRE : {title.strip()}"
         if snippet and snippet.strip():
             user_content += f"\n\nSNIPPET : {snippet.strip()[:1500]}"
@@ -429,7 +439,12 @@ class Extractor:
                 messages=self._build_messages(title, snippet),
                 temperature=0,
                 response_format={"type": "json_object"},
-                max_tokens=500,
+                # max_tokens=800 : marge anti-troncature pour impacts[] riches
+                # (cf. audit-ia §2). 500 tronquait des JSON multi-impacts → invalid
+                # → event en mode brut. Sur tronquage : json.JSONDecodeError est
+                # capté → ExtractedEvent.error → retry idempotent au prochain cycle
+                # (cf. agent_news.run_one_cycle, pas de mark_title_seen sur erreur).
+                max_tokens=800,
                 timeout=20,
             )
             duration_ms = int((time.monotonic() - start) * 1000)

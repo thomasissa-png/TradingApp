@@ -29,7 +29,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).parent))
 
 from extractor import Extractor  # noqa: E402
-from news_collector import collect_all  # noqa: E402
+from news_collector import collect_all, mark_title_seen  # noqa: E402
 from repo_publisher import RepoPublisher  # noqa: E402
 
 
@@ -67,7 +67,9 @@ def run_one_cycle(publisher: RepoPublisher, extractor: Extractor) -> dict:
     started = time.monotonic()
     logger.info("=== Cycle start (Europe/Paris : %s) ===", _now_paris())
 
-    result = collect_all()
+    # commit_seen=False : on diffère la dédup jusqu'à extraction réussie (idempotence,
+    # cf. audit-ia §1). Les titres NON extraits avec succès reviendront au prochain cycle.
+    result = collect_all(commit_seen=False)
     raw = result["raw"]
     deduped = result["deduped"]
     filtered = result["filtered"]
@@ -88,30 +90,47 @@ def run_one_cycle(publisher: RepoPublisher, extractor: Extractor) -> dict:
     # NB: extractor.is_enabled() retourne False si pas d'API key OU si hard cap.
     # En cours de batch, un hard cap franchi → ExtractedEvent.error contient
     # "disabled" → on bascule en raw pour les suivants.
+    #
+    # Idempotence (audit-ia §1) :
+    # - extraction OK            → écrire ligne enrichie + marquer vu (mark_title_seen)
+    # - extracteur DELIBERATELY off (pas d'API key OU hard cap) → écrire ligne brute
+    #   + marquer vu (mode dégradé volontaire ; pas de retry car aucun appel n'a
+    #   eu lieu et ne pourra avoir lieu)
+    # - extraction ECHEC réel (timeout, JSON tronqué, erreur réseau) → écrire ligne
+    #   brute mais NE PAS marquer vu → l'item reviendra au prochain cycle pour
+    #   ré-extraction. Pas de perte silencieuse.
     lines = []
     errors = 0
+    retry_pending = 0
     if extractor.is_enabled():
         for item in filtered:
             extracted = extractor.extract(item.title, item.summary)
             if extracted.error and "disabled" in extracted.error:
-                # Hard cap franchi en cours de batch → raw
+                # Hard cap franchi en cours de batch → raw, on marque vu (mode off délibéré)
                 lines.append(item.as_event_log_line_raw())
+                mark_title_seen(item)
             elif extracted.error:
+                # Erreur LLM réelle → ligne brute écrite MAIS pas de mark_title_seen
+                # → ré-extraction au prochain cycle (idempotence).
                 errors += 1
-                lines.append(item.as_event_log_line_extracted(extracted))
+                retry_pending += 1
+                lines.append(item.as_event_log_line_raw())
             else:
+                # Succès → on commit définitivement
                 lines.append(item.as_event_log_line_extracted(extracted))
+                mark_title_seen(item)
     else:
         logger.warning("Extractor désactivé (no key ou hard cap) → écriture en mode brut")
         for item in filtered:
             lines.append(item.as_event_log_line_raw())
+            mark_title_seen(item)  # mode off délibéré : pas de retry attendu
 
     publisher.append_to_events_log(lines)
     duration = time.monotonic() - started
     stats = extractor.get_stats()
     logger.info(
-        "=== Cycle done in %.1fs | raw=%d dedup=%d filt=%d skip=%d err=%d | extractor=%s",
-        duration, len(raw), len(deduped), len(filtered), skipped, errors, stats,
+        "=== Cycle done in %.1fs | raw=%d dedup=%d filt=%d skip=%d err=%d retry=%d | extractor=%s",
+        duration, len(raw), len(deduped), len(filtered), skipped, errors, retry_pending, stats,
     )
     return {
         "raw": len(raw),
@@ -119,6 +138,7 @@ def run_one_cycle(publisher: RepoPublisher, extractor: Extractor) -> dict:
         "filtered": len(filtered),
         "written": len(lines),
         "errors": errors,
+        "retry_pending": retry_pending,
         "extractor_stats": stats,
     }
 

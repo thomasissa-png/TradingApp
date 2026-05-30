@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math as _math
 import os
 import re
 import sys
@@ -56,7 +57,7 @@ import yaml
 
 logger = logging.getLogger("journaliste")
 
-JOURNALISTE_VERSION = "v3.0.0"
+JOURNALISTE_VERSION = "v3.1.0"
 HORIZONS: Tuple[str, ...] = ("24h", "7j", "1m")
 HORIZON_DAYS: Dict[str, int] = {"24h": 1, "7j": 7, "1m": 30}
 WINDOW = 30                  # KPI sur 30 dernières conclusions terminées
@@ -65,12 +66,36 @@ TARGET_TAUX = 70.0           # seuil éligibilité (Bourse.md)
 DISTRIB_MIN = 30.0           # alerte distribution LONG/SHORT hors [30, 70] %
 DISTRIB_MAX = 70.0
 
+# ---------------------------------------------------------------------------
+# Paramètres statistiques rigoureux (audit-data §1 §2 §3)
+# ---------------------------------------------------------------------------
+# Pas non-chevauchant (en jours ouvrés) pour l'échantillonnage indépendant.
+# On utilise des jours calendaires car les bulletins peuvent couvrir des horizons
+# calendaires, mais on approxime : 7j → step 5 jours ouvrés ≈ 7j calendaires.
+NON_OVERLAP_STEP: Dict[str, int] = {"24h": 1, "7j": 7, "1m": 30}
+
+# Seuil Wilson : borne basse IC à 95 % doit dépasser ce niveau pour éligibilité.
+WILSON_LOW_THRESHOLD = 0.50   # borne basse > 50 % exigée pour éligibilité non-chevauchante
+
+# Nombre minimum d'observations non-chevauchantes pour avoir un statut défini
+# (en dessous → warm-up, pas d'éligibilité). Aligné avec KILL-CRITERION.md.
+N_EFFECTIVE_MIN = 15          # warm-up si n_effective < 15 (aligné kill-criterion N>=15)
+N_EFFECTIVE_KILL = 15         # seuil kill criterion (KILL-CRITERION.md §2 condition 2)
+
+# Critère global multiple-testing : fraction de cellules < 55 % autorisée
+GLOBAL_MIN_TAUX = 55.0        # taux global minimum (kill criterion condition 1)
+MAX_CELLS_BELOW_55 = 0.40     # alerte si > 40 % des cellules ont taux < 55 %
+
+# Calibration ECE
+CALIB_N_BINS = 5              # bins pour reliability diagram (ECE)
+
 ROOT = Path(__file__).resolve().parents[1]
 FICHES_DIR = ROOT / "config" / "fiches"
 BULLETINS_DIR = ROOT / "data" / "bulletins"
 PRIX_EMISSION_DIR = ROOT / "data" / "prix-emission"
 PERFORMANCE_FILE = ROOT / "data" / "performance.md"
 PERFORMANCE_AB_FILE = ROOT / "data" / "performance-ab.md"
+CALIBRATION_FILE = ROOT / "data" / "calibration.md"
 
 
 # ---------------------------------------------------------------------------
@@ -386,7 +411,7 @@ class CellKPI:
     fiche_key: str
     actif_name: str
     horizon: str
-    n_total: int = 0          # mesures terminées (VRAI + FAUSSE + non-conclusive)
+    n_total: int = 0          # mesures terminées (VRAI + FAUSSE + non-conclusive) — brutes chevauchantes
     n_vrai: int = 0
     n_fausse: int = 0
     n_nc: int = 0
@@ -395,12 +420,68 @@ class CellKPI:
     brier_sum: float = 0.0
     brier_n: int = 0
     interrompus_recents: int = 0
-    taux_pct: Optional[float] = None
+    taux_pct: Optional[float] = None           # taux brut (chevauchant) — indicatif
     brier: Optional[float] = None
     distrib_long_pct: Optional[float] = None
     distrib_short_pct: Optional[float] = None
     statut: str = "shadow"
     alertes: List[str] = field(default_factory=list)
+    # --- Correction #1 : non-chevauchant ---
+    n_effective: int = 0                       # nb obs non-chevauchantes
+    n_vrai_eff: int = 0
+    n_fausse_eff: int = 0
+    taux_eff_pct: Optional[float] = None       # taux non-chevauchant (décisionnel)
+    # --- Correction #2 : Wilson IC + critère global ---
+    wilson_low: Optional[float] = None         # borne basse IC Wilson 95 % (sur n_effective)
+    wilson_high: Optional[float] = None        # borne haute IC Wilson 95 %
+
+
+def wilson_ci(n_success: int, n_total: int, z: float = 1.96) -> Tuple[float, float]:
+    """Intervalle de confiance de Wilson (proportion) à z-sigma (défaut z=1.96 → 95 %).
+
+    Formule : (p̂ + z²/2n ± z*sqrt(p̂(1-p̂)/n + z²/4n²)) / (1 + z²/n)
+
+    Retourne (borne_basse, borne_haute) ∈ [0, 1].
+    Retourne (0.0, 1.0) si n_total <= 0 (indéfini).
+    """
+    if n_total <= 0:
+        return (0.0, 1.0)
+    p_hat = n_success / n_total
+    z2 = z * z
+    centre = p_hat + z2 / (2 * n_total)
+    margin = z * _math.sqrt(p_hat * (1 - p_hat) / n_total + z2 / (4 * n_total * n_total))
+    denom = 1 + z2 / n_total
+    low = max(0.0, (centre - margin) / denom)
+    high = min(1.0, (centre + margin) / denom)
+    return (round(low, 4), round(high, 4))
+
+
+def select_non_overlapping(
+    measures: List["Measure"],
+    horizon: str,
+    step_days: Optional[int] = None,
+) -> List["Measure"]:
+    """Retourne un sous-ensemble NON-CHEVAUCHANT de mesures terminées (VRAI ou FAUSSE).
+
+    Stratégie : fenêtre glissante — on prend la 1ère mesure terminée disponible,
+    puis la suivante dont l'échéance est ≥ echeance_précédente + step_days.
+    Les non-conclusives sont exclues (elles n'entrent pas dans le taux de réussite).
+
+    step_days : si None, utilise NON_OVERLAP_STEP[horizon] (défaut sécurisé).
+    """
+    step = step_days if step_days is not None else NON_OVERLAP_STEP.get(horizon, 1)
+    # Tri par échéance croissante (ordre temporel)
+    terminées = sorted(
+        [m for m in measures if m.outcome in (OUTCOME_VRAI, OUTCOME_FAUSSE)],
+        key=lambda m: m.echeance,
+    )
+    selected: List["Measure"] = []
+    last_echeance: Optional[date] = None
+    for m in terminées:
+        if last_echeance is None or (m.echeance - last_echeance).days >= step:
+            selected.append(m)
+            last_echeance = m.echeance
+    return selected
 
 
 def proba_from_score(score: float, conclusion: str, scale: float = PROBA_SCALE) -> float:
@@ -467,15 +548,51 @@ def compute_kpi(measures_for_cell: List[Measure]) -> CellKPI:
         kpi.distrib_long_pct = round(kpi.n_long / kpi.n_total * 100.0, 1)
         kpi.distrib_short_pct = round(kpi.n_short / kpi.n_total * 100.0, 1)
 
-    # Statut éligibilité (Bourse.md)
-    if kpi.n_total >= WINDOW and kpi.taux_pct is not None and kpi.taux_pct >= TARGET_TAUX:
+    # --- Correction #1 : observations non-chevauchantes ---
+    non_overlap = select_non_overlapping(window, horizon)
+    kpi.n_effective = len(non_overlap)
+    kpi.n_vrai_eff = sum(1 for m in non_overlap if m.outcome == OUTCOME_VRAI)
+    kpi.n_fausse_eff = sum(1 for m in non_overlap if m.outcome == OUTCOME_FAUSSE)
+    denom_eff = kpi.n_vrai_eff + kpi.n_fausse_eff  # == n_effective (VRAI+FAUSSE uniquement)
+    if denom_eff > 0:
+        kpi.taux_eff_pct = round(kpi.n_vrai_eff / denom_eff * 100.0, 2)
+
+    # --- Correction #2 : intervalle de Wilson sur n_effective ---
+    if kpi.n_effective > 0:
+        low, high = wilson_ci(kpi.n_vrai_eff, kpi.n_effective)
+        kpi.wilson_low = low
+        kpi.wilson_high = high
+
+    # Statut éligibilité — basé sur NON-CHEVAUCHANT + Wilson (décisionnel)
+    # Règle :
+    #   warm-up   : n_effective < N_EFFECTIVE_MIN
+    #   éligible  : n_effective >= N_EFFECTIVE_MIN ET wilson_low > WILSON_LOW_THRESHOLD
+    #               ET taux_eff_pct >= TARGET_TAUX
+    #   shadow    : sinon
+    if kpi.n_effective < N_EFFECTIVE_MIN:
+        kpi.statut = "shadow"
+        kpi.alertes.append(
+            f"warm-up non-chevauchant : {kpi.n_effective}/{N_EFFECTIVE_MIN} obs effectives"
+        )
+    elif (
+        kpi.taux_eff_pct is not None
+        and kpi.taux_eff_pct >= TARGET_TAUX
+        and kpi.wilson_low is not None
+        and kpi.wilson_low > WILSON_LOW_THRESHOLD
+    ):
         kpi.statut = "éligible_actif"
     else:
         kpi.statut = "shadow"
-        if kpi.n_total < WINDOW:
-            kpi.alertes.append(f"{kpi.n_total}/{WINDOW} mesures terminées (warm-up)")
-        elif kpi.taux_pct is not None and kpi.taux_pct < TARGET_TAUX:
-            kpi.alertes.append(f"taux {kpi.taux_pct}% < cible {TARGET_TAUX}%")
+        if kpi.taux_eff_pct is not None and kpi.taux_eff_pct < TARGET_TAUX:
+            kpi.alertes.append(f"taux_eff {kpi.taux_eff_pct}% < cible {TARGET_TAUX}% (non-chevauchant)")
+        if kpi.wilson_low is not None and kpi.wilson_low <= WILSON_LOW_THRESHOLD:
+            kpi.alertes.append(
+                f"Wilson low {kpi.wilson_low:.3f} ≤ {WILSON_LOW_THRESHOLD:.2f} "
+                f"(IC trop large, N_eff={kpi.n_effective})"
+            )
+    # Alerte rétro-compat sur n_total (warm-up fenêtre brute)
+    if kpi.n_total < WINDOW:
+        kpi.alertes.append(f"{kpi.n_total}/{WINDOW} mesures terminées (fenêtre brute warm-up)")
 
     # Distribution L/S
     if kpi.distrib_long_pct is not None:
@@ -575,6 +692,169 @@ def measure(
 
 
 # ---------------------------------------------------------------------------
+# Correction #3 : Calibration — reliability diagram + ECE
+# ---------------------------------------------------------------------------
+
+@dataclass
+class CalibBin:
+    bin_idx: int
+    proba_low: float           # borne basse du bin
+    proba_high: float          # borne haute du bin
+    n: int                     # nb obs dans ce bin
+    mean_proba_pred: float     # proba prédite moyenne
+    mean_outcome: float        # taux observé moyen (0/1)
+    ece_contribution: float    # |mean_proba_pred - mean_outcome| * n / N_total
+
+
+@dataclass
+class CalibResult:
+    bins: List[CalibBin]
+    ece: float                 # Expected Calibration Error (pondéré par taille bin)
+    n_total: int               # nb total d'obs dans le diagramme
+    mean_proba: float          # proba prédite moyenne globale
+    mean_outcome: float        # taux observé global
+
+
+def compute_calibration(
+    measures: List[Measure],
+    n_bins: int = CALIB_N_BINS,
+) -> Optional[CalibResult]:
+    """Produit un reliability diagram bucketisé sur toutes les mesures VRAI/FAUSSE.
+
+    Buckets sur la proba prédite ∈ [0.5, 1.0] (par construction : proba ≥ 0.5).
+    Retourne None si < 10 observations conclusives.
+    """
+    conclusives = [
+        m for m in measures if m.outcome in (OUTCOME_VRAI, OUTCOME_FAUSSE)
+    ]
+    if len(conclusives) < 10:
+        return None
+
+    # Bornes des bins : proba ∈ [0.5, 1.0] découpé en n_bins parties égales
+    bin_edges = [0.5 + i * 0.5 / n_bins for i in range(n_bins + 1)]
+    bins_data: List[List[Tuple[float, float]]] = [[] for _ in range(n_bins)]
+
+    for m in conclusives:
+        p = proba_from_score(m.cell.score, m.cell.conclusion)
+        outcome = 1.0 if m.outcome == OUTCOME_VRAI else 0.0
+        # Trouver le bin (index du dernier edge ≤ p)
+        idx = min(
+            int((p - 0.5) / (0.5 / n_bins)),
+            n_bins - 1,
+        )
+        bins_data[idx].append((p, outcome))
+
+    n_total = len(conclusives)
+    calib_bins: List[CalibBin] = []
+    for i, bucket in enumerate(bins_data):
+        if not bucket:
+            calib_bins.append(CalibBin(
+                bin_idx=i,
+                proba_low=bin_edges[i],
+                proba_high=bin_edges[i + 1],
+                n=0,
+                mean_proba_pred=0.0,
+                mean_outcome=0.0,
+                ece_contribution=0.0,
+            ))
+            continue
+        n = len(bucket)
+        mean_p = sum(x[0] for x in bucket) / n
+        mean_o = sum(x[1] for x in bucket) / n
+        ece_contrib = abs(mean_p - mean_o) * n / n_total
+        calib_bins.append(CalibBin(
+            bin_idx=i,
+            proba_low=bin_edges[i],
+            proba_high=bin_edges[i + 1],
+            n=n,
+            mean_proba_pred=round(mean_p, 4),
+            mean_outcome=round(mean_o, 4),
+            ece_contribution=round(ece_contrib, 4),
+        ))
+
+    ece = round(sum(b.ece_contribution for b in calib_bins), 4)
+    all_probas = [x[0] for bkt in bins_data for x in bkt]
+    all_outcomes = [x[1] for bkt in bins_data for x in bkt]
+    mean_proba = round(sum(all_probas) / n_total, 4) if n_total else 0.0
+    mean_outcome = round(sum(all_outcomes) / n_total, 4) if n_total else 0.0
+
+    return CalibResult(
+        bins=calib_bins,
+        ece=ece,
+        n_total=n_total,
+        mean_proba=mean_proba,
+        mean_outcome=mean_outcome,
+    )
+
+
+def render_calibration(
+    calib: Optional[CalibResult],
+    now: datetime,
+) -> str:
+    """Génère le contenu de calibration.md (reliability diagram textuel + ECE)."""
+    lines: List[str] = []
+    lines.append("# Calibration probabiliste — Reliability Diagram")
+    lines.append("")
+    lines.append(f"- Généré : {now.isoformat()}")
+    lines.append(f"- Méthode : ECE (Expected Calibration Error) simple, {CALIB_N_BINS} bins sur proba ∈ [0.5, 1.0]")
+    lines.append(f"- proba = 0.5 + clip(|score| / {PROBA_SCALE}, 0, 0.5)  [mapping déterministe — non calibré empiriquement]")
+    lines.append("")
+    lines.append("## Interprétation")
+    lines.append("")
+    lines.append("- **Bien calibré** : proba_prédite ≈ taux_observé dans chaque bin → ECE proche de 0")
+    lines.append("- **Sur-confiant** : proba_prédite > taux_observé (systématique si ECE élevé et proba >> taux)")
+    lines.append("- **Sous-confiant** : proba_prédite < taux_observé")
+    lines.append("- Seuil d'alerte ECE > 0.10 : recalibration du mapping score→proba recommandée")
+    lines.append("")
+
+    if calib is None:
+        lines.append("_Pas encore assez d'observations conclusives (< 10) pour produire le diagramme._")
+        lines.append("")
+        return "\n".join(lines)
+
+    lines.append(f"- Observations conclusives totales : {calib.n_total}")
+    lines.append(f"- Proba prédite moyenne : {calib.mean_proba:.4f}")
+    lines.append(f"- Taux observé global : {calib.mean_outcome:.4f}")
+    lines.append(f"- **ECE = {calib.ece:.4f}** {'⚠️ RECALIBRER (> 0.10)' if calib.ece > 0.10 else '✓ acceptable (≤ 0.10)'}")
+    lines.append("")
+    lines.append("## Reliability Diagram (textuel)")
+    lines.append("")
+    lines.append("| Bin | Proba prédite (range) | N | Proba préd. moy. | Taux observé | Ecart | ECE contrib. |")
+    lines.append("|---|---|---|---|---|---|---|")
+
+    for b in calib.bins:
+        if b.n == 0:
+            lines.append(
+                f"| {b.bin_idx + 1} | [{b.proba_low:.2f}, {b.proba_high:.2f}] | 0 | — | — | — | — |"
+            )
+        else:
+            ecart = b.mean_proba_pred - b.mean_outcome
+            lines.append(
+                f"| {b.bin_idx + 1} | [{b.proba_low:.2f}, {b.proba_high:.2f}] | {b.n} | "
+                f"{b.mean_proba_pred:.4f} | {b.mean_outcome:.4f} | {ecart:+.4f} | {b.ece_contribution:.4f} |"
+            )
+
+    lines.append("")
+    lines.append(f"**ECE total = {calib.ece:.4f}**")
+    lines.append("")
+    lines.append("## Note méthodologique")
+    lines.append("")
+    lines.append("L'ECE mesure l'écart moyen pondéré entre la probabilité prédite et la fréquence observée.")
+    lines.append("Une ECE de 0.10 signifie que le système se trompe en moyenne de 10 points de proba.")
+    lines.append("Sans calibration empirique (Platt scaling, isotonic regression), le mapping score→proba")
+    lines.append("est structurellement non-calibré. Ce diagramme permet de détecter le biais systématique.")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def write_calibration(content: str, path: Path = CALIBRATION_FILE) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+# ---------------------------------------------------------------------------
 # Rendu performance.md
 # ---------------------------------------------------------------------------
 
@@ -594,8 +874,10 @@ def render_performance(
     lines.append("")
     lines.append("## Matrice cellules (actif × horizon)")
     lines.append("")
-    lines.append("| Actif | Horizon | N | Taux | Brier | LONG/SHORT | Statut | Alertes |")
-    lines.append("|---|---|---|---|---|---|---|---|")
+    lines.append(
+        "| Actif | Horizon | N_total | Taux_brut | N_eff | Taux_eff | Wilson_low | Brier | LONG/SHORT | Statut | Alertes |"
+    )
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
 
     # tri par actif puis horizon
     horizon_order = {h: i for i, h in enumerate(HORIZONS)}
@@ -606,6 +888,8 @@ def render_performance(
     for key in sorted_keys:
         k = kpis[key]
         taux = "—" if k.taux_pct is None else f"{k.taux_pct:.1f}%"
+        taux_eff = "—" if k.taux_eff_pct is None else f"{k.taux_eff_pct:.1f}%"
+        w_low = "—" if k.wilson_low is None else f"{k.wilson_low:.3f}"
         brier = "—" if k.brier is None else f"{k.brier:.4f}"
         if k.distrib_long_pct is None:
             distrib = "—"
@@ -613,7 +897,8 @@ def render_performance(
             distrib = f"{k.distrib_long_pct:.0f}/{k.distrib_short_pct:.0f}%"
         alertes = "; ".join(k.alertes) if k.alertes else "—"
         lines.append(
-            f"| {k.actif_name} | {k.horizon} | {k.n_total} | {taux} | {brier} | {distrib} | {k.statut} | {alertes} |"
+            f"| {k.actif_name} | {k.horizon} | {k.n_total} | {taux} | {k.n_effective} | "
+            f"{taux_eff} | {w_low} | {brier} | {distrib} | {k.statut} | {alertes} |"
         )
 
     # Synthèse
@@ -621,8 +906,26 @@ def render_performance(
     nb_shadow = sum(1 for k in kpis.values() if k.statut == "shadow")
     lines.append("")
     lines.append("## Synthèse")
-    lines.append(f"- Cellules éligibles actif (taux ≥ {TARGET_TAUX:.0f}%) : **{nb_eligibles}** / {len(kpis)}")
+    lines.append(f"- Cellules éligibles actif (Wilson low > {WILSON_LOW_THRESHOLD:.0%}, taux_eff ≥ {TARGET_TAUX:.0f}%) : **{nb_eligibles}** / {len(kpis)}")
     lines.append(f"- Cellules shadow : {nb_shadow} / {len(kpis)}")
+    lines.append("")
+    lines.append("### Critère global (multiple testing — audit-data §2)")
+    lines.append("")
+    lines.append("Avec 36 cellules testées, ~1-2 faux positifs attendus par hasard à α=0,05.")
+    lines.append("Critère d'éligibilité renforcé : Wilson low > 50 % (borne basse IC 95 % sur N_eff).")
+    lines.append("")
+    # Calculer les métriques globales
+    cells_with_eff = [k for k in kpis.values() if k.n_effective >= N_EFFECTIVE_MIN and k.taux_eff_pct is not None]
+    if cells_with_eff:
+        taux_global = sum(k.taux_eff_pct for k in cells_with_eff) / len(cells_with_eff)  # type: ignore[arg-type]
+        cells_below_55 = [k for k in cells_with_eff if k.taux_eff_pct is not None and k.taux_eff_pct < GLOBAL_MIN_TAUX]
+        pct_below = len(cells_below_55) / len(cells_with_eff) * 100
+        lines.append(f"- Taux moyen global (N_eff ≥ {N_EFFECTIVE_MIN}) : **{taux_global:.1f}%** ({len(cells_with_eff)} cellules)")
+        lines.append(f"- Cellules < {GLOBAL_MIN_TAUX:.0f}% : {len(cells_below_55)}/{len(cells_with_eff)} ({pct_below:.0f}%)")
+        kill_trigger = taux_global < GLOBAL_MIN_TAUX
+        lines.append(f"- Taux global {'< ⚠️ KILL CRITERION DÉCLENCHÉ' if kill_trigger else '≥'} {GLOBAL_MIN_TAUX:.0f}% : {'KILL' if kill_trigger else 'OK'}")
+    else:
+        lines.append(f"- Critère global : warm-up (aucune cellule avec N_eff ≥ {N_EFFECTIVE_MIN})")
 
     # Détail : 10 dernières mesures
     lines.append("")
@@ -824,6 +1127,16 @@ def run(
     content = render_performance(kpis, measures, now)
     out_path = write_performance(content, performance_path)
     logger.info("performance.md écrit : %s (%d mesures, %d cellules)", out_path, len(measures), len(kpis))
+
+    # Calibration (best-effort, non bloquant)
+    try:
+        calib = compute_calibration(measures)
+        calib_content = render_calibration(calib, now)
+        calib_path = performance_path.parent / "calibration.md"
+        write_calibration(calib_content, calib_path)
+        logger.info("calibration.md écrit : %s (ECE=%s)", calib_path, calib.ece if calib else "n/a")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("calibration KO (non bloquant) : %s", e)
 
     # A/B : ±1 vs pondéré (best-effort, non bloquant)
     try:

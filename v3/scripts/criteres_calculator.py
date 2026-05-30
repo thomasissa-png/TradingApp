@@ -644,20 +644,62 @@ def is_in_activation_window(cle: str, now: datetime, triggers_cfg: dict, fiche_k
 # Heuristique GATE
 # ---------------------------------------------------------------------------
 
-def _resolve_gate(cle: str, now: datetime, events: List[dict]) -> bool:
-    """GATE = True si fenêtre EIA active OU event triggerable < 48h."""
-    try:
-        cet = now.astimezone(ZoneInfo("Europe/Paris"))
-    except Exception:  # noqa: BLE001
-        cet = now
-    if cet.weekday() == 2 and 16 <= cet.hour <= 17:
-        return True
-    cutoff = now - timedelta(hours=48)
+# Mots-clés d'événement extrême PAR actif (fallback legacy, sans impacts IA)
+_GATE_KEYWORDS = {
+    "petrole": ("opec", "iran", "ormuz", "hormuz", "strait of hormuz", "fomc"),
+    "or": ("fomc", "cpi", "nfp", "guerre", "war", "escalad"),
+    "argent": ("fomc", "cpi", "nfp"),
+    "cac40": ("fomc", "bce", "ecb", "cpi", "nfp", "censure", "dissolution"),
+    "sp500": ("fomc", "cpi", "nfp"),
+    "nasdaq": ("fomc", "cpi", "nvidia", "nvda", "earnings"),
+    "eurusd": ("fomc", "ecb", "bce", "nfp", "cpi"),
+    "cuivre": ("caixin", "pmi", "fomc", "stimulus", "chine", "china"),
+    "cafe": ("gel", "frost", "conab", "drought", "sécheresse"),
+    "cacao": ("harmattan", "icco", "eudr"),
+    "ble": ("wasde", "mer noire", "black sea", "corridor"),
+    "vix": ("fomc", "cpi", "nfp", "ecb"),
+}
+# id actif IA (extractor) → clé de fiche
+_IA_TO_FICHE = {
+    "BRENT": "petrole", "GOLD": "or", "SILVER": "argent", "CAC40": "cac40",
+    "SP500": "sp500", "NASDAQ": "nasdaq", "EURUSD": "eurusd", "COPPER": "cuivre",
+    "COFFEE": "cafe", "COCOA": "cacao", "WHEAT": "ble", "VIX": "vix",
+}
+
+
+def _resolve_gate(fiche_key: str, cle: str, now: datetime, events: List[dict]) -> bool:
+    """GATE spécifique à l'actif = un événement EXTRÊME imminent le concernant.
+
+    Vrai si : (a) fenêtre EIA active (pétrole uniquement), OU
+              (b) un event de matérialité HIGH cible cet actif (impacts IA) < 24h, OU
+              (c) fallback legacy : mot-clé extrême SPÉCIFIQUE à l'actif < 24h.
+    Ne s'allume donc plus pour tous les actifs dès qu'une news macro tombe.
+    """
+    # (a) fenêtre EIA Crude (mercredi 16-17h CET) → seulement pétrole
+    if fiche_key == "petrole":
+        try:
+            cet = now.astimezone(ZoneInfo("Europe/Paris"))
+        except Exception:  # noqa: BLE001
+            cet = now
+        if cet.weekday() == 2 and 16 <= cet.hour <= 17:
+            return True
+
+    kws = _GATE_KEYWORDS.get(fiche_key, ())
+    cutoff = now - timedelta(hours=24)
     for ev in events:
         dt = ev.get("_dt")
-        if isinstance(dt, datetime) and dt >= cutoff:
+        if not (isinstance(dt, datetime) and dt >= cutoff):
+            continue
+        impacts = ev.get("_impacts") or []
+        # (b) v2 : event high-materiality ciblant CET actif
+        if (ev.get("materiality") or "").strip().lower() == "high" and impacts:
+            for imp in impacts:
+                if _IA_TO_FICHE.get((imp.get("asset") or "").upper()) == fiche_key:
+                    return True
+        # (c) fallback legacy : seulement si pas d'impacts IA + mot-clé spécifique actif
+        if not impacts and kws:
             text = tc._event_text(ev).lower()
-            if any(k in text for k in ("fomc", "cpi", "nfp", "frappes", "opec", "escalation", "escalade")):
+            if any(k in text for k in kws):
                 return True
     return False
 
@@ -898,7 +940,7 @@ def build_critere_value(
 
     # GATE
     if type_norm == "gate":
-        return {"valeur": _resolve_gate(cle, now, events), "ts": ts}
+        return {"valeur": _resolve_gate(fiche_key, cle, now, events), "ts": ts}
 
     # Triplet (résolu par triggers_classifier)
     if type_norm == "triplet":

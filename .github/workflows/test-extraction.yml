@@ -1,9 +1,14 @@
 name: test-extraction
 
-# Test traçable de l'extraction DeepSeek (lancement manuel).
+# Test traçable de l'extraction DeepSeek.
+# Déclenché : (a) manuellement (desktop), OU (b) par push touchant v3/RUN-TEST.txt
+#   → permet de lancer depuis mobile/chat sans bouton « Run workflow ».
 # Montre, pour de vraies news : input → prompt → JSON brut DeepSeek → interprétation → routing.
 # Écrit v3/data/test-extraction-report.md (commité) — lisible ensuite dans le repo.
 on:
+  push:
+    paths:
+      - "v3/RUN-TEST.txt"
   workflow_dispatch:
     inputs:
       source:
@@ -47,7 +52,8 @@ jobs:
           GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
           LOG_LEVEL: INFO
-        run: python v3/scripts/test_extraction.py --source "${{ inputs.source }}" --n "${{ inputs.n }}"
+        # Sur push (sans inputs) : défauts rss / toutes. Sur dispatch : valeurs choisies.
+        run: python v3/scripts/test_extraction.py --source "${{ inputs.source || 'rss' }}" --n "${{ inputs.n || '0' }}"
 
       - name: Commit report
         run: |

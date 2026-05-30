@@ -1,63 +1,29 @@
-# TradingApp
+# TradingApp v3
 
-Bot Telegram qui envoie a Thomas un signal turbo justifie par jour ouvre a 8h45-8h55 CET.
+Bulletin de **positionnement directionnel** : 3×/jour (7h/12h/18h CET), **12 actifs × 3 horizons** (24h/7j/1m), chaque cellule **LONG ou SHORT**. Trend-following multi-actifs. Thomas exécute manuellement (turbos Bourse Direct) — le système ne place jamais d'ordre.
 
-**Statut** : Phase 2a — squelette + mini-jalon J+7 (hello-world cron Telegram). R&D edge a venir (30-90j).
+> **Objectif** : être certain de la **tendance** par actif (suivre les vagues dans le bon sens), pas l'edge à la minute.
 
-## Disclaimer juridique
+## Où est quoi
 
-Outil personnel a usage strictement individuel. **Pas un conseil en investissement** au sens de l'Art. L. 321-1 du Code monetaire et financier. Aucune redistribution autorisee. Cf. `docs/legal/legal-audit.md`.
+| Chemin | Contenu |
+|---|---|
+| `v3/scripts/` | le système (ingest, critères, scoring, briefing, journaliste) |
+| `v3/config/` | fiches actifs (`fiches/*.yml`), `triggers-and-windows.yml`, `weighting.yml` |
+| `v3/data/` | sorties commitées : bulletins, events-log, **decision-log**, performance |
+| `v3/audit/` | audits croisés (elon / ia / data) |
+| `v3/docs/reco/` | décisions d'architecture |
+| `v3/ACTIVATION.md` · `v3/README.md` · `v3/KILL-CRITERION.md` | activation, archi, règle d'arrêt |
+| `project-context.md` | contexte technique (résumé) — réf produit complète = vault `Bourse/Bourse.md` |
+| `legacy/` | ancienne app (bot turbo) — **archivée** |
+| `.claude/`, `CLAUDE.md`, `update.sh` | framework Gradient Agents |
 
-## Quick start (Replit)
+## Architecture
 
-1. Forker / cloner le repo (prive obligatoire — donnees financieres personnelles).
-2. Renseigner les Replit Secrets selon `.env.example` (cf. `REPLIT_ACTIONS.md`).
-3. Cron Deployment configure a 8h40 CET, lundi-vendredi : `python -m src.main --mode=hello`.
-4. Verifier la reception Telegram + le ping healthchecks.io le 1er jour ouvre.
-
-## Quick start (local)
-
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-cp .env.example .env  # remplir les valeurs
-python -m pytest tests/
-python -m src.main --mode=hello
-```
-
-## Modes d'execution
-
-- `--mode=hello` : push hello-world Telegram (mini-jalon J+7).
-- `--mode=live` / `--mode=paper` : Phase 2c (fallback hello-world tant que pipeline scoring pas implemente).
-
-## Arborescence
-
-```
-src/
-├── main.py             entry point CLI
-├── config.py           validation env vars (Pydantic)
-├── telegram/           wrapper Bot API + templates
-├── journal/            init SQLite + DDL 7 tables
-├── scheduler/          calendrier ouvre FR + fenetre 8h40-8h55
-├── ai/ scoring/ backtester/  stubs Phase 2b/2c
-└── lib/                logger JSON + healthchecks.io
-tests/                  pytest (config / schema / calendrier)
-data/                   journal.sqlite (cree au runtime, gitignore)
-```
-
-## Documentation amont
-
-- `docs/product/functional-specs.md` — 12 user stories
-- `docs/analytics/kpi-framework.md` — schema SQLite + KPI
-- `docs/ia/edge-scoring-model.md` v1.1 — sanity checks SC1-SC6
-- `docs/ia/prompt-library.md` — `signal-scoring-v1.0`
-- `docs/infra/infra-audit.md` — cron Replit + healthchecks
-- `docs/legal/legal-audit.md` — AMF, RGPD, PFU 31,4 %
+GitHub Actions (workflow `cycle-decision`, cron 3×/jour) + **git-as-storage** (tout commité). Sans VPS, sans Cowork. DeepSeek (extraction news), Twelve Data / CFTC / EIA / Open-Meteo (données), Telegram/Argos (émission, post-shadow).
 
 ## Tests
 
 ```bash
-python -m pytest tests/ -v
-python -m mypy src/
-python -m ruff check src/
+python -m pytest v3/tests/   # 217 tests
 ```

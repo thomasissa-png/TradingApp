@@ -137,3 +137,84 @@ Append-only. Édité par v3/scripts/agent_news.py (GitHub Actions cron).
 | 2026-03-18 | Banques-centrales | Fed-FOMC | Fed releases economic projections from March 17-18 FOMC meeting | S&P 500 (^GSPC), US Dollar Index (DX-Y.NYB), US 10Y (^TNX) | intraday | 1 | fed_monetary | US | central_bank_subtle |  |
 | 2026-05-29 | Banques-centrales | BCE | ECB appoints three Directors General |  | intraday | 1 | ecb_press | EU | central_bank_subtle |  |
 | 2026-05-28 | Banques-centrales | BCE | Discours de Christine Lagarde sur l'indépendance des banques centrales |  | intraday | 1 | ecb_press | EU | central_bank_subtle |  |
+<!-- batch 2026-05-30T11:16:07Z : 80 events -->
+| 2026-05-28 |  | US-Canada trade war | Baisse des ventes d'un producteur américain de liqueur au Canada en raison de représailles tarifaires |  |  | 1 | bbc_business | US | supply_chain |  |  | low | reported |
+| 2026-05-29 |  |  | Explosion d'une fusée Blue Origin sur le pas de tir en Floride |  |  | 1 | bbc_business | US | other |  |  | low | confirmed |
+| 2026-05-28 |  | Coffee supply-demand | Coffee prices rising to £5 per cup due to tariffs, climate, and market dynamics | COFFEE |  | 1 | bbc_business | Global | commodity |  | COFFEE:LONG:medium | medium | reported |
+| 2026-05-28 |  | Iran-Moyen-Orient | Report of breakthrough in US-Iran talks, extended ceasefire subject to Trump approval | BRENT |  | 1 | bbc_business | Moyen-Orient | geopolitical |  | BRENT:SHORT:high;GOLD:SHORT:medium;VIX:SHORT:medium;SP500:LONG:medium | high | reported |
+| 2026-05-28 |  | Insider trading | Google employee charged with insider trading using internal data for $1.2m profit |  |  | 1 | bbc_business | US | regulatory |  |  | low | confirmed |
+| 2026-05-27 |  | EV-China | Domination chinoise des usines EV, difficultés des constructeurs mondiaux |  |  | 1 | bbc_business | Global | supply_chain |  |  | medium | reported |
+| 2026-05-27 |  | Iran-Moyen-Orient | Hausse des factures d'énergie au Royaume-Uni due à l'impact de la guerre en Iran sur les prix | BRENT |  | 1 | bbc_business | EU | commodity |  | BRENT:LONG:high | medium | confirmed |
+| 2026-05-27 |  | Automotive | Ferrari dévoile sa première voiture électrique (Luce), accueil mitigé sur les réseaux sociaux, pression des constructeurs chinois de VE |  |  | 1 | bbc_business | EU | earnings |  |  | medium | confirmed |
+| 2026-05-27 |  | AI-semiconductors | SK Hynix and Micron join $1tn club due to AI chip demand | NASDAQ |  | 1 | bbc_business | US | earnings |  | NASDAQ:LONG:high;SP500:LONG:medium | high | confirmed |
+| 2026-05-27 |  |  | Ethical hacker warns AI tools will increase competition |  |  | 1 | bbc_business | Global | other |  |  | low | reported |
+| 2026-05-27 |  |  | Article sur la culture et l'exportation des pommes-cannelle |  |  | 1 | bbc_business | Global | other |  |  | low | reported |
+| 2026-05-18 |  |  | Article d'opinion sur la domination d'Amazon sans information nouvelle |  |  | 1 | bbc_business | US | other |  |  | low | reported |
+| 2026-05-13 |  | Tech-Privacy | Ventes record de lunettes connectées Meta malgré les critiques sur la vie privée |  |  | 1 | bbc_business | US | regulatory |  |  | low | reported |
+| 2026-05-29 |  | Energy prices | Hausse des factures d'énergie en Irlande du Nord due à la hausse des prix mondiaux de l'énergie et du gaz | BRENT |  | 1 | bbc_business | EU | commodity |  | BRENT:LONG:medium | low | confirmed |
+| 2026-05-27 |  | Coffee supply shock | Poor coffee harvests in Brazil and Vietnam driving up prices | COFFEE |  | 1 | bbc_business | Global | commodity |  | COFFEE:LONG:high | medium | reported |
+| 2026-05-27 |  | Agricultural costs | Farmer reports red diesel costs doubled from £27k to £54k annually |  |  | 1 | bbc_business | EU | commodity |  |  | low | reported |
+| 2026-03-28 |  | Supply chain inflation | Orange juice price surge to £5.30, reflecting broader commodity inflation (butter, chocolate, coffee, milk) | COFFEE |  | 1 | bbc_business | EU | commodity |  | COFFEE:LONG:medium;COCOA:LONG:medium | medium | reported |
+| 2026-05-27 |  | Energy prices | Household energy prices to rise 13% in July due to US-Israel-Iran war driving wholesale costs | BRENT |  | 1 | bbc_business | EU | commodity |  | BRENT:LONG:high;CAC40:SHORT:medium | high | confirmed |
+| 2026-05-30 |  |  | Sauvetage de mineurs dans une grotte au Laos |  |  | 1 | bbc_world | Global | other |  |  | low | confirmed |
+| 2026-05-29 |  | Israel-Gaza | Netanyahu ordonne à l'armée israélienne d'étendre le contrôle de Gaza à 70%, violant le cessez-le-feu d'octobre 2025 | BRENT |  | 1 | bbc_world | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-05-28 |  | Hezbollah-Israel | Hezbollah utilise des drones à fibre optique contre Israël, s'inspirant de la guerre en Ukraine | BRENT |  | 1 | bbc_world | Moyen-Orient | geopolitical |  | BRENT:LONG:medium;GOLD:LONG:medium;VIX:LONG:low | medium | reported |
+| 2026-05-28 |  |  | Roman taïwanais remporte le Booker Prize |  |  | 1 | bbc_world | Global | other |  |  | low | confirmed |
+| 2026-05-29 |  | Tech earnings | Dell Q4 AI server revenue +757% YoY, stock +32% | NASDAQ |  | 1 | cnbc_top | US | earnings |  | NASDAQ:LONG:high;SP500:LONG:medium | high | confirmed |
+| 2026-05-29 |  | IPO disclosure | Elon Musk comments on SpaceX-Anthropic deal differ from IPO filing, raising disclosure concerns |  |  | 1 | cnbc_top | US | regulatory |  |  | low | reported |
+| 2026-05-29 |  | Tech-AI | Nvidia investit des milliards dans la photonique pour l'IA | NASDAQ |  | 1 | cnbc_top | US | earnings |  | NASDAQ:LONG:medium;SP500:LONG:low | medium | reported |
+| 2026-05-29 |  |  | Record disconnect in volatility spread between single stocks and index in trading pits |  |  | 1 | cnbc_top | US | other |  |  | low | reported |
+| 2026-05-28 |  | Oil supply | Exxon executive warns oil inventories will hit dangerously low levels in weeks, prices could spike to $150-160 | BRENT |  | 1 | cnbc_top | Global | commodity |  | BRENT:LONG:high | high | reported |
+| 2026-05-29 |  | Fed-FOMC | Fed Governor Bowman warns against hiking rates despite inflation spike, citing ineffectiveness of rate hikes on energy/tariff-driven inflation | SP500 |  | 1 | cnbc_top | US | central_bank |  | SP500:LONG:high;NASDAQ:LONG:high;EURUSD:SHORT:medium;GOLD:LONG:medium | high | confirmed |
+| 2026-05-29 |  |  | Analyst comment on AI rally and Nasdaq target |  |  | 1 | cnbc_top | US | other |  |  | low | reported |
+| 2026-05-30 |  |  | Bitcoin ETF demand cooling, analyst warns of extended downturn |  |  | 1 | investing_news | US | other |  |  | low | reported |
+| 2026-05-30 |  | Ukraine-Russia conflict | Ukrainian drone strikes on Russian port, tanker, and oil depot | BRENT |  | 1 | investing_news | UA | geopolitical |  | BRENT:LONG:medium | medium | reported |
+| 2026-05-30 |  | US-China tensions | Pentagon chief warns about China's military buildup, calls for increased allied defense spending | SP500 |  | 1 | investing_news | US | geopolitical |  | SP500:SHORT:low;GOLD:LONG:medium | medium | confirmed |
+| 2026-05-30 |  | Tesla-Chine | Poursuite en Chine contre Tesla pour publicité trompeuse sur FSD | SP500 |  | 1 | investing_news | CN | regulatory |  | SP500:SHORT:low | medium | reported |
+| 2026-05-29 |  | Iran-Moyen-Orient | Avertissement des institutions internationales sur les tensions au Moyen-Orient menaçant les approvisionnements énergétiques via le détroit d'Ormuz | BRENT |  | 1 | gnews | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-05-29 |  | US oil production | New oil projects in Alaska's North Slope and national security concerns | BRENT |  | 1 | gnews | US | commodity |  | BRENT:SHORT:low | low | reported |
+| 2026-05-29 |  | US crude exports | Port of Corpus Christi exports >2M bpd crude, highlighting US shale export capacity | BRENT |  | 1 | gnews | US | commodity |  | BRENT:SHORT:low | low | confirmed |
+| 2026-05-29 |  | OPEC+ | Fracture OPEC+ avec départ des Émirats Arabes Unis, implications sur l'offre pétrolière | BRENT |  | 1 | gnews | Moyen-Orient | commodity |  | BRENT:SHORT:medium | high | reported |
+| 2026-05-29 |  | Corn | Corn futures down 2-9 cents, month-end selling, crude oil pressure | WHEAT |  | 1 | gnews | US | commodity |  | WHEAT:SHORT:low | low | confirmed |
+| 2026-05-29 |  | Cotton | Cotton futures mixed, front months down 10-62 points, July down 127 points on week, USD lower, crude oil pressure |  |  | 1 | gnews | US | commodity |  |  | low | confirmed |
+| 2026-05-29 |  | Wheat | Wheat prices fell double digits, pressured by crude oil decline and profit-taking ahead of weekend amid US-Iran agreement talks | WHEAT |  | 1 | gnews | US | commodity |  | WHEAT:SHORT:high;BRENT:SHORT:medium | medium | confirmed |
+| 2026-05-29 |  | Iran-Moyen-Orient | Trump évalue une proposition de cessez-le-feu avec l'Iran, désaccords sur le nucléaire et le détroit d'Ormuz, pression électorale | BRENT |  | 1 | gnews | Moyen-Orient | geopolitical |  | BRENT:SHORT:medium;GOLD:SHORT:low;VIX:SHORT:low | medium | reported |
+| 2026-05-29 |  | S&P500 sector divergence | S&P500 record with 8/11 sectors down; Dell +30% on AI server sales; oil drops on Iran ceasefire; Anthropic $900B raise | SP500 |  | 1 | gnews | US | macro |  | SP500:LONG:medium;BRENT:SHORT:high;NASDAQ:LONG:medium | medium | confirmed |
+| 2026-05-29 |  | Iran-Moyen-Orient | Perspectives de trêve entre les États-Unis et l'Iran, apaisement des tensions | BRENT |  | 1 | gnews | Moyen-Orient | geopolitical |  | BRENT:SHORT:high;GOLD:SHORT:medium;VIX:SHORT:low;SP500:LONG:low | medium | reported |
+| 2026-05-29 |  | Iran-nuclear | Progrès dans les négociations nucléaires US-Iran, potentiel d'augmentation de l'offre pétrolière | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:SHORT:medium | medium | reported |
+| 2026-05-29 |  | Emerging Markets Currency Crisis | Indonesia and India intervene to support weakening currencies amid oil price surge, increasing EM strain and capital flight risk. | EURUSD |  | 1 | newsapi | Global | macro |  | EURUSD:LONG:medium;BRENT:LONG:high;GOLD:LONG:medium | medium | reported |
+| 2026-05-29 |  | Crypto-Exchange Partnership | ICE (NYSE parent) confirms partnership talks with Hyperliquid; HYPE token surges 38% |  |  | 1 | newsapi | US | regulatory |  |  | medium | reported |
+| 2026-05-29 |  | Credit rating upgrade | ICRA upgrade Vedanta entities to AA+ with stable outlook | COPPER |  | 1 | newsapi | Global | commodity |  | COPPER:LONG:low | medium | confirmed |
+| 2026-05-29 |  | Palm oil regulation | Indonesia drafts gender mainstreaming guidelines for palm oil sector |  |  | 1 | newsapi | Global | regulatory |  |  | low | reported |
+| 2026-05-29 |  | FX-EM | Rupee jumps on RBI intervention and oil drop, closes at 95 vs USD | EURUSD |  | 1 | newsapi | Global | macro |  | EURUSD:SHORT:low;BRENT:SHORT:medium | medium | confirmed |
+| 2026-05-29 |  |  | Daily links compilation with mixed topics |  |  | 1 | newsapi | Global | other |  |  | low | reported |
+| 2026-05-29 |  | Iran-Moyen-Orient | Escalade au Moyen-Orient : rejet d'accord, menaces US, frappes israéliennes sur Beyrouth, craintes sur les prix de l'énergie et accusations de ventes illégales de la SPR | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:medium;SP500:SHORT:medium;EURUSD:SHORT:low | high | reported |
+| 2026-05-29 |  | Somali piracy | Resurgence of Somali piracy due to political turmoil, aid cuts, and Iran war | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:LONG:low | low | reported |
+| 2026-05-29 |  | Iran-Moyen-Orient | Optimisme sur un cessez-le-feu US-Iran, baisse du pétrole de 20% depuis le pic de 2026 | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:SHORT:high;GOLD:SHORT:medium;VIX:SHORT:medium;SP500:LONG:medium | high | reported |
+| 2026-05-29 |  | JGB yields | Major Japanese banks raise fixed mortgage rates due to rising long-term yields |  |  | 1 | newsapi | JP | macro |  |  | medium | confirmed |
+| 2026-05-29 |  | Iran-Moyen-Orient | Hint of US-Iran deal easing stagflation fears | BRENT |  | 1 | newsapi | US | geopolitical |  | BRENT:SHORT:medium;SP500:LONG:medium;GOLD:SHORT:low | medium | reported |
+| 2026-05-29 |  |  | Opinion piece comparing Big Oil to Big Tobacco, calling for damages |  |  | 1 | newsapi | US | other |  |  | low | rumor |
+| 2026-05-29 |  | BoJ-FX intervention | Japan spent $73B in yen-buying intervention, limited effect | EURUSD |  | 1 | newsapi | JP | central_bank |  | EURUSD:LONG:medium | high | confirmed |
+| 2026-05-29 |  |  | Anniversary of journalist detention in Azerbaijan, no market impact |  |  | 1 | newsapi | UA | other |  |  | low | confirmed |
+| 2026-05-29 |  | US-PCE inflation | PCE avril 3.8% YoY, core 3.3%, conforme aux attentes, pas de choc inflationniste |  |  | 1 | newsapi | US | macro |  |  | medium | confirmed |
+| 2026-05-29 |  | Shareholder Rights Plan | Surge Copper adopte un plan de droits des actionnaires (poison pill) |  |  | 1 | newsapi | US | regulatory |  |  | low | confirmed |
+| 2026-05-29 |  | Iran-Moyen-Orient | Extension de trêve avec l'Iran, ouverture en hausse de l'argent | SILVER |  | 1 | newsapi | Moyen-Orient | geopolitical |  | SILVER:LONG:medium;GOLD:SHORT:low | medium | reported |
+| 2026-05-29 |  |  | Sortie d'un port PC d'un jeu vidéo rétro |  |  | 1 | newsapi | Global | other |  |  | low | confirmed |
+| 2026-05-29 |  | AI-photonics | Nvidia investit massivement dans les entreprises de photonique pour améliorer l'efficacité de l'IA | NASDAQ |  | 1 | newsapi | US | commodity |  | NASDAQ:LONG:medium | medium | reported |
+| 2026-05-29 |  | Small-cap M&A | Click Holdings (CLIK) acquires Hong Kong construction HR tech company, targets HK$50M+ annual revenue in new segment within 2 years |  |  | 1 | newsapi | CN | m_a |  |  | low | confirmed |
+| 2026-05-29 |  | US corruption probe | Arrestation d'un haut responsable de la CIA avec 40M$ en lingots d'or et 2M$ en liquide |  |  | 1 | newsapi | US | regulatory |  |  | low | confirmed |
+| 2026-05-29 |  |  | Employment Tribunal decision in case D Gold v Econowise Drives and Controls Ltd |  |  | 1 | newsapi | EU | other |  |  | low | confirmed |
+| 2026-05-29 |  |  | Lancement d'un nouveau moulin à café manuel AeroPress |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-29 |  |  | Sugar Ray Leonard demande une ordonnance restrictive contre son fils pour raisons familiales |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-29 |  |  | Article lifestyle sur les Summer Fridays |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-29 |  |  | Opinion piece on Pope and AI, no tradable impact |  |  | 1 | newsapi | Global | other |  |  | low | reported |
+| 2026-05-29 |  |  | Article sur l'interaction pamplemousse-café, sans impact financier |  |  | 1 | newsapi | Global | other |  |  | low | reported |
+| 2026-05-29 |  | Ukraine-Russia | EU prepares for potential talks with Putin on Ukraine settlement | EURUSD |  | 1 | newsapi | EU | geopolitical |  | EURUSD:LONG:medium;BRENT:SHORT:low | medium | reported |
+| 2026-05-29 |  |  | Article sur une chaîne de centres commerciaux à Las Vegas inspirée d'Hawaï |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-29 |  | Cannabis-International Expansion | Canopy Growth relance Tweed en Allemagne avec nouvelles variétés de cannabis médical |  |  | 1 | newsapi | EU | commodity |  |  | low | confirmed |
+| 2026-05-29 |  | Inflation-Energy | Irish inflation slowed in May, energy prices down 4.3% MoM |  |  | 1 | newsapi | EU | macro |  |  | low | confirmed |
+| 2026-05-29 |  |  | VersaBank founder named Executive of the Year by Canadian Lenders Association |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-29 |  | Fed-FOMC | Jeff Schmid (Kansas City Fed) réaffirme la lutte contre l'inflation persistante | SP500 |  | 1 | newsapi | US | central_bank |  | SP500:SHORT:medium;NASDAQ:SHORT:medium;EURUSD:LONG:low | medium | confirmed |
+| 2026-05-29 |  |  | Woman fined for feeding pigeons, claims she wanted to rescue them |  |  | 1 | newsapi | Global | other |  |  | low | confirmed |
+| 2026-05-29 |  | BoE | BoE Governor Bailey signals tolerance for above-target inflation to support weak economy | EURUSD |  | 1 | newsapi | EU | central_bank |  | EURUSD:SHORT:medium | high | confirmed |
+| 2026-05-29 |  |  | Kailas FUGA lance une équipe de trail féminine en Italie |  |  | 1 | newsapi | EU | other |  |  | low | confirmed |

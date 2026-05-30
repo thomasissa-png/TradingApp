@@ -609,6 +609,28 @@ def _ia_direction_for(ev: dict, actif_key: str) -> Optional[str]:
     return best_dir
 
 
+def _resolve_triplet_with_meta(
+    events: List[dict],
+    actif_key: str,
+    cle: str,
+    long_keywords: List[str],
+    short_keywords: List[str],
+    lookback_days: int,
+    now: datetime,
+) -> Tuple[int, Dict[str, str]]:
+    """Comme _resolve_triplet mais retourne aussi (materiality, reliability,
+    source_track) du meilleur event ayant produit la direction.
+
+    source_track ∈ {"ia", "keyword", "none"}.
+    materiality/reliability sont les champs bruts de l'event gagnant (lower-case,
+    "" si manquants). Si direction = 0 → meta vide.
+    """
+    val, meta = _resolve_triplet_impl(
+        events, actif_key, cle, long_keywords, short_keywords, lookback_days, now,
+    )
+    return val, meta
+
+
 def _resolve_triplet(
     events: List[dict],
     actif_key: str,
@@ -618,6 +640,22 @@ def _resolve_triplet(
     lookback_days: int,
     now: datetime,
 ) -> int:
+    """Rétro-compat : ne retourne que la direction."""
+    val, _meta = _resolve_triplet_impl(
+        events, actif_key, cle, long_keywords, short_keywords, lookback_days, now,
+    )
+    return val
+
+
+def _resolve_triplet_impl(
+    events: List[dict],
+    actif_key: str,
+    cle: str,
+    long_keywords: List[str],
+    short_keywords: List[str],
+    lookback_days: int,
+    now: datetime,
+) -> Tuple[int, Dict[str, str]]:
     """Résout un triplet en mode HYBRIDE :
 
     1. **IA-first** : si un event récent dans la fenêtre a un `impacts[]` qui
@@ -644,14 +682,15 @@ def _resolve_triplet(
     """
     if not long_keywords and not short_keywords and not _criterion_has_ia_route(actif_key, cle):
         # Critère sans keywords ni route IA possible : 0 neutre.
-        return 0
+        return 0, {}
 
     cutoff = now - timedelta(days=lookback_days)
     candidates = _candidates_for(events, actif_key, cle)
 
     # -------- 1) IA-first : un event avec direction IA LONG/SHORT --------
-    ia_long: Optional[Tuple[datetime, int]] = None  # (dt, materiality_weight)
-    ia_short: Optional[Tuple[datetime, int]] = None
+    # Tuple : (dt, materiality_weight, materiality_raw, reliability_raw)
+    ia_long: Optional[Tuple[datetime, int, str, str]] = None
+    ia_short: Optional[Tuple[datetime, int, str, str]] = None
     ia_seen_any = False
     # On suit aussi les events où l'IA s'est "exprimée pour cet actif" mais en
     # direction non-tradable (NEUTRAL legacy) : ils ne déclenchent rien et
@@ -669,32 +708,35 @@ def _resolve_triplet(
             continue
         ia_seen_any = True
         mat = (ev.get("materiality") or "").strip().lower()
+        rel = (ev.get("reliability") or "").strip().lower()
         weight = _MAT_WEIGHT.get(mat, 1)
         if direction == "LONG":
             if ia_long is None or (weight, dt) > (ia_long[1], ia_long[0]):
-                ia_long = (dt, weight)
+                ia_long = (dt, weight, mat, rel)
         elif direction == "SHORT":
             if ia_short is None or (weight, dt) > (ia_short[1], ia_short[0]):
-                ia_short = (dt, weight)
+                ia_short = (dt, weight, mat, rel)
     if ia_seen_any:
         # Au moins un event IA tradable cible cet actif → on tranche en IA-only.
+        def _meta_from(t: Tuple[datetime, int, str, str]) -> Dict[str, str]:
+            return {"materiality": t[2], "reliability": t[3], "source_track": "ia"}
         if ia_long and not ia_short:
-            return 1
+            return 1, _meta_from(ia_long)
         if ia_short and not ia_long:
-            return -1
+            return -1, _meta_from(ia_short)
         if ia_long and ia_short:
             # Matérialité d'abord, date ensuite
             if (ia_long[1], ia_long[0]) >= (ia_short[1], ia_short[0]):
-                return 1
-            return -1
-        # Cas théorique (jamais atteint : ia_seen_any implique au moins un side)
-        return 0
+                return 1, _meta_from(ia_long)
+            return -1, _meta_from(ia_short)
+        return 0, {}
 
     # -------- 2) Fallback keyword (IA n'a rien marqué d'exploitable) -----
     if not long_keywords and not short_keywords:
-        return 0
-    last_long: Optional[datetime] = None
-    last_short: Optional[datetime] = None
+        return 0, {}
+    # Tuple : (dt, materiality, reliability)
+    last_long: Optional[Tuple[datetime, str, str]] = None
+    last_short: Optional[Tuple[datetime, str, str]] = None
     for ev in candidates:
         dt = ev.get("_dt")
         if not isinstance(dt, datetime):
@@ -702,21 +744,24 @@ def _resolve_triplet(
         if dt < cutoff or dt > now:
             continue
         text = _event_text(ev)
+        mat = (ev.get("materiality") or "").strip().lower()
+        rel = (ev.get("reliability") or "").strip().lower()
         if _any_keyword_matches(text, long_keywords):
-            if last_long is None or dt > last_long:
-                last_long = dt
+            if last_long is None or dt > last_long[0]:
+                last_long = (dt, mat, rel)
         if _any_keyword_matches(text, short_keywords):
-            if last_short is None or dt > last_short:
-                last_short = dt
+            if last_short is None or dt > last_short[0]:
+                last_short = (dt, mat, rel)
     if last_long is None and last_short is None:
-        return 0
+        return 0, {}
     if last_long is not None and last_short is None:
-        return 1
+        return 1, {"materiality": last_long[1], "reliability": last_long[2], "source_track": "keyword"}
     if last_short is not None and last_long is None:
-        return -1
-    if last_long >= last_short:  # type: ignore[operator]
-        return 1
-    return -1
+        return -1, {"materiality": last_short[1], "reliability": last_short[2], "source_track": "keyword"}
+    # Les deux matchent
+    if last_long[0] >= last_short[0]:  # type: ignore[index]
+        return 1, {"materiality": last_long[1], "reliability": last_long[2], "source_track": "keyword"}
+    return -1, {"materiality": last_short[1], "reliability": last_short[2], "source_track": "keyword"}
 
 
 def _criterion_has_ia_route(actif_key: str, cle: str) -> bool:
@@ -767,6 +812,72 @@ def _emit_key(actif_key: str, yml_cle: str) -> str:
     """Retourne la clé sous laquelle émettre le triplet (cle_courante des fiches
     si un alias est défini, sinon la clé YAML directe)."""
     return YML_KEY_TO_CLE_COURANTE.get((actif_key, yml_cle), yml_cle)
+
+
+def classify_all_with_meta(
+    events: Optional[List[dict]] = None,
+    today: Optional[datetime] = None,
+    triggers_cfg: Optional[dict] = None,
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Variante riche : pour chaque triplet, retourne aussi materiality/reliability/source_track.
+
+    Sortie : {actif_key: {cle_courante: {"valeur": int, "materiality": str,
+              "reliability": str, "source_track": str}}}
+    Pour les critères calendrier (pas d'event source) → meta avec source_track='calendrier'.
+    """
+    if triggers_cfg is None:
+        triggers_cfg = load_triggers_config()
+    if events is None:
+        events = parse_events_log()
+    if today is None:
+        today = datetime.now(timezone.utc)
+    if isinstance(today, datetime):
+        today_dt = today if today.tzinfo else today.replace(tzinfo=timezone.utc)
+        today_date = today.date()
+    else:
+        today_dt = datetime(today.year, today.month, today.day, 23, 59, 59, tzinfo=timezone.utc)
+        today_date = today
+
+    out: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for actif_key, criteres in triggers_cfg.items():
+        if not isinstance(criteres, dict):
+            continue
+        actif_out: Dict[str, Dict[str, Any]] = {}
+        for cle, spec in criteres.items():
+            if not isinstance(spec, dict):
+                continue
+            t = spec.get("type")
+            emit_cle = _emit_key(actif_key, cle)
+            if t == "triplet" or t == "triplet_composite":
+                lookback = int(spec.get("horizon_lookback_jours", 7))
+                val, meta = _resolve_triplet_with_meta(
+                    events,
+                    actif_key,
+                    cle,
+                    spec.get("long_keywords", []) or [],
+                    spec.get("short_keywords", []) or [],
+                    lookback,
+                    today_dt,
+                )
+                entry: Dict[str, Any] = {"valeur": val}
+                entry["materiality"] = meta.get("materiality", "")
+                entry["reliability"] = meta.get("reliability", "")
+                entry["source_track"] = meta.get("source_track", "none")
+                actif_out[emit_cle] = entry
+            elif t == "calendrier":
+                val = _resolve_calendrier(cle, today_date)
+                if val is not None:
+                    actif_out[emit_cle] = {
+                        "valeur": val,
+                        "materiality": "",
+                        "reliability": "",
+                        "source_track": "calendrier",
+                    }
+                else:
+                    logger.warning("Calendrier non géré : %s/%s", actif_key, cle)
+        if actif_out:
+            out[actif_key] = actif_out
+    return out
 
 
 def classify_all(

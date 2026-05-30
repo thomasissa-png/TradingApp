@@ -46,6 +46,7 @@ CRITERES_OUT = ROOT / "data" / "criteres-courants.md"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import triggers_classifier as tc  # noqa: E402
+import weighting as wg  # noqa: E402
 
 SKIP_COUNTER: Counter = Counter()
 DEFAULT_TIMEOUT = 15  # seconds
@@ -709,7 +710,10 @@ def _resolve_gate(fiche_key: str, cle: str, now: datetime, events: List[dict]) -
 # ---------------------------------------------------------------------------
 
 def _emit_zscore(value: float, normalisee: float, ts: str) -> dict:
-    return {"valeur": value, "valeur_normalisee": normalisee, "ts": ts}
+    # Pour les critères numériques (z-scores), la valeur normalisée EST déjà
+    # graduée → valeur_ponderee = valeur_normalisee. (Identité entre les deux chemins.)
+    return {"valeur": value, "valeur_normalisee": normalisee,
+            "valeur_ponderee": normalisee, "ts": ts}
 
 
 def _handle_twelve_zscore_dispatch(cle: str, crit: dict, ts: str) -> Optional[dict]:
@@ -837,7 +841,8 @@ def _handle_mapping_non_monotone(cle: str, crit: dict, ts: str) -> Optional[dict
     low = float(crit.get("low", 14.0))
     high = float(crit.get("high", 25.0))
     norm = _mapping_non_monotone_vix(price, low=low, high=high, cap=cap)
-    return {"valeur": price, "valeur_normalisee": norm, "ts": ts}
+    return {"valeur": price, "valeur_normalisee": norm,
+            "valeur_ponderee": norm, "ts": ts}
 
 
 def _handle_composite(cle: str, crit: dict, ts: str) -> Optional[dict]:
@@ -851,7 +856,8 @@ def _handle_composite(cle: str, crit: dict, ts: str) -> Optional[dict]:
         cap = float(crit.get("cap", 1.0))
         div = float(crit.get("zscore_div", 2.0))
         norm = max(-cap, min(cap, z / div))
-        return {"valeur": z, "valeur_normalisee": norm, "ts": ts}
+        return {"valeur": z, "valeur_normalisee": norm,
+                "valeur_ponderee": norm, "ts": ts}
     # shiller_cape_fwd_pe : CAPE et FwdPE non dispo sans clé Shiller / FactSet → n/a explicite
     # hf_positioning_flux_options : composite put/call OI + COT → COT seul (proxy)
     if cle == "hf_positioning_flux_options":
@@ -868,7 +874,8 @@ def _handle_composite(cle: str, crit: dict, ts: str) -> Optional[dict]:
         return _emit_zscore(res[0], res[1], ts)
     # demande_pv_mining_strikes : composite triplet+triplet → on retourne 0 neutre
     if cle == "demande_pv_mining_strikes":
-        return {"valeur": 0.0, "valeur_normalisee": 0.0, "ts": ts, "note": "composite indispo : neutre"}
+        return {"valeur": 0.0, "valeur_normalisee": 0.0, "valeur_ponderee": 0.0,
+                "ts": ts, "note": "composite indispo : neutre"}
     SKIP_COUNTER[f"composite_unmapped:{cle}"] += 1
     return None
 
@@ -919,7 +926,8 @@ def _handle_meteo(cle: str, crit: dict, ts: str) -> Optional[dict]:
     cap = float(crit.get("cap", 1.0))
     div = float(crit.get("zscore_div", 2.0))
     norm = max(-cap, min(cap, z / div))
-    return {"valeur": z, "valeur_normalisee": norm, "ts": ts}
+    return {"valeur": z, "valeur_normalisee": norm,
+            "valeur_ponderee": norm, "ts": ts}
 
 
 def build_critere_value(
@@ -944,10 +952,39 @@ def build_critere_value(
 
     # Triplet (résolu par triggers_classifier)
     if type_norm == "triplet":
+        weighting = wg.load_weighting()
         if cle in triplets:
-            return {"valeur": int(triplets[cle]), "ts": ts}
+            entry = triplets[cle]
+            if isinstance(entry, dict):
+                val = int(entry.get("valeur", 0))
+                mat = entry.get("materiality", "")
+                rel = entry.get("reliability", "")
+                source_track = entry.get("source_track", "")
+            else:
+                val = int(entry)
+                mat = ""
+                rel = ""
+                source_track = "legacy"
+            valeur_ponderee = weighting.weight_direction(val, mat, rel)
+            return {
+                "valeur": val,
+                "valeur_normalisee": float(val),
+                "valeur_ponderee": valeur_ponderee,
+                "materiality": mat,
+                "reliability": rel,
+                "source_track": source_track,
+                "ts": ts,
+            }
         SKIP_COUNTER[f"triplet_no_cfg:{cle}"] += 1
-        return {"valeur": 0, "ts": ts}
+        return {
+            "valeur": 0,
+            "valeur_normalisee": 0.0,
+            "valeur_ponderee": 0.0,
+            "materiality": "",
+            "reliability": "",
+            "source_track": "none",
+            "ts": ts,
+        }
 
     # Mapping non-monotone (VIX/V2X/VXN regime)
     if type_norm == "mapping_non_monotone":
@@ -1061,7 +1098,11 @@ def run(now: Optional[datetime] = None) -> Path:
     fiches = load_fiches()
     triggers_cfg = tc.load_triggers_config()
     events = tc.parse_events_log()
-    triplets_by_actif = tc.classify_all(events=events, today=now, triggers_cfg=triggers_cfg)
+    # On utilise la variante "with_meta" pour propager materiality/reliability
+    # jusqu'aux critères (nécessaire au calcul de valeur_ponderee).
+    triplets_by_actif = tc.classify_all_with_meta(
+        events=events, today=now, triggers_cfg=triggers_cfg,
+    )
 
     payload: Dict[str, Any] = {"last_update": now.isoformat()}
     total_crit = 0

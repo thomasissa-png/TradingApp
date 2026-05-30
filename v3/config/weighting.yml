@@ -1,0 +1,23 @@
+# TradingApp v3 — Facteurs de pondération (source de vérité)
+# Utilisé pour calculer valeur_ponderee = direction(±1) × materiality × reliability,
+# capée à ±cap. S'applique uniquement aux critères NEWS (triplets). Les critères
+# numériques (z-scores) sont déjà gradués → valeur_ponderee = valeur_normalisee.
+#
+# Versionné : tout changement de facteur DOIT incrémenter `version`.
+# Loader : v3/scripts/weighting.py (défauts si fichier absent).
+
+version: 1
+
+materiality_factor:
+  high: 1.0
+  medium: 0.6
+  low: 0.3
+  "": 0.6     # absence d'info → médian (dégradation gracieuse)
+
+reliability_factor:
+  confirmed: 1.0
+  reported: 0.7
+  rumor: 0.4
+  "": 0.7     # absence d'info → médian
+
+cap: 1.0

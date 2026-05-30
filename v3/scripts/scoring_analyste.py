@@ -136,6 +136,26 @@ def _clip(x: float, cap: float) -> float:
     return max(-cap, min(cap, x))
 
 
+def extract_valeur_ponderee(critere: dict, raw: Any, valeur_norm: Optional[float]) -> Optional[float]:
+    """Extrait valeur_ponderee depuis raw.
+
+    Règles :
+    - Si raw est un dict et contient `valeur_ponderee` → on l'utilise (clipé au cap).
+    - Sinon (rétro-compat / raw scalaire / clé absente) → fallback = valeur_norm
+      (identité avec le chemin baseline ±1).
+    Retourne None si valeur_norm est None.
+    """
+    cap = float(critere.get("cap", 1.0))
+    if valeur_norm is None:
+        return None
+    if isinstance(raw, dict) and "valeur_ponderee" in raw and raw["valeur_ponderee"] is not None:
+        try:
+            return _clip(float(raw["valeur_ponderee"]), cap)
+        except (TypeError, ValueError):
+            return _clip(valeur_norm, cap)
+    return _clip(valeur_norm, cap)
+
+
 def normalise(critere: dict, raw: Any) -> Tuple[Optional[float], str]:
     """Applique la normalisation de la fiche à la valeur brute.
 
@@ -240,6 +260,13 @@ class CritereResult:
     is_gate: bool = False
     gate_active: bool = False
     is_na: bool = False
+    # --- Pondération (v3.1) : chemin secondaire en parallèle du ±1 ---------
+    valeur_ponderee: Optional[float] = None
+    contributions_pond: Dict[str, float] = field(default_factory=dict)
+    materiality: str = ""
+    reliability: str = ""
+    source_track: str = ""
+    cle_courante: str = ""
 
 
 @dataclass
@@ -250,6 +277,11 @@ class ActifResult:
     scores: Dict[str, float]
     conclusions: Dict[str, str]
     tie_break_notes: Dict[str, str]
+    # --- Pondération (v3.1) ------------------------------------------------
+    scores_pond: Dict[str, float] = field(default_factory=dict)
+    conclusions_pond: Dict[str, str] = field(default_factory=dict)
+    tie_break_notes_pond: Dict[str, str] = field(default_factory=dict)
+    diverge: Dict[str, bool] = field(default_factory=dict)
 
 
 def _conclusion_from_score(score: float) -> Optional[str]:
@@ -264,19 +296,22 @@ def tie_break(
     criteres: List[CritereResult],
     horizon: str,
     veille_conclusion: Optional[str] = None,
+    use_pond: bool = False,
 ) -> Tuple[str, str]:
     """Tie-break Analyste §5.2.
 
     1. Majorité des 3 critères les plus pesants (|poids|) → 2/3 LONG ⇒ LONG.
     2. Égalité 3-3 ⇒ reconduire la conclusion de la veille.
     3. Aucune veille ⇒ LONG par défaut.
+    use_pond=True : utilise contributions_pond au lieu de contributions.
     """
     actifs = [c for c in criteres if not c.is_na and not c.is_gate and c.valeur_norm is not None]
     top3 = sorted(actifs, key=lambda c: abs(c.poids), reverse=True)[:3]
     if len(top3) == 0:
         return "LONG", "tie-break: aucun critère actif → LONG par défaut"
-    votes_long = sum(1 for c in top3 if c.contributions.get(horizon, 0.0) > 0)
-    votes_short = sum(1 for c in top3 if c.contributions.get(horizon, 0.0) < 0)
+    contribs_attr = "contributions_pond" if use_pond else "contributions"
+    votes_long = sum(1 for c in top3 if getattr(c, contribs_attr).get(horizon, 0.0) > 0)
+    votes_short = sum(1 for c in top3 if getattr(c, contribs_attr).get(horizon, 0.0) < 0)
     if votes_long > votes_short:
         return "LONG", f"tie-break: majorité top3 LONG ({votes_long}/{len(top3)})"
     if votes_short > votes_long:
@@ -308,19 +343,33 @@ def score_actif(
         signe = int(crit.get("signe", 1))
         pertinence = {h: float(crit.get("pertinence", {}).get(h, 0.0)) for h in HORIZONS}
         is_na = (valeur_norm is None) and not is_gate
+        # Pondéré : extrait depuis raw (triplet) ou fallback = valeur_norm (numérique).
+        valeur_ponderee = extract_valeur_ponderee(crit, raw, valeur_norm)
         contributions: Dict[str, float] = {}
+        contributions_pond: Dict[str, float] = {}
         if not is_na and not is_gate and valeur_norm is not None:
             for h in HORIZONS:
                 contributions[h] = valeur_norm * poids * pertinence[h] * signe
+                vp = valeur_ponderee if valeur_ponderee is not None else valeur_norm
+                contributions_pond[h] = vp * poids * pertinence[h] * signe
         else:
             for h in HORIZONS:
                 contributions[h] = 0.0
+                contributions_pond[h] = 0.0
         gate_active = False
         if is_gate:
             if isinstance(raw, dict):
                 gate_active = bool(raw.get("valeur"))
             else:
                 gate_active = bool(raw)
+        # Métadonnées de pondération (pour decision-log)
+        mat = ""
+        rel = ""
+        src_track = ""
+        if isinstance(raw, dict):
+            mat = str(raw.get("materiality", "") or "")
+            rel = str(raw.get("reliability", "") or "")
+            src_track = str(raw.get("source_track", "") or "")
         criteres_res.append(
             CritereResult(
                 id=crit.get("id"),
@@ -336,19 +385,38 @@ def score_actif(
                 is_gate=is_gate,
                 gate_active=gate_active,
                 is_na=is_na,
+                valeur_ponderee=valeur_ponderee,
+                contributions_pond=contributions_pond,
+                materiality=mat,
+                reliability=rel,
+                source_track=src_track,
+                cle_courante=str(cle or ""),
             )
         )
 
     scores: Dict[str, float] = {}
     conclusions: Dict[str, str] = {}
     tie_notes: Dict[str, str] = {}
+    scores_pond: Dict[str, float] = {}
+    conclusions_pond: Dict[str, str] = {}
+    tie_notes_pond: Dict[str, str] = {}
+    diverge: Dict[str, bool] = {}
     for h in HORIZONS:
+        # --- Baseline ±1 (primaire, sortie de référence) ------------------
         scores[h] = round(sum(c.contributions[h] for c in criteres_res), 6)
         conc = _conclusion_from_score(scores[h])
         if conc is None:
             conc, note = tie_break(criteres_res, h, veille_conclusions.get(h))
             tie_notes[h] = note
         conclusions[h] = conc
+        # --- Pondéré (secondaire, loggé) ----------------------------------
+        scores_pond[h] = round(sum(c.contributions_pond[h] for c in criteres_res), 6)
+        conc_p = _conclusion_from_score(scores_pond[h])
+        if conc_p is None:
+            conc_p, note_p = tie_break(criteres_res, h, veille_conclusions.get(h), use_pond=True)
+            tie_notes_pond[h] = note_p
+        conclusions_pond[h] = conc_p
+        diverge[h] = (conclusions[h] != conclusions_pond[h])
 
     return ActifResult(
         nom=fiche.get("actif", fiche_key),
@@ -357,6 +425,10 @@ def score_actif(
         scores=scores,
         conclusions=conclusions,
         tie_break_notes=tie_notes,
+        scores_pond=scores_pond,
+        conclusions_pond=conclusions_pond,
+        tie_break_notes_pond=tie_notes_pond,
+        diverge=diverge,
     )
 
 
@@ -409,7 +481,7 @@ def render_bulletin(
     lines.append(f"- Fiches hash : {fiches_h}")
     lines.append(f"- Fraîcheur : {freshness_msg}")
     lines.append("")
-    lines.append("## Matrice (12 actifs × 3 horizons)")
+    lines.append("## Matrice (12 actifs × 3 horizons) — primaire ±1, pondéré en annotation")
     lines.append("")
     lines.append("| Actif | 24h | 7j | 1m |")
     lines.append("|---|---|---|---|")
@@ -421,7 +493,12 @@ def render_bulletin(
             score = r.scores[h]
             gate_flag = " ⚑" if any(c.is_gate and c.gate_active for c in r.criteres) else ""
             tie = " (tb)" if h in r.tie_break_notes else ""
-            cells.append(f"{conc} ({score:+.2f}){tie}{gate_flag}")
+            # Annotation pondérée (secondaire) + ⚠ si divergence
+            conc_p = r.conclusions_pond.get(h, "")
+            score_p = r.scores_pond.get(h, 0.0)
+            div_flag = " ⚠" if r.diverge.get(h) else ""
+            pond_str = f" [pond:{conc_p} {score_p:+.2f}]{div_flag}" if conc_p else ""
+            cells.append(f"{conc} ({score:+.2f}){tie}{gate_flag}{pond_str}")
         lines.append(f"| {r.nom} | {cells[0]} | {cells[1]} | {cells[2]} |")
         veille = veille_conclusions.get(r.nom.lower(), {})
         for h in HORIZONS:
@@ -477,6 +554,89 @@ def render_bulletin(
         lines.append("- (aucune)")
     lines.append("")
     return "\n".join(lines)
+
+
+DECISION_LOG_DIR = ROOT / "data" / "decision-log"
+
+
+def build_decision_log_records(results: List[ActifResult], now: datetime) -> List[Dict[str, Any]]:
+    """Construit la liste de lignes JSONL (une par cellule actif × horizon).
+
+    Chaque ligne contient :
+    - bulletin_date, generated_at, fiche_key, actif, horizon
+    - critères contributeurs (cle_courante, valeur, valeur_normalisee, valeur_ponderee,
+      poids, pertinence, materiality, reliability, source_track, facteur, contrib_pm1, contrib_pond)
+    - score_pm1, score_pond, conclusion_pm1, conclusion_pond, diverge
+    """
+    import math as _math
+    records: List[Dict[str, Any]] = []
+    bulletin_date = now.strftime("%Y-%m-%d")
+    generated_at = now.isoformat()
+    for r in results:
+        for h in HORIZONS:
+            contribs: List[Dict[str, Any]] = []
+            for c in r.criteres:
+                if c.is_gate or c.is_na:
+                    continue
+                # Facteur de pondération réellement appliqué
+                # Si valeur_norm ≠ 0 et != None : facteur = valeur_ponderee / valeur_norm
+                facteur: Optional[float] = None
+                if c.valeur_ponderee is not None and c.valeur_norm not in (None, 0, 0.0):
+                    try:
+                        facteur = c.valeur_ponderee / c.valeur_norm
+                        if _math.isnan(facteur) or _math.isinf(facteur):
+                            facteur = None
+                    except ZeroDivisionError:
+                        facteur = None
+                contribs.append({
+                    "cle": c.cle_courante,
+                    "nom": c.nom,
+                    "type_norm": c.type_norm,
+                    "valeur": c.valeur_brute if not isinstance(c.valeur_brute, dict)
+                              else c.valeur_brute.get("valeur"),
+                    "valeur_normalisee": c.valeur_norm,
+                    "valeur_ponderee": c.valeur_ponderee,
+                    "poids": c.poids,
+                    "pertinence": c.pertinence.get(h, 0.0),
+                    "signe": c.signe,
+                    "materiality": c.materiality,
+                    "reliability": c.reliability,
+                    "source_track": c.source_track,
+                    "facteur": facteur,
+                    "contrib_pm1": c.contributions.get(h, 0.0),
+                    "contrib_pond": c.contributions_pond.get(h, 0.0),
+                })
+            records.append({
+                "bulletin_date": bulletin_date,
+                "generated_at": generated_at,
+                "fiche_key": r.fiche_key,
+                "actif": r.nom,
+                "horizon": h,
+                "score_pm1": r.scores.get(h, 0.0),
+                "score_pond": r.scores_pond.get(h, 0.0),
+                "conclusion_pm1": r.conclusions.get(h, ""),
+                "conclusion_pond": r.conclusions_pond.get(h, ""),
+                "diverge": bool(r.diverge.get(h, False)),
+                "criteres": contribs,
+            })
+    return records
+
+
+def write_decision_log(
+    records: List[Dict[str, Any]],
+    now: datetime,
+    base_dir: Path = DECISION_LOG_DIR,
+) -> Path:
+    """Append-only : 1 fichier par run (date-hhmm) pour éviter les races."""
+    import json as _json
+    base_dir.mkdir(parents=True, exist_ok=True)
+    fname = f"{now:%Y-%m-%d}-{now:%H%M}.jsonl"
+    path = base_dir / fname
+    # Append (idempotence : si même run rejoué dans la même minute, on append).
+    with path.open("a", encoding="utf-8") as fh:
+        for rec in records:
+            fh.write(_json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+    return path
 
 
 def _fmt_raw(raw: Any) -> str:

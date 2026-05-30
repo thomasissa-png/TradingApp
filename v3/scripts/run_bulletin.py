@@ -55,6 +55,16 @@ def main() -> int:
 
     logger.info("Bulletin écrit : %s (%d actifs)", out_path, len(results))
 
+    # Étape 2ter — Decision-log (observabilité ±1 vs pondéré, append-only).
+    try:
+        recs = scoring_analyste.build_decision_log_records(results, now)
+        dl_path = scoring_analyste.write_decision_log(recs, now)
+        n_diverge = sum(1 for r in recs if r.get("diverge"))
+        logger.info("Decision-log écrit : %s (%d lignes, %d divergences)",
+                    dl_path, len(recs), n_diverge)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("decision-log KO (non bloquant) : %s", e)
+
     # Étape 2bis — Briefing du jour (synthèse news à impact, déterministe, zéro
     # LLM). Best-effort : si échec, le bulletin reste valide.
     try:

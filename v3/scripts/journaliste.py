@@ -70,6 +70,7 @@ FICHES_DIR = ROOT / "config" / "fiches"
 BULLETINS_DIR = ROOT / "data" / "bulletins"
 PRIX_EMISSION_DIR = ROOT / "data" / "prix-emission"
 PERFORMANCE_FILE = ROOT / "data" / "performance.md"
+PERFORMANCE_AB_FILE = ROOT / "data" / "performance-ab.md"
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +116,8 @@ MATRIX_LINE_RE = re.compile(
     r"\s*(?P<c1>LONG|SHORT)\s*\((?P<s1>[+-]?\d+(?:\.\d+)?)\)[^|]*\|",
     re.MULTILINE,
 )
+# Annotation pondérée optionnelle : "[pond:LONG +0.42]"
+POND_ANNOT_RE = re.compile(r"\[pond:(LONG|SHORT)\s+([+-]?\d+(?:\.\d+)?)\]")
 BULLETIN_FILE_RE = re.compile(r"^bulletin-(\d{4}-\d{2}-\d{2})\.md$")
 
 
@@ -123,8 +126,11 @@ class BulletinCell:
     bulletin_date: date
     actif_name: str          # tel que lu dans le bulletin
     horizon: str             # "24h" / "7j" / "1m"
-    conclusion: str          # "LONG" / "SHORT"
+    conclusion: str          # "LONG" / "SHORT" (baseline ±1)
     score: float
+    # Pondéré (v3.1) — None si bulletin antérieur ne contient pas l'annotation
+    conclusion_pond: Optional[str] = None
+    score_pond: Optional[float] = None
 
 
 def parse_bulletin(path: Path) -> List[BulletinCell]:
@@ -143,12 +149,31 @@ def parse_bulletin(path: Path) -> List[BulletinCell]:
     cells: List[BulletinCell] = []
     for mm in MATRIX_LINE_RE.finditer(text):
         actif = mm.group("actif").strip()
-        # Skip ligne d'en-tête "| Actif | 24h | 7j | 1m |" (déjà filtrée par regex car nécessite LONG/SHORT)
-        for h, conc_key, score_key in (("24h", "c24", "s24"), ("7j", "c7", "s7"), ("1m", "c1", "s1")):
+        # Découpe la ligne complète en cellules markdown pour extraire l'annotation pondérée
+        # par cellule (re-split sur '|', on garde les 3 dernières cellules après l'actif).
+        line = mm.group(0)
+        raw_cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        # Format attendu : [actif, cell24, cell7, cell1] → 4 entrées
+        cell_texts = raw_cells[1:4] if len(raw_cells) >= 4 else ["", "", ""]
+        for h, conc_key, score_key, idx in (
+            ("24h", "c24", "s24", 0),
+            ("7j", "c7", "s7", 1),
+            ("1m", "c1", "s1", 2),
+        ):
             try:
                 score = float(mm.group(score_key))
             except (TypeError, ValueError):
                 continue
+            conc_pond: Optional[str] = None
+            score_pond: Optional[float] = None
+            if idx < len(cell_texts):
+                mp = POND_ANNOT_RE.search(cell_texts[idx])
+                if mp:
+                    conc_pond = mp.group(1)
+                    try:
+                        score_pond = float(mp.group(2))
+                    except (TypeError, ValueError):
+                        score_pond = None
             cells.append(
                 BulletinCell(
                     bulletin_date=bdate,
@@ -156,6 +181,8 @@ def parse_bulletin(path: Path) -> List[BulletinCell]:
                     horizon=h,
                     conclusion=mm.group(conc_key),
                     score=score,
+                    conclusion_pond=conc_pond,
+                    score_pond=score_pond,
                 )
             )
     return cells
@@ -272,6 +299,8 @@ class Measure:
     delta_pct: Optional[float]
     outcome: str
     note: str = ""
+    # A/B : outcome pondéré (None si bulletin sans annotation pondérée)
+    outcome_pond: Optional[str] = None
 
 
 def measure_cell(
@@ -334,6 +363,17 @@ def measure_cell(
         return base
 
     base.note = f"delta={delta_pct:+.3f}% vs seuil={seuil}%"
+
+    # --- A/B : outcome pondéré (même delta, conclusion différente possible) ---
+    if cell.conclusion_pond in ("LONG", "SHORT"):
+        if abs_delta <= seuil:
+            base.outcome_pond = OUTCOME_NC
+        elif cell.conclusion_pond == "LONG":
+            base.outcome_pond = OUTCOME_VRAI if delta_pct > 0 else OUTCOME_FAUSSE
+        else:  # SHORT
+            base.outcome_pond = OUTCOME_VRAI if delta_pct < 0 else OUTCOME_FAUSSE
+    # Sinon : bulletin antérieur sans annotation pondérée → outcome_pond reste None.
+
     return base
 
 
@@ -612,6 +652,139 @@ def write_performance(content: str, path: Path = PERFORMANCE_FILE) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# A/B Performance (±1 vs pondéré, côte à côte)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class CellKPIAB:
+    fiche_key: str
+    actif_name: str
+    horizon: str
+    # Baseline ±1
+    n_pm1: int = 0
+    n_vrai_pm1: int = 0
+    n_fausse_pm1: int = 0
+    taux_pm1: Optional[float] = None
+    brier_pm1: Optional[float] = None
+    # Pondéré
+    n_pond: int = 0
+    n_vrai_pond: int = 0
+    n_fausse_pond: int = 0
+    taux_pond: Optional[float] = None
+    brier_pond: Optional[float] = None
+
+
+def compute_kpi_ab(measures_for_cell: List[Measure]) -> CellKPIAB:
+    """Calcule taux + Brier en parallèle pour ±1 et pondéré.
+
+    Skip propre : les mesures dont outcome_pond=None (anciennes) ne comptent
+    PAS dans le dénominateur pondéré (mais bien dans le ±1).
+    """
+    if not measures_for_cell:
+        return CellKPIAB(fiche_key="", actif_name="", horizon="")
+    kpi = CellKPIAB(
+        fiche_key=measures_for_cell[0].fiche_key,
+        actif_name=measures_for_cell[0].cell.actif_name,
+        horizon=measures_for_cell[0].horizon,
+    )
+    terminees = [m for m in measures_for_cell if m.outcome != OUTCOME_INTERROMPU]
+    window = terminees[-WINDOW:]
+    brier_sum_pm1 = 0.0
+    brier_n_pm1 = 0
+    brier_sum_pond = 0.0
+    brier_n_pond = 0
+    for m in window:
+        # ±1
+        if m.outcome in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            kpi.n_pm1 += 1
+            if m.outcome == OUTCOME_VRAI:
+                kpi.n_vrai_pm1 += 1
+            else:
+                kpi.n_fausse_pm1 += 1
+            outcome_bin = 1.0 if m.outcome == OUTCOME_VRAI else 0.0
+            proba = proba_from_score(m.cell.score, m.cell.conclusion)
+            brier_sum_pm1 += (proba - outcome_bin) ** 2
+            brier_n_pm1 += 1
+        # Pondéré (skip si outcome_pond None ou non-conclusive)
+        if m.outcome_pond in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            kpi.n_pond += 1
+            if m.outcome_pond == OUTCOME_VRAI:
+                kpi.n_vrai_pond += 1
+            else:
+                kpi.n_fausse_pond += 1
+            outcome_bin = 1.0 if m.outcome_pond == OUTCOME_VRAI else 0.0
+            score_p = m.cell.score_pond if m.cell.score_pond is not None else m.cell.score
+            conc_p = m.cell.conclusion_pond if m.cell.conclusion_pond else m.cell.conclusion
+            proba = proba_from_score(score_p, conc_p)
+            brier_sum_pond += (proba - outcome_bin) ** 2
+            brier_n_pond += 1
+    if kpi.n_pm1 > 0:
+        kpi.taux_pm1 = round(kpi.n_vrai_pm1 / kpi.n_pm1 * 100.0, 2)
+    if brier_n_pm1 > 0:
+        kpi.brier_pm1 = round(brier_sum_pm1 / brier_n_pm1, 4)
+    if kpi.n_pond > 0:
+        kpi.taux_pond = round(kpi.n_vrai_pond / kpi.n_pond * 100.0, 2)
+    if brier_n_pond > 0:
+        kpi.brier_pond = round(brier_sum_pond / brier_n_pond, 4)
+    return kpi
+
+
+def render_performance_ab(
+    kpis_ab: Dict[Tuple[str, str], CellKPIAB],
+    now: datetime,
+) -> str:
+    lines: List[str] = []
+    lines.append("# Performance A/B — ±1 (baseline) vs pondéré (secondaire)")
+    lines.append("")
+    lines.append(f"- Généré : {now.isoformat()}")
+    lines.append(f"- Fenêtre KPI : {WINDOW} dernières conclusions terminées par cellule")
+    lines.append(f"- Cible : {TARGET_TAUX:.0f}% (Bourse.md)")
+    lines.append("")
+    lines.append("Skip propre : les bulletins antérieurs sans annotation pondérée ne comptent")
+    lines.append("pas dans le dénominateur pondéré (colonne N_pond < N_pm1 normal au démarrage).")
+    lines.append("")
+    lines.append("## Matrice A/B")
+    lines.append("")
+    lines.append("| Actif | Horizon | N_pm1 | Taux_pm1 | Brier_pm1 | N_pond | Taux_pond | Brier_pond |")
+    lines.append("|---|---|---|---|---|---|---|---|")
+    horizon_order = {h: i for i, h in enumerate(HORIZONS)}
+    sorted_keys = sorted(
+        kpis_ab.keys(),
+        key=lambda k: (kpis_ab[k].actif_name.lower(), horizon_order.get(k[1], 99)),
+    )
+    for key in sorted_keys:
+        k = kpis_ab[key]
+        t_pm1 = "—" if k.taux_pm1 is None else f"{k.taux_pm1:.1f}%"
+        b_pm1 = "—" if k.brier_pm1 is None else f"{k.brier_pm1:.4f}"
+        t_p = "—" if k.taux_pond is None else f"{k.taux_pond:.1f}%"
+        b_p = "—" if k.brier_pond is None else f"{k.brier_pond:.4f}"
+        lines.append(
+            f"| {k.actif_name} | {k.horizon} | {k.n_pm1} | {t_pm1} | {b_pm1} | "
+            f"{k.n_pond} | {t_p} | {b_p} |"
+        )
+    # Synthèse globale
+    lines.append("")
+    lines.append("## Synthèse globale (cellules avec ≥1 mesure pondérée)")
+    deltas = []
+    for k in kpis_ab.values():
+        if k.taux_pm1 is not None and k.taux_pond is not None and k.n_pond > 0:
+            deltas.append(k.taux_pond - k.taux_pm1)
+    if deltas:
+        avg = sum(deltas) / len(deltas)
+        lines.append(f"- Delta taux moyen (pondéré − ±1) : **{avg:+.2f} pts** sur {len(deltas)} cellules")
+    else:
+        lines.append("- Aucune cellule avec mesure pondérée disponible (warm-up A/B).")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_performance_ab(content: str, path: Path = PERFORMANCE_AB_FILE) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+# ---------------------------------------------------------------------------
 # Entrée principale
 # ---------------------------------------------------------------------------
 
@@ -651,6 +824,23 @@ def run(
     content = render_performance(kpis, measures, now)
     out_path = write_performance(content, performance_path)
     logger.info("performance.md écrit : %s (%d mesures, %d cellules)", out_path, len(measures), len(kpis))
+
+    # A/B : ±1 vs pondéré (best-effort, non bloquant)
+    try:
+        by_cell_ab: Dict[Tuple[str, str], List[Measure]] = {}
+        for m in measures:
+            by_cell_ab.setdefault((m.fiche_key, m.horizon), []).append(m)
+        for key in by_cell_ab:
+            by_cell_ab[key].sort(key=lambda m: m.echeance)
+        kpis_ab: Dict[Tuple[str, str], CellKPIAB] = {
+            k: compute_kpi_ab(ms) for k, ms in by_cell_ab.items()
+        }
+        ab_content = render_performance_ab(kpis_ab, now)
+        write_performance_ab(ab_content)
+        logger.info("performance-ab.md écrit (%d cellules A/B)", len(kpis_ab))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("performance-ab KO (non bloquant) : %s", e)
+
     return out_path, measures, kpis
 
 

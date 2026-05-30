@@ -35,17 +35,28 @@ IA_TO_ACTIF = {
 }
 
 
-def _sample_news(source: str, n: int) -> list:
-    """Retourne [(titre, snippet, source_name)]."""
+def _sample_news(source: str, n: int) -> tuple:
+    """Retourne (news, funnel) où news=[(titre, snippet, source_name)] et
+    funnel = dict {raw, deduped, filtered, skipped} pour l'entonnoir.
+    n <= 0 → TOUTES les news filtrées (pas de limite)."""
+    funnel = {}
     if source == "rss":
         try:
             import news_collector as nc
             res = nc.collect_all(commit_seen=False)
+            funnel = {
+                "raw": len(res.get("raw") or []),
+                "deduped": len(res.get("deduped") or []),
+                "filtered": len(res.get("filtered") or []),
+                "skipped_non_finance": res.get("skipped_non_finance", 0),
+            }
             items = res.get("filtered") or res.get("deduped") or res.get("raw") or []
-            return [(it.title, getattr(it, "summary", ""), it.source) for it in items[:n]]
+            if n and n > 0:
+                items = items[:n]
+            return [(it.title, getattr(it, "summary", ""), it.source) for it in items], funnel
         except Exception as e:  # noqa: BLE001
             print(f"[warn] fetch RSS échoué ({e}) → fallback events-log")
-    # source == events : relire les derniers titres de events-log
+    # source == events : relire les titres de events-log
     log = ROOT / "data" / "events-log.md"
     out = []
     if log.exists():
@@ -55,19 +66,22 @@ def _sample_news(source: str, n: int) -> list:
             cols = [c.strip() for c in line.strip("|").split("|")]
             if len(cols) >= 8:
                 out.append((cols[3], "", cols[7]))  # trigger, -, source
-    return out[-n:]
+    if n and n > 0:
+        out = out[-n:]
+    funnel = {"raw": len(out), "deduped": len(out), "filtered": len(out), "skipped_non_finance": 0}
+    return out, funnel
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--n", type=int, default=6)
+    ap.add_argument("--n", type=int, default=0, help="0 = TOUTES les news du cycle (défaut)")
     ap.add_argument("--source", choices=["events", "rss"], default="rss")
     args = ap.parse_args()
 
     ext = ex.Extractor()
     lines = ["# Test extraction DeepSeek — rapport traçable", ""]
     lines.append(f"- Modèle : `{getattr(ext, 'model', 'n/a')}` · prompt `{ex.PROMPT_VERSION}` · temperature=0")
-    lines.append(f"- Source des news : `{args.source}` · n={args.n}")
+    lines.append(f"- Source des news : `{args.source}` · n={args.n if args.n else 'TOUTES'}")
     lines.append("")
 
     if not ext.is_enabled():
@@ -78,10 +92,18 @@ def main() -> int:
         REPORT.write_text("\n".join(lines), encoding="utf-8")
         return 0
 
-    news = _sample_news(args.source, args.n)
+    news, funnel = _sample_news(args.source, args.n)
+    lines.append("## Entonnoir de collecte")
+    lines.append(f"- brut récupéré : **{funnel.get('raw', 0)}** → après dédup : **{funnel.get('deduped', 0)}** "
+                 f"→ après pré-filtre finance : **{funnel.get('filtered', 0)}** "
+                 f"(écartées non-finance : {funnel.get('skipped_non_finance', 0)})")
+    lines.append(f"- **{len(news)} news envoyées à DeepSeek** dans ce run")
+    lines.append("")
     if not news:
         print("Aucune news à tester.")
-        return 1
+        lines.append("_Aucune news après filtrage._")
+        REPORT.write_text("\n".join(lines), encoding="utf-8")
+        return 0
 
     # System prompt + few-shots : constants → résumé une fois.
     lines.append("## Contexte envoyé à CHAQUE appel (constant)")
@@ -89,6 +111,14 @@ def main() -> int:
     lines.append(f"- Few-shots : {len(ex.FEW_SHOTS)} exemples calibrés")
     lines.append("- Seul le message ci-dessous (la news) change d'un appel à l'autre.")
     lines.append("")
+
+    # Accumulateurs : table récap + détail séparés (table insérée avant le détail).
+    recap_rows = []          # lignes de la table de synthèse
+    detail_lines = []        # blocs détaillés par news
+    n_avec_impact = 0
+    n_sans_impact = 0
+    n_erreurs = 0
+    asset_counter = {}
 
     for i, (title, snippet, src) in enumerate(news, 1):
         msgs = ext._build_messages(title, snippet)
@@ -104,7 +134,9 @@ def main() -> int:
             tin = resp.usage.prompt_tokens if resp.usage else 0
             tout = resp.usage.completion_tokens if resp.usage else 0
         except Exception as e:  # noqa: BLE001
-            lines.append(f"## News {i} — ERREUR : {e}")
+            n_erreurs += 1
+            recap_rows.append(f"| {i} | {title[:55]} | `{src}` | — | — | ERREUR |")
+            detail_lines.append(f"## News {i} — ERREUR : {e}\n")
             continue
 
         data = json.loads(raw)
@@ -120,7 +152,19 @@ def main() -> int:
         routed = [f"{imp.asset}→{IA_TO_ACTIF.get(imp.asset,'?')} {imp.direction} ({imp.confidence})"
                   for imp in ev.impacts]
 
-        lines += [
+        # Stats récap
+        if ev.impacts:
+            n_avec_impact += 1
+            for imp in ev.impacts:
+                asset_counter[imp.asset] = asset_counter.get(imp.asset, 0) + 1
+        else:
+            n_sans_impact += 1
+        impacts_short = ", ".join(f"{imp.asset} {imp.direction[:1]}" for imp in ev.impacts) or "—"
+        recap_rows.append(
+            f"| {i} | {title[:55].replace('|','/')} | `{src}` | {ev.category} | {ev.materiality}/{ev.reliability} | {impacts_short} |"
+        )
+
+        detail_lines += [
             f"## News {i}",
             f"**1. INPUT** — source `{src}`",
             f"> {title}",
@@ -140,12 +184,29 @@ def main() -> int:
             f"\n_coût : {tin} tok in / {tout} tok out · {dur} ms_",
             "\n---\n",
         ]
-        print(f"News {i}: {title[:60]}… → {len(ev.impacts)} impacts {[imp.asset for imp in ev.impacts]}")
+        print(f"News {i}/{len(news)}: {title[:55]}… → {len(ev.impacts)} impacts {[imp.asset for imp in ev.impacts]}")
 
+    # --- Assemblage : synthèse + table récap + détail ---
     stats = ext.get_stats()
-    lines.append(f"## Coût total run : {json.dumps(stats, ensure_ascii=False)}")
+    assets_sorted = sorted(asset_counter.items(), key=lambda kv: -kv[1])
+    lines.append("## Synthèse")
+    lines.append(f"- News analysées : **{len(news)}** · avec impact tradable : **{n_avec_impact}** "
+                 f"· sans impact (écartées) : **{n_sans_impact}** · erreurs : **{n_erreurs}**")
+    if assets_sorted:
+        lines.append("- Actifs les plus touchés : " + ", ".join(f"{a} ({c})" for a, c in assets_sorted))
+    lines.append(f"- Coût total : `{json.dumps(stats, ensure_ascii=False)}`")
+    lines.append("")
+    lines.append("## Table récap (toutes les news)")
+    lines.append("| # | Titre | Source | Catégorie | Matér./Fiab. | Impacts |")
+    lines.append("|---|---|---|---|---|---|")
+    lines += recap_rows
+    lines.append("")
+    lines.append("## Détail par news")
+    lines.append("")
+    lines += detail_lines
+
     REPORT.write_text("\n".join(lines), encoding="utf-8")
-    print(f"\nRapport écrit : {REPORT}")
+    print(f"\nRapport écrit : {REPORT}  ({len(news)} news, {n_avec_impact} avec impact, {n_erreurs} erreurs)")
     return 0
 
 

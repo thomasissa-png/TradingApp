@@ -12,9 +12,9 @@ on:
         options: ["rss", "events"]
         default: "rss"
       n:
-        description: "Nombre de news à tester"
+        description: "Nombre de news (0 = TOUTES les news du cycle)"
         type: string
-        default: "6"
+        default: "0"
 
 permissions:
   contents: write
@@ -22,7 +22,7 @@ permissions:
 jobs:
   test-extraction:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -1,7 +1,7 @@
 # KILL-CRITERION — TradingApp v3 (shadow mode)
 
-> **STATUT : PROPOSITION — à valider/ajuster par Thomas AVANT J+1 du shadow.**
-> Une fois validée, cette règle est GRAVÉE : pas de relâchement post-hoc.
+> **STATUT : VALIDÉ v1 (Thomas, 30/05/2026, sur recommandation).**
+> Règle GRAVÉE : pas de relâchement post-hoc. Toute modif → `kill-criterion-v2` avec justification écrite.
 
 ## Pourquoi un kill criterion gravé
 
@@ -24,8 +24,8 @@ formalisé").
    OU
 
 2. **Aucune cellule individuelle ≥ 65 % sur N ≥ 15 observations non-chevauchantes**
-   - "cellule" = combinaison (actif × horizon × pattern_id) telle que définie dans
-     `weighting.py`
+   - "cellule" = combinaison (actif × horizon), soit 36 cellules (12 actifs × 3 horizons).
+     Pas de `pattern_id` en v3 (notion legacy event-driven abandonnée).
    - 65 % est le seuil edge minimum revendiqué dans la thèse v3 ; en dessous, même
      la meilleure cellule ne fournit pas un signal exploitable
    - N ≥ 15 = puissance statistique minimale pour distinguer 65 % d'un coin flip à
@@ -73,10 +73,10 @@ Source : audit-data §3 et §6 (autocorrélation des horizons multi-jours).
 
 ## Action requise AVANT J+1
 
-- [ ] Thomas valide ou ajuste les seuils (55 %, 65 %, N ≥ 15, J+60)
-- [ ] Thomas valide la définition de "cellule" (actif × horizon × pattern_id)
-- [ ] Thomas valide la règle de comptage non-chevauchant
-- [ ] Cette version est commit avec un tag git `kill-criterion-v1` (versionnage gravé)
+- [x] Thomas valide les seuils (55 %, 65 %, N ≥ 15, J+60) — **validé v1 le 30/05/2026**
+- [x] Définition de "cellule" : **actif × horizon** (36 cellules) — corrigé (plus de pattern_id)
+- [x] Règle de comptage non-chevauchant — validée
+- [ ] Poser le tag git `kill-criterion-v1` au lancement du shadow
 
 Toute modification ultérieure de ce fichier doit créer une `kill-criterion-v2`
 avec justification écrite ; jamais d'édition silencieuse.

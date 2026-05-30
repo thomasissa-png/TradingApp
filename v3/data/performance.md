@@ -1,31 +1,38 @@
 # Performance du bulletin — Journaliste
 
-- Généré : 2026-05-30T13:16:57.126010+02:00
-- Journaliste version : v3.0.0
+- Généré : 2026-05-30T18:56:01.526634+02:00
+- Journaliste version : v3.1.0
 - Fenêtre KPI : 30 dernières conclusions terminées par cellule
 - PROBA_SCALE : 10.0 (proba = 0.5 + clip(|score|/SCALE, 0, 0.5))
 - Cible éligibilité : 70% (Bourse.md)
 
 ## Matrice cellules (actif × horizon)
 
-| Actif | Horizon | N | Taux | Brier | LONG/SHORT | Statut | Alertes |
-|---|---|---|---|---|---|---|---|
-| Argent | 24h | 0 | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
-| Blé | 24h | 0 | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
-| CAC 40 | 24h | 0 | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
-| Cacao | 24h | 0 | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
-| Café (Arabica) | 24h | 0 | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
-| Cuivre | 24h | 0 | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
-| EUR/USD | 24h | 0 | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
-| Nasdaq | 24h | 0 | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
-| Or | 24h | 0 | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
-| Pétrole (Brent) | 24h | 0 | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
-| S&P 500 | 24h | 0 | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
-| VIX | 24h | 0 | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Actif | Horizon | N_total | Taux_brut | N_eff | Taux_eff | Wilson_low | Brier | LONG/SHORT | Statut | Alertes |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Argent | 24h | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Blé | 24h | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| CAC 40 | 24h | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Cacao | 24h | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Café (Arabica) | 24h | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Cuivre | 24h | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| EUR/USD | 24h | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Nasdaq | 24h | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Or | 24h | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Pétrole (Brent) | 24h | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| S&P 500 | 24h | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| VIX | 24h | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
 
 ## Synthèse
-- Cellules éligibles actif (taux ≥ 70%) : **0** / 12
+- Cellules éligibles actif (Wilson low > 50%, taux_eff ≥ 70%) : **0** / 12
 - Cellules shadow : 12 / 12
+
+### Critère global (multiple testing — audit-data §2)
+
+Avec 36 cellules testées, ~1-2 faux positifs attendus par hasard à α=0,05.
+Critère d'éligibilité renforcé : Wilson low > 50 % (borne basse IC 95 % sur N_eff).
+
+- Critère global : warm-up (aucune cellule avec N_eff ≥ 15)
 
 ## Dernières mesures (max 20)
 

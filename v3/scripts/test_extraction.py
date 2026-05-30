@@ -107,7 +107,16 @@ def main() -> int:
             lines.append(f"## News {i} — ERREUR : {e}")
             continue
 
-        ev = ex._event_from_data(ex._parse_response(raw))
+        data = json.loads(raw)
+        ev = ex.ExtractedEvent(
+            impacts=ex._parse_impacts(data.get("impacts")),
+            category=ex._norm_enum(data.get("category"), ex._CAT_SET, default="other"),
+            subcat=str(data.get("subcat") or "")[:80],
+            trigger=str(data.get("trigger") or title)[:250],
+            news_zone=str(data.get("news_zone") or "")[:30],
+            reliability=ex._norm_enum(data.get("reliability"), ex._REL_SET, default=""),
+            materiality=ex._norm_enum(data.get("materiality"), ex._MAT_SET, default="low"),
+        )
         routed = [f"{imp.asset}→{IA_TO_ACTIF.get(imp.asset,'?')} {imp.direction} ({imp.confidence})"
                   for imp in ev.impacts]
 

@@ -47,33 +47,60 @@ class NewsItem:
     summary: str = ""
 
     def as_event_log_line_raw(self) -> str:
-        """Ligne markdown brute (sans extraction)."""
+        """Ligne markdown brute (sans extraction) — schéma v2 directionnel.
+
+        Colonnes (14) :
+        date | L1 | L2 | trigger | cours | latence | R | source | news_zone |
+        category | pattern_id | impacts | materiality | reliability
+        """
         date = self.published.strftime("%Y-%m-%d")
         safe_title = self.title.replace("|", "/").strip()[:250]
-        # Colonnes : date | L1 | L2 | trigger | cours | latence | R | source | news_zone | category | pattern_id
-        return f"| {date} |  |  | {safe_title} |  |  | 1 | {self.source} |  |  |  |"
+        return (
+            f"| {date} |  |  | {safe_title} |  |  | 1 | "
+            f"{self.source} |  |  |  |  |  |  |"
+        )
 
     def as_event_log_line_extracted(self, e) -> str:
-        """Ligne markdown enrichie — schéma 7 champs v3.
-        Colonnes : date | L1 | L2 | trigger | cours | latence | R | source | news_zone | category | pattern_id
+        """Ligne markdown enrichie — schéma v2 directionnel.
+
+        Colonnes (14) : date | L1 | L2 | trigger | cours | latence | R | source |
+        news_zone | category | pattern_id | impacts | materiality | reliability
+
+        - L1/L2 conservés pour rétro-compat lecteurs anciens (laissés vides : on
+          ne fait plus de double-taxonomie).
+        - cours = libellé lisible reconstruit à partir des impacts (premier actif).
+        - impacts = encodage compact 'ASSET:DIR:CONF;...' (voir extractor.encode_impacts).
         """
         date = self.published.strftime("%Y-%m-%d")
 
         def safe(v):
-            return (v or "").replace("|", "/").strip()
+            return (str(v) if v is not None else "").replace("|", "/").strip()
+
+        # Lazy import pour éviter le coût si non utilisé
+        from extractor import encode_impacts
+
+        impacts_str = encode_impacts(getattr(e, "impacts", []) or [])
+        # cours = libellé lisible (premier actif) pour rétro-compat parsers historiques
+        first_asset = ""
+        impacts = getattr(e, "impacts", []) or []
+        if impacts:
+            first_asset = impacts[0].asset
 
         cols = [
             date,
-            safe(e.L1),
-            safe(e.L2),
-            safe(e.trigger or self.title)[:250],
-            safe(e.cours),
-            safe(e.latence),
+            "",  # L1 (legacy, vide)
+            safe(getattr(e, "subcat", "")),  # L2 = subcat (libre)
+            safe(getattr(e, "trigger", "") or self.title)[:250],
+            first_asset,  # cours = id actif des 12 (ex: BRENT)
+            safe(getattr(e, "latence", "")),
             "1",
             self.source,
-            safe(e.news_zone),
-            safe(e.news_category),
+            safe(getattr(e, "news_zone", "")),
+            safe(getattr(e, "category", "other")),
             "",  # pattern_id Phase 2.3
+            impacts_str,
+            safe(getattr(e, "materiality", "")),
+            safe(getattr(e, "reliability", "")),
         ]
         return "| " + " | ".join(cols) + " |"
 

@@ -61,47 +61,80 @@ TRIGGERS_YML = ROOT / "config" / "triggers-and-windows.yml"
 # Les alias matchent en substring case/accent-insensible sur le champ `cours`.
 TICKER_TO_ACTIF: Dict[str, Tuple[Set[str], Set[str]]] = {
     "cac_40": (
-        {"^FCHI"},
+        {"^FCHI", "CAC40"},
         {"cac 40", "cac40"},
     ),
     "nasdaq": (
-        {"^IXIC", "NVDA", "MSFT", "GOOGL", "AAPL", "AMZN", "META", "TSLA"},
+        {"^IXIC", "NASDAQ", "NVDA", "MSFT", "GOOGL", "AAPL", "AMZN", "META", "TSLA"},
         {"nasdaq", "nvidia", "microsoft", "alphabet", "google", "apple",
          "amazon", "meta", "tesla"},
     ),
+    "sp500": (
+        {"^GSPC", "SP500", "SPX"},
+        {"s&p 500", "sp500", "s&p500"},
+    ),
     "vix": (
-        {"^VIX"},
+        {"^VIX", "VIX"},
         {"vix"},
     ),
+    "eurusd": (
+        {"EUR=X", "EURUSD"},
+        {"eur/usd", "eurusd", "eur usd"},
+    ),
     "petrole": (
-        {"BZ=F", "CL=F"},
+        {"BZ=F", "CL=F", "BRENT"},
         {"brent", "petrole", "wti", "crude", "oil"},
     ),
     "or": (
-        {"GC=F", "XAU/USD"},
+        {"GC=F", "XAU/USD", "GOLD"},
         {"gold", " or "},  # " or " avec espaces pour éviter de matcher "for", "more", etc.
     ),
     "argent": (
-        {"SI=F", "XAG/USD"},
+        {"SI=F", "XAG/USD", "SILVER"},
         {"silver", "argent"},
     ),
     "cuivre": (
-        {"HG=F"},
+        {"HG=F", "COPPER"},
         {"copper", "cuivre"},
     ),
     "cafe": (
-        {"KC=F"},
+        {"KC=F", "COFFEE"},
         {"coffee", "cafe"},
     ),
     "cacao": (
-        {"CC=F"},
+        {"CC=F", "COCOA"},
         {"cocoa", "cacao"},
     ),
     "ble": (
-        {"ZW=F"},
+        {"ZW=F", "WHEAT"},
         {"wheat", "ble"},
     ),
 }
+
+
+# ---------------------------------------------------------------------------
+# Mapping ASSET (id IA fermé) → actif_key YAML
+# ---------------------------------------------------------------------------
+# Utilisé par le routage IA-first : pour un event qui a un `impacts[]` contenant
+# {asset:"BRENT",...}, on sait que c'est l'actif `petrole` du YAML.
+IA_ASSET_TO_ACTIF: Dict[str, str] = {
+    "CAC40":   "cac_40",
+    "SP500":   "sp500",
+    "NASDAQ":  "nasdaq",
+    "EURUSD":  "eurusd",
+    "BRENT":   "petrole",
+    "VIX":     "vix",
+    "GOLD":    "or",
+    "SILVER":  "argent",
+    "COPPER":  "cuivre",
+    "COFFEE":  "cafe",
+    "COCOA":   "cacao",
+    "WHEAT":   "ble",
+}
+
+
+# Matérialité IA → poids (pour départager LONG/SHORT de même date)
+_MAT_WEIGHT = {"high": 3, "medium": 2, "low": 1, "": 1}
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +282,14 @@ def _parse_date(s: str) -> Optional[datetime]:
 
 
 def parse_events_log(path: Path = EVENTS_LOG) -> List[dict]:
-    """Parse le tableau markdown. Retourne une liste de dicts triée par date desc."""
+    """Parse le tableau markdown. Retourne une liste de dicts triée par date desc.
+
+    Rétro-compat : supporte 2 formats de header
+    - Legacy (11 cols) : date|L1|L2|trigger|cours|latence|R|source|news_zone|category|pattern_id
+    - v2 directionnel (14 cols) : + impacts|materiality|reliability
+
+    Une ligne sans colonnes v2 -> impacts décodés=[], materiality="", reliability="".
+    """
     if not path.exists():
         logger.warning("events-log absent (%s) — 0 events", path)
         return []
@@ -274,9 +314,14 @@ def parse_events_log(path: Path = EVENTS_LOG) -> List[dict]:
 
     header = rows[0]
     first_is_date = _parse_date(header[0]) is not None
+    # Header par défaut v2 (14 col). Si la ligne a moins de colonnes, on tronque.
+    DEFAULT_HEADERS = [
+        "date", "l1", "l2", "trigger", "cours", "latence", "r",
+        "source", "news_zone", "category", "pattern_id",
+        "impacts", "materiality", "reliability",
+    ]
     if first_is_date:
-        headers_l = ["date", "l1", "l2", "trigger", "cours", "latence", "r",
-                     "source", "news_zone", "category", "pattern_id"]
+        headers_l = DEFAULT_HEADERS
         data_rows = rows
     else:
         headers_l = [h.lower().strip() for h in header]
@@ -295,9 +340,44 @@ def parse_events_log(path: Path = EVENTS_LOG) -> List[dict]:
             logger.warning("events-log : ligne ignorée (date illisible) : %r", r)
             continue
         ev["_dt"] = dt
+        # Décode `impacts` compacts en liste de dicts (rétro-compat : vide si absent)
+        ev["_impacts"] = _decode_impacts_str(ev.get("impacts", ""))
         events.append(ev)
     events.sort(key=lambda e: e["_dt"], reverse=True)
     return events
+
+
+# ---------------------------------------------------------------------------
+# Décodage impacts (sans dépendance dure à extractor.py pour la rétro-compat)
+# ---------------------------------------------------------------------------
+
+_VALID_DIRECTIONS_TC = {"LONG", "SHORT", "NEUTRAL"}
+_VALID_ASSETS_TC = set(IA_ASSET_TO_ACTIF.keys())
+
+
+def _decode_impacts_str(encoded: str) -> List[Dict[str, Any]]:
+    """Décodage tolérant 'ASSET:DIR:CONF;...' → [{asset,direction,confidence}].
+    Entrées hors-énum silencieusement ignorées."""
+    if not encoded or not isinstance(encoded, str):
+        return []
+    out: List[Dict[str, Any]] = []
+    for chunk in encoded.split(";"):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        parts = chunk.split(":")
+        if len(parts) < 2:
+            continue
+        asset = parts[0].strip().upper()
+        direction = parts[1].strip().upper()
+        if asset not in _VALID_ASSETS_TC or direction not in _VALID_DIRECTIONS_TC:
+            continue
+        try:
+            confidence = int(parts[2].strip()) if len(parts) >= 3 and parts[2].strip() else 0
+        except ValueError:
+            confidence = 0
+        out.append({"asset": asset, "direction": direction, "confidence": confidence})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -386,19 +466,38 @@ def _event_category_ok(ev: dict, scope: Dict[str, Any]) -> bool:
     return ev_cat in cats
 
 
+def _event_ia_targets_actif(ev: dict, actif_key: str) -> bool:
+    """L'event a-t-il un impact IA ciblant cet actif (asset IA mappé via
+    IA_ASSET_TO_ACTIF) ?"""
+    impacts = ev.get("_impacts") or []
+    for imp in impacts:
+        asset = imp.get("asset")
+        if asset and IA_ASSET_TO_ACTIF.get(asset) == actif_key:
+            return True
+    return False
+
+
 def _candidates_for(events: List[dict], actif_key: str, cle: str) -> List[dict]:
-    """Filtre les events candidats pour un critère donné (avant matching directionnel)."""
+    """Filtre les events candidats pour un critère donné (avant matching directionnel).
+
+    Routage IA-first : un event dont `impacts[]` cible cet actif est candidat
+    SANS exiger que `cours` ou `domain_hints` matchent (l'IA a déjà inféré
+    l'impact réel). Le filtre catégorie reste appliqué pour éviter qu'un event
+    earnings pollue un critère géopolitique.
+    """
     scope = CRITERION_SCOPE.get((actif_key, cle), {})
     strict = bool(scope.get("strict_actif", False))
     out: List[dict] = []
     for ev in events:
-        # Filtre catégorie en premier (peu coûteux)
+        # Filtre catégorie en premier (peu coûteux, s'applique aussi à l'IA)
         if not _event_category_ok(ev, scope):
             continue
-        # Routage : (a) `cours` cible l'actif, ou (b) domain_hints matchent
+        # Routage : (a) impacts IA ciblent l'actif, (b) `cours` cible l'actif,
+        # ou (c) domain_hints matchent (legacy fallback).
+        ia_targets = _event_ia_targets_actif(ev, actif_key)
         targets = _event_targets_actif(ev, actif_key)
         domain = _event_matches_domain(ev, scope) if not strict else False
-        if not (targets or domain):
+        if not (ia_targets or targets or domain):
             continue
         out.append(ev)
     return out
@@ -449,6 +548,31 @@ def _any_keyword_matches(text: str, keywords: List[str]) -> bool:
 # Résolution triplet : routage + direction
 # ---------------------------------------------------------------------------
 
+def _ia_direction_for(ev: dict, actif_key: str) -> Optional[str]:
+    """Retourne 'LONG' / 'SHORT' / 'NEUTRAL' si l'IA a marqué cet actif dans
+    `impacts[]`, sinon None.
+
+    Si plusieurs impacts ciblent le même actif (rare), on garde celui de
+    confidence max. NEUTRAL est traité comme un vrai signal "0", pas comme None.
+    """
+    impacts = ev.get("_impacts") or []
+    if not impacts:
+        return None
+    best_dir: Optional[str] = None
+    best_conf = -1
+    for imp in impacts:
+        asset = imp.get("asset")
+        if not asset:
+            continue
+        if IA_ASSET_TO_ACTIF.get(asset) != actif_key:
+            continue
+        conf = int(imp.get("confidence") or 0)
+        if conf > best_conf:
+            best_conf = conf
+            best_dir = imp.get("direction")
+    return best_dir
+
+
 def _resolve_triplet(
     events: List[dict],
     actif_key: str,
@@ -458,21 +582,76 @@ def _resolve_triplet(
     lookback_days: int,
     now: datetime,
 ) -> int:
-    """Cherche dans les events candidats (routage DeepSeek) ceux qui matchent
-    LONG ou SHORT par mots-clés. Retourne -1/0/+1.
+    """Résout un triplet en mode HYBRIDE :
 
-    Règles :
+    1. **IA-first** : si un event récent dans la fenêtre a un `impacts[]` qui
+       cible cet actif, on prend sa direction (LONG=+1, SHORT=-1, NEUTRAL=0).
+       Le scope catégorie + domaine reste vérifié pour éviter qu'un event
+       Brent off-topic (ex: earnings) pollue un critère géopolitique.
+       Départage : matérialité descendante puis date descendante.
+
+    2. **Fallback keyword** (rétro-compat ancien schéma sans impacts, ou IA off) :
+       pour les events SANS `_impacts`, on applique l'ancien matching mots-clés
+       (LONG/SHORT) avec le même routage scope.
+
+    Règles communes :
     - Fenêtre [now - lookback, now]
-    - Si long ET short matchent → garder le plus récent
-    - Si event bien rattaché à l'actif+catégorie mais sans cue directionnel → 0
+    - Long et Short conflictuels (même event ou même date) : matérialité puis
+      récence
     """
+    if not long_keywords and not short_keywords and not _criterion_has_ia_route(actif_key, cle):
+        # Critère sans keywords ni route IA possible : 0 neutre.
+        return 0
+
+    cutoff = now - timedelta(days=lookback_days)
+    candidates = _candidates_for(events, actif_key, cle)
+
+    # -------- 1) IA-first : un event avec direction IA pour cet actif --------
+    ia_long: Optional[Tuple[datetime, int]] = None  # (dt, materiality_weight)
+    ia_short: Optional[Tuple[datetime, int]] = None
+    ia_seen_any = False
+    for ev in candidates:
+        dt = ev.get("_dt")
+        if not isinstance(dt, datetime):
+            continue
+        if dt < cutoff or dt > now:
+            continue
+        direction = _ia_direction_for(ev, actif_key)
+        if direction is None:
+            continue
+        ia_seen_any = True
+        mat = (ev.get("materiality") or "").strip().lower()
+        weight = _MAT_WEIGHT.get(mat, 1)
+        if direction == "LONG":
+            if ia_long is None or (weight, dt) > (ia_long[1], ia_long[0]):
+                ia_long = (dt, weight)
+        elif direction == "SHORT":
+            if ia_short is None or (weight, dt) > (ia_short[1], ia_short[0]):
+                ia_short = (dt, weight)
+        # NEUTRAL : ne touche ni long ni short (mais contribue à ia_seen_any=True)
+    if ia_seen_any:
+        # Au moins un event IA cible cet actif dans la fenêtre → on tranche en IA-only.
+        if ia_long and not ia_short:
+            return 1
+        if ia_short and not ia_long:
+            return -1
+        if ia_long and ia_short:
+            # Matérialité d'abord, date ensuite
+            if (ia_long[1], ia_long[0]) >= (ia_short[1], ia_short[0]):
+                return 1
+            return -1
+        # Que des NEUTRAL → 0
+        return 0
+
+    # -------- 2) Fallback keyword (ancien schéma, ou IA n'a rien marqué) -----
     if not long_keywords and not short_keywords:
         return 0
-    cutoff = now - timedelta(days=lookback_days)
     last_long: Optional[datetime] = None
     last_short: Optional[datetime] = None
-    candidates = _candidates_for(events, actif_key, cle)
     for ev in candidates:
+        # On évite de re-traiter les events ayant déjà des impacts IA (cohérence)
+        if ev.get("_impacts"):
+            continue
         dt = ev.get("_dt")
         if not isinstance(dt, datetime):
             continue
@@ -491,10 +670,16 @@ def _resolve_triplet(
         return 1
     if last_short is not None and last_long is None:
         return -1
-    # Les deux : plus récent gagne
     if last_long >= last_short:  # type: ignore[operator]
         return 1
     return -1
+
+
+def _criterion_has_ia_route(actif_key: str, cle: str) -> bool:
+    """Un critère est IA-routable si son scope catégorie est défini (sinon
+    aucun event IA ne sera retenu — autant le savoir tôt)."""
+    scope = CRITERION_SCOPE.get((actif_key, cle))
+    return bool(scope)
 
 
 # ---------------------------------------------------------------------------
@@ -558,9 +743,15 @@ def classify_all(
         events = parse_events_log()
     if today is None:
         today = datetime.now(timezone.utc)
-    elif today.tzinfo is None:
-        today = today.replace(tzinfo=timezone.utc)
-    today_date = today.date()
+    # Accepte un date OU un datetime (naïf ou aware). On dérive :
+    #  - today_dt : datetime aware UTC (fin de journée) pour comparer aux _dt des events
+    #  - today_date : date pure pour les critères calendrier
+    if isinstance(today, datetime):
+        today_dt = today if today.tzinfo else today.replace(tzinfo=timezone.utc)
+        today_date = today.date()
+    else:
+        today_dt = datetime(today.year, today.month, today.day, 23, 59, 59, tzinfo=timezone.utc)
+        today_date = today
 
     out: Dict[str, Dict[str, int]] = {}
     for actif_key, criteres in triggers_cfg.items():
@@ -581,7 +772,7 @@ def classify_all(
                     spec.get("long_keywords", []) or [],
                     spec.get("short_keywords", []) or [],
                     lookback,
-                    today,
+                    today_dt,
                 )
                 actif_out[emit_cle] = val
             elif t == "calendrier":

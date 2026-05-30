@@ -4,5 +4,11 @@
     "calls": 50,
     "tokens_in": 25025,
     "tokens_out": 4600
+  },
+  "2026-05-30": {
+    "cost_usd": 0.008047,
+    "calls": 80,
+    "tokens_in": 41840,
+    "tokens_out": 7819
   }
 }

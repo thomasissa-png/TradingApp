@@ -1,1 +1,2 @@
-Cycle validation post-corrections (synthèse + symboles + routing) — 2026-05-31T21:27:43Z
+Cycle validation finale — 2026-05-31T21:53:01Z
+Vérifie : indices ETF en CI + synthèse contexte-prix + prix mesure.

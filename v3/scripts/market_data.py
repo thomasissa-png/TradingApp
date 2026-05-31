@@ -56,10 +56,19 @@ def _twelve_key() -> str:
 TD_BASE = "https://api.twelvedata.com"
 TD_TIMEOUT = 15  # seconds per request
 
-# ── Rate limiter (8 req/min free tier, use 7 for safety) ──────────
+# ── Rate limiter ───────────────────────────────────────────────────
+# Configurable via env var TWELVE_RPM. Defaults to 55 (plan Grow ≈ 55-60 req/min,
+# 55 = marge sûre). Plan gratuit Twelve Data = 8 req/min → exporter TWELVE_RPM=7.
+# Lu au boot (process-level) ; pour relire à runtime dans des tests, patcher
+# directement market_data._TD_RPM.
 _rate_lock = threading.Lock()
 _request_times: deque = deque()
-_TD_RPM = 7
+_TD_RPM = int(os.environ.get("TWELVE_RPM", "55"))
+
+# Si l'attente du rate-limit dépasse ce seuil, on abandonne la requête
+# (le caller retombera en fallback yfinance). Empêche un cycle de bloquer
+# indéfiniment si la deque a accumulé un retard pathologique.
+_RATE_WAIT_TIMEOUT = 90.0  # seconds
 
 # ── TTL Cache ─────────────────────────────────────────────────────
 _cache: dict[str, tuple[float, Any]] = {}
@@ -218,7 +227,11 @@ def _blacklist_ticker(yf_ticker: str) -> None:
 # ── Rate limiter ──────────────────────────────────────────────────
 
 def _try_rate_limit() -> bool:
-    """Try to acquire a rate limit slot. Returns True if allowed, False otherwise."""
+    """Try to acquire a rate limit slot (non-blocking). Returns True if allowed.
+
+    Conservé pour rétro-compatibilité / tests. Le chemin de prod utilise
+    désormais _acquire_rate_limit() qui ATTEND au lieu de refuser.
+    """
     with _rate_lock:
         now = time.monotonic()
         while _request_times and now - _request_times[0] > 60:
@@ -227,6 +240,40 @@ def _try_rate_limit() -> bool:
             return False
         _request_times.append(now)
         return True
+
+
+def _acquire_rate_limit(max_wait: float = _RATE_WAIT_TIMEOUT) -> bool:
+    """Acquire a rate limit slot, BLOCKING (sleep) if the 60s window is full.
+
+    Boucle : calcule le temps qu'il faut attendre pour que le plus ancien
+    timestamp sorte de la fenêtre 60s, libère le lock pendant le sleep, puis
+    réessaye. Garantit qu'aucune requête Twelve n'est perdue à cause du rate
+    limit — elles sont juste étalées.
+
+    Returns True quand un slot est acquis. Returns False si max_wait dépassé
+    (dégradation gracieuse : le caller retombera en fallback yfinance).
+    """
+    deadline = time.monotonic() + max_wait
+    while True:
+        with _rate_lock:
+            now = time.monotonic()
+            while _request_times and now - _request_times[0] > 60:
+                _request_times.popleft()
+            if len(_request_times) < _TD_RPM:
+                _request_times.append(now)
+                return True
+            # Fenêtre pleine : on doit attendre que le plus ancien sorte.
+            # +0.05s pour éviter le réveil pile à la frontière.
+            wait_needed = 60.0 - (now - _request_times[0]) + 0.05
+        # Vérif timeout AVANT de dormir (et marge pour ne pas dépasser deadline)
+        if time.monotonic() + wait_needed > deadline:
+            logger.warning(
+                "TD rate-limit wait would exceed %.0fs (need %.1fs), falling back to yfinance",
+                max_wait, wait_needed,
+            )
+            return False
+        # On dort hors du lock pour ne pas bloquer les autres threads.
+        time.sleep(max(0.0, wait_needed))
 
 
 # ── Cache ─────────────────────────────────────────────────────────
@@ -261,8 +308,11 @@ def _td_request(endpoint: str, params: dict, yf_ticker: Optional[str] = None) ->
     """
     if not td_available() or http_req is None:
         return None
-    if not _try_rate_limit():
-        logger.debug("TD rate limited, falling back to yfinance")
+    # Rate limit BLOQUANT : attend qu'un slot se libère au lieu de tomber en
+    # fallback yfinance dès le 8e appel/min. Sur runners GitHub Actions,
+    # yfinance est bloqué (IP datacenter) → indices KO. Cf. CI 2026-05.
+    if not _acquire_rate_limit():
+        logger.debug("TD rate-limit timeout exceeded, falling back to yfinance")
         return None
 
     params = dict(params)

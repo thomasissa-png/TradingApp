@@ -1,6 +1,6 @@
 # Performance du bulletin — Journaliste
 
-- Généré : 2026-05-31T22:25:13.614114+02:00
+- Généré : 2026-05-31T23:31:49.573460+02:00
 - Journaliste version : v3.1.0
 - Fenêtre KPI : 30 dernières conclusions terminées par cellule
 - PROBA_SCALE : 10.0 (proba = 0.5 + clip(|score|/SCALE, 0, 0.5))
@@ -38,23 +38,23 @@ Critère d'éligibilité renforcé : Wilson low > 50 % (borne basse IC 95 % sur 
 
 | Émission | Échéance | Actif | Horizon | Concl. | Prix émis. | Prix actuel | Delta % | Seuil % | Outcome | Note |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 2026-05-30 | 2026-05-31 | Argent | 24h | SHORT | — | — | — | 0.8% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-30 | 2026-05-31 | Blé | 24h | LONG | — | — | — | 0.8% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-05-31 | Argent | 24h | SHORT | — | 75.3693 | — | 0.8% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-05-31 | Blé | 24h | LONG | — | 610.7924 | — | 0.8% | suivi-interrompu | prix d'émission indisponible |
 | 2026-05-30 | 2026-05-31 | CAC 40 | 24h | LONG | — | — | — | 0.5% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-30 | 2026-05-31 | Cacao | 24h | LONG | — | — | — | 1.5% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-30 | 2026-05-31 | Café (Arabica) | 24h | SHORT | — | — | — | 1.0% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-30 | 2026-05-31 | Cuivre | 24h | SHORT | — | — | — | 0.8% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-30 | 2026-05-31 | EUR/USD | 24h | SHORT | — | — | — | 0.25% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-05-31 | Cacao | 24h | LONG | — | 3924.6486 | — | 1.5% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-05-31 | Café (Arabica) | 24h | SHORT | — | 265.5419 | — | 1.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-05-31 | Cuivre | 24h | SHORT | — | 6.3621 | — | 0.8% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-05-31 | EUR/USD | 24h | SHORT | — | 1.1658 | — | 0.25% | suivi-interrompu | prix d'émission indisponible |
 | 2026-05-30 | 2026-05-31 | Nasdaq | 24h | SHORT | — | — | — | 0.7% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-30 | 2026-05-31 | Or | 24h | LONG | — | — | — | 0.5% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-05-31 | Or | 24h | LONG | — | 4542.3575 | — | 0.5% | suivi-interrompu | prix d'émission indisponible |
 | 2026-05-30 | 2026-05-31 | Pétrole (Brent) | 24h | LONG | — | — | — | 1.0% | suivi-interrompu | prix d'émission indisponible |
 | 2026-05-30 | 2026-05-31 | S&P 500 | 24h | SHORT | — | — | — | 0.4% | suivi-interrompu | prix d'émission indisponible |
 | 2026-05-30 | 2026-05-31 | VIX | 24h | LONG | — | — | — | 5.0% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-05-30 | Argent | 24h | LONG | — | — | — | 0.8% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-05-30 | Blé | 24h | SHORT | — | — | — | 0.8% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-05-30 | Argent | 24h | LONG | — | 75.3693 | — | 0.8% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-05-30 | Blé | 24h | SHORT | — | 610.7924 | — | 0.8% | suivi-interrompu | prix d'émission indisponible |
 | 2026-05-29 | 2026-05-30 | CAC 40 | 24h | LONG | — | — | — | 0.5% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-05-30 | Cacao | 24h | LONG | — | — | — | 1.5% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-05-30 | Café (Arabica) | 24h | SHORT | — | — | — | 1.0% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-05-30 | Cuivre | 24h | SHORT | — | — | — | 0.8% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-05-30 | EUR/USD | 24h | SHORT | — | — | — | 0.25% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-05-30 | Cacao | 24h | LONG | — | 3924.6486 | — | 1.5% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-05-30 | Café (Arabica) | 24h | SHORT | — | 265.5419 | — | 1.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-05-30 | Cuivre | 24h | SHORT | — | 6.3621 | — | 0.8% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-05-30 | EUR/USD | 24h | SHORT | — | 1.1658 | — | 0.25% | suivi-interrompu | prix d'émission indisponible |
 | 2026-05-29 | 2026-05-30 | Nasdaq | 24h | SHORT | — | — | — | 0.7% | suivi-interrompu | prix d'émission indisponible |

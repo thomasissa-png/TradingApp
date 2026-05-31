@@ -33,6 +33,26 @@ import synthese_directionnelle as sd  # noqa: E402
 import triggers_classifier as tc  # noqa: E402
 
 
+# On capture la vraie fonction _fetch_price_context AVANT tout monkeypatch,
+# pour pouvoir la restaurer dans les tests qui en ont besoin.
+_REAL_FETCH_PRICE_CONTEXT = sd._fetch_price_context
+
+
+# Autouse : isole les tests des appels réseau market_data.fetch_history.
+# Chaque test qui veut tester le contexte prix réactive explicitement via monkeypatch.
+@pytest.fixture(autouse=True)
+def _no_price_context(monkeypatch):
+    monkeypatch.setattr(sd, "_fetch_price_context", lambda asset_id: None)
+    yield
+
+
+@pytest.fixture
+def real_price_context(monkeypatch):
+    """Restaure la vraie fonction _fetch_price_context (utile aux tests qui mockent market_data)."""
+    monkeypatch.setattr(sd, "_fetch_price_context", _REAL_FETCH_PRICE_CONTEXT)
+    yield
+
+
 # ---------------------------------------------------------------------------
 # Helpers : fake Extractor + fake LLM response
 # ---------------------------------------------------------------------------
@@ -396,3 +416,145 @@ def test_group_events_by_asset_ignores_neutral(now_fixed):
     ev = _make_event("2026-05-28", "x", [{"asset": "BRENT", "direction": "NEUTRAL", "confidence": "high"}])
     grouped = tc._group_events_by_asset([ev], now_fixed, lookback_days=14)
     assert grouped == {}
+
+
+# ---------------------------------------------------------------------------
+# 10. Contexte prix injecté dans le prompt
+# ---------------------------------------------------------------------------
+
+def test_price_context_injected_in_user_prompt(monkeypatch):
+    """Quand market_data renvoie un contexte prix, il est ajouté en tête du prompt user."""
+    monkeypatch.setattr(sd, "_fetch_price_context", lambda asset_id: {
+        "perf_20d_pct": -18.5, "perf_5d_pct": -7.2, "last_close": 63.4,
+    })
+    ext = _make_fake_extractor({"direction": "SHORT", "conviction": "medium", "rationale": "ok"})
+    events = [_make_event("2026-05-28", "Brent news",
+                          [{"asset": "BRENT", "direction": "LONG", "confidence": "high"}])]
+    sd.synthesize_asset("BRENT", events, ext)
+    # Inspecte le payload effectivement envoyé au LLM
+    call = ext.client.chat.completions.create.call_args
+    messages = call.kwargs["messages"]
+    user_msg = next(m["content"] for m in messages if m["role"] == "user")
+    assert "CONTEXTE MARCHÉ" in user_msg
+    assert "BRENT" in user_msg
+    assert "-18.50%" in user_msg
+    assert "-7.20%" in user_msg
+    # Et le contexte arrive AVANT la liste d'events (cadre global)
+    assert user_msg.index("CONTEXTE MARCHÉ") < user_msg.index("NEWS RECENTES")
+
+
+def test_price_context_absent_no_crash(monkeypatch):
+    """Si market_data renvoie None (réseau KO, ticker non mappé...) → pas de crash, pas de ligne contexte."""
+    monkeypatch.setattr(sd, "_fetch_price_context", lambda asset_id: None)
+    ext = _make_fake_extractor({"direction": "LONG", "conviction": "high", "rationale": "x"})
+    events = [_make_event("2026-05-28", "x",
+                          [{"asset": "BRENT", "direction": "LONG", "confidence": "high"}])]
+    res = sd.synthesize_asset("BRENT", events, ext)
+    assert res is not None
+    call = ext.client.chat.completions.create.call_args
+    user_msg = next(m["content"] for m in call.kwargs["messages"] if m["role"] == "user")
+    assert "CONTEXTE MARCHÉ" not in user_msg
+    # Le prompt events reste intact
+    assert "ACTIF : BRENT" in user_msg
+
+
+def test_fetch_price_context_returns_none_when_market_data_unavailable(monkeypatch, real_price_context):
+    """Si market_data.fetch_history n'existe pas ou retourne None → None, pas de crash."""
+    import market_data as md
+    monkeypatch.setattr(md, "fetch_history", lambda *a, **kw: None)
+    assert sd._fetch_price_context("BRENT") is None
+
+
+def test_fetch_price_context_unknown_asset_returns_none(real_price_context):
+    """Ticker non mappé → None (pas d'invention)."""
+    assert sd._fetch_price_context("UNKNOWN_ASSET") is None
+
+
+def test_fetch_price_context_handles_fetch_exception(monkeypatch, real_price_context):
+    """Si fetch_history lève → dégradation gracieuse (None, pas de crash)."""
+    import market_data as md
+    def boom(*a, **kw):
+        raise RuntimeError("network down")
+    monkeypatch.setattr(md, "fetch_history", boom)
+    assert sd._fetch_price_context("BRENT") is None
+
+
+def test_fetch_price_context_computes_perf(monkeypatch, real_price_context):
+    """Vérifie le calcul perf 20d / 5d sur un DataFrame factice."""
+    pytest.importorskip("pandas")
+    import pandas as pd  # type: ignore
+    # 25 barres : close passe de 100 à 80 → -20% sur la fenêtre.
+    closes = [100.0] * 5 + [95.0] * 10 + [90.0] * 5 + [85.0] * 3 + [80.0] * 2
+    df = pd.DataFrame({
+        "Open": closes, "High": closes, "Low": closes, "Close": closes,
+        "Volume": [1000] * len(closes),
+    })
+    import market_data as md
+    monkeypatch.setattr(md, "fetch_history", lambda *a, **kw: df)
+    ctx = sd._fetch_price_context("BRENT")
+    assert ctx is not None
+    assert ctx["last_close"] == 80.0
+    # perf 20d : (80 - closes[len-1-20]) / closes[len-1-20] * 100
+    # len = 25, idx_long = 25-1-20 = 4 → closes[4] = 100 → (80-100)/100 = -20%
+    assert ctx["perf_20d_pct"] == -20.0
+
+
+# ---------------------------------------------------------------------------
+# 11. Flux contradictoire : conviction plafonnée à medium
+# ---------------------------------------------------------------------------
+
+def test_contradictory_signals_caps_conviction_high_to_medium():
+    """LONG:high ET SHORT:high pour le même actif → même si LLM dit high, on cap à medium."""
+    ext = _make_fake_extractor({"direction": "LONG", "conviction": "high", "rationale": "ok"})
+    events = [
+        _make_event("2026-05-28", "frappe Iran",
+                    [{"asset": "BRENT", "direction": "LONG", "confidence": "high"}]),
+        _make_event("2026-05-27", "détente US-Iran",
+                    [{"asset": "BRENT", "direction": "SHORT", "confidence": "high"}]),
+    ]
+    res = sd.synthesize_asset("BRENT", events, ext)
+    assert res is not None
+    assert res["direction"] == "LONG"
+    # Cappé à medium (signal déchiré)
+    assert res["conviction"] == "medium"
+
+
+def test_no_contradiction_keeps_conviction_high():
+    """Si pas de flux LONG:high + SHORT:high → conviction high préservée."""
+    ext = _make_fake_extractor({"direction": "LONG", "conviction": "high", "rationale": "ok"})
+    events = [
+        _make_event("2026-05-28", "frappe Iran",
+                    [{"asset": "BRENT", "direction": "LONG", "confidence": "high"}]),
+        _make_event("2026-05-27", "demand weak",
+                    [{"asset": "BRENT", "direction": "SHORT", "confidence": "low"}]),
+    ]
+    res = sd.synthesize_asset("BRENT", events, ext)
+    assert res["conviction"] == "high"
+
+
+def test_contradictory_signals_helper():
+    """Test unitaire du helper _has_contradictory_high_impacts."""
+    long_high = _make_event("2026-05-28", "x", [{"asset": "BRENT", "direction": "LONG", "confidence": "high"}])
+    short_high = _make_event("2026-05-28", "y", [{"asset": "BRENT", "direction": "SHORT", "confidence": "high"}])
+    short_low = _make_event("2026-05-28", "z", [{"asset": "BRENT", "direction": "SHORT", "confidence": "low"}])
+    # Pas de contradiction si une seule direction high
+    assert sd._has_contradictory_high_impacts("BRENT", [long_high]) is False
+    assert sd._has_contradictory_high_impacts("BRENT", [long_high, short_low]) is False
+    # Contradiction si LONG:high ET SHORT:high
+    assert sd._has_contradictory_high_impacts("BRENT", [long_high, short_high]) is True
+    # Asset différent → pas de contradiction
+    gold_short_high = _make_event("2026-05-28", "g", [{"asset": "GOLD", "direction": "SHORT", "confidence": "high"}])
+    assert sd._has_contradictory_high_impacts("BRENT", [long_high, gold_short_high]) is False
+
+
+# ---------------------------------------------------------------------------
+# 12. Mapping ticker complet
+# ---------------------------------------------------------------------------
+
+def test_asset_to_yahoo_ticker_covers_all_ia_assets():
+    """Tous les asset_id IA utilisés dans triggers_classifier doivent avoir un ticker yahoo."""
+    expected = {"BRENT", "GOLD", "SILVER", "COPPER", "WHEAT", "COFFEE", "COCOA",
+                "SP500", "NASDAQ", "CAC40", "VIX", "EURUSD"}
+    assert expected <= set(sd.ASSET_TO_YAHOO_TICKER.keys())
+    assert sd.ASSET_TO_YAHOO_TICKER["BRENT"] == "BZ=F"
+    assert sd.ASSET_TO_YAHOO_TICKER["EURUSD"] == "EURUSD=X"

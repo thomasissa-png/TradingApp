@@ -51,6 +51,28 @@ MAX_EVENTS_PER_ASSET = 30
 # Plafond de tokens en sortie (le JSON attendu est court).
 MAX_OUTPUT_TOKENS = 350
 
+# Mapping asset_id IA → ticker yahoo pour récupérer le contexte prix.
+# Le prix ne ment pas : si DeepSeek voit des news LONG mais le marché a fait -20%,
+# c'est que l'info est déjà pricée → on plafonne la conviction.
+ASSET_TO_YAHOO_TICKER: Dict[str, str] = {
+    "BRENT":  "BZ=F",
+    "GOLD":   "GC=F",
+    "SILVER": "SI=F",
+    "COPPER": "HG=F",
+    "WHEAT":  "ZW=F",
+    "COFFEE": "KC=F",
+    "COCOA":  "CC=F",
+    "SP500":  "^GSPC",
+    "NASDAQ": "^IXIC",
+    "CAC40":  "^FCHI",
+    "VIX":    "^VIX",
+    "EURUSD": "EURUSD=X",
+}
+
+# Fenêtres de calcul de momentum (en jours de marché).
+_PRICE_CTX_LONG_DAYS = 20
+_PRICE_CTX_SHORT_DAYS = 5
+
 # Prompt système : court, factuel, JSON strict.
 SYSTEM_PROMPT = """Tu es un analyste senior d'un desk de news trading institutionnel.
 
@@ -80,6 +102,13 @@ REGLES :
 4. rationale = factuel, court, cite les drivers (ex: "OPEC cut confirmé +
    tensions Ormuz dominent malgré 3 news demand-side faibles").
 5. Ne mentionne aucun ticker hors de l'actif demandé.
+6. LE PRIX NE MENT PAS. Si un CONTEXTE MARCHÉ t'est fourni et que la direction
+   suggérée par les news CONTREDIT le mouvement de prix récent (ex : news LONG
+   mais prix -15% sur 20j), abaisse ta conviction à "low" ou renvoie NEUTRAL.
+   Le marché a probablement déjà pricé l'info. Tu ne vas contre le prix que si
+   une news fraîche (≤ 48h) à matérialité high change clairement la donne, et
+   tu l'expliques dans le rationale ("malgré -15%/20j, frappe US sur Natanz du
+   jour change le régime").
 
 Réponds avec UNIQUEMENT le JSON, rien d'autre."""
 
@@ -186,6 +215,113 @@ def _parse_response(content: str) -> Optional[Dict[str, str]]:
     }
 
 
+def _fetch_price_context(asset_id: str) -> Optional[Dict[str, float]]:
+    """Récupère un mini contexte prix pour l'actif via market_data.fetch_history.
+
+    Retourne :
+        {"perf_20d_pct": -18.2, "perf_5d_pct": -7.1, "last_close": 65.4}
+    ou None si :
+        - asset_id non mappé,
+        - import market_data KO (dépendance absente, ex en test minimal),
+        - fetch_history retourne None / DataFrame vide / pas assez de barres,
+        - toute exception inattendue (dégradation gracieuse stricte : on continue
+          sans contexte prix, on n'invente RIEN, on ne bloque PAS la synthèse).
+    """
+    ticker = ASSET_TO_YAHOO_TICKER.get(asset_id.upper())
+    if not ticker:
+        return None
+    try:
+        import market_data as md  # import local : keep tests sans market_data possibles
+    except Exception as e:  # noqa: BLE001
+        logger.debug("price-ctx[%s]: import market_data KO : %s", asset_id, str(e)[:120])
+        return None
+    fetch = getattr(md, "fetch_history", None)
+    if not callable(fetch):
+        return None
+    # On demande _PRICE_CTX_LONG_DAYS + 5 pour avoir une marge (weekends, jours fériés).
+    try:
+        df = fetch(ticker, period_days=_PRICE_CTX_LONG_DAYS + 5, interval="1day")
+    except Exception as e:  # noqa: BLE001
+        logger.debug("price-ctx[%s]: fetch_history exception : %s", asset_id, str(e)[:120])
+        return None
+    if df is None:
+        return None
+    # DataFrame yfinance-like : colonne "Close" capitalized.
+    try:
+        if getattr(df, "empty", False):
+            return None
+        closes = df["Close"].dropna()
+        n = len(closes)
+        if n < 2:
+            return None
+        last = float(closes.iloc[-1])
+        # Ancrages : on prend la barre la plus ancienne dispo si on n'a pas
+        # assez de jours (dégradation gracieuse). On signale dans les clés.
+        idx_long = max(0, n - 1 - _PRICE_CTX_LONG_DAYS)
+        idx_short = max(0, n - 1 - _PRICE_CTX_SHORT_DAYS)
+        ref_long = float(closes.iloc[idx_long])
+        ref_short = float(closes.iloc[idx_short])
+        if ref_long == 0 or ref_short == 0:
+            return None
+        perf_long = (last - ref_long) / ref_long * 100.0
+        perf_short = (last - ref_short) / ref_short * 100.0
+        return {
+            "perf_20d_pct": round(perf_long, 2),
+            "perf_5d_pct": round(perf_short, 2),
+            "last_close": round(last, 4),
+        }
+    except Exception as e:  # noqa: BLE001
+        logger.debug("price-ctx[%s]: parsing DataFrame KO : %s", asset_id, str(e)[:120])
+        return None
+
+
+def _format_price_context_line(asset_id: str, ctx: Optional[Dict[str, float]]) -> str:
+    """Formate le contexte prix pour le prompt user. '' si pas de contexte."""
+    if not ctx:
+        return ""
+    perf20 = ctx.get("perf_20d_pct")
+    perf5 = ctx.get("perf_5d_pct")
+    if perf20 is None or perf5 is None:
+        return ""
+    sign20 = "+" if perf20 >= 0 else ""
+    sign5 = "+" if perf5 >= 0 else ""
+    return (
+        f"CONTEXTE MARCHÉ : le prix de {asset_id} a fait {sign20}{perf20:.2f}% sur ~20j "
+        f"(et {sign5}{perf5:.2f}% sur ~5j). "
+        f"Si les news contredisent ce mouvement, le marché a probablement déjà arbitré "
+        f"— abaisse la conviction ou renvoie NEUTRAL."
+    )
+
+
+def _has_contradictory_high_impacts(asset_id: str, events: List[dict]) -> bool:
+    """True si les events contiennent À LA FOIS LONG:high ET SHORT:high pour cet actif.
+
+    Signal "déchiré" : DeepSeek peut quand même retourner high, mais on plafonnera
+    sa conviction à medium (le contexte prix l'aura déjà orienté côté direction).
+    """
+    has_long_high = False
+    has_short_high = False
+    target = asset_id.upper()
+    for ev in events:
+        impacts = ev.get("_impacts") or []
+        for imp in impacts:
+            if not isinstance(imp, dict):
+                continue
+            if str(imp.get("asset", "")).upper() != target:
+                continue
+            direction = str(imp.get("direction", "")).upper()
+            conf = str(imp.get("confidence", "")).lower()
+            if conf != "high":
+                continue
+            if direction == "LONG":
+                has_long_high = True
+            elif direction == "SHORT":
+                has_short_high = True
+            if has_long_high and has_short_high:
+                return True
+    return False
+
+
 def synthesize_asset(
     asset_id: str,
     events_recent: List[dict],
@@ -223,7 +359,19 @@ def synthesize_asset(
         # pour distinguer "pas de news" de "erreur LLM".
         return {"direction": "NEUTRAL", "conviction": "low", "rationale": "aucune news exploitable"}
 
+    # Contexte prix (dégradation gracieuse : None si market_data KO).
+    price_ctx = _fetch_price_context(asset_id)
+    price_line = _format_price_context_line(asset_id, price_ctx)
+
     user_content = _format_events_for_prompt(asset_id, events_recent)
+    if price_line:
+        # Préfixe : le contexte prix arrive AVANT la liste d'events pour
+        # que le LLM le lise comme cadre global, pas comme une news de plus.
+        user_content = f"{price_line}\n\n{user_content}"
+
+    # Détection de flux contradictoire (LONG:high ET SHORT:high pour cet actif).
+    contradictory = _has_contradictory_high_impacts(asset_id, events_recent)
+
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_content},
@@ -265,10 +413,25 @@ def synthesize_asset(
     if parsed is None:
         return None
 
+    # Plafond conviction sur flux contradictoire (LONG:high ET SHORT:high) :
+    # même si DeepSeek dit "high", le signal est déchiré → on cap à "medium".
+    # Le niveau 2 (low/NEUTRAL → 0) reste géré par triggers_classifier en aval.
+    if contradictory and parsed["conviction"] == "high":
+        logger.info(
+            "synthese[%s] flux contradictoire (LONG:high + SHORT:high) -> conviction high cappee a medium",
+            asset_id,
+        )
+        parsed["conviction"] = "medium"
+
+    # Log enrichi : direction, conviction, perf prix (si dispo), rationale.
+    if price_ctx:
+        price_tag = f"prix={price_ctx['perf_20d_pct']:+.1f}%/20j,{price_ctx['perf_5d_pct']:+.1f}%/5j"
+    else:
+        price_tag = "prix=n/a"
     logger.info(
-        "synthese[%s] dur=%dms -> direction=%s conviction=%s | %s",
-        asset_id, duration_ms,
-        parsed["direction"], parsed["conviction"], parsed["rationale"][:160],
+        "synthese %s: %s (%s) [%s] dur=%dms — %s",
+        asset_id, parsed["direction"], parsed["conviction"], price_tag,
+        duration_ms, parsed["rationale"][:200],
     )
     return parsed
 

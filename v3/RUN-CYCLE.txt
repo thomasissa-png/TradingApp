@@ -1,2 +1,1 @@
-Cycle de répétition — 2026-05-31T20:21:44Z
-Pousser ce fichier déclenche un cycle décisionnel complet (ingest→critères→bulletin→mesure).
+Cycle validation post-corrections (synthèse + symboles + routing) — 2026-05-31T21:27:43Z

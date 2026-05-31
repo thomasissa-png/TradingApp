@@ -1,6 +1,6 @@
 # Performance A/B — ±1 (baseline) vs pondéré (secondaire)
 
-- Généré : 2026-05-30T18:56:01.526634+02:00
+- Généré : 2026-05-31T10:12:36.007561+02:00
 - Fenêtre KPI : 30 dernières conclusions terminées par cellule
 - Cible : 70% (Bourse.md)
 

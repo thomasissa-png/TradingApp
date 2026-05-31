@@ -299,3 +299,84 @@ Append-only. Édité par v3/scripts/agent_news.py (GitHub Actions cron).
 | 2026-05-07 |  | Biofuels-Energy | US exported 20% of renewable diesel/SAF production in 2H25, mostly to Canada and Europe | BRENT |  | 1 | eia_today_in_energy | US | commodity |  | BRENT:SHORT:low | medium | confirmed |
 | 2026-05-04 |  | Coal demand decline | Coal deliveries for non-electric use in US South fell 75% from 2010 to 2025 due to substitution by natural gas and plant closures |  |  | 1 | eia_today_in_energy | US | commodity |  |  | low | confirmed |
 | 2026-04-30 |  | Strategic Petroleum Reserve release | DOE released 17.5 million barrels from SPR since March, with 7.1 million barrels in the week ending April 24, the largest weekly release since October 2022. | BRENT |  | 1 | eia_today_in_energy | US | commodity |  | BRENT:SHORT:medium | medium | confirmed |
+<!-- batch 2026-05-31T08:11:26Z : 80 events -->
+| 2026-05-30 |  |  | Article sur le chômage des jeunes dans une région britannique |  |  | 1 | bbc_business | EU | other |  |  | low | reported |
+| 2026-05-31 |  | Japan-China tensions | Japan defence minister denies militarism, criticises China's 'huge arsenal' |  |  | 1 | bbc_world | CN | geopolitical |  |  | low | confirmed |
+| 2026-05-30 |  | Ukraine-Romania | Drone strike on Romanian city near Ukraine border, civilian fears | VIX |  | 1 | bbc_world | EU | geopolitical |  | VIX:LONG:medium;GOLD:LONG:medium | medium | confirmed |
+| 2026-05-30 |  | Amérique latine | Accusation d'ingérence équatorienne dans l'élection colombienne via promesse tarifaire |  |  | 1 | bbc_world | Global | geopolitical |  |  | low | reported |
+| 2026-05-30 |  | Iran-Moyen-Orient | Réunion Trump sans accord final sur Iran malgré un cadre d'accord rapporté | BRENT |  | 1 | bbc_world | Moyen-Orient | geopolitical |  | BRENT:SHORT:medium;GOLD:SHORT:low | medium | reported |
+| 2026-05-30 |  | Ukraine-Russia | Ukraine using AI drones to strike Russian supply convoys | BRENT |  | 1 | bbc_world | UA | geopolitical |  | BRENT:LONG:medium;GOLD:LONG:low;VIX:LONG:low | medium | reported |
+| 2026-05-30 |  | US-China tensions | Hegseth criticizes China's role in Asia, calls out hegemony | SP500 |  | 1 | cnbc_top | US | geopolitical |  | SP500:SHORT:low | medium | confirmed |
+| 2026-05-29 |  | AI sector earnings | Dell Technologies' blowout quarter reignites AI enthusiasm, per Jim Cramer | NASDAQ |  | 1 | cnbc_top | US | earnings |  | NASDAQ:LONG:medium;SP500:LONG:low | medium | reported |
+| 2026-05-29 |  | Tech sector rally | Software stocks best month since 2001, Snowflake and Okta record pops on AI strategies | NASDAQ |  | 1 | cnbc_top | US | earnings |  | NASDAQ:LONG:high;SP500:LONG:medium | high | confirmed |
+| 2026-05-29 |  | Iran-Moyen-Orient | Trump annonce réunion pour décision finale sur accord avec Iran, Brent chute fortement | BRENT |  | 1 | cnbc_top | Moyen-Orient | geopolitical |  | BRENT:SHORT:high;GOLD:SHORT:medium;VIX:SHORT:medium;SP500:LONG:medium | high | confirmed |
+| 2026-05-29 |  | Iran-Moyen-Orient | Coût de la guerre en Iran : ménages américains paient 450$ de plus pour l'énergie | BRENT |  | 1 | cnbc_top | US | geopolitical |  | BRENT:LONG:high;SP500:SHORT:medium;VIX:LONG:medium | medium | reported |
+| 2026-05-31 |  | Mer de Chine | Patrouille chinoise au banc de Scarborough après avertissement des Philippines | COPPER |  | 1 | investing_news | CN | geopolitical |  | COPPER:SHORT:low | medium | confirmed |
+| 2026-05-31 |  |  | Saudi contractor MGC seeks up to $799 million in Riyadh IPO |  |  | 1 | investing_news | Moyen-Orient | other |  |  | low | reported |
+| 2026-05-31 |  | Taiwan-China tensions | China expels NYT reporter, Taiwan responds defiantly | SP500 |  | 1 | investing_news | CN | geopolitical |  | SP500:SHORT:low;GOLD:LONG:low | medium | confirmed |
+| 2026-05-31 |  |  | Article d'opinion sur l'IA agentique |  |  | 1 | investing_news | Global | other |  |  | low | rumor |
+| 2026-05-31 |  | China-Industrial | China factory activity stalls in May as demand weakens | COPPER |  | 1 | investing_news | CN | macro |  | COPPER:SHORT:high;BRENT:SHORT:medium;CAC40:SHORT:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-05-31 |  | Japan-China tensions | Japan rejects China's 'new militarism' criticism, defense minister comments |  |  | 1 | investing_news | CN | geopolitical |  |  | low | confirmed |
+| 2026-05-31 |  | AI sector rotation | Investisseurs cherchent gagnants IA hors semi-conducteurs en Asie |  |  | 1 | investing_econ | Global | macro |  |  | low | reported |
+| 2026-05-30 |  |  | Clôture stable du MOEX Russia Index, sans variation notable |  |  | 1 | investing_econ | RU | other |  |  | low | confirmed |
+| 2026-05-30 |  | Tech investment | SoftBank investit jusqu'à 75 milliards d'euros dans des data centers IA en France | CAC40 |  | 1 | investing_econ | EU-FR | macro |  | CAC40:LONG:medium | high | reported |
+| 2026-05-30 |  | Emerging Markets | Analyse de l'impact de la hausse du pétrole sur la roupie indienne |  |  | 1 | investing_forex | Global | macro |  |  | low | reported |
+| 2026-05-30 |  | Iran-Moyen-Orient | US military intercepts blockade runner heading to Iranian port | BRENT |  | 1 | investing_commod | Moyen-Orient | geopolitical |  | BRENT:LONG:medium;GOLD:LONG:low | medium | confirmed |
+| 2026-04-29 |  | Oil & Gas Reserves | Alaska proved reserves up 5% oil, 7% gas in 2024; nationwide reserves fell due to low prices |  |  | 1 | eia_today_in_energy | US | commodity |  |  | low | confirmed |
+| 2026-04-28 |  | Iran-Moyen-Orient | Fermeture du détroit d'Ormuz le 28 février, perturbation des flux de GNL | BRENT |  | 1 | eia_today_in_energy | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-04-24 |  | Crude oil backwardation | Brent spot price premium >$25/bbl over front-month futures in early April | BRENT |  | 1 | eia_today_in_energy | Global | commodity |  | BRENT:LONG:high | high | confirmed |
+| 2026-04-23 |  | LNG supply | Golden Pass LNG (10th US terminal) ships first cargo amid Strait of Hormuz disruption affecting 20% of global supply | BRENT |  | 1 | eia_today_in_energy | US | commodity |  | BRENT:SHORT:medium | high | confirmed |
+| 2026-04-21 |  | Natural Gas Storage | US natural gas storage at end of winter heating season 3% above 5-year average |  |  | 1 | eia_today_in_energy | US | commodity |  |  | low | confirmed |
+| 2026-04-20 |  | Strategic oil reserves | US and IEA members agree to coordinated emergency release of strategic oil stocks after Strait of Hormuz closure | BRENT |  | 1 | eia_today_in_energy | Global | commodity |  | BRENT:SHORT:high | high | reported |
+| 2026-04-16 |  | LNG-Exports | US LNG exports forecast to grow nearly 30% by 2027 as new facilities ramp up | BRENT |  | 1 | eia_today_in_energy | US | commodity |  | BRENT:SHORT:medium | medium | confirmed |
+| 2026-04-15 |  |  | Article éducatif sur les formulations d'essence aux États-Unis |  |  | 1 | eia_today_in_energy | US | other |  |  | low | confirmed |
+| 2026-04-14 |  | Energy | US hydropower generation expected to increase 5% in 2026 but remain below 10-year average due to snow drought |  |  | 1 | eia_today_in_energy | US | commodity |  |  | low | confirmed |
+| 2026-04-10 |  | Oil demand | US gasoline consumption declining due to fuel efficiency gains, trend to continue | BRENT |  | 1 | eia_today_in_energy | US | commodity |  | BRENT:SHORT:medium | medium | confirmed |
+| 2026-04-08 |  | Natural Gas Supply | EIA AEO2026 projects significant increase in U.S. dry natural gas production over next decades due to growing demand | BRENT |  | 1 | eia_today_in_energy | US | commodity |  | BRENT:SHORT:low | medium | confirmed |
+| 2026-04-07 |  | Iran-Moyen-Orient | Fermeture de facto du détroit d'Ormuz après action militaire le 28 février 2026 | BRENT |  | 1 | eia_today_in_energy | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-04-06 |  | Oil supply | US crude oil imports from Middle East Gulf represent 8% of total in 2025 |  |  | 1 | eia_today_in_energy | US | commodity |  |  | low | confirmed |
+| 2026-04-02 |  | Energy transition | Rooftop solar reaches 20% of Puerto Rico's capacity mix, becoming second-largest source |  |  | 1 | eia_today_in_energy | US | commodity |  |  | low | confirmed |
+| 2026-05-12 |  | EIA-Short-Term-Energy-Outlook | EIA publie ses prévisions de mai avec perturbations persistantes des flux pétroliers au Moyen-Orient | BRENT |  | 1 | eia_press_releases | US | commodity |  | BRENT:LONG:medium | medium | confirmed |
+| 2026-04-08 |  | EIA-Energy Outlook | Publication du Annual Energy Outlook 2026 par l'EIA, projections long terme |  |  | 1 | eia_press_releases | US | commodity |  |  | low | confirmed |
+| 2026-04-07 |  | Iran-Moyen-Orient | EIA examine les implications de la fermeture du détroit d'Ormuz dans ses prévisions | BRENT |  | 1 | eia_press_releases | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-03-25 |  | EIA-Data Centers | EIA launches pilot survey on energy use at data centers |  |  | 1 | eia_press_releases | US | regulatory |  |  | low | confirmed |
+| 2026-03-10 |  | EIA-Short-Term Energy Outlook | Brent à 94$/b, hausse 50% depuis janvier, chute trafic détroit d'Ormuz et production Moyen-Orient | BRENT |  | 1 | eia_press_releases | Moyen-Orient | commodity |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-02-10 |  | Natural Gas | EIA raises natural gas price forecast due to record storage withdrawals and increased heating demand from Winter Storm Fern | BRENT |  | 1 | eia_press_releases | US | commodity |  | BRENT:LONG:low | high | confirmed |
+| 2026-01-13 |  | US Energy Demand | EIA forecasts strongest four-year growth in U.S. electricity demand since 2000, driven by data centers | SP500 |  | 1 | eia_press_releases | US | macro |  | SP500:LONG:medium;NASDAQ:LONG:medium | medium | confirmed |
+| 2026-05-28 |  | Fed enforcement actions | Fed issues enforcement actions against former employees of Atlantic Union Bank and Frost Bank |  |  | 1 | fed_press_all | US | regulatory |  |  | low | confirmed |
+| 2026-05-22 |  | Fed-FOMC | Kevin Warsh prête serment comme président de la Fed et du FOMC, élection unanime | SP500 |  | 1 | fed_press_all | US | central_bank |  | SP500:SHORT:medium;NASDAQ:SHORT:medium;EURUSD:LONG:medium;GOLD:LONG:medium | high | confirmed |
+| 2026-05-21 |  | Fed-enforcement | Fed enforcement action against former Commerce Bank employee |  |  | 1 | fed_press_all | US | regulatory |  |  | low | confirmed |
+| 2026-05-20 |  | Fed-Payments | Fed proposes new payment account for clearing and settlement, seeking public comment |  |  | 1 | fed_press_all | US | regulatory |  |  | low | confirmed |
+| 2026-05-15 |  | Fed-FOMC | Jerome Powell nommé président pro tempore de la Fed en attendant la confirmation de Kevin Warsh | SP500 |  | 1 | fed_press_all | US | central_bank |  | SP500:LONG:medium;NASDAQ:LONG:medium;EURUSD:SHORT:low | medium | confirmed |
+| 2026-05-15 |  | Fed-approval | Fed approuve une demande de trust bancaire (Stephen M. Calk 2025 Trust) |  |  | 1 | fed_press_all | US | regulatory |  |  | low | confirmed |
+| 2026-05-15 |  | Banking regulation | Fed non-objection to United Texas Bank conversion from state to national bank |  |  | 1 | fed_press_all | US | regulatory |  |  | low | confirmed |
+| 2026-05-15 |  | Fed-enforcement | Fed lève les mesures de contrôle sur UBS/Credit Suisse, fin des restrictions réglementaires |  |  | 1 | fed_press_all | US | regulatory |  |  | medium | confirmed |
+| 2026-05-14 |  | Fed-FOMC | Stephen Miran submits resignation from Fed Board, effective upon successor's swearing-in |  |  | 1 | fed_press_all | US | central_bank |  |  | low | confirmed |
+| 2026-05-14 |  | Fed-surveys | Fed publie enquêtes sur fenêtre d'escompte et gestion des réserves |  |  | 1 | fed_press_all | US | central_bank |  |  | low | confirmed |
+| 2026-05-13 |  | Fed-Report | Publication du rapport sur le bien-être économique des ménages américains par la Fed |  |  | 1 | fed_press_all | US | macro |  |  | low | confirmed |
+| 2026-05-12 |  | Fed enforcement actions | Fed terminates enforcement actions against two small bank holding companies |  |  | 1 | fed_press_all | US | regulatory |  |  | low | confirmed |
+| 2026-05-08 |  | Fed-approval | Fed approuve les demandes de Columbia Bank MHC et Columbia Financial |  |  | 1 | fed_press_all | US | regulatory |  |  | low | confirmed |
+| 2026-04-29 |  | Fed-FOMC | Publication du communiqué FOMC de la Fed | SP500 |  | 1 | fed_press_all | US | central_bank |  | SP500:LONG:medium;NASDAQ:LONG:medium;EURUSD:SHORT:medium;GOLD:SHORT:medium | high | confirmed |
+| 2026-04-24 |  | Fed-approval | Fed approuve la demande d'OceanFirst Financial Corp. |  |  | 1 | fed_press_all | US | regulatory |  |  | low | confirmed |
+| 2026-04-24 |  | Fed-approval | Fed approuve la demande de Banco de Credito del Peru |  |  | 1 | fed_press_all | US | regulatory |  |  | low | confirmed |
+| 2026-03-18 |  | Fed-FOMC | Publication des projections économiques du FOMC de mars |  |  | 1 | fed_monetary | US | central_bank |  |  | medium | confirmed |
+| 2026-05-29 |  | ECB | ECB appoints three Directors General |  |  | 1 | ecb_press | EU | central_bank |  |  | low | confirmed |
+| 2026-05-28 |  | ECB | Discours de Lagarde sur l'indépendance des banques centrales |  |  | 1 | ecb_press | EU | central_bank |  |  | low | confirmed |
+| 2026-05-26 |  | ECB | Interview de Philip Lane (ECB) avec Nikkei |  |  | 1 | ecb_press | EU | central_bank |  |  | low | confirmed |
+| 2026-05-22 |  | ECB | ECB Governing Council decisions (non-rate) |  |  | 1 | ecb_press | EU | central_bank |  |  | low | confirmed |
+| 2026-05-20 |  |  | Publication d'une enquête technique sur les conditions de crédit dans les marchés de financement de titres et dérivés OTC en euros |  |  | 1 | ecb_press | EU | other |  |  | low | confirmed |
+| 2026-05-13 |  |  | Discours de Christine Lagarde sur l'Europe |  |  | 1 | ecb_press | EU | other |  |  | low | confirmed |
+| 2026-05-26 |  |  | Mise à jour de taxonomie statistique bancaire (BEEDS UAT) |  |  | 1 | boe_news | EU | other |  |  | low | confirmed |
+| 2026-05-18 |  | UK crypto-tokenisation regulation | FCA and BoE publish shared vision for tokenisation in UK wholesale markets, seeking industry feedback |  |  | 1 | boe_news | EU | regulatory |  |  | low | confirmed |
+| 2026-05-15 |  | AI regulation | Joint statement by BoE, FCA, HM Treasury on frontier AI models and cyber resilience |  |  | 1 | boe_news | EU | regulatory |  |  | low | confirmed |
+| 2026-05-08 |  | BoE-MPC | Publication des minutes du MPG du 7 mai 2026, forum avec la BoE |  |  | 1 | boe_news | EU | central_bank |  |  | low | confirmed |
+| 2026-04-30 |  | BoE-Inflation | Échange de lettres entre le gouverneur de la BoE et le chancelier sur l'inflation CPI | EURUSD |  | 1 | boe_news | EU | central_bank |  | EURUSD:SHORT:medium | medium | confirmed |
+| 2026-04-30 |  | BoE-Monetary Policy | Bank of England maintains Bank Rate at 3.75% as expected |  |  | 1 | boe_news | EU | central_bank |  |  | low | confirmed |
+| 2026-04-28 |  |  | Mise à jour administrative des définitions statistiques bancaires par la Banque d'Angleterre |  |  | 1 | boe_news | EU | other |  |  | low | confirmed |
+| 2026-04-16 |  | AI regulation | Publication des minutes du consortium IA sur les services financiers au Royaume-Uni |  |  | 1 | boe_news | EU | regulatory |  |  | low | confirmed |
+| 2026-04-13 |  |  | Réunion du sous-comité opérations et juridique du FXJSC à la Banque d'Angleterre |  |  | 1 | boe_news | EU | other |  |  | low | confirmed |
+| 2026-04-13 |  |  | Publication des minutes du comité FXJSC de Londres, sans annonce de politique monétaire ni choc de marché |  |  | 1 | boe_news | EU | other |  |  | low | confirmed |
+| 2026-04-13 |  | Bank of England - resolution regime | BoE publie des guides opérationnels mis à jour sur la résolution bancaire |  |  | 1 | boe_news | EU | regulatory |  |  | low | confirmed |
+| 2026-04-01 |  | UK AI regulation in finance | Bank of England and PRA respond to government on AI in financial services |  |  | 1 | boe_news | EU | regulatory |  |  | low | confirmed |
+| 2026-03-26 |  | BoE-PRA regulation | BoE and PRA finalize changes to resolution reporting and disclosure requirements, reducing regulatory burden while maintaining regime robustness. |  |  | 1 | boe_news | EU | regulatory |  |  | low | confirmed |
+| 2026-03-11 |  |  | Bank of England announces wildlife-themed banknotes after public consultation |  |  | 1 | boe_news | EU | other |  |  | low | confirmed |

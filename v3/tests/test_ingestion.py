@@ -70,16 +70,17 @@ def _mk_rss_response(entries):
 # ============================================================
 
 def test_early_signal_feeds_declared():
-    """16 early-signal feeds configurés (cf. spec Phase 2.2)."""
-    assert len(config.EARLY_SIGNAL_FEEDS) >= 16
-    # Échantillon : energie, banques centrales, agri, métaux
+    """early-signal feeds configurés (purge flux morts 30/05 : 14 flux testés OK)."""
+    assert len(config.EARLY_SIGNAL_FEEDS) >= 12
+    # Échantillon : energie, banques centrales, métaux, actifs sous-couverts (gnews)
     names = {n for n, _, _ in config.EARLY_SIGNAL_FEEDS}
     assert "eia_today_in_energy" in names
-    assert "opec_press" in names
+    assert "mining_com" in names
     assert "fed_press_all" in names
     assert "ecb_press" in names
-    assert "usda_newsroom" in names
-    assert "lme_news" in names
+    assert "gnews_coffee" in names
+    assert "gnews_cac40" in names
+    assert "oilprice" in names
 
 
 def test_structured_sources_declared():
@@ -308,7 +309,7 @@ def test_collect_all_polls_early_signal_feeds(monkeypatch):
     # Early-signal pollés
     assert "eia_today_in_energy" in polled_names
     assert "fed_press_all" in polled_names
-    assert "opec_press" in polled_names
+    assert "mining_com" in polled_names
 
     # Total : mainstream actifs (10) + early-signal (16) = 26 feeds RSS pollés
     n_mainstream = len([f for f in config.RSS_FEEDS if not f[0].startswith("reuters_")])

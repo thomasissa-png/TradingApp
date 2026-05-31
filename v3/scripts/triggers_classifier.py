@@ -627,16 +627,25 @@ def _resolve_triplet_with_meta(
     short_keywords: List[str],
     lookback_days: int,
     now: datetime,
+    synthese: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Comme _resolve_triplet mais retourne aussi (materiality, reliability,
     source_track) du meilleur event ayant produit la direction.
 
-    source_track ∈ {"ia", "keyword", "none"}.
+    source_track ∈ {"ia_synthese", "ia_synthese_faible", "ia", "ia_conflict",
+    "keyword", "none"}.
     materiality/reliability sont les champs bruts de l'event gagnant (lower-case,
-    "" si manquants). Si direction = 0 → meta vide.
+    "" si manquants). Si direction = 0 → meta peut être vide ou contenir
+    "ia_synthese_faible" (niveau 2 — fallback prix attendu).
+
+    `synthese` (optionnel) : résultat de synthese_directionnelle pour cet actif,
+    forme {"direction": "LONG|SHORT|NEUTRAL", "conviction": "high|medium|low",
+    "rationale": "..."}. Si fourni avec conviction high/medium → court-circuite
+    l'agrégation. Si low/NEUTRAL → critère = 0 (niveau 2).
     """
     val, meta = _resolve_triplet_impl(
         events, actif_key, cle, long_keywords, short_keywords, lookback_days, now,
+        synthese=synthese,
     )
     return val, meta
 
@@ -649,10 +658,12 @@ def _resolve_triplet(
     short_keywords: List[str],
     lookback_days: int,
     now: datetime,
+    synthese: Optional[Dict[str, str]] = None,
 ) -> int:
     """Rétro-compat : ne retourne que la direction."""
     val, _meta = _resolve_triplet_impl(
         events, actif_key, cle, long_keywords, short_keywords, lookback_days, now,
+        synthese=synthese,
     )
     return val
 
@@ -665,6 +676,7 @@ def _resolve_triplet_impl(
     short_keywords: List[str],
     lookback_days: int,
     now: datetime,
+    synthese: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Résout un triplet en mode HYBRIDE :
 
@@ -693,6 +705,40 @@ def _resolve_triplet_impl(
     if not long_keywords and not short_keywords and not _criterion_has_ia_route(actif_key, cle):
         # Critère sans keywords ni route IA possible : 0 neutre.
         return 0, {}
+
+    # -------- 0) Synthèse directionnelle IA (niveau 1) --------
+    # Si une synthèse par actif a été calculée en amont par synthese_directionnelle,
+    # elle PRIME sur l'agrégation mécanique : c'est elle qui résout les conflits
+    # multi-news (ex Pétrole 16 LONG vs 8 SHORT). On l'applique uniquement aux
+    # critères qui ont un scope IA (sinon la synthèse n'aurait pas vu cet actif).
+    if synthese and _criterion_has_ia_route(actif_key, cle):
+        direction = str(synthese.get("direction", "")).upper()
+        conviction = str(synthese.get("conviction", "")).lower()
+        rationale = str(synthese.get("rationale", ""))[:300]
+        if conviction in ("high", "medium") and direction in ("LONG", "SHORT"):
+            val_signed = 1 if direction == "LONG" else -1
+            logger.info(
+                "synthese[%s/%s] -> %s (conviction=%s) : %s",
+                actif_key, cle, direction, conviction, rationale[:160],
+            )
+            return val_signed, {
+                "materiality": conviction,  # propage le bucket pour valeur_pondérée
+                "reliability": "",
+                "source_track": "ia_synthese",
+                "synthese_rationale": rationale,
+            }
+        # Conviction faible OU direction NEUTRAL → niveau 2 : critère news = 0.
+        # Le prix tranchera via les critères numériques de la cellule.
+        logger.info(
+            "synthese[%s/%s] faible/neutral (dir=%s conv=%s) -> 0 (niveau 2 : prix tranchera)",
+            actif_key, cle, direction or "?", conviction or "?",
+        )
+        return 0, {
+            "materiality": "",
+            "reliability": "",
+            "source_track": "ia_synthese_faible",
+            "synthese_rationale": rationale,
+        }
 
     cutoff = now - timedelta(days=lookback_days)
     candidates = _candidates_for(events, actif_key, cle)
@@ -854,16 +900,96 @@ def _emit_key(actif_key: str, yml_cle: str) -> str:
     return YML_KEY_TO_CLE_COURANTE.get((actif_key, yml_cle), yml_cle)
 
 
+def _group_events_by_asset(events: List[dict], now: datetime, lookback_days: int = 7) -> Dict[str, List[dict]]:
+    """Regroupe les events par asset_id IA (BRENT, GOLD, ...) sur la fenêtre.
+
+    Un event peut apparaître dans plusieurs buckets (multi-impacts).
+    Tri desc par date dans chaque bucket. Filtre : seuls les events ayant un
+    impact LONG/SHORT pour l'asset sont inclus (NEUTRAL/non-listé ignoré).
+    """
+    cutoff = now - timedelta(days=lookback_days)
+    out: Dict[str, List[dict]] = {}
+    for ev in events:
+        dt = ev.get("_dt")
+        if not isinstance(dt, datetime):
+            continue
+        if dt < cutoff or dt > now:
+            continue
+        impacts = ev.get("_impacts") or []
+        for imp in impacts:
+            if not isinstance(imp, dict):
+                continue
+            asset = str(imp.get("asset", "")).upper()
+            direction = str(imp.get("direction", "")).upper()
+            if asset not in IA_ASSET_TO_ACTIF or direction not in ("LONG", "SHORT"):
+                continue
+            out.setdefault(asset, []).append(ev)
+    # Déduplication (un event multi-impacts n'apparaît qu'une fois par asset)
+    # + tri desc par date
+    for asset in list(out.keys()):
+        seen = set()
+        dedup: List[dict] = []
+        for ev in out[asset]:
+            key = id(ev)
+            if key in seen:
+                continue
+            seen.add(key)
+            dedup.append(ev)
+        dedup.sort(key=lambda e: e.get("_dt") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+        out[asset] = dedup
+    return out
+
+
+def _compute_syntheses(
+    events: List[dict], now: datetime, extractor: Any, max_lookback_days: int = 14,
+) -> Dict[str, Dict[str, str]]:
+    """Calcule les synthèses directionnelles par actif (niveau 1).
+
+    Retourne {actif_key_yml: {direction, conviction, rationale}} (clé YAML, pas
+    asset_id IA — c'est ce que consomme `_resolve_triplet_impl`).
+
+    Si extractor None ou désactivé → {} (dégradation gracieuse, ancien comportement).
+    """
+    if extractor is None:
+        return {}
+    is_enabled = getattr(extractor, "is_enabled", None)
+    if not callable(is_enabled) or not is_enabled():
+        return {}
+    try:
+        import synthese_directionnelle as sd
+    except ImportError as e:
+        logger.warning("synthese_directionnelle import KO : %s", e)
+        return {}
+
+    events_by_asset = _group_events_by_asset(events, now, lookback_days=max_lookback_days)
+    if not events_by_asset:
+        return {}
+    raw = sd.synthesize_all(events_by_asset, extractor)
+    # Remap asset_id IA -> actif_key YAML
+    out: Dict[str, Dict[str, str]] = {}
+    for asset_id, synth in raw.items():
+        actif_key = IA_ASSET_TO_ACTIF.get(asset_id)
+        if actif_key:
+            out[actif_key] = synth
+    return out
+
+
 def classify_all_with_meta(
     events: Optional[List[dict]] = None,
     today: Optional[datetime] = None,
     triggers_cfg: Optional[dict] = None,
+    extractor: Any = None,
 ) -> Dict[str, Dict[str, Dict[str, Any]]]:
     """Variante riche : pour chaque triplet, retourne aussi materiality/reliability/source_track.
 
     Sortie : {actif_key: {cle_courante: {"valeur": int, "materiality": str,
               "reliability": str, "source_track": str}}}
     Pour les critères calendrier (pas d'event source) → meta avec source_track='calendrier'.
+
+    `extractor` (optionnel) : instance Extractor. Si fournie ET activée, on calcule
+    une synthèse directionnelle par actif (niveau 1 — DeepSeek) qui prime sur
+    l'agrégation mécanique pour les critères de type news/géopol. Si None →
+    comportement legacy 100% rétro-compatible (les 299 tests passent).
     """
     if triggers_cfg is None:
         triggers_cfg = load_triggers_config()
@@ -878,11 +1004,15 @@ def classify_all_with_meta(
         today_dt = datetime(today.year, today.month, today.day, 23, 59, 59, tzinfo=timezone.utc)
         today_date = today
 
+    # Synthèses directionnelles par actif (niveau 1). Vide si extractor None.
+    syntheses = _compute_syntheses(events, today_dt, extractor)
+
     out: Dict[str, Dict[str, Dict[str, Any]]] = {}
     for actif_key, criteres in triggers_cfg.items():
         if not isinstance(criteres, dict):
             continue
         actif_out: Dict[str, Dict[str, Any]] = {}
+        synth_for_actif = syntheses.get(actif_key)
         for cle, spec in criteres.items():
             if not isinstance(spec, dict):
                 continue
@@ -898,11 +1028,14 @@ def classify_all_with_meta(
                     spec.get("short_keywords", []) or [],
                     lookback,
                     today_dt,
+                    synthese=synth_for_actif,
                 )
                 entry: Dict[str, Any] = {"valeur": val}
                 entry["materiality"] = meta.get("materiality", "")
                 entry["reliability"] = meta.get("reliability", "")
                 entry["source_track"] = meta.get("source_track", "none")
+                if "synthese_rationale" in meta:
+                    entry["synthese_rationale"] = meta["synthese_rationale"]
                 actif_out[emit_cle] = entry
             elif t == "calendrier":
                 val = _resolve_calendrier(cle, today_date)
@@ -924,6 +1057,7 @@ def classify_all(
     events: Optional[List[dict]] = None,
     today: Optional[datetime] = None,
     triggers_cfg: Optional[dict] = None,
+    extractor: Any = None,
 ) -> Dict[str, Dict[str, int]]:
     """Pour chaque actif × critère triplet/calendrier, retourne la valeur ∈ {-1,0,+1}.
 
@@ -931,6 +1065,9 @@ def classify_all(
     Les clés émises sont les `cle_courante` attendues par les fiches.
     Les critères `numerique` (fenêtres d'activation) ne sont PAS traités ici
     (le calculator s'en occupe).
+
+    `extractor` (optionnel) : instance Extractor pour activer la synthèse
+    directionnelle (niveau 1). None → comportement legacy (rétro-compat tests).
     """
     if triggers_cfg is None:
         triggers_cfg = load_triggers_config()
@@ -948,11 +1085,14 @@ def classify_all(
         today_dt = datetime(today.year, today.month, today.day, 23, 59, 59, tzinfo=timezone.utc)
         today_date = today
 
+    syntheses = _compute_syntheses(events, today_dt, extractor)
+
     out: Dict[str, Dict[str, int]] = {}
     for actif_key, criteres in triggers_cfg.items():
         if not isinstance(criteres, dict):
             continue
         actif_out: Dict[str, int] = {}
+        synth_for_actif = syntheses.get(actif_key)
         for cle, spec in criteres.items():
             if not isinstance(spec, dict):
                 continue
@@ -968,6 +1108,7 @@ def classify_all(
                     spec.get("short_keywords", []) or [],
                     lookback,
                     today_dt,
+                    synthese=synth_for_actif,
                 )
                 actif_out[emit_cle] = val
             elif t == "calendrier":

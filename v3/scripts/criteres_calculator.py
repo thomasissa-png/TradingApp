@@ -1489,10 +1489,28 @@ def run(now: Optional[datetime] = None) -> Path:
     fiches = load_fiches()
     triggers_cfg = tc.load_triggers_config()
     events = tc.parse_events_log()
+
+    # Synthèse directionnelle par actif (niveau 1 — DeepSeek). Si la clé
+    # DEEPSEEK_API_KEY est absente OU si le hard-cap coût est atteint,
+    # l'extractor est désactivé → classify_all_with_meta retombe sur
+    # l'agrégation mécanique legacy (rétro-compat 100%).
+    extractor_for_synthese: Any = None
+    try:
+        from extractor import Extractor  # import local : pas de cycle, pas de coût si non utilisé
+        ext = Extractor()
+        if ext.is_enabled():
+            extractor_for_synthese = ext
+            logger.info("synthese-directionnelle: extractor activé")
+        else:
+            logger.info("synthese-directionnelle: extractor désactivé (no key / hard-cap) -> fallback legacy")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("synthese-directionnelle: init extractor KO (%s) -> fallback legacy", e)
+
     # On utilise la variante "with_meta" pour propager materiality/reliability
     # jusqu'aux critères (nécessaire au calcul de valeur_ponderee).
     triplets_by_actif = tc.classify_all_with_meta(
         events=events, today=now, triggers_cfg=triggers_cfg,
+        extractor=extractor_for_synthese,
     )
 
     payload: Dict[str, Any] = {"last_update": now.isoformat()}

@@ -56,6 +56,8 @@ jobs:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
           USDA_API_KEY: ${{ secrets.USDA_API_KEY }}
+          NASS_API_KEY: ${{ secrets.NASS_API_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           GIE_AGSI_API_KEY: ${{ secrets.GIE_AGSI_API_KEY }}
           LOG_LEVEL: INFO
         run: python v3/scripts/run_bulletin.py

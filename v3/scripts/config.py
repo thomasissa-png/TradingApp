@@ -83,6 +83,15 @@ EARLY_SIGNAL_FEEDS = [
     ("worldbank_news",         "https://www.worldbank.org/en/news/all.rss",                  1800),
     ("bis_press",              "https://www.bis.org/list/press_releases/index.rss",          1800),
     ("bls_news",               "https://www.bls.gov/feed/news_release.rss",                  1800),
+    # Agri / softs (Café, Cacao, Blé) — sous-couverts par les sources US (audit 30/05)
+    ("usda_nass",              "https://www.nass.usda.gov/RSS/news.rss",                     1800),
+    ("fao_news",               "https://www.fao.org/feeds/news/en/rss.xml",                  3600),
+    ("agweb_markets",          "https://www.agweb.com/rss/markets",                          1800),
+    ("worldgrain",             "https://www.world-grain.com/rss/topic/1-news",               3600),
+    # CAC 40 / Europe actions — sous-couverts (audit 30/05)
+    ("boursorama_actions",     "https://www.boursorama.com/bourse/rss/actualites",           1800),
+    # Cuivre / métaux industriels (Chine, mines)
+    ("mining_com",             "https://www.mining.com/feed/",                               1800),
 ]
 
 # ============================================================
@@ -99,6 +108,12 @@ STRUCTURED_QUERIES = [
     "Fed OR FOMC OR ECB OR inflation OR CPI",
     "Nasdaq OR S&P 500 OR CAC 40 OR DAX",
     "EUR USD OR yen OR dollar index OR forex",
+    # Requêtes dédiées aux actifs sous-couverts (audit 30/05) — agri / cuivre / CAC
+    "coffee prices OR arabica OR robusta OR Brazil harvest OR Vietnam coffee",
+    "cocoa prices OR Ivory Coast OR Ghana cocoa OR cocoa grindings",
+    "wheat prices OR Black Sea grain OR Russia wheat OR US wheat crop",
+    "copper prices OR LME copper OR Chile mine OR China copper demand",
+    "CAC 40 OR French stocks OR LVMH OR TotalEnergies OR France politics budget",
 ]
 
 STRUCTURED_SOURCES = [

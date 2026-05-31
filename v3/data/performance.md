@@ -1,6 +1,6 @@
 # Performance du bulletin — Journaliste
 
-- Généré : 2026-05-31T10:12:36.007561+02:00
+- Généré : 2026-05-31T13:30:47.940734+02:00
 - Journaliste version : v3.1.0
 - Fenêtre KPI : 30 dernières conclusions terminées par cellule
 - PROBA_SCALE : 10.0 (proba = 0.5 + clip(|score|/SCALE, 0, 0.5))

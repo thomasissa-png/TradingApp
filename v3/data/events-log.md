@@ -380,3 +380,84 @@ Append-only. Édité par v3/scripts/agent_news.py (GitHub Actions cron).
 | 2026-04-01 |  | UK AI regulation in finance | Bank of England and PRA respond to government on AI in financial services |  |  | 1 | boe_news | EU | regulatory |  |  | low | confirmed |
 | 2026-03-26 |  | BoE-PRA regulation | BoE and PRA finalize changes to resolution reporting and disclosure requirements, reducing regulatory burden while maintaining regime robustness. |  |  | 1 | boe_news | EU | regulatory |  |  | low | confirmed |
 | 2026-03-11 |  |  | Bank of England announces wildlife-themed banknotes after public consultation |  |  | 1 | boe_news | EU | other |  |  | low | confirmed |
+<!-- batch 2026-05-31T11:29:42Z : 80 events -->
+| 2026-05-30 |  |  | Ex-M&S chief Marc Bolland to advise UK government on youth unemployment |  |  | 1 | bbc_business | EU | other |  |  | low | confirmed |
+| 2026-05-31 |  | Asia-Pacific security | IISS Shangri-La Dialogue 2026: discussions on defense spending, China in Asia, and lessons from Ukraine |  |  | 1 | cnbc_top | Global | geopolitical |  |  | low | confirmed |
+| 2026-05-30 |  | Iran-Moyen-Orient | Trump met fin à la réunion sur l'Iran sans annonce de décision finale sur l'accord, incertitude maintenue | BRENT |  | 1 | cnbc_top | Moyen-Orient | geopolitical |  | BRENT:LONG:medium;GOLD:LONG:medium;VIX:LONG:low | medium | confirmed |
+| 2026-05-31 |  |  | InvestingPro Fair Value call delivers 62% return on Kforce stock |  |  | 1 | investing_news | US | other |  |  | low | reported |
+| 2026-05-31 |  |  | Concentration du S&P 500 sur 7 valeurs (35%) |  |  | 1 | investing_news | US | other |  |  | low | confirmed |
+| 2026-05-31 |  | Iran-Moyen-Orient | Iran's top negotiator says no deal until national rights secured | BRENT |  | 1 | investing_news | Moyen-Orient | geopolitical |  | BRENT:LONG:medium;GOLD:LONG:medium | medium | reported |
+| 2026-05-31 |  | UE-Russie sanctions | UE envisage de geler le plafonnement du prix du pétrole russe en raison du conflit au Moyen-Orient | BRENT |  | 1 | investing_news | EU | geopolitical |  | BRENT:LONG:medium | medium | reported |
+| 2026-05-31 |  | Ukraine-Russia | Coupes d'aide américaine à l'Ukraine sous Trump, impact sur justice crimes de guerre |  |  | 1 | investing_news | UA | geopolitical |  |  | low | reported |
+| 2026-05-31 |  | EU-Russia sanctions | EU considers freezing Russian oil price cap amid Middle East war lifting crude prices | BRENT |  | 1 | investing_news | EU | geopolitical |  | BRENT:LONG:medium | medium | reported |
+| 2026-02-27 |  | UK-PRA | Nomination de Katharine Braddick comme nouveau chef de la PRA (régulateur bancaire UK) à partir de juin 2026 |  |  | 1 | boe_news | EU | regulatory |  |  | low | confirmed |
+| 2026-02-16 |  | BoE-AI | Bank of England holds AI roundtables with regulated firms |  |  | 1 | boe_news | EU | central_bank |  |  | low | confirmed |
+| 2026-02-09 |  | BoE-statistical | Green notice 2026/01: proposals for BoE reporting, not yet finalised |  |  | 1 | boe_news | EU | central_bank |  |  | low | reported |
+| 2026-02-04 |  | FX market data | Publication des résultats de l'enquête semestrielle sur le turnover FX au Royaume-Uni pour octobre 2025 |  |  | 1 | boe_news | EU | macro |  |  | low | confirmed |
+| 2026-01-14 |  | UK-EU financial regulation | UK and EU regulators sign MoU to strengthen oversight of critical third parties (CTPs) |  |  | 1 | boe_news | EU | regulatory |  |  | low | confirmed |
+| 2026-01-13 |  | Fed-FOMC | Déclaration de soutien des banquiers centraux internationaux à Powell |  |  | 1 | boe_news | US | central_bank |  |  | low | confirmed |
+| 2026-05-29 |  | BOJ-JGB | BOJ publie calendrier d'achats d'obligations d'État japonaises pour avril-juin 2026 |  |  | 1 | boj_news | JP | central_bank |  |  | low | confirmed |
+| 2026-05-27 |  | BOJ | Discours du gouverneur Ueda à la conférence BOJ-IMES 2026 |  |  | 1 | boj_news | JP | central_bank |  |  | low | confirmed |
+| 2026-05-26 |  | US-inflation | Indicateurs pour Core CPI à venir |  |  | 1 | boj_news | US | macro |  |  | low | reported |
+| 2026-05-25 |  | Credit conditions | Publication des taux d'intérêt moyens sur prêts et escomptes (mars) |  |  | 1 | boj_news | US | macro |  |  | low | confirmed |
+| 2026-05-22 |  |  | Information générale sur les obligations d'État japonaises détenues par la BoJ |  |  | 1 | boj_news | Global | other |  |  | low | confirmed |
+| 2026-05-22 |  |  | Publication d'un papier de recherche sur les attentes de croissance des salaires et d'inflation |  |  | 1 | boj_news | Global | other |  |  | low | confirmed |
+| 2026-05-22 |  | BOJ-FX | Analyse BOJ du marché FX japonais basée sur enquête BIS 2025 |  |  | 1 | boj_news | JP | central_bank |  |  | low | confirmed |
+| 2026-05-22 |  |  | Publication des comptes de la Banque du Japon au 20 mai |  |  | 1 | boj_news | Global | other |  |  | low | confirmed |
+| 2026-05-22 |  |  | Research paper on spatial spillovers of land price declines after Typhoon Hagibis |  |  | 1 | boj_news | Global | other |  |  | low | confirmed |
+| 2026-05-21 |  |  | BOJ review on life insurers business models and financial stability |  |  | 1 | boj_news | JP | other |  |  | low | confirmed |
+| 2026-05-20 |  |  | Enquête sur le marché obligataire (mai 2026) sans données spécifiques |  |  | 1 | boj_news | US | other |  |  | low | reported |
+| 2026-05-18 |  | BOJ-monetary-policy | Publication des soldes des comptes courants par secteur de la BOJ pour avril |  |  | 1 | boj_news | JP | macro |  |  | low | confirmed |
+| 2026-05-14 |  | scam warning | Warning against scams using Bank of Japan's name |  |  | 1 | boj_news | JP | regulatory |  |  | low | confirmed |
+| 2026-05-13 |  | Monetary aggregates | Publication des données de masse monétaire (M2) pour avril |  |  | 1 | boj_news | US | macro |  |  | low | confirmed |
+| 2026-05-11 |  | BoJ-Japan | Publication des transactions BoJ avec le gouvernement pour avril |  |  | 1 | boj_news | JP | macro |  |  | low | confirmed |
+| 2026-05-11 |  | BoJ-monetary-policy | Publication des transactions de la Banque du Japon et de la base monétaire pour avril |  |  | 1 | boj_news | JP | central_bank |  |  | low | confirmed |
+| 2026-05-11 |  | BoJ | Bank of Japan conducts market operations in April |  |  | 1 | boj_news | JP | central_bank |  |  | low | confirmed |
+| 2026-05-07 |  | BoJ-Politique monétaire | Publication des données de collatéral accepté par la BoJ fin avril |  |  | 1 | boj_news | JP | central_bank |  |  | low | confirmed |
+| 2026-05-07 |  | BoJ | Publication des comptes de la Banque du Japon au 30 avril |  |  | 1 | boj_news | JP | central_bank |  |  | low | confirmed |
+| 2026-04-30 |  | Fed-Liquidité | Publication du calendrier des opérations de fourniture de dollars US (mai-sept 2026) |  |  | 1 | boj_news | US | central_bank |  |  | low | confirmed |
+| 2026-04-30 |  | BOJ-BOK research workshop | Annonce d'un atelier de recherche conjoint BOJ-BOK en 2026 |  |  | 1 | boj_news | Global | central_bank |  |  | low | confirmed |
+| 2026-05-30 |  | UK-China-India diplomacy | British foreign minister to visit China and India amid geopolitical tensions and high oil prices |  |  | 1 | gnews | Global | geopolitical |  |  | low | confirmed |
+| 2026-05-30 |  | China oil demand | China's inventory drawdown strategy nearing limits, expected to resume crude imports | BRENT |  | 1 | gnews | CN | commodity |  | BRENT:LONG:medium | medium | reported |
+| 2026-05-30 |  | Oil supply | Avertissement des dirigeants pétroliers sur des stocks très bas et hausse imminente des prix | BRENT |  | 1 | gnews | Global | commodity |  | BRENT:LONG:high | medium | reported |
+| 2026-05-30 |  |  | Conseil d'entretien de driveway contre les taches d'huile |  |  | 1 | gnews | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Test de primers cosmétiques par un journaliste |  |  | 1 | gnews | EU | other |  |  | low | confirmed |
+| 2026-05-30 |  | Carbon market policy | California eases carbon-market costs for oil refiners | BRENT |  | 1 | gnews | US | regulatory |  | BRENT:SHORT:low | medium | reported |
+| 2026-05-30 |  | Iran-export disruptions | Iranian non-oil exports (methanol, pistachios, cement) disrupted by war and supply chain issues |  |  | 1 | gnews | Moyen-Orient | supply_chain |  |  | low | reported |
+| 2026-05-30 |  | Oil supply disruption | Japan's naphtha imports plunge 47% in April due to Iran war supply disruptions | BRENT |  | 1 | gnews | Moyen-Orient | commodity |  | BRENT:LONG:high | high | confirmed |
+| 2026-05-30 |  | Iran-Moyen-Orient | Trump reporte sa décision finale sur l'accord avec l'Iran, maintenant l'incertitude | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:SHORT:medium;GOLD:SHORT:low | medium | confirmed |
+| 2026-05-30 |  | Iran-Moyen-Orient | Trump annonce une possible réouverture du détroit d'Ormuz ce week-end, signal géopolitique positif | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:SHORT:high;GOLD:SHORT:medium;SP500:LONG:medium | high | reported |
+| 2026-05-30 |  | Iran-Moyen-Orient | Maintien de la position ferme des États-Unis sur le détroit d'Ormuz, tensions prolongées avec l'Iran | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:low | medium | reported |
+| 2026-05-30 |  | Iran-Moyen-Orient | Iran utilise les cryptomonnaies pour contourner les sanctions et financer son économie de guerre | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:LONG:medium;GOLD:LONG:medium;VIX:LONG:low | medium | reported |
+| 2026-05-30 |  | Iran-Moyen-Orient | US interdit tout accord avec Iran pour transit sûr via Hormuz, escalade des tensions | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-05-30 |  |  | Tom Steyer, candidat démocrate au poste de gouverneur, promet de défier le pouvoir des entreprises et de protéger les travailleurs contre l'IA lors d'une réunion publique. |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Video explaining oil supply disruption and other topics |  |  | 1 | newsapi | Global | other |  |  | low | reported |
+| 2026-05-30 |  | Iran-Moyen-Orient | Parlement iranien va approuver une loi affirmant la souveraineté sur le détroit d'Ormuz | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | reported |
+| 2026-05-30 |  | Iran-Moyen-Orient | Avertissement maritime britannique d'éviter le détroit d'Ormuz en raison de tensions accrues | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-05-30 |  | Fuel supply | Indian OMCs confirm adequate fuel stocks in Tripura, supply smooth |  |  | 1 | newsapi | CN | supply_chain |  |  | low | confirmed |
+| 2026-05-30 |  | Ukraine-Russia conflict | Ukrainian drone strikes on Russian oil tanker and depot in southern Russia | BRENT |  | 1 | newsapi | UA | geopolitical |  | BRENT:LONG:medium | medium | confirmed |
+| 2026-05-30 |  |  | Indian stock market selloff due to MSCI reshuffles, not directly tradable in given asset list |  |  | 1 | newsapi | Global | other |  |  | low | confirmed |
+| 2026-05-30 |  | FPI flows-India | FPIs net sellers of Indian equities for third month, selling ₹32,963 crore in May | SP500 |  | 1 | newsapi | Global | macro |  | SP500:LONG:low;BRENT:LONG:low | medium | confirmed |
+| 2026-05-30 |  | US-China relations | China holds advantageous position in US negotiations, Trump visit to China |  |  | 1 | newsapi | Global | geopolitical |  |  | low | reported |
+| 2026-05-30 |  |  | Promotion sur carte graphique et alimentation PC |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Vente d'un cottage abritant le pommier Bramley original, déception des militants |  |  | 1 | newsapi | EU | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Robert Kirkman obtient la licence Gold Key pour Image/Skybound (bande dessinée) |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-30 |  |  | Événement historique du 30 mai 1925 à Shanghai |  |  | 1 | newsapi | CN | other |  |  | low | confirmed |
+| 2026-05-30 |  | Copper supply disruption | Démantèlement d'un réseau de vol de cuivre en Grèce, réduction de l'offre illicite | COPPER |  | 1 | newsapi | EU | commodity |  | COPPER:LONG:low | low | confirmed |
+| 2026-05-30 |  |  | Calendrier des jours fériés boursiers en Inde pour juin 2026 |  |  | 1 | newsapi | Global | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Rescue of gold miners from flooded cave in Laos |  |  | 1 | newsapi | Global | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Promotion sur smartphone Samsung Galaxy A54 |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Walmart annonce des réductions sur l'alimentation et livraison gratuite à partir de 35$ |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Article sur les bienfaits du café pour la santé |  |  | 1 | newsapi | Global | other |  |  | low | reported |
+| 2026-05-30 |  |  | Article lifestyle sur des astuces de glycémie |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-30 |  |  | Promotion café sur Amazon |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Weekend reads article with general content, no tradable news |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-30 |  | US-inflation-consumption | US consumer spending barely rose in April, inflation erodes incomes, saving rate near 4-year low | SP500 |  | 1 | newsapi | US | macro |  | SP500:SHORT:medium;NASDAQ:SHORT:medium;EURUSD:LONG:low | medium | confirmed |
+| 2026-05-30 |  |  | Promotion Amazon sur des bols de fruits Dole |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Opinion piece on AI economy risks from chip costs and token costs |  |  | 1 | newsapi | US | other |  |  | low | rumor |
+| 2026-05-30 |  |  | Basketball player injury update, no market impact |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Review of Tello Mobile budget plan, no market-moving information |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-30 |  | US equity rally | Wall Street record close, AI stocks and Dell lead rally | SP500 |  | 1 | newsapi | US | macro |  | SP500:LONG:medium;NASDAQ:LONG:medium | medium | confirmed |
+| 2026-05-30 |  | Fed-crypto | Fed Chair Kevin Warsh co-authored paper highlighting XRP as bridge currency for cross-border payments |  |  | 1 | newsapi | US | central_bank |  |  | low | reported |
+| 2026-05-30 |  |  | Retraction Watch weekly roundup, including White House proposal on APCs and data integrity allegations |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-30 |  | US housing-finance | HELOC rates near multi-year lows but expected to rise |  |  | 1 | newsapi | US | macro |  |  | low | reported |

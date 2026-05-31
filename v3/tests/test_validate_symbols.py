@@ -169,9 +169,19 @@ class TestTickerMapMarketData:
         assert md._map_ticker("EURUSD=X") == ("EUR/USD", {})
         # Alias raccourci EUR=X (utilisé dans nos fiches)
         assert md._map_ticker("EUR=X") == ("EUR/USD", {})
-        # Indices blacklistés → None (force yfinance)
-        assert md._map_ticker("^GSPC") is None
-        assert md._map_ticker("^FCHI") is None
+        # Indices principaux → ETF proxies Twelve (CI compatible, GitHub
+        # Actions où yfinance est bloqué par Yahoo). Cf. _TICKER_MAP.
+        assert md._map_ticker("^GSPC") == ("SPY", {})
+        assert md._map_ticker("^IXIC") == ("QQQ", {})
+        assert md._map_ticker("^NDX") == ("QQQ", {})
+        assert md._map_ticker("^RUT") == ("IWM", {})
+        assert md._map_ticker("^VIX") == ("VIXY", {})
+        # CAC 40 : symbole indice direct sur Twelve (FCHI=8183 validé)
+        assert md._map_ticker("^FCHI") == ("FCHI", {})
+        # Indices sans proxy validé → restent blacklistés (fallback yfinance)
+        assert md._map_ticker("^DJI") is None
+        assert md._map_ticker("^GDAXI") is None
+        assert md._map_ticker("^N225") is None
         # DXY blacklisté → yfinance
         assert md._map_ticker("DX-Y.NYB") is None
 

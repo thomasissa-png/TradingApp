@@ -95,9 +95,31 @@ def td_available() -> bool:
 # ── Ticker mapping: yfinance format → (td_symbol, extra_params) ──
 # Verified against TD /indices, /forex_pairs, /commodities endpoints (2026-03).
 _TICKER_MAP: dict[str, tuple[str, dict]] = {
-    # Indices — all blacklisted (404 or ETF collision on TD free tier).
-    # ^GSPC, ^DJI, ^IXIC, ^RUT, ^VIX, ^FCHI, ^GDAXI, ^FTSE, ^N225 → yfinance.
-    # Forex — all verified correct via /forex_pairs endpoint
+    # ── Indices : Twelve Data direct OU ETF proxy (CI compatible) ────
+    # Sur GitHub Actions, yfinance est bloqué (Yahoo refuse les IP datacenter).
+    # Validé via v3/data/symbol-validation.md (run réel Twelve Data) :
+    #   FCHI (direct) = 8183.34  ✅ vrai CAC 40
+    #   SPY  (ETF)    = 756.48   ✅ proxy S&P 500
+    #   QQQ  (ETF)    = 738.31   ✅ proxy Nasdaq 100 (= ^IXIC / ^NDX)
+    #   IWM  (ETF)    = 290.43   ✅ proxy Russell 2000
+    #   EWQ  (ETF)    = 45.97    ✅ proxy iShares MSCI France
+    #   VIXY (ETF)    = 23.29    ✅ proxy VIX (futures-based)
+    #   FEZ  (ETF)    = 67.91    ✅ proxy Euro Stoxx 50
+    #   SOXX (ETF)    = 569.08   ✅ proxy Philly Semicond
+    # Restent en blacklist (pas de proxy Twelve validé) :
+    #   ^DJI, ^GDAXI, ^FTSE, ^N225, ^TNX, ^IRX, ^VIX3M, ^VXN, ^VVIX, ^SKEW
+    # NB : pour alpha/ratio indice/indice (ex: ^FCHI vs ^GSPC), on mélange
+    # FCHI direct (8183) avec SPY (756). C'est acceptable pour les perf
+    # relatives en % (variation 5j) car chacun reflète son sous-jacent.
+    "^GSPC":    ("SPY",  {}),
+    "^IXIC":    ("QQQ",  {}),
+    "^NDX":     ("QQQ",  {}),   # Nasdaq 100 = QQQ exactement
+    "^FCHI":    ("FCHI", {}),   # CAC 40 direct sur Twelve (8183 confirmé)
+    "^RUT":     ("IWM",  {}),
+    "^VIX":     ("VIXY", {}),   # proxy ETF (corrélation directionnelle)
+    "^STOXX50E":("FEZ",  {}),
+    "^SOX":     ("SOXX", {}),
+    # ── Forex — all verified correct via /forex_pairs endpoint
     "EURUSD=X": ("EUR/USD", {}),
     "USDJPY=X": ("USD/JPY", {}),
     "GBPUSD=X": ("GBP/USD", {}),
@@ -155,13 +177,17 @@ _TICKER_MAP: dict[str, tuple[str, dict]] = {
 }
 
 # Tickers known to not work on Twelve Data — skip to yfinance directly.
-# Indices are not available on TD free tier (404 or resolve to ETFs).
-# DXY : pas exposé par TD Grow → forcer yfinance via blacklist (DX-Y.NYB côté yf).
+# Important : les indices US/EU principaux (^GSPC, ^IXIC, ^NDX, ^FCHI, ^RUT,
+# ^VIX, ^STOXX50E, ^SOX) sont maintenant routés vers ETF proxies dans
+# _TICKER_MAP — ils marchent en CI (où yfinance est bloqué par Yahoo).
+# Restent ici les indices/yields sans proxy Twelve validé : ils retombent
+# en fallback yfinance (OK en local) et sortent "n/a" en CI (acceptable).
 _td_blacklist: set[str] = {
-    "^GSPC", "^DJI", "^IXIC", "^RUT", "^VIX",   # US indices — not on TD free tier
-    "^FCHI", "^GDAXI", "^N225",                  # EU/JP indices — 404 on TD
-    "^FTSE",                                      # FTSE — resolves to ETF (~14$)
+    "^DJI", "^GDAXI", "^N225", "^FTSE",          # indices sans proxy ETF validé
+    "^TNX", "^IRX",                              # US Treasury yields (yf only)
+    "^VIX3M", "^VXN", "^VVIX", "^SKEW",          # vol indices secondaires (yf)
     "DX-Y.NYB",                                  # DXY US Dollar Index — TD KO, yf OK
+    "^STOXX50EVOL",                              # placeholder (V2X) — yf
 }
 _blacklist_lock = threading.Lock()
 
@@ -633,11 +659,21 @@ _PRICE_RANGES: dict[str, tuple[float, float]] = {
     "PL=F": (400, 5000), "PA=F": (300, 5000),
     "SB=F": (3, 50), "CT=F": (20, 200), "OJ=F": (50, 800),
     "LE=F": (80, 500), "HE=F": (30, 250),
-    # Indices
-    "^GSPC": (2000, 15000), "^DJI": (15000, 80000),
-    "^IXIC": (5000, 40000), "^RUT": (800, 5000),
-    "^FCHI": (3000, 15000), "^GDAXI": (8000, 40000),
+    # Indices — bornes élargies vers le bas pour couvrir le mode ETF proxy
+    # (en CI sur GitHub Actions, ^GSPC est servi via SPY ~750, ^IXIC via
+    # QQQ ~740, ^RUT via IWM ~290, ^VIX via VIXY ~23, etc.). En local
+    # yfinance renvoie l'indice réel (~5000-7000). Une seule borne doit
+    # couvrir les deux régimes pour ne pas faire de faux rejet en CI.
+    "^GSPC": (100, 15000),   # SPY ~750  / indice ~5000-7000
+    "^DJI": (15000, 80000),
+    "^IXIC": (100, 40000),   # QQQ ~740  / indice ~20000
+    "^NDX": (100, 40000),    # QQQ ~740  / indice ~20000
+    "^RUT": (100, 5000),     # IWM ~290  / indice ~2000
+    "^FCHI": (40, 15000),    # FCHI direct ~8183 / fallback yf ~8000
+    "^GDAXI": (8000, 40000),
     "^FTSE": (4000, 15000), "^N225": (15000, 80000),
+    "^STOXX50E": (20, 10000),  # FEZ ~68 / indice ~5000
+    "^SOX": (100, 10000),      # SOXX ~569 / indice ~5000
     # Forex
     "EURUSD=X": (0.7, 1.6), "EUR=X": (0.7, 1.6),
     "USDJPY=X": (80, 200), "JPY=X": (80, 200),
@@ -652,7 +688,7 @@ _PRICE_RANGES: dict[str, tuple[float, float]] = {
     "AAPL": (50, 500), "MSFT": (100, 1000),
     "TSLA": (50, 1500), "AMZN": (50, 500),
     "URA": (5, 100),
-    "^VIX": (5, 100),
+    "^VIX": (5, 100),   # VIXY ~23 / indice ~15-30 (range commun OK)
     # DXY
     "DX-Y.NYB": (70, 130),
 }

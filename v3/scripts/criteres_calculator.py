@@ -286,18 +286,223 @@ def fetch_eia_series(path: str, *, frequency: str = "weekly", series_id: Optiona
 
 
 # ---------------------------------------------------------------------------
+# FRED (Federal Reserve Economic Data — St. Louis Fed)
+# ---------------------------------------------------------------------------
+
+FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
+
+# Mapping cle_courante → (series_id, mode) où mode ∈ {"zscore", "linear", "spread"}
+# Pour les spreads US-DE : tuple (series_us, series_de). Si une série DE n'existe pas
+# côté FRED → on n'inclut PAS le critère ici (skip propre dans le dispatch).
+#
+# Séries validées :
+#   DFII10        : 10-Year Treasury Inflation-Indexed (TIPS) — taux réel 10a US — daily
+#   BAMLH0A0HYM2  : ICE BofA US High Yield Index Option-Adjusted Spread — daily
+#   DGS10         : 10-Year Treasury Constant Maturity Rate — daily
+#   DGS2          : 2-Year Treasury Constant Maturity Rate — daily
+#   IRLTLT01DEM156N : Germany Long-Term Gov Bond Yield (mensuel)
+#   DTWEXBGS      : Trade-Weighted USD Index — Broad — daily (fallback DXY)
+FRED_SERIES_SIMPLE = {
+    "taux_10y_us_reels_tips": "DFII10",       # Or, Argent, Nasdaq — z-score
+    "hy_credit_spread":       "BAMLH0A0HYM2", # S&P 500 — z-score
+}
+# Différentiels US - DE (spread = série_US - série_DE alignée)
+FRED_SPREADS = {
+    "differentiel_taux_10y_us_bund": ("DGS10", "IRLTLT01DEM156N"),
+    # 2Y DE n'est pas dispo en série quotidienne fiable côté FRED gratuit → skip propre
+    # ("differentiel_taux_2y_us_de" est laissé volontairement non mappé)
+}
+
+
+def _fred_key() -> Optional[str]:
+    k = os.environ.get("FRED_API_KEY")
+    return k or None
+
+
+def fetch_fred_series(series_id: str, *, n: int = 252) -> Optional[List[float]]:
+    """Retourne les N dernières observations valides d'une série FRED, oldest→newest.
+
+    Filtre les valeurs manquantes ('.' chez FRED). None si clé absente ou erreur HTTP.
+    """
+    key = _fred_key()
+    if not key:
+        SKIP_COUNTER["fred_no_key"] += 1
+        logger.warning("FRED_API_KEY manquante — series_id=%s skip", series_id)
+        return None
+    params = {
+        "series_id": series_id,
+        "file_type": "json",
+        "sort_order": "desc",
+        "limit": n,
+        "api_key": key,
+    }
+    data = http_get_json(FRED_BASE, params=params)
+    if not isinstance(data, dict):
+        SKIP_COUNTER[f"fred_dead:{series_id}"] += 1
+        return None
+    obs = data.get("observations")
+    if not isinstance(obs, list) or not obs:
+        SKIP_COUNTER[f"fred_empty:{series_id}"] += 1
+        return None
+    parsed: List[Tuple[str, float]] = []
+    for row in obs:
+        try:
+            d = row.get("date")
+            v = row.get("value")
+        except AttributeError:
+            continue
+        if not d or v in (None, "", "."):
+            continue
+        try:
+            parsed.append((d, float(v)))
+        except (TypeError, ValueError):
+            continue
+    if not parsed:
+        SKIP_COUNTER[f"fred_parse:{series_id}"] += 1
+        return None
+    parsed.sort(key=lambda t: t[0])  # oldest → newest
+    return [v for _, v in parsed]
+
+
+def fetch_fred_spread(series_us: str, series_de: str, *, n: int = 252) -> Optional[List[float]]:
+    """Spread US - DE aligné par date d'observation (intersection). oldest→newest."""
+    key = _fred_key()
+    if not key:
+        SKIP_COUNTER["fred_no_key"] += 1
+        return None
+    params_base = {"file_type": "json", "sort_order": "desc", "limit": n, "api_key": key}
+    a = http_get_json(FRED_BASE, params=dict(params_base, series_id=series_us))
+    b = http_get_json(FRED_BASE, params=dict(params_base, series_id=series_de))
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        SKIP_COUNTER[f"fred_spread_dead:{series_us}-{series_de}"] += 1
+        return None
+    def _parse(obj: dict) -> Dict[str, float]:
+        out: Dict[str, float] = {}
+        for r in obj.get("observations", []) or []:
+            v = r.get("value")
+            d = r.get("date")
+            if not d or v in (None, "", "."):
+                continue
+            try:
+                out[d] = float(v)
+            except (TypeError, ValueError):
+                continue
+        return out
+    map_a = _parse(a)
+    map_b = _parse(b)
+    common = sorted(set(map_a) & set(map_b))
+    if len(common) < 10:
+        SKIP_COUNTER[f"fred_spread_thin:{series_us}-{series_de}"] += 1
+        return None
+    return [map_a[d] - map_b[d] for d in common]
+
+
+# ---------------------------------------------------------------------------
+# CBOE (CSV public — sans clé)
+# ---------------------------------------------------------------------------
+
+CBOE_BASE = "https://cdn.cboe.com/api/global/us_indices/daily_prices"
+
+# Mapping cle_courante → identifiant CBOE (utilisé pour <IDX>_History.csv)
+# VIX, VIX3M, SKEW, VVIX exposés publiquement en CSV daily sans authentification.
+CBOE_HISTORY_INDEX = {
+    "niveau_vix_absolu":          "VIX",
+    "vix_risk_off_proxy":         "VIX",
+    "skew_index_cboe":            "SKEW",
+    "vvix":                       "VVIX",
+}
+# Term structure : ratio VIX / VIX3M (centré autour de ~0.95 en marché normal,
+# > 1 = backwardation = stress)
+CBOE_TERM_STRUCTURE = ("VIX", "VIX3M")
+
+
+def http_get_text(url: str, *, timeout: int = DEFAULT_TIMEOUT) -> Optional[str]:
+    """GET texte (CSV CBOE). None si erreur."""
+    try:
+        import requests  # lazy
+    except ImportError:
+        return None
+    try:
+        r = requests.get(url, timeout=timeout)
+        r.raise_for_status()
+        return r.text
+    except Exception as e:  # noqa: BLE001
+        logger.warning("HTTP GET %s : %s", url, e)
+        return None
+
+
+def _parse_cboe_csv(text: str) -> List[Tuple[str, float]]:
+    """Parse CSV CBOE. Deux formats existent :
+    - VIX/VIX3M : 'DATE,OPEN,HIGH,LOW,CLOSE' → on prend CLOSE.
+    - SKEW/VVIX : 'DATE,<INDEX>' (valeur unique) → on prend la dernière colonne numérique.
+    Retourne [(date, valeur)] oldest→newest."""
+    out: List[Tuple[str, float]] = []
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return out
+    # Trouver le header (ligne contenant 'date'). CBOE met parfois un préambule.
+    header_idx = None
+    for i, ln in enumerate(lines[:20]):
+        if "date" in ln.lower():
+            header_idx = i
+            break
+    if header_idx is None:
+        return out
+    header = [h.strip().lower() for h in lines[header_idx].split(",")]
+    try:
+        i_date = header.index("date")
+    except ValueError:
+        return out
+    # Colonne valeur : 'close' si présente (VIX/VIX3M), sinon dernière colonne (SKEW/VVIX).
+    i_val = header.index("close") if "close" in header else len(header) - 1
+    for ln in lines[header_idx + 1:]:
+        parts = [p.strip() for p in ln.split(",")]
+        if len(parts) <= max(i_date, i_val):
+            continue
+        d = parts[i_date]
+        try:
+            c = float(parts[i_val])
+        except (TypeError, ValueError):
+            continue
+        if not d:
+            continue
+        out.append((d, c))
+    out.sort(key=lambda t: t[0])
+    return out
+
+
+def fetch_cboe_history(index: str) -> Optional[List[Tuple[str, float]]]:
+    """Retourne [(date_str, close)] oldest→newest depuis le CSV public CBOE.
+    None si HTTP KO ou parse vide."""
+    url = f"{CBOE_BASE}/{index}_History.csv"
+    text = http_get_text(url)
+    if not text:
+        SKIP_COUNTER[f"cboe_dead:{index}"] += 1
+        return None
+    parsed = _parse_cboe_csv(text)
+    if not parsed:
+        SKIP_COUNTER[f"cboe_parse:{index}"] += 1
+        return None
+    return parsed
+
+
+# ---------------------------------------------------------------------------
 # Open-Meteo (anomalies météo)
 # ---------------------------------------------------------------------------
 
 OPEN_METEO_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 
 # Mapping cle_courante → (lat, lon, days_window)
+# Coordonnées validées contre brief P3 : Minas Gerais (-19.9/-43.9 — Belo Horizonte),
+# Vietnam Central Highlands (12.7/108.1 — Buon Ma Thuot), Côte d'Ivoire/Ghana barycentre
+# bassin cacao (~6.8/-5.3 entre Daloa CI et Kumasi GH), US Plains (39/-98 — center Kansas),
+# Australie wheatbelt (-33/147 — NSW/VIC bordure).
 METEO_CRITERIA = {
-    "meteo_ci_ghana_precip_30j":    (6.5, -3.0, 30),    # Côte d'Ivoire / Ghana — cacao
-    "meteo_vietnam_robusta":        (12.7, 108.0, 60),   # Central Highlands — café robusta
-    "meteo_australie_dryland":      (-31.5, 117.0, 60),  # Wheatbelt WA — blé
-    "meteo_bresil_minas_gerais":    (-19.5, -44.0, 60),  # Minas Gerais — café arabica
-    "noaa_drought_midwest_plains":  (41.5, -93.5, 60),   # US Midwest — blé HRW/SRW
+    "meteo_ci_ghana_precip_30j":    (6.8, -5.3, 30),    # CI/Ghana — cacao
+    "meteo_vietnam_robusta":        (12.7, 108.1, 60),   # Central Highlands — café robusta
+    "meteo_australie_dryland":      (-33.0, 147.0, 60),  # NSW/VIC wheatbelt — blé
+    "meteo_bresil_minas_gerais":    (-19.9, -43.9, 60),  # Minas Gerais — café arabica
+    "noaa_drought_midwest_plains":  (39.0, -98.0, 60),   # US Plains (KS) — blé HRW/SRW
 }
 
 
@@ -850,7 +1055,9 @@ def _handle_composite(cle: str, crit: dict, ts: str) -> Optional[dict]:
     # meteo_bresil_minas_gerais : composite (précipitations + check Tmin<4°C). On utilise
     # juste l'anomalie pluie (proxy) — la composante T° n'est pas critique en routine.
     if cle == "meteo_bresil_minas_gerais":
-        z = fetch_open_meteo_anomaly(-19.5, -44.0, days=60)
+        # Coords alignées sur METEO_CRITERIA (brief P3 : Belo Horizonte -19.9/-43.9)
+        lat, lon, days = METEO_CRITERIA.get(cle, (-19.9, -43.9, 60))
+        z = fetch_open_meteo_anomaly(lat, lon, days=days)
         if z is None:
             return None
         cap = float(crit.get("cap", 1.0))
@@ -913,6 +1120,74 @@ def _handle_eia(cle: str, crit: dict, ts: str) -> Optional[dict]:
     if norm is None:
         return None
     return _emit_zscore(value, norm, ts)
+
+
+def _handle_fred(cle: str, crit: dict, ts: str) -> Optional[dict]:
+    """Calcule un z-score à partir d'une série FRED (simple ou spread US-DE)."""
+    window = int(crit.get("zscore_window", 252))
+    # Spread US-DE
+    if cle in FRED_SPREADS:
+        sus, sde = FRED_SPREADS[cle]
+        series = fetch_fred_spread(sus, sde, n=max(window + 10, 260))
+    elif cle in FRED_SERIES_SIMPLE:
+        sid = FRED_SERIES_SIMPLE[cle]
+        series = fetch_fred_series(sid, n=max(window + 10, 260))
+    else:
+        return None
+    if not series or len(series) < 10:
+        return None
+    value = series[-1]
+    hist = series[-window:] if len(series) >= window else series
+    norm = compute_zscore_normalisee(value, hist, zscore_div=float(crit.get("zscore_div", 2.0)),
+                                     cap=float(crit.get("cap", 1.0)))
+    if norm is None:
+        return None
+    return _emit_zscore(value, norm, ts)
+
+
+def _handle_cboe(cle: str, crit: dict, ts: str, type_norm: str) -> Optional[dict]:
+    """Récupère VIX/VIX3M/SKEW/VVIX via CSV CBOE et émet le bon format.
+
+    - term_structure_vix_vix3m : ratio VIX/VIX3M (lineaire) — sortie {valeur}
+    - niveau_vix_absolu, skew_index_cboe, vvix : lineaire — sortie {valeur}
+    - vix_risk_off_proxy (zscore) : z-score des closes VIX sur la fenêtre
+    """
+    if cle == "term_structure_vix_vix3m":
+        sa = fetch_cboe_history("VIX")
+        sb = fetch_cboe_history("VIX3M")
+        if not sa or not sb:
+            return None
+        # Aligne par date d'observation, prend la dernière intersection
+        db = dict(sb)
+        last_date = None
+        last_a = last_b = None
+        for d, a in sa:
+            if d in db:
+                last_date = d
+                last_a = a
+                last_b = db[d]
+        if last_a is None or last_b is None or last_b == 0:
+            return None
+        return {"valeur": last_a / last_b, "ts": ts}
+    idx = CBOE_HISTORY_INDEX.get(cle)
+    if not idx:
+        return None
+    series = fetch_cboe_history(idx)
+    if not series:
+        return None
+    if type_norm == "zscore":
+        if len(series) < 2:
+            return None
+        closes = [c for _, c in series]
+        window = int(crit.get("zscore_window", 60))
+        hist = closes[-window:] if len(closes) >= window else closes
+        res = zscore_from_series(hist, zscore_div=float(crit.get("zscore_div", 2.0)),
+                                 cap=float(crit.get("cap", 1.0)))
+        if res is None:
+            return None
+        return _emit_zscore(res[0], res[1], ts)
+    # lineaire : on retourne le dernier close
+    return {"valeur": series[-1][1], "ts": ts}
 
 
 def _handle_meteo(cle: str, crit: dict, ts: str) -> Optional[dict]:
@@ -1013,6 +1288,20 @@ def build_critere_value(
             if res is not None:
                 return res
             return None
+        # FRED (taux réels TIPS, HY OAS, différentiels US-DE)
+        if cle in FRED_SERIES_SIMPLE or cle in FRED_SPREADS or "fred" in source:
+            res = _handle_fred(cle, crit, ts)
+            if res is not None:
+                return res
+            return None
+        # CBOE (Put/Call : non câblé sans auth → skip ; SKEW/VVIX/VIX en zscore : si demandé)
+        if cle in CBOE_HISTORY_INDEX or "cboe" in source:
+            res = _handle_cboe(cle, crit, ts, "zscore")
+            if res is not None:
+                return res
+            # Sinon : Put/Call sans CSV public fiable → skip propre
+            SKIP_COUNTER[f"cboe_unmapped:{cle}"] += 1
+            return None
         # Open-Meteo
         if cle in METEO_CRITERIA:
             return _handle_meteo(cle, crit, ts)
@@ -1026,6 +1315,12 @@ def build_critere_value(
         return None
 
     if type_norm == "lineaire":
+        # CBOE en priorité pour les critères vol (term structure, SKEW, VVIX, niveau VIX)
+        if cle == "term_structure_vix_vix3m" or cle in CBOE_HISTORY_INDEX or "cboe" in source:
+            res = _handle_cboe(cle, crit, ts, "lineaire")
+            if res is not None:
+                return res
+            # Fallback Twelve Data si CBOE indispo (ex: VIX via Twelve)
         if cle in TWELVE_SYMBOLS or "twelve" in source:
             res = _handle_twelve_lineaire_dispatch(cle, crit, ts)
             if res is not None:

@@ -657,8 +657,8 @@ def test_open_meteo_zone_routing(monkeypatch, now_fixed):
     # Avec série constante répétée, mean récent == mean climato → z=0 → omis (std=0)
     # Mais on vérifie que les bons lat/lon ont été passés
     assert len(captured_params) >= 1
-    assert captured_params[0]["latitude"] == 6.5
-    assert captured_params[0]["longitude"] == -3.0
+    assert captured_params[0]["latitude"] == 6.8
+    assert captured_params[0]["longitude"] == -5.3
 
 
 def test_mapping_non_monotone_vix_centre():
@@ -718,3 +718,256 @@ def test_run_complete_no_keys_no_crash(monkeypatch, tmp_path):
     assert "last_update" in text
     # Au moins les gates + triplets sont présents pour chaque fiche
     assert "petrole" in text or "petrole:" in text
+
+
+# ---------------------------------------------------------------------------
+# FRED — fetchers + dispatch
+# ---------------------------------------------------------------------------
+
+def test_fred_no_key_skips_gracefully(monkeypatch):
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    out = cc.fetch_fred_series("DFII10", n=30)
+    assert out is None
+    # Le compteur skip doit avoir été incrémenté
+    assert any(k.startswith("fred_no_key") for k in cc.SKIP_COUNTER)
+
+
+def test_fred_series_parsing_filters_missing_values(monkeypatch):
+    """FRED renvoie '.' pour les jours sans observation — doit être filtré."""
+    monkeypatch.setenv("FRED_API_KEY", "fake")
+    fake = {
+        "observations": [
+            {"date": "2026-05-29", "value": "2.05"},
+            {"date": "2026-05-28", "value": "."},     # manquant
+            {"date": "2026-05-27", "value": "2.01"},
+            {"date": "2026-05-26", "value": "1.98"},
+            {"date": "2026-05-23", "value": ""},      # vide
+            {"date": "2026-05-22", "value": "1.95"},
+        ]
+    }
+    monkeypatch.setattr(cc, "http_get_json", lambda url, params=None, timeout=15: fake)
+    series = cc.fetch_fred_series("DFII10", n=10)
+    assert series is not None
+    # 4 valeurs valides, triées oldest→newest
+    assert series == [1.95, 1.98, 2.01, 2.05]
+
+
+def test_fred_spread_aligns_by_date(monkeypatch):
+    """Spread FRED US-DE : seul les dates présentes dans LES DEUX séries sont gardées."""
+    monkeypatch.setenv("FRED_API_KEY", "fake")
+    payload_us = {"observations": [
+        {"date": "2026-05-29", "value": "4.50"},
+        {"date": "2026-05-28", "value": "4.45"},
+        {"date": "2026-05-27", "value": "4.40"},
+        {"date": "2026-05-26", "value": "4.42"},
+        {"date": "2026-05-23", "value": "4.41"},
+        {"date": "2026-05-22", "value": "4.43"},
+        {"date": "2026-05-21", "value": "4.44"},
+        {"date": "2026-05-20", "value": "4.46"},
+        {"date": "2026-05-19", "value": "4.48"},
+        {"date": "2026-05-16", "value": "4.49"},
+    ]}
+    payload_de = {"observations": [
+        {"date": "2026-05-29", "value": "2.50"},
+        {"date": "2026-05-28", "value": "2.45"},
+        {"date": "2026-05-27", "value": "2.40"},
+        {"date": "2026-05-26", "value": "2.42"},
+        {"date": "2026-05-23", "value": "2.41"},
+        {"date": "2026-05-22", "value": "2.43"},
+        {"date": "2026-05-21", "value": "2.44"},
+        {"date": "2026-05-20", "value": "2.46"},
+        {"date": "2026-05-19", "value": "2.48"},
+        {"date": "2026-05-16", "value": "2.49"},
+    ]}
+    calls = {"n": 0}
+    def fake_get(url, params=None, timeout=15):
+        calls["n"] += 1
+        sid = (params or {}).get("series_id", "")
+        if sid == "DGS10":
+            return payload_us
+        if sid == "IRLTLT01DEM156N":
+            return payload_de
+        return None
+    monkeypatch.setattr(cc, "http_get_json", fake_get)
+    spread = cc.fetch_fred_spread("DGS10", "IRLTLT01DEM156N", n=20)
+    assert spread is not None
+    # 10 dates communes, spread constant = 2.00 (oldest→newest)
+    assert len(spread) == 10
+    assert all(abs(s - 2.00) < 1e-9 for s in spread)
+
+
+def test_fred_dispatch_taux_tips(monkeypatch, now_fixed):
+    """cle_courante='taux_10y_us_reels_tips' (zscore) → calcule un z-score capé."""
+    monkeypatch.setenv("FRED_API_KEY", "fake")
+    obs = [{"date": f"2026-01-{i:02d}", "value": f"{1.5 + 0.01*i:.4f}"}
+           for i in range(1, 32)] + [
+           {"date": "2026-02-28", "value": "3.50"}]  # spike final
+    fake = {"observations": list(reversed(obs))}  # FRED renvoie DESC
+    monkeypatch.setattr(cc, "http_get_json", lambda url, params=None, timeout=15: fake)
+    crit = {"cle_courante": "taux_10y_us_reels_tips", "normalisation": "zscore",
+            "source": "FRED (DFII10)", "zscore_window": 60, "zscore_div": 2, "cap": 1.0}
+    val = cc.build_critere_value("or", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    # La valeur brute est le dernier point (le spike = 3.50)
+    assert val["valeur"] == 3.50
+    # z-score capé à +1.0 (cap)
+    assert val["valeur_normalisee"] == 1.0
+    assert val["valeur_ponderee"] == val["valeur_normalisee"]
+
+
+def test_fred_dispatch_hy_credit_spread(monkeypatch, now_fixed):
+    """cle_courante='hy_credit_spread' (zscore) — série BAMLH0A0HYM2."""
+    monkeypatch.setenv("FRED_API_KEY", "fake")
+    captured = {}
+    def fake_get(url, params=None, timeout=15):
+        captured["sid"] = (params or {}).get("series_id")
+        obs = [{"date": f"2026-04-{i:02d}", "value": f"{3.0 + 0.02*i:.4f}"} for i in range(1, 31)]
+        return {"observations": list(reversed(obs))}
+    monkeypatch.setattr(cc, "http_get_json", fake_get)
+    crit = {"cle_courante": "hy_credit_spread", "normalisation": "zscore",
+            "source": "FRED (ICE BofA HY OAS)", "zscore_window": 60, "zscore_div": 2, "cap": 1.0}
+    val = cc.build_critere_value("sp500", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    assert captured["sid"] == "BAMLH0A0HYM2"
+
+
+def test_fred_dispatch_differentiel_10y(monkeypatch, now_fixed):
+    """differentiel_taux_10y_us_bund → spread DGS10 - IRLTLT01DEM156N."""
+    monkeypatch.setenv("FRED_API_KEY", "fake")
+    def fake_get(url, params=None, timeout=15):
+        sid = (params or {}).get("series_id")
+        if sid == "DGS10":
+            obs = [{"date": f"2026-04-{i:02d}", "value": f"{4.50 + 0.01*i:.4f}"} for i in range(1, 31)]
+        elif sid == "IRLTLT01DEM156N":
+            obs = [{"date": f"2026-04-{i:02d}", "value": f"{2.40 + 0.005*i:.4f}"} for i in range(1, 31)]
+        else:
+            return None
+        return {"observations": list(reversed(obs))}
+    monkeypatch.setattr(cc, "http_get_json", fake_get)
+    crit = {"cle_courante": "differentiel_taux_10y_us_bund", "normalisation": "zscore",
+            "source": "FRED", "zscore_window": 60, "zscore_div": 2, "cap": 1.0}
+    val = cc.build_critere_value("eurusd", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    # Spread positif (US > DE)
+    assert val["valeur"] > 0
+
+
+# ---------------------------------------------------------------------------
+# CBOE — parsing CSV + dispatch
+# ---------------------------------------------------------------------------
+
+def test_cboe_csv_parsing():
+    """Parse CSV CBOE basique : 'date,open,high,low,close'."""
+    csv = (
+        "Cboe Volatility Index (VIX) Historical Data\n"
+        "DATE,OPEN,HIGH,LOW,CLOSE\n"
+        "2026-05-29,18.50,19.20,18.10,18.95\n"
+        "2026-05-28,18.20,18.80,18.00,18.50\n"
+        "2026-05-27,17.90,18.40,17.70,18.20\n"
+    )
+    out = cc._parse_cboe_csv(csv)
+    assert len(out) == 3
+    # Tri oldest→newest
+    assert out[0][0] == "2026-05-27"
+    assert out[-1][0] == "2026-05-29"
+    assert out[-1][1] == 18.95
+
+
+def test_cboe_csv_parsing_skips_invalid_lines():
+    csv = (
+        "DATE,OPEN,HIGH,LOW,CLOSE\n"
+        "2026-05-29,18.5,19.2,18.1,18.95\n"
+        "bad,line,with,no,close-numeric\n"
+        "2026-05-28,18.2,18.8,18.0,18.50\n"
+    )
+    out = cc._parse_cboe_csv(csv)
+    assert len(out) == 2
+
+
+def test_cboe_term_structure_vix_vix3m(monkeypatch, now_fixed):
+    """term_structure_vix_vix3m → ratio VIX/VIX3M sur dernière date commune."""
+    csv_vix = "DATE,OPEN,HIGH,LOW,CLOSE\n2026-05-29,18,19,17,19.0\n2026-05-28,18,19,17,18.5\n"
+    csv_vix3m = "DATE,OPEN,HIGH,LOW,CLOSE\n2026-05-29,20,21,19,20.0\n2026-05-28,20,21,19,19.5\n"
+    def fake_text(url, timeout=15):
+        if "VIX3M" in url:
+            return csv_vix3m
+        if "VIX" in url:
+            return csv_vix
+        return None
+    monkeypatch.setattr(cc, "http_get_text", fake_text)
+    # http_get_json reste mocké à l'erreur — on n'en a pas besoin ici
+    crit = {"cle_courante": "term_structure_vix_vix3m", "normalisation": "lineaire",
+            "source": "Twelve Data (calculé)"}
+    val = cc.build_critere_value("vix", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    # 19.0 / 20.0 = 0.95
+    assert abs(val["valeur"] - 0.95) < 1e-9
+
+
+def test_cboe_skew_lineaire(monkeypatch, now_fixed):
+    csv = "DATE,OPEN,HIGH,LOW,CLOSE\n2026-05-29,130,140,128,135.5\n"
+    monkeypatch.setattr(cc, "http_get_text", lambda url, timeout=15: csv)
+    crit = {"cle_courante": "skew_index_cboe", "normalisation": "lineaire", "source": "CBOE"}
+    val = cc.build_critere_value("vix", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    assert val["valeur"] == 135.5
+
+
+def test_cboe_vvix_lineaire(monkeypatch, now_fixed):
+    csv = "DATE,OPEN,HIGH,LOW,CLOSE\n2026-05-29,92,98,90,95.2\n"
+    monkeypatch.setattr(cc, "http_get_text", lambda url, timeout=15: csv)
+    crit = {"cle_courante": "vvix", "normalisation": "lineaire", "source": "CBOE"}
+    val = cc.build_critere_value("vix", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    assert val["valeur"] == 95.2
+
+
+def test_cboe_dead_returns_none(monkeypatch, now_fixed):
+    """Si CBOE renvoie None (HTTP KO), critère omis proprement."""
+    monkeypatch.setattr(cc, "http_get_text", lambda url, timeout=15: None)
+    crit = {"cle_courante": "skew_index_cboe", "normalisation": "lineaire", "source": "CBOE"}
+    val = cc.build_critere_value("vix", crit, {}, {}, [], now_fixed)
+    assert val is None
+    assert any(k.startswith("cboe_dead:") for k in cc.SKIP_COUNTER)
+
+
+# ---------------------------------------------------------------------------
+# Open-Meteo — routing par zone agri
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("cle, lat, lon", [
+    ("meteo_ci_ghana_precip_30j", 6.8, -5.3),
+    ("meteo_vietnam_robusta", 12.7, 108.1),
+    ("meteo_australie_dryland", -33.0, 147.0),
+    ("noaa_drought_midwest_plains", 39.0, -98.0),
+])
+def test_meteo_routing_all_zones(monkeypatch, now_fixed, cle, lat, lon):
+    captured = []
+    def fake_get(url, params=None, timeout=15):
+        captured.append(dict(params or {}))
+        return {"daily": {"precipitation_sum": [1.0] * 100}}
+    monkeypatch.setattr(cc, "http_get_json", fake_get)
+    crit = {"cle_courante": cle, "normalisation": "zscore",
+            "source": "Open-Meteo", "zscore_div": 2, "cap": 1.0}
+    # Mappe cle → bonne fiche pour le routing
+    fiche = {"meteo_ci_ghana_precip_30j": "cacao", "meteo_vietnam_robusta": "cafe",
+             "meteo_australie_dryland": "ble", "noaa_drought_midwest_plains": "ble"}[cle]
+    cc.build_critere_value(fiche, crit, {}, {}, [], now_fixed)
+    assert len(captured) >= 1
+    assert captured[0]["latitude"] == lat
+    assert captured[0]["longitude"] == lon
+
+
+def test_meteo_bresil_minas_composite_coords(monkeypatch, now_fixed):
+    """meteo_bresil_minas_gerais (composite) → coords -19.9/-43.9."""
+    captured = []
+    def fake_get(url, params=None, timeout=15):
+        captured.append(dict(params or {}))
+        return {"daily": {"precipitation_sum": [1.0] * 100}}
+    monkeypatch.setattr(cc, "http_get_json", fake_get)
+    crit = {"cle_courante": "meteo_bresil_minas_gerais", "normalisation": "composite",
+            "source": "NOAA / météo + check T min", "zscore_div": 2, "cap": 1.0}
+    cc.build_critere_value("cafe", crit, {}, {}, [], now_fixed)
+    assert len(captured) >= 1
+    assert captured[0]["latitude"] == -19.9
+    assert captured[0]["longitude"] == -43.9

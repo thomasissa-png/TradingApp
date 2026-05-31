@@ -146,6 +146,9 @@ SOURCE_WEIGHTS = {
     "ecb_press": 1.5, "boe_news": 1.3, "boj_news": 1.3,
     "imf_news": 1.2, "worldbank_news": 1.1,
     "bis_press": 1.2, "bls_news": 1.4,
+    # Actifs sous-couverts (ajout audit 30/05) — agri / CAC / cuivre
+    "usda_nass": 1.4, "fao_news": 1.2, "agweb_markets": 1.0, "worldgrain": 1.1,
+    "boursorama_actions": 0.9, "mining_com": 1.1,
     # Sources structurées (agrégateurs) — bruit élevé mais couverture large
     "gnews": 0.7, "newsapi": 0.7,
 }

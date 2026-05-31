@@ -1,6 +1,6 @@
 # Calibration probabiliste — Reliability Diagram
 
-- Généré : 2026-05-31T23:31:49.573460+02:00
+- Généré : 2026-05-31T23:56:52.065366+02:00
 - Méthode : ECE (Expected Calibration Error) simple, 5 bins sur proba ∈ [0.5, 1.0]
 - proba = 0.5 + clip(|score| / 10.0, 0, 0.5)  [mapping déterministe — non calibré empiriquement]
 

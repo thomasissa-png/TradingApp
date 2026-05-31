@@ -299,6 +299,88 @@ def test_parse_events_log_legacy_11_cols(tmp_path):
     assert ev.get("_impacts") == []
 
 
+EVENTS_LOG_MIXED_HEADER_LEGACY_DATA_V2 = """| date | L1 | L2 | trigger | cours | latence | R | source | news_zone | category | pattern_id |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-05-28 |  | Iran-Moyen-Orient | Report of breakthrough in US-Iran talks, extended ceasefire subject to Trump approval | BRENT |  | 1 | bbc_business | Moyen-Orient | geopolitical |  | BRENT:SHORT:high;GOLD:SHORT:medium;VIX:SHORT:medium;SP500:LONG:medium | high | reported |
+| 2026-02-15 |  | Iran | Iran threatens Strait of Hormuz closure (vieux archive) | Brent (BZ=F) | intraday | 1 | bbc | Moyen-Orient | geopolitical |  |
+"""
+
+
+def test_parse_auto_upgrade_v2_when_header_legacy_but_data_v2(tmp_path):
+    """FIX bug v2.2 (REGRESSION CRITIQUE) : un header legacy 11 cols suivi de
+    lignes data v2 14 cols (append-only sur fichier vivant) DOIT auto-upgrade
+    sur DEFAULT_HEADERS — sinon impacts/materiality/reliability sont silencieusement
+    ignorés et tout le routage IA-first est désactivé (fallback keyword aveugle
+    qui matche des archives).
+    """
+    p = tmp_path / "events-log.md"
+    p.write_text(EVENTS_LOG_MIXED_HEADER_LEGACY_DATA_V2, encoding="utf-8")
+    events = tc.parse_events_log(p)
+    assert len(events) == 2
+    # Event v2 (14 cols) DOIT avoir ses impacts décodés.
+    ev_v2 = next(e for e in events if e["_dt"].year == 2026 and e["_dt"].month == 5)
+    assert ev_v2.get("materiality") == "high"
+    assert ev_v2.get("reliability") == "reported"
+    decoded = ev_v2.get("_impacts")
+    assert any(i["asset"] == "BRENT" and i["direction"] == "SHORT" for i in decoded)
+
+
+def test_fresh_ia_short_beats_old_keyword_match(triggers_cfg):
+    """SCENARIO RÉEL 31/05 (preuve du bug) : un event frais BRENT:SHORT:high
+    (détente US-Iran) DOIT primer sur un vieux event archive contenant le mot
+    "Iran/Ormuz" sans impacts IA (qui le keyword-matcherait en LONG).
+
+    Avant fix v2.2 : le parser ignorait les impacts → fallback keyword aveugle
+    sur les 2 events → "Iran" + "Ormuz" → LONG = +1 (bulletin à contresens).
+    Après fix v2.2 : impacts décodés → IA-first ia_seen_any=True → SHORT = -1.
+    """
+    now = datetime(2026, 5, 31, 23, 59, tzinfo=timezone.utc)
+    fresh_short = _ev(
+        "2026-05-28",
+        trigger="Report of breakthrough in US-Iran talks, extended ceasefire",
+        cours="BRENT",
+        l2="Iran-Moyen-Orient",
+        category="geopolitical",
+        impacts="BRENT:SHORT:high",
+        materiality="high",
+    )
+    # Archive vieux mais dans la fenêtre (lookback geopol_iran=7j) :
+    old_archive_keyword = _ev(
+        "2026-05-26",
+        trigger="frappes Iran sur Ormuz (archive)",
+        cours="Brent (BZ=F)",
+        l2="Iran",
+        category="geopolitical",
+        impacts="",  # legacy : pas d'impacts IA
+    )
+    res = tc.classify_all(events=[fresh_short, old_archive_keyword],
+                          today=now, triggers_cfg=triggers_cfg)
+    # SHORT IA prime — le keyword "frappes Iran" sur le vieux event est ignoré
+    # car ia_seen_any=True (présence d'un signal IA exploitable pour BRENT).
+    assert res["petrole"]["tension_geopol_moyen_orient"] == -1
+
+
+def test_cafe_penurie_haussiere_long(triggers_cfg):
+    """Café : mauvaises récoltes Brésil/Vietnam → COFFEE:LONG → critère LONG.
+    Régression : avant fix v2.2, le keyword fallback ne matchait aucun mot-clé
+    coffee_rust spécifique → critère restait 0. Avec IA-first, la pénurie
+    haussière donne bien +1.
+    """
+    now = datetime(2026, 5, 31, 23, 59, tzinfo=timezone.utc)
+    ev = _ev(
+        "2026-05-27",
+        trigger="Mauvaises recoltes de cafe au Bresil et au Vietnam font grimper les prix",
+        cours="COFFEE",
+        l2="Cafe",
+        category="commodity",
+        impacts="COFFEE:LONG:medium",
+        materiality="medium",
+    )
+    res = tc.classify_all(events=[ev], today=now, triggers_cfg=triggers_cfg)
+    # Critère café maladies_cabosses → cle_courante "maladies_cabosses_rouille"
+    assert res["cafe"]["maladies_cabosses_rouille"] == 1
+
+
 def test_parse_events_log_v2_14_cols(tmp_path):
     """Format v2 : impacts décodés, materiality/reliability remplis."""
     p = tmp_path / "events-log.md"

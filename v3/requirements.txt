@@ -5,6 +5,12 @@
 requests==2.31.0
 feedparser==6.0.10
 
+# Market data : Twelve Data (primary) via requests + yfinance (fallback indices)
+# yfinance est obligatoire pour les indices (^GSPC, ^IXIC, ^FCHI, ^VIX, ^RUT...)
+# qui ne sont pas servis par le plan Twelve Grow.
+yfinance==0.2.40
+pandas==2.2.2
+
 # Parsing HTML (utilisé par feedparser pour certains feeds malformés)
 beautifulsoup4==4.12.2
 lxml==5.0.0

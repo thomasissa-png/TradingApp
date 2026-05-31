@@ -25,6 +25,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 import triggers_classifier as tc  # noqa: E402
 import criteres_calculator as cc  # noqa: E402
+import market_data as md  # noqa: E402
 import scoring_analyste as sa  # noqa: E402
 
 
@@ -34,10 +35,22 @@ import scoring_analyste as sa  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _no_real_http(monkeypatch):
-    """Bloque tout appel HTTP réel : si un test oublie de mocker, il échoue clean."""
+    """Bloque tout appel HTTP réel : si un test oublie de mocker, il échoue clean.
+
+    Couvre :
+      - cc.http_get_json (CFTC, FRED, EIA, Open-Meteo, CBOE)
+      - md.fetch_history / md.fetch_price (Twelve Data + yfinance)
+    """
     def _fail(*a, **kw):
         raise RuntimeError("HTTP réseau interdit dans les tests — mocker http_get_json")
+
+    def _fail_md(*a, **kw):
+        raise RuntimeError("HTTP réseau interdit dans les tests — mocker market_data.fetch_*")
+
     monkeypatch.setattr(cc, "http_get_json", _fail)
+    # Désactive aussi market_data : tests qui veulent un fetch doivent monkeypatcher md.fetch_*
+    monkeypatch.setattr(md, "fetch_history", _fail_md)
+    monkeypatch.setattr(md, "fetch_price", _fail_md)
 
 
 @pytest.fixture
@@ -510,23 +523,33 @@ def test_output_compatible_scoring_gate():
 # Fetch helpers mockés (sanity)
 # ---------------------------------------------------------------------------
 
+def _fake_df(values_list):
+    """Helper : construit un DataFrame OHLCV yfinance-compatible à partir d'une liste
+    [(date_str, close), ...] (oldest→newest)."""
+    import pandas as pd
+    rows = [{"Open": c, "High": c, "Low": c, "Close": c, "Volume": 0} for _, c in values_list]
+    idx = pd.to_datetime([d for d, _ in values_list])
+    df = pd.DataFrame(rows, index=idx)
+    df.index.name = "Date"
+    return df
+
+
 def test_fetch_twelve_series_no_key(monkeypatch):
+    """Sans clé Twelve ET sans yfinance dispo → None propre."""
     monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
-    assert cc.fetch_twelve_series("DXY") is None
+    # Force la branche "pas de yfinance" : on patche _yfinance_available
+    monkeypatch.setattr(cc, "_yfinance_available", lambda: False)
+    assert cc.fetch_twelve_series("DX-Y.NYB") is None
 
 
 def test_fetch_twelve_series_with_mock(monkeypatch):
+    """fetch_twelve_series délègue à market_data.fetch_history (ticker Yahoo)."""
     monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
-    fake = {
-        "status": "ok",
-        "values": [
-            {"datetime": "2026-05-25", "close": "100.0"},
-            {"datetime": "2026-05-26", "close": "101.0"},
-            {"datetime": "2026-05-27", "close": "102.0"},
-        ],
-    }
-    monkeypatch.setattr(cc, "http_get_json", lambda url, params=None, timeout=15: fake)
-    series = cc.fetch_twelve_series("DXY", outputsize=3)
+    fake_df = _fake_df([
+        ("2026-05-25", 100.0), ("2026-05-26", 101.0), ("2026-05-27", 102.0),
+    ])
+    monkeypatch.setattr(md, "fetch_history", lambda ticker, **k: fake_df)
+    series = cc.fetch_twelve_series("DX-Y.NYB", outputsize=3)
     assert series is not None
     assert len(series) == 3
     assert series[-1][1] == 102.0
@@ -558,14 +581,11 @@ def test_cftc_markets_table_complete():
 
 
 def test_twelve_zscore_dispatch_simple_symbol(monkeypatch, now_fixed):
-    """dxy_trend_20j → série Twelve → zscore calculé."""
+    """dxy_trend_20j → DX-Y.NYB via market_data (yfinance fallback) → zscore."""
     monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
     # 30 closes croissants : la dernière est l'extrême → z>0 capé
-    fake_series = {
-        "status": "ok",
-        "values": [{"datetime": f"2026-04-{i:02d}", "close": str(100.0 + i)} for i in range(1, 31)],
-    }
-    monkeypatch.setattr(cc, "http_get_json", lambda url, params=None, timeout=15: fake_series)
+    fake_df = _fake_df([(f"2026-04-{i:02d}", 100.0 + i) for i in range(1, 31)])
+    monkeypatch.setattr(md, "fetch_history", lambda ticker, **k: fake_df)
     crit = {"cle_courante": "dxy_trend_20j", "normalisation": "zscore",
             "source": "Twelve Data", "zscore_window": 20, "zscore_div": 2, "cap": 1.0}
     val = cc.build_critere_value("petrole", crit, {}, {}, [], now_fixed)
@@ -575,33 +595,35 @@ def test_twelve_zscore_dispatch_simple_symbol(monkeypatch, now_fixed):
 
 
 def test_twelve_rsi_dispatch(monkeypatch, now_fixed):
-    """rsi_14j_gspc → endpoint /rsi → valeur lineaire 0-100."""
+    """rsi_14j_gspc → RSI calculé localement à partir d'une série market_data."""
     monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
-    fake_rsi = {"status": "ok", "values": [{"datetime": "2026-05-28", "rsi": "65.4"}]}
-    monkeypatch.setattr(cc, "http_get_json", lambda url, params=None, timeout=15: fake_rsi)
+    # Série croissante (50 points) → gains uniquement → RSI = 100
+    fake_df = _fake_df([(f"2026-03-{i:02d}", 100.0 + i) for i in range(1, 32)] +
+                       [(f"2026-04-{i:02d}", 131.0 + i) for i in range(1, 20)])
+    monkeypatch.setattr(md, "fetch_history", lambda ticker, **k: fake_df)
     crit = {"cle_courante": "rsi_14j_gspc", "normalisation": "lineaire",
             "source": "Twelve Data", "centre": 50, "echelle": 20, "cap": 1.0}
     val = cc.build_critere_value("sp500", crit, {}, {}, [], now_fixed)
     assert val is not None
-    assert val["valeur"] == 65.4
+    # RSI sur série monotone croissante → 100 (pas de perte)
+    assert val["valeur"] == 100.0
 
 
 def test_twelve_spread_zscore(monkeypatch, now_fixed):
-    """spread_brent_wti → 2 séries → diff → zscore."""
+    """spread_brent_wti → BZ=F vs CL=F via market_data → diff → zscore."""
     monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
 
-    def fake_get(url, params=None, timeout=15):
-        sym = params.get("symbol", "")
-        if "BZ" in sym:
-            return {"status": "ok", "values": [
-                {"datetime": f"2026-04-{i:02d}", "close": str(80.0 + i * 0.5)} for i in range(1, 31)
-            ]}
-        if "CL" in sym:
-            return {"status": "ok", "values": [
-                {"datetime": f"2026-04-{i:02d}", "close": str(77.0 + i * 0.4)} for i in range(1, 31)
-            ]}
+    df_bz = _fake_df([(f"2026-04-{i:02d}", 80.0 + i * 0.5) for i in range(1, 31)])
+    df_cl = _fake_df([(f"2026-04-{i:02d}", 77.0 + i * 0.4) for i in range(1, 31)])
+
+    def fake_hist(ticker, **k):
+        if ticker == "BZ=F":
+            return df_bz
+        if ticker == "CL=F":
+            return df_cl
         return None
-    monkeypatch.setattr(cc, "http_get_json", fake_get)
+
+    monkeypatch.setattr(md, "fetch_history", fake_hist)
     crit = {"cle_courante": "spread_brent_wti", "normalisation": "zscore",
             "source": "Twelve Data (calculé)", "zscore_window": 20, "zscore_div": 2, "cap": 1.0}
     val = cc.build_critere_value("petrole", crit, {}, {}, [], now_fixed)
@@ -612,14 +634,11 @@ def test_twelve_spread_zscore(monkeypatch, now_fixed):
 
 
 def test_twelve_ratio_lineaire(monkeypatch, now_fixed):
-    """ratio_gold_silver lineaire → XAU/XAG."""
+    """_twelve_ratio_lineaire utilise market_data.fetch_price (Yahoo tickers)."""
     monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
-    # Le ratio est demandé en zscore dans la fiche, mais le test couvre le helper lineaire.
-    fake_series = {"status": "ok", "values": [{"datetime": "2026-05-28", "close": "2000"}]}
-    monkeypatch.setattr(cc, "http_get_json", lambda url, params=None, timeout=15: fake_series)
-    # On vérifie juste que le helper ratio renvoie quelque chose de cohérent
-    ratio = cc._twelve_ratio_lineaire("XAU/USD", "XAG/USD")
-    assert ratio == 1.0  # 2000 / 2000 = 1 (mock identique)
+    monkeypatch.setattr(md, "fetch_price", lambda ticker, **k: 2000.0)
+    ratio = cc._twelve_ratio_lineaire("GC=F", "SI=F")
+    assert ratio == 1.0  # 2000 / 2000 (mock identique)
 
 
 def test_cftc_parsing_socrata_payload(monkeypatch):

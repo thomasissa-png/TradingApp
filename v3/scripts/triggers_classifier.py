@@ -327,6 +327,16 @@ def parse_events_log(path: Path = EVENTS_LOG) -> List[dict]:
         headers_l = [h.lower().strip() for h in header]
         data_rows = rows[1:]
 
+    # FIX bug v2.2 : un fichier peut avoir un header legacy 11 cols puis des
+    # lignes data v2 14 cols (append-only, schéma upgradé en cours de vie).
+    # Si AU MOINS une ligne data a >= 12 colonnes ET les headers ne couvrent
+    # pas `impacts`, on bascule sur DEFAULT_HEADERS (les colonnes 0..10 sont
+    # identiques entre les 2 schémas). Sans ça, impacts/materiality/reliability
+    # sont silencieusement ignorés → tout le routage IA-first est désactivé.
+    if "impacts" not in headers_l:
+        if any(len(r) >= 12 for r in data_rows):
+            headers_l = DEFAULT_HEADERS
+
     events: List[dict] = []
     for r in data_rows:
         if len(r) < 2:

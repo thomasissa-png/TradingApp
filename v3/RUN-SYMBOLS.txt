@@ -1,0 +1,3 @@
+# Touch this file (any change) to trigger .github/workflows/validate-symbols.yml
+# Le workflow lance v3/scripts/validate_symbols.py et commit
+# v3/data/symbol-validation.md.

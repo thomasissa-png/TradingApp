@@ -1,0 +1,60 @@
+name: validate-symbols
+
+# Validation des symboles Twelve Data.
+# Déclenché : (a) manuellement (workflow_dispatch), OU (b) par push sur v3/RUN-SYMBOLS.txt
+#   → permet de lancer depuis mobile/chat sans bouton « Run workflow ».
+# Teste plusieurs variantes de symboles pour chaque actif et écrit
+# v3/data/symbol-validation.md (commité) — lisible ensuite dans le repo.
+on:
+  push:
+    paths:
+      - "v3/RUN-SYMBOLS.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate-symbols:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: v3/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r v3/requirements.txt
+
+      - name: Run symbol validation
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          LOG_LEVEL: INFO
+        run: python v3/scripts/validate_symbols.py
+
+      - name: Commit report
+        run: |
+          git config user.name  "tradingapp-bot"
+          git config user.email "tradingapp-bot@users.noreply.github.com"
+          git add v3/data/symbol-validation.md
+          if git diff --cached --quiet; then
+            echo "No report change."
+            exit 0
+          fi
+          git commit -m "data(symbols): rapport validation Twelve Data [skip ci]"
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            git push origin HEAD:"${GITHUB_REF_NAME}" && exit 0
+            sleep 5
+          done
+          exit 1

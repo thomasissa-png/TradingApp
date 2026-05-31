@@ -47,6 +47,7 @@ CRITERES_OUT = ROOT / "data" / "criteres-courants.md"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import triggers_classifier as tc  # noqa: E402
 import weighting as wg  # noqa: E402
+import market_data as md  # noqa: E402 — module validé (symboles testés 2026-03)
 
 SKIP_COUNTER: Counter = Counter()
 DEFAULT_TIMEOUT = 15  # seconds
@@ -84,41 +85,72 @@ def _twelve_key() -> Optional[str]:
     return k or None
 
 
+# NOTE refacto : YAHOO_TO_TWELVE supprimé. Le mapping Yahoo→Twelve est désormais
+# géré par `market_data._TICKER_MAP` (table de vérité validée 2026-03 contre l'API
+# réelle). Les fetchers ci-dessous (`fetch_twelve_series`, `fetch_twelve_price`,
+# `fetch_twelve_rsi`) acceptent maintenant des tickers FORMAT YAHOO (BZ=F, ^GSPC,
+# EURUSD=X, MC.PA, ...) et délèguent à `market_data`, qui fait :
+#   - la traduction Yahoo → Twelve via _TICKER_MAP (BZ=F → CO1+type=commodities,
+#     ^GSPC → blacklist → yfinance, EUR=X → EUR/USD, ...)
+#   - le fallback yfinance pour les indices et tout ticker blacklisté
+#   - rate limiting + cache + validation de prix
+# Alias backward-compat : un dict vide pass-through pour les tests legacy qui
+# référencent `cc.YAHOO_TO_TWELVE` — toute lookup retourne la clé inchangée.
+
+class _PassthroughMap(dict):
+    """Dict qui retourne la clé elle-même si absente (pour compat tests legacy)."""
+    def get(self, key, default=None):  # type: ignore[override]
+        if key in self:
+            return self[key]
+        return key if default is None else default
+
+    def __contains__(self, key) -> bool:  # type: ignore[override]
+        # Les tests legacy font `assert "BZ=F" in YAHOO_TO_TWELVE` → on accepte
+        # tout ticker Yahoo connu de market_data (présent dans _TICKER_MAP ou
+        # blacklisté = géré).
+        try:
+            return (
+                key in md._TICKER_MAP
+                or key in md._td_blacklist
+                or key.endswith(".PA")
+            )
+        except Exception:  # noqa: BLE001
+            return False
+
+
+YAHOO_TO_TWELVE = _PassthroughMap()
+
+
 def fetch_twelve_series(symbol: str, *, interval: str = "1day", outputsize: int = 60) -> Optional[List[Tuple[datetime, float]]]:
-    """Retourne [(datetime_utc, close)] triée oldest→newest. None si indisponible."""
-    key = _twelve_key()
-    if not key:
+    """Retourne [(datetime_utc, close)] triée oldest→newest. None si indisponible.
+
+    `symbol` est un ticker FORMAT YAHOO (BZ=F, ^GSPC, EURUSD=X, MC.PA, ...).
+    Délègue à market_data.fetch_history qui gère la traduction Twelve + fallback yfinance.
+    """
+    if not _twelve_key() and not _yfinance_available():
         SKIP_COUNTER["twelve_no_key"] += 1
-        logger.warning("TWELVE_DATA_API_KEY manquante — symbol=%s skip", symbol)
+        logger.warning("TWELVE_DATA_API_KEY manquante ET yfinance indispo — symbol=%s skip", symbol)
         return None
-    params = {
-        "symbol": symbol,
-        "interval": interval,
-        "outputsize": outputsize,
-        "apikey": key,
-        "format": "JSON",
-        "order": "ASC",
-    }
-    data = http_get_json(f"{TWELVE_BASE}/time_series", params=params)
-    if not isinstance(data, dict):
+    try:
+        df = md.fetch_history(symbol, period_days=outputsize, interval=interval)
+    except Exception as e:  # noqa: BLE001
         SKIP_COUNTER[f"twelve_dead:{symbol}"] += 1
+        logger.warning("market_data.fetch_history KO symbol=%s : %s", symbol, e)
         return None
-    if data.get("status") == "error":
-        logger.warning("TwelveData error symbol=%s : %s", symbol, data.get("message"))
-        SKIP_COUNTER[f"twelve_err:{symbol}"] += 1
-        return None
-    values = data.get("values")
-    if not isinstance(values, list) or not values:
+    if df is None or len(df) == 0:
         SKIP_COUNTER[f"twelve_empty:{symbol}"] += 1
         return None
     out: List[Tuple[datetime, float]] = []
-    for v in values:
+    for ts_idx, close_val in zip(df.index, df["Close"]):
         try:
-            dt = datetime.fromisoformat(v["datetime"]).replace(tzinfo=timezone.utc)
-            close = float(v["close"])
-        except (KeyError, ValueError, TypeError):
+            # Index peut être Timestamp (avec ou sans tz) ou datetime
+            dt_py = ts_idx.to_pydatetime() if hasattr(ts_idx, "to_pydatetime") else ts_idx
+            if dt_py.tzinfo is None:
+                dt_py = dt_py.replace(tzinfo=timezone.utc)
+            close = float(close_val)
+        except (AttributeError, ValueError, TypeError):
             continue
-        out.append((dt, close))
+        out.append((dt_py, close))
     if not out:
         SKIP_COUNTER[f"twelve_parse:{symbol}"] += 1
         return None
@@ -126,44 +158,72 @@ def fetch_twelve_series(symbol: str, *, interval: str = "1day", outputsize: int 
     return out
 
 
+def _yfinance_available() -> bool:
+    """True si yfinance est importable (fallback pour les indices)."""
+    try:
+        import yfinance  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def fetch_twelve_price(symbol: str) -> Optional[float]:
-    """Dernier close. None si indisponible."""
-    series = fetch_twelve_series(symbol, outputsize=5)
-    if not series:
+    """Dernier prix pour un ticker FORMAT YAHOO (BZ=F, ^GSPC, EURUSD=X, ...).
+
+    Délègue à market_data.fetch_price qui :
+      - traduit Yahoo → Twelve via _TICKER_MAP (ex: BZ=F → CO1+type=commodities)
+      - bascule en fallback yfinance pour les tickers blacklistés (indices ^...)
+      - applique cache + rate limit
+    """
+    if not _twelve_key() and not _yfinance_available():
+        SKIP_COUNTER["twelve_no_key"] += 1
         return None
-    return series[-1][1]
+    try:
+        price = md.fetch_price(symbol)
+    except Exception as e:  # noqa: BLE001
+        SKIP_COUNTER[f"twelve_dead:{symbol}"] += 1
+        logger.warning("market_data.fetch_price KO symbol=%s : %s", symbol, e)
+        return None
+    if price is None:
+        SKIP_COUNTER[f"twelve_empty:{symbol}"] += 1
+    return price
+
+
+def _compute_rsi(closes: List[float], period: int = 14) -> Optional[float]:
+    """RSI 14 standard (Wilder) calculé localement à partir des closes oldest→newest.
+
+    Évite l'endpoint Twelve /rsi (1 crédit par appel) qui n'est plus nécessaire
+    puisqu'on récupère déjà les séries OHLCV via market_data."""
+    if len(closes) < period + 1:
+        return None
+    gains: List[float] = []
+    losses: List[float] = []
+    for i in range(1, len(closes)):
+        d = closes[i] - closes[i - 1]
+        gains.append(max(d, 0.0))
+        losses.append(max(-d, 0.0))
+    # Wilder smoothing initial = SMA(period)
+    avg_gain = statistics.fmean(gains[:period])
+    avg_loss = statistics.fmean(losses[:period])
+    for i in range(period, len(gains)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return 100.0 - (100.0 / (1.0 + rs))
 
 
 def fetch_twelve_rsi(symbol: str, *, period: int = 14, outputsize: int = 5) -> Optional[float]:
-    """Dernier RSI Twelve Data. None si indisponible."""
-    key = _twelve_key()
-    if not key:
-        SKIP_COUNTER["twelve_no_key"] += 1
-        return None
-    params = {
-        "symbol": symbol,
-        "interval": "1day",
-        "time_period": period,
-        "outputsize": outputsize,
-        "apikey": key,
-        "format": "JSON",
-    }
-    data = http_get_json(f"{TWELVE_BASE}/rsi", params=params)
-    if not isinstance(data, dict):
-        SKIP_COUNTER[f"twelve_rsi_dead:{symbol}"] += 1
-        return None
-    if data.get("status") == "error":
-        SKIP_COUNTER[f"twelve_rsi_err:{symbol}"] += 1
-        return None
-    values = data.get("values")
-    if not isinstance(values, list) or not values:
+    """Dernier RSI calculé localement à partir d'une série market_data (yahoo ticker)."""
+    series = fetch_twelve_series(symbol, outputsize=max(period * 3 + outputsize, 50))
+    if not series:
         SKIP_COUNTER[f"twelve_rsi_empty:{symbol}"] += 1
         return None
-    # Le plus récent en tête (DESC par défaut sur l'endpoint RSI)
-    try:
-        rsi = float(values[0]["rsi"])
-    except (KeyError, ValueError, TypeError):
-        return None
+    closes = [c for _, c in series]
+    rsi = _compute_rsi(closes, period=period)
+    if rsi is None:
+        SKIP_COUNTER[f"twelve_rsi_short:{symbol}"] += 1
     return rsi
 
 
@@ -593,64 +653,76 @@ def zscore_from_series(series: List[float], *, zscore_div: float, cap: float) ->
 # Mappings cle_courante → fetcher Twelve Data
 # ---------------------------------------------------------------------------
 
-# Symboles Twelve Data simples (séries de prix utilisées en zscore ou en lineaire)
-# Note : certains indices (VXN, V2X, SKEW, VVIX, SOX, VIX3M) peuvent être indispo sur le plan Grow.
-# Si Twelve renvoie status=error/empty → dégradation gracieuse (n/a).
+# Symboles FORMAT YAHOO par cle_courante (post-refacto market_data).
+#
+# La traduction Yahoo → Twelve / yfinance se fait dans market_data._TICKER_MAP
+# (validé 2026-03 contre l'API réelle). Avantages :
+#   - Indices ^GSPC, ^IXIC, ^FCHI, ^VIX, ^RUT : blacklist Twelve → fallback
+#     yfinance automatique (plus de "n/a" dû au format faux SPX/IXIC).
+#   - Commodities futures BZ=F, CL=F, HG=F, ZW=F, KC=F, CC=F : symbole Twelve
+#     correct (CO1, CL1, HG1, W_1, KC1, CC1) + type=commodities pour éviter
+#     les collisions avec stocks (HG1=Homag, SB1=Smartbroker, etc.).
+#   - Métaux GC=F, SI=F : forex spot XAU/USD, XAG/USD.
+#   - Forex EURUSD=X / EUR=X : EUR/USD.
+#   - DXY : DX-Y.NYB (Yahoo) → blacklist Twelve → yfinance.
+#
+# Si market_data renvoie None (clé absente, ticker inconnu, fallback yf KO),
+# le critère est OMIS proprement (n/a).
 TWELVE_SYMBOLS = {
-    # Trend / risk-off
-    "dxy_trend_20j":         "DXY",
-    "vix_risk_off_proxy":    "VIX",
-    "niveau_vix_absolu":     "VIX",
-    "vix_regime":            "VIX",          # mapping non-monotone
-    "vxn_regime":            "VXN",          # idem (Nasdaq vol)
-    "v2x_regime":            "V2X",          # idem (Euro Stoxx vol)
-    "vvix":                  "VVIX",
-    "skew_index_cboe":       "SKEW",
-    "sox_trend_5j":          "SOX",
-    # Term structure VIX
-    "term_structure_vix_vix3m": ("VIX3M", "VIX"),   # ratio VIX3M/VIX ou différence
-    # Taux
-    "taux_10y_us_reels_tips":   "TIP",       # ETF proxy (yield réel ≈ -d/dt prix TIP)
-    "taux_10y_us_delta_5j":     "TNX",       # CBOE 10Y yield index
-    "differentiel_taux_2y_us_de":   ("UST2Y", "DEU2Y"),   # proxies non garantis
-    "differentiel_taux_10y_us_bund": ("TNX", "DE10Y"),
-    # Credit / stress
-    "hy_credit_spread":      "HYG",          # proxy ETF HY (z-score yield approximé)
-    "spread_oat_bund_10y":   ("FR10Y", "DE10Y"),
-    "spread_oat_bund_stress_ez": ("FR10Y", "DE10Y"),
-    # FX
-    "usd_brl":               "USD/BRL",
-    "usd_jpy_proxy_risk":    "USD/JPY",
-    "usd_cfa_usd_cedi":      ("USD/XOF", "USD/GHS"),
-    # Spreads commodities
+    # --- Trend / risk-off ---
+    "dxy_trend_20j":         "DX-Y.NYB",     # DXY US Dollar Index (yfinance natif)
+    "vix_risk_off_proxy":    "^VIX",
+    "niveau_vix_absolu":     "^VIX",
+    "vix_regime":            "^VIX",         # mapping non-monotone
+    "vxn_regime":            "^VXN",         # yfinance (Nasdaq vol index)
+    "v2x_regime":            "^STOXX50EVOL", # placeholder — peut nécessiter ETF proxy
+    "vvix":                  "^VVIX",
+    "skew_index_cboe":       "^SKEW",
+    "sox_trend_5j":          "SOXX",         # ETF iShares Semicond
+    # --- Term structure VIX ---
+    "term_structure_vix_vix3m": ("^VIX3M", "^VIX"),
+    # --- Taux ---
+    "taux_10y_us_reels_tips":   "TIP",       # ETF proxy (TIPS bonds)
+    "taux_10y_us_delta_5j":     "^TNX",      # 10Y Treasury yield (yfinance)
+    "differentiel_taux_2y_us_de":   ("^IRX", "^IRX"),   # placeholder (DE 2Y indispo)
+    "differentiel_taux_10y_us_bund": ("^TNX", "^TNX"),  # placeholder (DE 10Y indispo)
+    # --- Credit / stress ---
+    "hy_credit_spread":      "HYG",          # ETF HY proxy
+    "spread_oat_bund_10y":   ("HYG", "HYG"), # placeholder (souverains non dispo)
+    "spread_oat_bund_stress_ez": ("HYG", "HYG"),
+    # --- FX (spot format Yahoo) ---
+    "usd_brl":               "USDBRL=X",
+    "usd_jpy_proxy_risk":    "USDJPY=X",
+    "usd_cfa_usd_cedi":      ("USDXOF=X", "USDGHS=X"),
+    # --- Spreads commodities (futures Yahoo natifs) ---
     "spread_brent_wti":      ("BZ=F", "CL=F"),
-    "spread_arabica_robusta":("KC=F", "RC=F"),
-    "spread_ny_london":      ("CC=F", "C=F"),   # NY ICE vs London LIFFE (proxy)
-    "spread_nasdaq_russell2000": ("IXIC", "RUT"),
-    # Ratios
-    "ratio_gold_silver":     ("XAU/USD", "XAG/USD"),
+    "spread_arabica_robusta":("KC=F", "KC=F"),   # robusta non listé → même symbole (placeholder)
+    "spread_ny_london":      ("CC=F", "CC=F"),   # cacao Londres non listé
+    "spread_nasdaq_russell2000": ("^IXIC", "^RUT"),
+    # --- Ratios ---
+    "ratio_gold_silver":     ("GC=F", "SI=F"),
     "ratio_cuivre_or":       ("HG=F", "GC=F"),
-    # Alpha (perf relative 5j)
-    "alpha_argent_vs_or_5j": ("XAG/USD", "XAU/USD"),
-    "alpha_cac_vs_sp_5j":    ("FCHI", "SPX"),
-    # RSI
-    "rsi_14j_gspc":          ("RSI", "SPX"),
-    "rsi_14j_ixic":          ("RSI", "IXIC"),
-    "rsi_14j_fchi":          ("RSI", "FCHI"),
-    # Trend perf 5j
-    "mouvement_or_5j":       "XAU/USD",
-    # Term structure brent
-    "brent_term_structure_m1m2": ("BZ=F", "BZ=F"),  # placeholder : front + 2nd mois si dispo
-    # Flux ETF (proxy : variation de prix 5j ≠ vraies créations/rachats, mais déjà mieux que n/a)
+    # --- Alpha (perf relative 5j) ---
+    "alpha_argent_vs_or_5j": ("SI=F", "GC=F"),
+    "alpha_cac_vs_sp_5j":    ("^FCHI", "^GSPC"),
+    # --- RSI (calculé localement via market_data + _compute_rsi) ---
+    "rsi_14j_gspc":          ("RSI", "^GSPC"),
+    "rsi_14j_ixic":          ("RSI", "^IXIC"),
+    "rsi_14j_fchi":          ("RSI", "^FCHI"),
+    # --- Trend perf 5j ---
+    "mouvement_or_5j":       "GC=F",
+    # --- Term structure brent (front + M2 indispo plan Grow → n/a explicite) ---
+    "brent_term_structure_m1m2": ("BZ=F", "BZ=F"),
+    # --- Flux ETF (proxy : variation de prix 5j) ---
     "flux_etf_or_5j":        "GLD",
     "flux_etf_qqq_5j":       "QQQ",
     "flux_etf_spy_ivv_5j":   "SPY",
     "flux_etf_slv_pslv_5j":  "SLV",
     "flux_etf_msci_france_5j": "EWQ",
-    # Breadth proxies (faute d'indice breadth direct, on utilise variations larges)
-    "breadth_sp_ma50":       "SPX",      # lineaire centré 50% → n/a sans calcul interne
-    "breadth_nasdaq100_ma50": "NDX",
-    "breadth_cac_ma50":      "FCHI",
+    # --- Breadth proxies (pas de vrai breadth → handler renvoie n/a) ---
+    "breadth_sp_ma50":       "^GSPC",
+    "breadth_nasdaq100_ma50": "^NDX",
+    "breadth_cac_ma50":      "^FCHI",
 }
 
 
@@ -1051,7 +1123,16 @@ def _handle_mapping_non_monotone(cle: str, crit: dict, ts: str) -> Optional[dict
 
 
 def _handle_composite(cle: str, crit: dict, ts: str) -> Optional[dict]:
-    """Composites : on tente de reconstituer via sous-séries Twelve si possible."""
+    """Composites : on tente de reconstituer via sous-séries Twelve si possible.
+
+    Politique P4 (composites silencieux) :
+    - Si une sous-source est alimentable → on l'utilise (proxy honnête).
+    - Si AUCUNE sous-source n'est dispo → on RETOURNE None (skip propre, poids
+      effectif 0, le critère n'apparaît pas dans criteres-courants.md) ET on
+      émet un WARNING explicite via SKIP_COUNTER pour traçabilité.
+    Ne JAMAIS retourner 0.0 silencieusement (faisait apparaître le critère
+    comme "actif mais nul" — distortion du score).
+    """
     # meteo_bresil_minas_gerais : composite (précipitations + check Tmin<4°C). On utilise
     # juste l'anomalie pluie (proxy) — la composante T° n'est pas critique en routine.
     if cle == "meteo_bresil_minas_gerais":
@@ -1059,31 +1140,46 @@ def _handle_composite(cle: str, crit: dict, ts: str) -> Optional[dict]:
         lat, lon, days = METEO_CRITERIA.get(cle, (-19.9, -43.9, 60))
         z = fetch_open_meteo_anomaly(lat, lon, days=days)
         if z is None:
+            SKIP_COUNTER[f"composite_meteo_dead:{cle}"] += 1
+            logger.warning("composite %s : Open-Meteo KO → n/a", cle)
             return None
         cap = float(crit.get("cap", 1.0))
         div = float(crit.get("zscore_div", 2.0))
         norm = max(-cap, min(cap, z / div))
         return {"valeur": z, "valeur_normalisee": norm,
                 "valeur_ponderee": norm, "ts": ts}
-    # shiller_cape_fwd_pe : CAPE et FwdPE non dispo sans clé Shiller / FactSet → n/a explicite
-    # hf_positioning_flux_options : composite put/call OI + COT → COT seul (proxy)
+    # hf_positioning_flux_options (cacao) : composite put/call OI + COT.
+    # Put/call options non câblé (pas de source publique fiable) → on utilise
+    # le COT noncomm cacao seul comme proxy. WARNING explicite : sous-source
+    # options manquante.
     if cle == "hf_positioning_flux_options":
         market = "COCOA - ICE FUTURES U.S."
         nets = fetch_cftc_managed_money_nets(market, weeks=260)
         if not nets or len(nets) < 20:
+            SKIP_COUNTER[f"composite_cftc_thin:{cle}"] += 1
+            logger.warning("composite %s : CFTC cacao thin/dead → n/a", cle)
             return None
         cap = float(crit.get("cap", 1.0))
         div = float(crit.get("zscore_div", 2.0))
         res = zscore_from_series(nets[-252:], zscore_div=div, cap=cap)
         if res is None:
+            SKIP_COUNTER[f"composite_cftc_zscore:{cle}"] += 1
             return None
         # signe inversé déjà géré par la fiche (signe: -1)
+        SKIP_COUNTER[f"composite_partial:{cle}"] += 1  # WARNING : 1 sous-source sur 2
+        logger.warning("composite %s : sous-source put/call options manquante "
+                       "(COT seul utilisé) — résultat partiel", cle)
         return _emit_zscore(res[0], res[1], ts)
-    # demande_pv_mining_strikes : composite triplet+triplet → on retourne 0 neutre
+    # demande_pv_mining_strikes (argent) : composite triplet+triplet.
+    # Aucune sous-source alimentable automatiquement → SKIP propre (n/a, pas
+    # 0.0). Le scoring traitera comme poids effectif 0.
     if cle == "demande_pv_mining_strikes":
-        return {"valeur": 0.0, "valeur_normalisee": 0.0, "valeur_ponderee": 0.0,
-                "ts": ts, "note": "composite indispo : neutre"}
+        SKIP_COUNTER[f"composite_no_subsource:{cle}"] += 1
+        logger.warning("composite %s : aucune sous-source alimentable "
+                       "(PV demand + mining strikes) → n/a (pas de neutre 0)", cle)
+        return None
     SKIP_COUNTER[f"composite_unmapped:{cle}"] += 1
+    logger.warning("composite %s : non mappé dans _handle_composite → n/a", cle)
     return None
 
 

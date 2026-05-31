@@ -10,6 +10,10 @@ on:
   schedule:
     - cron: "0 5,10,16 * * *"
   workflow_dispatch: {}
+  # Répétition manuelle sans bouton (mobile) : pousser v3/RUN-CYCLE.txt déclenche un cycle.
+  push:
+    paths:
+      - "v3/RUN-CYCLE.txt"
 
 permissions:
   contents: write

@@ -718,17 +718,47 @@ def _resolve_triplet_impl(
                 ia_short = (dt, weight, mat, rel)
     if ia_seen_any:
         # Au moins un event IA tradable cible cet actif → on tranche en IA-only.
-        def _meta_from(t: Tuple[datetime, int, str, str]) -> Dict[str, str]:
-            return {"materiality": t[2], "reliability": t[3], "source_track": "ia"}
+        def _meta_from(t: Tuple[datetime, int, str, str], track: str = "ia") -> Dict[str, str]:
+            return {"materiality": t[2], "reliability": t[3], "source_track": track}
         if ia_long and not ia_short:
             return 1, _meta_from(ia_long)
         if ia_short and not ia_long:
             return -1, _meta_from(ia_short)
         if ia_long and ia_short:
-            # Matérialité d'abord, date ensuite
-            if (ia_long[1], ia_long[0]) >= (ia_short[1], ia_short[0]):
+            # Règle de tranche (audit DeepSeek — conflit non arbitraire) :
+            #   1) Si une direction a un materiality_weight STRICTEMENT supérieur,
+            #      elle gagne.
+            #   2) À weight égal, si l'écart de date est ≥ 1 jour, le plus récent
+            #      gagne (signal frais surclasse l'ancien).
+            #   3) Sinon (weight égal ET écart < 1 jour) : conflit non tranché
+            #      → 0 neutre + meta source_track="ia_conflict" + log info.
+            #      Pas de >= arbitraire qui forçait LONG par hasard d'ordre.
+            w_long, dt_long = ia_long[1], ia_long[0]
+            w_short, dt_short = ia_short[1], ia_short[0]
+            if w_long > w_short:
                 return 1, _meta_from(ia_long)
-            return -1, _meta_from(ia_short)
+            if w_short > w_long:
+                return -1, _meta_from(ia_short)
+            # Weights égaux : départage par récence si écart significatif (≥ 1 jour).
+            dt_gap = abs((dt_long - dt_short).total_seconds())
+            if dt_gap >= 86400:  # 1 jour
+                if dt_long > dt_short:
+                    return 1, _meta_from(ia_long)
+                return -1, _meta_from(ia_short)
+            # Conflit non tranchable → 0 + observabilité.
+            logger.info(
+                "conflit IA non tranche sur %s/%s : LONG(mat=%s,dt=%s) vs "
+                "SHORT(mat=%s,dt=%s) -> 0",
+                actif_key, cle, ia_long[2] or "?", dt_long.isoformat(),
+                ia_short[2] or "?", dt_short.isoformat(),
+            )
+            return 0, {
+                "materiality": "",
+                "reliability": "",
+                "source_track": "ia_conflict",
+                "conflict_long_materiality": ia_long[2] or "",
+                "conflict_short_materiality": ia_short[2] or "",
+            }
         return 0, {}
 
     # -------- 2) Fallback keyword (IA n'a rien marqué d'exploitable) -----

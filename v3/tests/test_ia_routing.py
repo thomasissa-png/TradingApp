@@ -399,3 +399,156 @@ def test_ia_blocked_by_category_scope(triggers_cfg, now_fixed):
     )
     res = tc.classify_all(events=[ev], today=now_fixed, triggers_cfg=triggers_cfg)
     assert res["petrole"]["tension_geopol_moyen_orient"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Conflit IA non tranchable (audit DeepSeek)
+# ---------------------------------------------------------------------------
+
+def test_ia_conflict_same_materiality_same_day_returns_zero(triggers_cfg, now_fixed):
+    """Conflit LONG vs SHORT, même materiality_weight, même jour → 0 (neutre)
+    au lieu d'un arbitrage `>=` qui forçait LONG par hasard d'ordre."""
+    long_ev = _ev(
+        "2026-05-29",
+        trigger="Iran tensions on the rise",
+        cours="BRENT",
+        l2="Iran",
+        category="geopolitical",
+        impacts="BRENT:LONG:high",
+        materiality="medium",
+    )
+    short_ev = _ev(
+        "2026-05-29",
+        trigger="Iran de-escalation rumours",
+        cours="BRENT",
+        l2="Iran",
+        category="geopolitical",
+        impacts="BRENT:SHORT:high",
+        materiality="medium",
+    )
+    res = tc.classify_all(events=[long_ev, short_ev], today=now_fixed,
+                          triggers_cfg=triggers_cfg)
+    assert res["petrole"]["tension_geopol_moyen_orient"] == 0
+
+
+def test_ia_conflict_meta_exposes_source_track(triggers_cfg, now_fixed):
+    """Le conflit IA non tranché expose source_track='ia_conflict' dans le meta."""
+    long_ev = _ev(
+        "2026-05-29",
+        trigger="Iran tensions",
+        cours="BRENT",
+        l2="Iran",
+        category="geopolitical",
+        impacts="BRENT:LONG:high",
+        materiality="medium",
+    )
+    short_ev = _ev(
+        "2026-05-29",
+        trigger="Iran de-escalation",
+        cours="BRENT",
+        l2="Iran",
+        category="geopolitical",
+        impacts="BRENT:SHORT:high",
+        materiality="medium",
+    )
+    val, meta = tc._resolve_triplet_with_meta(
+        events=[long_ev, short_ev],
+        actif_key="petrole",
+        # Clé interne triggers-and-windows.yml (la cle fiche
+        # "tension_geopol_moyen_orient" est dérivée via YML_KEY_TO_CLE_COURANTE).
+        cle="geopol_iran",
+        long_keywords=[],
+        short_keywords=[],
+        lookback_days=7,
+        now=now_fixed,
+    )
+    assert val == 0
+    assert meta.get("source_track") == "ia_conflict"
+    # Les matérialités des deux côtés sont exposées pour audit/decision-log.
+    assert meta.get("conflict_long_materiality") == "medium"
+    assert meta.get("conflict_short_materiality") == "medium"
+
+
+def test_ia_strict_materiality_domination_long_wins(triggers_cfg, now_fixed):
+    """Domination STRICTE de matérialité : LONG high vs SHORT low → LONG."""
+    long_ev = _ev(
+        "2026-05-29",
+        trigger="Iran escalation",
+        cours="BRENT",
+        l2="Iran",
+        category="geopolitical",
+        impacts="BRENT:LONG:high",
+        materiality="high",
+    )
+    short_ev = _ev(
+        "2026-05-29",
+        trigger="Iran chatter",
+        cours="BRENT",
+        l2="Iran",
+        category="geopolitical",
+        impacts="BRENT:SHORT:low",
+        materiality="low",
+    )
+    res = tc.classify_all(events=[long_ev, short_ev], today=now_fixed,
+                          triggers_cfg=triggers_cfg)
+    assert res["petrole"]["tension_geopol_moyen_orient"] == 1
+
+
+def test_ia_conflict_same_materiality_one_day_apart_recent_wins(triggers_cfg, now_fixed):
+    """Weights égaux MAIS écart ≥ 1 jour → le plus récent gagne (signal frais)."""
+    old_ev = _ev(
+        "2026-05-27",
+        trigger="Iran escalation",
+        cours="BRENT",
+        l2="Iran",
+        category="geopolitical",
+        impacts="BRENT:LONG:high",
+        materiality="medium",
+    )
+    recent_ev = _ev(
+        "2026-05-29",
+        trigger="Iran ceasefire framework",
+        cours="BRENT",
+        l2="Iran",
+        category="geopolitical",
+        impacts="BRENT:SHORT:high",
+        materiality="medium",
+    )
+    res = tc.classify_all(events=[old_ev, recent_ev], today=now_fixed,
+                          triggers_cfg=triggers_cfg)
+    # Écart de 2 jours → SHORT (plus récent) gagne malgré weights égaux.
+    assert res["petrole"]["tension_geopol_moyen_orient"] == -1
+
+
+def test_ia_basket_of_lows_does_not_dominate_medium_event(triggers_cfg, now_fixed):
+    """Garde anti-sur-extraction : un panier de 4 impacts low d'un même event ne
+    domine pas un signal medium provenant d'un autre event.
+
+    Mécanisme actuel : la matérialité de chaque event est figée au niveau de
+    l'event (champ `materiality`), pas calculée par sommation des confidences
+    des impacts. Donc un event "panier low" avec materiality='low' a un
+    _MAT_WEIGHT=1, alors qu'un event medium dédié a _MAT_WEIGHT=2 → le medium
+    l'emporte. On documente et on vérifie le comportement.
+    """
+    basket_low = _ev(
+        "2026-05-29",
+        trigger="Markets roundup of macro flows",
+        cours="BRENT",
+        l2="Macro",
+        category="geopolitical",
+        impacts="BRENT:SHORT:low;GOLD:LONG:low;VIX:LONG:low;SP500:SHORT:low",
+        materiality="low",
+    )
+    focused_medium = _ev(
+        "2026-05-29",
+        trigger="Iran tension report",
+        cours="BRENT",
+        l2="Iran",
+        category="geopolitical",
+        impacts="BRENT:LONG:medium",
+        materiality="medium",
+    )
+    res = tc.classify_all(events=[basket_low, focused_medium], today=now_fixed,
+                          triggers_cfg=triggers_cfg)
+    # _MAT_WEIGHT(medium)=2 > _MAT_WEIGHT(low)=1 → domination stricte → LONG.
+    assert res["petrole"]["tension_geopol_moyen_orient"] == 1

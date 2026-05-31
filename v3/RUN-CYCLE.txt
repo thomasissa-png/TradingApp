@@ -1,0 +1,2 @@
+Cycle de répétition — 2026-05-31T20:21:44Z
+Pousser ce fichier déclenche un cycle décisionnel complet (ingest→critères→bulletin→mesure).

@@ -461,3 +461,72 @@ Append-only. Édité par v3/scripts/agent_news.py (GitHub Actions cron).
 | 2026-05-30 |  | Fed-crypto | Fed Chair Kevin Warsh co-authored paper highlighting XRP as bridge currency for cross-border payments |  |  | 1 | newsapi | US | central_bank |  |  | low | reported |
 | 2026-05-30 |  |  | Retraction Watch weekly roundup, including White House proposal on APCs and data integrity allegations |  |  | 1 | newsapi | US | other |  |  | low | reported |
 | 2026-05-30 |  | US housing-finance | HELOC rates near multi-year lows but expected to rise |  |  | 1 | newsapi | US | macro |  |  | low | reported |
+<!-- batch 2026-05-31T16:58:54Z : 68 events -->
+| 2026-05-31 |  | Israel-Hezbollah | Israel seizes castle in Lebanon, expands ground offensive against Hezbollah | BRENT |  | 1 | bbc_world | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-05-31 |  | Iran-Moyen-Orient | Trump déclare ne pas être pressé de conclure un accord avec l'Iran et menace d'actions militaires si les négociations échouent | BRENT |  | 1 | cnbc_top | Moyen-Orient | geopolitical |  | BRENT:LONG:medium;GOLD:LONG:medium;VIX:LONG:low;SP500:SHORT:low | medium | confirmed |
+| 2026-05-31 |  | Jeffrey Epstein investigation | Former Barclays CEO Jes Staley agrees to July 23 interview about Jeffrey Epstein by Oversight panel; Bill Gates also scheduled for June interview |  |  | 1 | cnbc_top | US | regulatory |  |  | low | confirmed |
+| 2026-05-31 |  | US labor policy | Oklahoma vote on doubling minimum wage, reflecting economic mood and inflation outlook |  |  | 1 | cnbc_top | US | macro |  |  | low | reported |
+| 2026-05-31 |  |  | Analyst stock picks, no tradable event |  |  | 1 | cnbc_top | US | other |  |  | low | reported |
+| 2026-05-31 |  | Tech-Investissement | SoftBank annonce 75 milliards d'euros d'investissements IA en France, dont 5 GW de data centers | CAC40 |  | 1 | cnbc_top | EU-FR | macro |  | CAC40:LONG:medium | medium | confirmed |
+| 2026-05-31 |  | US earnings & data | Semaine chargée : résultats CrowdStrike, Palo Alto, Broadcom ; données emploi ; Computex ; spin-offs | NASDAQ |  | 1 | cnbc_top | US | macro |  | NASDAQ:LONG:medium;SP500:LONG:medium | medium | confirmed |
+| 2026-05-31 |  |  | Article sur l'intelligence émotionnelle chez les enfants |  |  | 1 | cnbc_top | US | other |  |  | low | reported |
+| 2026-05-31 |  | BoE-CBDC | BoE's Greene envisage les dépôts tokenisés comme remplacement des stablecoins |  |  | 1 | investing_news | EU | central_bank |  |  | low | reported |
+| 2026-05-31 |  | BoE-Crypto | BoE's Greene says stablecoin demand may soon fade |  |  | 1 | investing_news | EU | central_bank |  |  | low | confirmed |
+| 2026-05-31 |  | Crypto-derivatives | CME lance le trading 24/7 de futures crypto, Bitcoin glisse mais reste au-dessus de 73k$ |  |  | 1 | investing_news | US | regulatory |  |  | medium | confirmed |
+| 2026-05-31 |  |  | Article d'opinion sur le potentiel de marché de l'IA de Meta |  |  | 1 | investing_econ | US | other |  |  | low | rumor |
+| 2026-05-31 |  |  | Saudi stocks close slightly higher, Tadawul All Share +0.46% |  |  | 1 | investing_econ | Moyen-Orient | other |  |  | low | confirmed |
+| 2026-05-31 |  | Taiwan-China tensions | China expels NYT reporter after Taiwan presidential interview |  |  | 1 | investing_econ | CN | geopolitical |  |  | low | confirmed |
+| 2026-05-31 |  | Treasury yields | Questionnement sur l'impact des rendements obligataires élevés sur les marchés actions |  |  | 1 | investing_econ | US | macro |  |  | low | reported |
+| 2026-05-31 |  | Iran-Moyen-Orient | Escalade tensions Iran-États-Unis, impact sur le pétrole et les marchés actions indiens | BRENT |  | 1 | gnews | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:low | medium | reported |
+| 2026-05-31 |  | Emerging Markets - Currency Risk | Rupee weakening, structural pressures from oil, capital outflows, inflation differentials |  |  | 1 | gnews | Global | macro |  |  | low | reported |
+| 2026-05-31 |  | Agriculture | Oil palm intercropping boosts farm income in India |  |  | 1 | gnews | Global | commodity |  |  | low | reported |
+| 2026-05-31 |  | Iran-Moyen-Orient | Négociations de paix US-Iran en cours, baisse du pétrole brut, ventes d'investisseurs étrangers en Inde | BRENT |  | 1 | gnews | Moyen-Orient | geopolitical |  | BRENT:SHORT:medium;EURUSD:LONG:low | medium | reported |
+| 2026-05-31 |  |  | Victoire de Justin Allgaier en NASCAR à Nashville |  |  | 1 | gnews | US | other |  |  | low | confirmed |
+| 2026-05-30 |  | Ukraine-Russia conflict | Ukrainian drone strikes on Russian oil facilities, causing fires | BRENT |  | 1 | newsapi | UA | geopolitical |  | BRENT:LONG:medium | medium | confirmed |
+| 2026-05-30 |  | Q1 results | Trimble Inc. reports strong Q1 results, recurring revenue growth |  |  | 1 | newsapi | US | earnings |  |  | low | confirmed |
+| 2026-05-30 |  | Ukraine-Russia | Drone strike on Zaporizhzhia nuclear plant, ongoing aerial attacks | GOLD |  | 1 | newsapi | UA | geopolitical |  | GOLD:LONG:medium;BRENT:LONG:medium;VIX:LONG:medium;SP500:SHORT:low | high | reported |
+| 2026-05-30 |  |  | Analyst rating on Intuit (INTU) with 10x potential by 2030 |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-30 |  |  | Analyst note on BioMarin stock potential, not a tradable event for indices/commodities |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-30 |  |  | Opinion article on MSTR potential 10x return by 2030 |  |  | 1 | newsapi | US | other |  |  | low | rumor |
+| 2026-05-30 |  | Iran-Moyen-Orient | Découverte de mines navales dans le détroit d'Ormuz, tensions US-Iran accrues, risque de perturbations maritimes | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | reported |
+| 2026-05-30 |  | Ukraine-Russia conflict | Ukrainian drones destroy Russian Tu-142 aircraft and Iskander launcher in Taganrog | BRENT |  | 1 | newsapi | UA | geopolitical |  | BRENT:LONG:low;GOLD:LONG:low | medium | reported |
+| 2026-05-30 |  | Iran-Moyen-Orient | US forces disable commercial ship attempting to breach blockade to Iran, sixth such interception | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:LONG:medium;GOLD:LONG:low;VIX:LONG:low | medium | confirmed |
+| 2026-05-30 |  |  | Annonce de vente de véhicule ancien |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  | Iran-Moyen-Orient | Goldman Sachs warns of potential supply shock due to Strait of Hormuz disruptions | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | reported |
+| 2026-05-30 |  | Natural Gas Infrastructure | Texas leads new natural gas pipeline boom, reinforcing US energy dominance |  |  | 1 | newsapi | US | commodity |  |  | low | reported |
+| 2026-05-30 |  |  | Article général sur stratégies d'investissement en période d'inflation |  |  | 1 | newsapi | Global | other |  |  | low | reported |
+| 2026-05-30 |  |  | Promotion interne dans le staff de basket de Penn State |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Annonce de vente de voiture de collection |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Décès d'une actrice américaine |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Article spéculatif sur le potentiel de rendement d'Equinox Gold Corp. |  |  | 1 | newsapi | US | other |  |  | low | rumor |
+| 2026-05-30 |  |  | Match de softball lycéen en Californie |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Article d'opinion sur le cycle des semi-conducteurs et l'IA, sans fait nouveau |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-30 |  |  | Médaille d'argent de l'Inde en tir sportif à la Coupe du monde ISSF |  |  | 1 | newsapi | Global | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | CIA officer accused of stealing gold bars |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-30 |  |  | Discussion sur le design des boutons d'un appareil Kobo |  |  | 1 | newsapi | Global | other |  |  | low | rumor |
+| 2026-05-30 |  |  | Article d'opinion sur les bénévoles sportifs en Nouvelle-Zélande |  |  | 1 | newsapi | AU | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Article lifestyle sur le shopping du samedi |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Podcast sur les contributions IA et la charge des mainteneurs dans l'open source |  |  | 1 | newsapi | Global | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Article mode sans impact financier |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Promotion sur une cafetière Ninja sur Woot |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Vente aux enchères de voiture de collection |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Opinion d'investissement sur une action FMCG indienne (Emami) hors liste |  |  | 1 | newsapi | Global | other |  |  | low | rumor |
+| 2026-05-30 |  |  | Déclarations du CEO de Paytm sur la croissance de l'économie numérique indienne |  |  | 1 | newsapi | Global | other |  |  | low | reported |
+| 2026-05-30 |  |  | Opinion piece criticizing Tony Blair's legacy |  |  | 1 | newsapi | EU | other |  |  | low | reported |
+| 2026-05-30 |  | AI funding | Anthropic raises $65B, signaling strong AI investment demand | NASDAQ |  | 1 | newsapi | US | earnings |  | NASDAQ:LONG:medium;SP500:LONG:low | medium | reported |
+| 2026-05-30 |  | Base metals outlook | Analyse sur les métaux de base : risque de hausse des taux pourrait stopper la hausse |  |  | 1 | newsapi | Global | commodity |  |  | low | reported |
+| 2026-05-30 |  | Iran-US sanctions | US seizes $1B in Iranian crypto, expands economic pressure campaign | BRENT |  | 1 | newsapi | Moyen-Orient | geopolitical |  | BRENT:LONG:medium;GOLD:LONG:low | medium | confirmed |
+| 2026-05-30 |  |  | Consumer confidence in California rises despite war and high gas prices |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-30 |  |  | Opinion piece linking fossil fuel policy to inflation |  |  | 1 | newsapi | US | other |  |  | low | rumor |
+| 2026-05-30 |  |  | Jim Cramer commente Home Depot, s'attendait au pire |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-30 |  |  | Podcast sur les leçons de vie d'un homme en phase terminale |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Documentaire sur Alex Murdaugh, sans impact financier |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Film 'The Good Sister' (Schwesterherz) - contenu non financier |  |  | 1 | newsapi | Global | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Recrutement sportif universitaire américain |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-30 |  |  | Fonds hybride conservateur SBI, mélange crédit et actions |  |  | 1 | newsapi | Global | other |  |  | low | confirmed |
+| 2026-05-30 |  |  | Analyst rating upgrade for NVIDIA, but no material new information |  |  | 1 | newsapi | US | other |  |  | low | reported |
+| 2026-05-30 |  | SEC-crypto | SEC poursuit un individu pour fraude crypto de 12,3 M$ |  |  | 1 | newsapi | US | regulatory |  |  | low | confirmed |
+| 2026-05-29 |  | Iran-Moyen-Orient | Optimisme sur un accord de paix US-Iran, dollar en baisse, actions en hausse | EURUSD |  | 1 | newsapi | Moyen-Orient | geopolitical |  | EURUSD:LONG:high;SP500:LONG:medium;BRENT:SHORT:high;GOLD:SHORT:medium | high | reported |
+| 2026-05-29 |  | Nasdaq OMX Copenhagen interim report | Interim report for Q1 2026 published by Nasdaq OMX Copenhagen |  |  | 1 | newsapi | EU | earnings |  |  | low | confirmed |
+| 2026-05-29 |  |  | Acer annonce un nouveau laptop gaming Predator Helios 18 AI |  |  | 1 | newsapi | US | other |  |  | low | confirmed |
+| 2026-05-29 |  |  | Acer announces new tablets and AR glasses |  |  | 1 | newsapi | US | other |  |  | low | confirmed |

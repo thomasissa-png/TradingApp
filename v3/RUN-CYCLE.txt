@@ -1,2 +1,2 @@
-Cycle validation finale — 2026-05-31T21:53:01Z
-Vérifie : indices ETF en CI + synthèse contexte-prix + prix mesure.
+Cycle décisif rate-limit — 2026-05-31T22:02:13Z
+Vérifie : indices ETF remontent (couverture ~110, CAC plus en tie-break).

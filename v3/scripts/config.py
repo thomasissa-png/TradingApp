@@ -61,37 +61,33 @@ RSS_FEEDS = [
 # Format : (name, url, poll_interval_sec_legacy)
 # ============================================================
 
+# NB (30/05) : tous les flux ci-dessous ont été testés en réel (HTTP 200 + items RSS).
+# Les flux institutionnels qui bloquaient (OPEC/LME/Kitco/USDA/NOAA/IMF/WB/BIS/BLS,
+# 403/404 même avec UA navigateur) ont été RETIRÉS. Pour les actifs sous-couverts
+# (agri/cuivre/CAC), on utilise Google News RSS ciblé (robuste, ~100 items/requête).
 EARLY_SIGNAL_FEEDS = [
-    # Énergie (pétrole, gaz, OPEP)
+    # Énergie (pétrole, gaz)
     ("eia_today_in_energy",    "https://www.eia.gov/rss/todayinenergy.xml",                  1800),
     ("eia_press_releases",     "https://www.eia.gov/rss/press_rss.xml",                      1800),
-    ("opec_press",             "https://www.opec.org/opec_web/en/press_room/rss.xml",        1800),
+    ("oilprice",               "https://oilprice.com/rss/main",                              1800),
     # Métaux / commodités
-    ("lme_news",               "https://www.lme.com/api/rss/news",                           1800),
-    ("kitco_metals",           "https://www.kitco.com/rss/KitcoNews.xml",                    1800),
-    # Agri (USDA / météo)
-    ("usda_newsroom",          "https://www.usda.gov/rss/latest-releases.xml",               1800),
-    ("noaa_news",              "https://www.noaa.gov/news/rss.xml",                          1800),
+    ("mining_com",             "https://www.mining.com/feed/",                               1800),
+    ("investing_commodities",  "https://www.investing.com/rss/commodities.rss",              1800),
+    ("investing_metals",       "https://www.investing.com/rss/commodities_Metals.rss",       1800),
     # Banques centrales — communiqués
     ("fed_press_all",          "https://www.federalreserve.gov/feeds/press_all.xml",         1800),
     ("fed_monetary",           "https://www.federalreserve.gov/feeds/press_monetary.xml",    1800),
     ("ecb_press",              "https://www.ecb.europa.eu/rss/press.html",                   1800),
     ("boe_news",               "https://www.bankofengland.co.uk/rss/news",                   1800),
     ("boj_news",               "https://www.boj.or.jp/en/rss/whatsnew.xml",                  1800),
-    # Macro / institutionnel
-    ("imf_news",               "https://www.imf.org/en/News/RSS?Language=ENG",               1800),
-    ("worldbank_news",         "https://www.worldbank.org/en/news/all.rss",                  1800),
-    ("bis_press",              "https://www.bis.org/list/press_releases/index.rss",          1800),
-    ("bls_news",               "https://www.bls.gov/feed/news_release.rss",                  1800),
-    # Agri / softs (Café, Cacao, Blé) — sous-couverts par les sources US (audit 30/05)
-    ("usda_nass",              "https://www.nass.usda.gov/RSS/news.rss",                     1800),
-    ("fao_news",               "https://www.fao.org/feeds/news/en/rss.xml",                  3600),
-    ("agweb_markets",          "https://www.agweb.com/rss/markets",                          1800),
-    ("worldgrain",             "https://www.world-grain.com/rss/topic/1-news",               3600),
-    # CAC 40 / Europe actions — sous-couverts (audit 30/05)
-    ("boursorama_actions",     "https://www.boursorama.com/bourse/rss/actualites",           1800),
-    # Cuivre / métaux industriels (Chine, mines)
-    ("mining_com",             "https://www.mining.com/feed/",                               1800),
+    # Macro
+    ("investing_economy",      "https://www.investing.com/rss/news_95.rss",                  1800),
+    # Actifs sous-couverts — Google News RSS ciblé (testé : ~100 items/requête)
+    ("gnews_coffee",  "https://news.google.com/rss/search?q=coffee+prices+arabica+robusta&hl=en-US&gl=US&ceid=US:en", 3600),
+    ("gnews_cocoa",   "https://news.google.com/rss/search?q=cocoa+prices+Ivory+Coast+Ghana&hl=en-US&gl=US&ceid=US:en", 3600),
+    ("gnews_wheat",   "https://news.google.com/rss/search?q=wheat+grain+prices+harvest&hl=en-US&gl=US&ceid=US:en",     3600),
+    ("gnews_copper",  "https://news.google.com/rss/search?q=copper+prices+LME+China+demand&hl=en-US&gl=US&ceid=US:en", 3600),
+    ("gnews_cac40",   "https://news.google.com/rss/search?q=CAC+40+bourse+Paris+France&hl=fr&gl=FR&ceid=FR:fr",        3600),
 ]
 
 # ============================================================
@@ -137,19 +133,17 @@ SOURCE_WEIGHTS = {
     "cnbc_top": 0.9, "cnbc_economy": 1.0, "cnbc_finance": 1.0,
     "investing_news": 0.8, "investing_econ": 0.9, "investing_forex": 0.9,
     "investing_commod": 0.9, "investing_stocks": 0.8,
-    # Early-signal — sources primaires officielles
+    # Early-signal — flux testés fonctionnels (30/05)
     "eia_today_in_energy": 1.5, "eia_press_releases": 1.4,
-    "opec_press": 1.5,
-    "lme_news": 1.3, "kitco_metals": 1.1,
-    "usda_newsroom": 1.4, "noaa_news": 1.2,
+    "oilprice": 1.0,
+    "mining_com": 1.1, "investing_commodities": 0.9, "investing_metals": 0.9,
     "fed_press_all": 1.5, "fed_monetary": 1.5,
     "ecb_press": 1.5, "boe_news": 1.3, "boj_news": 1.3,
-    "imf_news": 1.2, "worldbank_news": 1.1,
-    "bis_press": 1.2, "bls_news": 1.4,
-    # Actifs sous-couverts (ajout audit 30/05) — agri / CAC / cuivre
-    "usda_nass": 1.4, "fao_news": 1.2, "agweb_markets": 1.0, "worldgrain": 1.1,
-    "boursorama_actions": 0.9, "mining_com": 1.1,
-    # Sources structurées (agrégateurs) — bruit élevé mais couverture large
+    "investing_economy": 0.9,
+    # Actifs sous-couverts — Google News RSS ciblé (agrégateur, bruit modéré)
+    "gnews_coffee": 0.8, "gnews_cocoa": 0.8, "gnews_wheat": 0.8,
+    "gnews_copper": 0.8, "gnews_cac40": 0.8,
+    # Sources structurées (agrégateurs API) — bruit élevé mais couverture large
     "gnews": 0.7, "newsapi": 0.7,
 }
 

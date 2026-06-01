@@ -559,18 +559,24 @@ def render_bulletin(
             score_p = r.scores_pond.get(h, 0.0)
             div_flag = " ⚠" if r.diverge.get(h) else ""
             pond_str = f" [pond:{conc_p} {score_p:+.2f}]{div_flag}" if conc_p else ""
-            # Drapeau news_dominant (Point 4) : 📰 si abs(news)>50% abs(quant)
+            # Drapeau news_dominant (Point 4) : 📰 si abs(news)/abs(quant) > 0.5
+            # Définition UNIFIÉE avec decision-log (ratio_news abs/abs) — voir l.679-680
             cap_info = r.news_cap_info.get(h, {}) if r.news_cap_info else {}
             n_tot = abs(float(cap_info.get("news_total_pm1", 0.0)))
             q_tot = abs(float(cap_info.get("quant_total_pm1", 0.0)))
-            news_flag = " 📰" if (n_tot / (q_tot + 1e-9)) > 0.5 else ""
-            cells.append(f"{conc} ({score:+.2f}){tie}{gate_flag}{pond_str}{news_flag}")
+            ratio_news_cell = n_tot / (q_tot + 1e-9)
+            news_flag = " 📰" if ratio_news_cell > 0.5 else ""
+            # Marqueur coin-flip : |score_pm1| < 0.05 → signal non-actionnable
+            coin_flip_flag = " ⚪" if abs(score) < 0.05 else ""
+            cells.append(f"{conc} ({score:+.2f}){tie}{gate_flag}{pond_str}{news_flag}{coin_flip_flag}")
         lines.append(f"| {r.nom} | {cells[0]} | {cells[1]} | {cells[2]} |")
         veille = veille_conclusions.get(r.nom.lower(), {})
         for h in HORIZONS:
             v = veille.get(h)
             if v and v != r.conclusions[h]:
                 flips.append(f"- {r.nom} [{h}] : {v} → {r.conclusions[h]} (score {r.scores[h]:+.2f})")
+    lines.append("")
+    lines.append("**Légende** : ⚑ gate actif · 📰 news>50% du quant (abs/abs) · ⚪ quasi coin-flip (|score|<0.05) — signal non-actionnable, la règle jamais-neutre tranche par défaut · ⚠ divergence pm1/pondéré")
     lines.append("")
     lines.append("## Flips vs veille")
     if flips:
@@ -678,17 +684,19 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
             quant_total = float(cap_info.get("quant_total_pm1", 0.0))
             ratio_news = abs(news_total) / (abs(quant_total) + 1e-9)
             news_dominant = ratio_news > 0.5
+            score_pm1_val = r.scores.get(h, 0.0)
             records.append({
                 "bulletin_date": bulletin_date,
                 "generated_at": generated_at,
                 "fiche_key": r.fiche_key,
                 "actif": r.nom,
                 "horizon": h,
-                "score_pm1": r.scores.get(h, 0.0),
+                "score_pm1": score_pm1_val,
                 "score_pond": r.scores_pond.get(h, 0.0),
                 "conclusion_pm1": r.conclusions.get(h, ""),
                 "conclusion_pond": r.conclusions_pond.get(h, ""),
                 "diverge": bool(r.diverge.get(h, False)),
+                "coin_flip": bool(abs(score_pm1_val) < 0.05),
                 "criteres": contribs,
                 "news_total": news_total,
                 "quant_total": quant_total,

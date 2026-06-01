@@ -100,6 +100,10 @@ jobs:
           LOG_LEVEL: INFO
         run: python v3/scripts/run_journaliste.py
 
+      - name: Build HTML (page autonome de lecture des bulletins)
+        if: steps.guard.outputs.run == 'true'
+        run: python v3/scripts/build_html.py
+
       - name: Commit and push snapshot
         if: steps.guard.outputs.run == 'true'
         run: |

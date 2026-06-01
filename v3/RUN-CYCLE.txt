@@ -1,2 +1,1 @@
-Cycle contrôle ajustements Phase 2 — 2026-06-01 21:17 CEST
-Vérifie : T1 (faux flips évités) >0, classification v2.3, override.
+Backtest/audit base réelle — 2026-06-01 21:30 CEST

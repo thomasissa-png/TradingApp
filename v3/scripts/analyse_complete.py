@@ -139,15 +139,50 @@ def backtest_status() -> None:
 
 
 def caveat() -> None:
-    _section("8. RAPPEL STATISTIQUE")
+    _section("9. RAPPEL STATISTIQUE")
     print("  ⚠️ Mode shadow / warm-up : tant que N_eff < 15/cellule, aucun chiffre")
     print("     n'est statistiquement significatif. Signal précoce ≠ edge prouvé.")
     print("     Backtest quant v1 = NO-GO sur sous-ensemble price-only (partiel).")
 
 
+def sante_sources() -> None:
+    """Section SANTÉ DES SOURCES : lit v3/data/source-health.md (écrit par
+    agent_news à chaque cycle). Affiche synthèse + flux à problème.
+    """
+    _section("8. SANTÉ DES SOURCES — flux news appelés / OK / échec / muets")
+    p = os.path.join(DATA, "source-health.md")
+    if not os.path.exists(p):
+        print("  (source-health.md absent — cycle news pas encore exécuté)")
+        return
+    txt = open(p, encoding="utf-8").read()
+    # Synthèse
+    m = re.search(r"\*\*Synthèse\*\* : ([^\n]+)", txt)
+    if m:
+        print("  " + m.group(1).strip())
+    # Flux à problème (❌ + ⚪)
+    ko_lines = [l for l in txt.splitlines() if l.startswith("| ❌ ")]
+    muet_lines = [l for l in txt.splitlines() if l.startswith("| ⚪ ")]
+    if ko_lines:
+        print(f"\n  Flux en ÉCHEC ({len(ko_lines)}) :")
+        for ln in ko_lines[:10]:
+            parts = [c.strip() for c in ln.split("|")[1:-1]]
+            if len(parts) >= 6:
+                _, name, http, recus, kept, reason = parts[:6]
+                print(f"    ❌ {name:<28} http={http:<8} reçus={recus:<3} gardés={kept:<3} — {reason}")
+    if muet_lines:
+        print(f"\n  Flux MUETS — appelés OK mais 0 gardé ({len(muet_lines)}) :")
+        for ln in muet_lines[:10]:
+            parts = [c.strip() for c in ln.split("|")[1:-1]]
+            if len(parts) >= 6:
+                _, name, http, recus, kept, reason = parts[:6]
+                print(f"    ⚪ {name:<28} http={http:<8} reçus={recus:<3} gardés={kept:<3} — {reason}")
+    if not ko_lines and not muet_lines:
+        print("  ✅ Tous les flux appelés ont livré des items utiles.")
+
+
 if __name__ == "__main__":
     print("ANALYSE COMPLÈTE — TradingApp v3")
-    for fn in (run_info_and_matrix, bilan_news, mesure_forward, phase2_metrics, biais, flips, backtest_status, caveat):
+    for fn in (run_info_and_matrix, bilan_news, mesure_forward, phase2_metrics, biais, flips, backtest_status, sante_sources, caveat):
         try:
             fn()
         except Exception as e:  # robustesse : une section qui casse ne tue pas le reste

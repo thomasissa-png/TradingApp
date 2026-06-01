@@ -67,10 +67,10 @@ def _mk_item(title: str, source: str = "test_feed") -> nc.NewsItem:
 
 def test_collect_all_commit_seen_false_does_not_persist(monkeypatch):
     """commit_seen=False → titres filtrés mais NON marqués vus en DB."""
-    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url: [
+    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url, **kwargs: [
         _mk_item("Fed hikes rates 25bps OPEC oil", name)
     ])
-    monkeypatch.setattr(nc, "_collect_structured", lambda: [])
+    monkeypatch.setattr(nc, "_collect_structured", lambda **kwargs: [])
 
     r1 = nc.collect_all(commit_seen=False)
     assert len(r1["filtered"]) >= 1
@@ -83,10 +83,10 @@ def test_collect_all_commit_seen_false_does_not_persist(monkeypatch):
 
 def test_collect_all_commit_seen_true_persists(monkeypatch):
     """commit_seen=True (défaut historique) → 2e collecte dédupliqué."""
-    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url: [
+    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url, **kwargs: [
         _mk_item("Fed hikes rates 25bps OPEC oil", name)
     ])
-    monkeypatch.setattr(nc, "_collect_structured", lambda: [])
+    monkeypatch.setattr(nc, "_collect_structured", lambda **kwargs: [])
 
     r1 = nc.collect_all(commit_seen=True)
     assert len(r1["filtered"]) >= 1
@@ -98,10 +98,10 @@ def test_collect_all_commit_seen_true_persists(monkeypatch):
 
 def test_mark_title_seen_commits(monkeypatch):
     """mark_title_seen() explicite → le titre est ensuite dédupliqué."""
-    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url: [
+    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url, **kwargs: [
         _mk_item("Brent crude rallies OPEC cut", name)
     ])
-    monkeypatch.setattr(nc, "_collect_structured", lambda: [])
+    monkeypatch.setattr(nc, "_collect_structured", lambda **kwargs: [])
 
     r1 = nc.collect_all(commit_seen=False)
     item = r1["filtered"][0]
@@ -151,10 +151,10 @@ def test_extraction_error_does_not_dedupe(monkeypatch):
     """Cœur du fix idempotence : extraction KO → titre NON marqué vu →
     réapparaît au cycle suivant pour ré-extraction.
     """
-    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url: [
+    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url, **kwargs: [
         _mk_item("Fed FOMC inflation outlook critical", name)
     ])
-    monkeypatch.setattr(nc, "_collect_structured", lambda: [])
+    monkeypatch.setattr(nc, "_collect_structured", lambda **kwargs: [])
 
     # Cycle 1 : l'extracteur retourne une ERREUR (ex: JSON tronqué)
     extractor_ko = _FakeExtractor(outputs=[
@@ -190,10 +190,10 @@ def test_extraction_error_does_not_dedupe(monkeypatch):
 
 def test_extraction_success_dedupes(monkeypatch):
     """Extraction OK → titre marqué vu → cycle 2 ne le revoit pas."""
-    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url: [
+    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url, **kwargs: [
         _mk_item("OPEC announces production cut Brent", name)
     ])
-    monkeypatch.setattr(nc, "_collect_structured", lambda: [])
+    monkeypatch.setattr(nc, "_collect_structured", lambda **kwargs: [])
 
     extractor = _FakeExtractor(outputs=[
         ExtractedEvent(
@@ -223,10 +223,10 @@ def test_extractor_deliberately_off_dedupes(monkeypatch):
     """Extracteur DELIBERATELY off (pas de key, hard cap) → ligne brute écrite
     ET titre marqué vu (mode dégradé volontaire, pas de retry attendu).
     """
-    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url: [
+    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url, **kwargs: [
         _mk_item("Gold hits record on Fed dovish pivot", name)
     ])
-    monkeypatch.setattr(nc, "_collect_structured", lambda: [])
+    monkeypatch.setattr(nc, "_collect_structured", lambda **kwargs: [])
 
     extractor_off = _FakeExtractor(outputs=[])
     extractor_off._enabled = False
@@ -249,10 +249,10 @@ def test_hard_cap_midbatch_dedupes(monkeypatch):
     """Hard cap atteint en cours de batch → ExtractedEvent.error contient
     'disabled' → ligne brute + mark_title_seen (mode dégradé volontaire).
     """
-    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url: [
+    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url, **kwargs: [
         _mk_item("Iran strikes Brent oil rallies geopolitical", name)
     ])
-    monkeypatch.setattr(nc, "_collect_structured", lambda: [])
+    monkeypatch.setattr(nc, "_collect_structured", lambda **kwargs: [])
 
     extractor = _FakeExtractor(outputs=[
         ExtractedEvent(trigger="Iran", error="extractor disabled or hard-capped"),

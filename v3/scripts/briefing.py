@@ -23,6 +23,7 @@ logger = logging.getLogger("briefing")
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS_LOG = ROOT / "data" / "events-log.md"
+SOURCE_HEALTH = ROOT / "data" / "source-health.md"
 
 # Catégories considérées « à impact » pour le briefing
 IMPACT_CATEGORIES = {
@@ -311,6 +312,7 @@ def build_briefing(
     events_path: Path = EVENTS_LOG,
     today: Optional[date] = None,
     max_par_actif: int = 3,
+    source_health_path: Path = SOURCE_HEALTH,
 ) -> str:
     """Construit le bloc markdown '## Briefing du jour'.
 
@@ -363,6 +365,19 @@ def build_briefing(
             lines.append(f"- _(+{len(evs_sorted) - max_par_actif} autres events sur cet actif)_")
         lines.append("")
 
+    # --- Santé des sources (visible dans le briefing de base) ---
+    # Best-effort : si source_monitor indispo ou source-health.md absent, on
+    # affiche un bloc minimal. Ne fait jamais crasher le briefing.
+    try:
+        from source_monitor import render_briefing_block
+        lines.append(render_briefing_block(source_health_path))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Santé des sources non rendue : %s", e)
+        lines.append("## Santé des sources")
+        lines.append("")
+        lines.append("_Indisponible (erreur de rendu)._")
+        lines.append("")
+
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -388,13 +403,20 @@ def prepend_to_bulletin(bulletin_path: Path, briefing_md: str) -> bool:
         return False
     content = bulletin_path.read_text(encoding="utf-8")
 
-    # Si un briefing existe déjà, le retirer pour le remplacer
+    # Si un briefing existe déjà, le retirer pour le remplacer.
+    # Le bloc briefing inclut "## Briefing du jour" + (optionnel) "## Santé des sources".
     existing_re = re.compile(
         r"## Briefing du jour\n.*?(?=\n## |\Z)",
         re.DOTALL,
     )
     if existing_re.search(content):
         content = existing_re.sub("", content, count=1)
+        # Idem pour la section "## Santé des sources" (si elle suivait immédiatement)
+        sante_re = re.compile(
+            r"## Santé des sources\n.*?(?=\n## |\Z)",
+            re.DOTALL,
+        )
+        content = sante_re.sub("", content, count=1)
         # nettoyage des doubles sauts résiduels après suppression
         content = re.sub(r"\n{3,}", "\n\n", content)
 

@@ -30,6 +30,7 @@ from config import (
     TITLES_CACHE_DB,
     USER_AGENT,
 )
+from source_monitor import SourceMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +245,25 @@ FINANCE_KEYWORDS = [
     # Météo
     r"\bhurricane\b", r"\btyphoon\b", r"\bnoaa\b", r"\bel\s+niño\b",
     r"\bla\s+niña\b", r"\bfrost\b",
+    # --- Finance FR (fix 31/05 : gnews_cac40 muet car titres FR non whitelistés) ---
+    # Marchés / actions
+    r"\bbourse\b", r"\bcotation\b", r"\bcours\s+action\b", r"\baction(s)?\s+(en|de|du|à)\b",
+    r"\beuronext\b", r"\bcac\s?40\b", r"\bsbf\s?120\b", r"\bindice(s)?\b",
+    # Économie / monnaie / banques centrales
+    r"\bbanque\s+centrale\b", r"\btaux\s+(directeur|d'intérêt)\b",
+    r"\bpolitique\s+monétaire\b", r"\bbcf\b", r"\bbce\b",
+    r"\bobligation(s)?\b", r"\brendement\b", r"\bdette\s+publique\b",
+    r"\bdéficit\b", r"\bcroissance\b", r"\brécession\b", r"\binflation\b",
+    # Macro FR (acronymes courants)
+    r"\bpib\b", r"\bchômage\b", r"\bemploi\b",
+    # Méga-caps FR
+    r"\blvmh\b", r"\btotalenergies\b", r"\bsanofi\b", r"\bairbus\b",
+    r"\bschneider\b", r"\bsaint-gobain\b", r"\bcrédit\s+agricole\b",
+    r"\bbnp\s+paribas\b", r"\bsociété\s+générale\b",
+    # Trading verbes / signaux FR
+    r"\bbénéfices?\b", r"\brésultats?\s+(annuels|trimestriels|semestriels)\b",
+    r"\bdividende(s)?\b", r"\bipo\b", r"\boffre\s+publique\b", r"\bopa\b",
+    r"\brachat\s+d'actions\b", r"\bémission\s+obligataire\b",
 ]
 
 _FINANCE_PATTERN = re.compile("|".join(FINANCE_KEYWORDS), re.IGNORECASE)
@@ -352,13 +372,31 @@ def _is_dup(title: str, recent_titles: list) -> bool:
 # Fetch RSS
 # ============================================================
 
-def _fetch_rss(name: str, url: str) -> list:
+def _fetch_rss(name: str, url: str, monitor: "SourceMonitor | None" = None) -> list:
+    """Fetch RSS et enregistre la santé du flux dans `monitor` (si fourni).
+
+    Retour : liste de NewsItem (peut être vide). Les détails d'erreur sont
+    persistés dans le monitor (HTTP status, type d'erreur, items_fetched bruts).
+    """
     headers = {"User-Agent": USER_AGENT}
+    http_status: str = "-"
     try:
         response = requests.get(url, headers=headers, timeout=HTTP_TIMEOUT)
+        http_status = str(response.status_code)
         response.raise_for_status()
+    except requests.Timeout:
+        logger.warning("RSS fetch timeout for %s", name)
+        if monitor is not None:
+            monitor.record_call(name, ok=False, http_status="timeout",
+                                items_fetched=0, reason="timeout HTTP")
+        return []
     except requests.RequestException as e:
-        logger.warning("RSS fetch failed for %s: %s", name, e)
+        # Si on a un status (4xx/5xx), on l'a déjà capturé. Sinon erreur réseau.
+        status = http_status if http_status != "-" else "net_error"
+        logger.warning("RSS fetch failed for %s (status=%s): %s", name, status, e)
+        if monitor is not None:
+            monitor.record_call(name, ok=False, http_status=status,
+                                items_fetched=0, reason=f"HTTP {status}")
         return []
 
     parsed = feedparser.parse(response.content)
@@ -379,6 +417,11 @@ def _fetch_rss(name: str, url: str) -> list:
             logger.warning("Failed to parse entry from %s: %s", name, e)
 
     logger.info("RSS %s: %d items fetched", name, len(items))
+    if monitor is not None:
+        # ok = HTTP OK + parse OK. items_fetched = items bruts (avant dédup/filtre).
+        reason = "0 reçus (RSS vide ou parse-friendly mais 0 entries)" if len(items) == 0 else ""
+        monitor.record_call(name, ok=True, http_status=http_status,
+                            items_fetched=len(items), reason=reason)
     return items
 
 
@@ -398,7 +441,7 @@ def collect_rss_phase21(commit_seen: bool = True) -> dict:
     for name, url, _interval in RSS_FEEDS:
         if name.startswith("reuters_"):
             continue
-        raw.extend(_fetch_rss(name, url))
+        raw.extend(_fetch_rss(name, url))  # pas de monitor sur cette voie legacy
 
     deduped = []
     for item in raw:
@@ -431,7 +474,8 @@ def collect_rss_phase21(commit_seen: bool = True) -> dict:
 # Fetch JSON (GNews + NewsAPI) — Phase 2.2
 # ============================================================
 
-def _fetch_gnews(query: str, api_key: str, base_url: str) -> list:
+def _fetch_gnews(query: str, api_key: str, base_url: str,
+                 monitor: "SourceMonitor | None" = None) -> list:
     """GNews API : https://gnews.io/docs/v4
     Réponse : {"articles": [{"title", "description", "url", "publishedAt", "source": {"name"}}, ...]}
     """
@@ -442,12 +486,24 @@ def _fetch_gnews(query: str, api_key: str, base_url: str) -> list:
         "apikey": api_key,
     }
     headers = {"User-Agent": USER_AGENT}
+    http_status = "-"
     try:
         r = requests.get(base_url, params=params, headers=headers, timeout=HTTP_TIMEOUT)
+        http_status = str(r.status_code)
         r.raise_for_status()
         data = r.json()
+    except requests.Timeout:
+        logger.warning("GNews timeout for query '%s'", query)
+        if monitor is not None:
+            monitor.record_call("gnews", ok=False, http_status="timeout",
+                                items_fetched=0, reason="timeout HTTP")
+        return []
     except (requests.RequestException, ValueError) as e:
-        logger.warning("GNews fetch failed for query '%s': %s", query, e)
+        status = http_status if http_status != "-" else "net_error"
+        logger.warning("GNews fetch failed for query '%s' (status=%s): %s", query, status, e)
+        if monitor is not None:
+            monitor.record_call("gnews", ok=False, http_status=status,
+                                items_fetched=0, reason=f"HTTP {status}")
         return []
 
     items = []
@@ -468,10 +524,15 @@ def _fetch_gnews(query: str, api_key: str, base_url: str) -> list:
         except Exception as e:
             logger.warning("GNews entry parse failed: %s", e)
     logger.info("GNews query='%s': %d items", query[:40], len(items))
+    if monitor is not None:
+        monitor.record_call("gnews", ok=True, http_status=http_status,
+                            items_fetched=len(items),
+                            reason="" if items else "0 reçus")
     return items
 
 
-def _fetch_newsapi(query: str, api_key: str, base_url: str) -> list:
+def _fetch_newsapi(query: str, api_key: str, base_url: str,
+                   monitor: "SourceMonitor | None" = None) -> list:
     """NewsAPI.org : https://newsapi.org/docs/endpoints/everything
     Réponse : {"articles": [{"title", "description", "url", "publishedAt", "source": {"name"}}, ...]}
     """
@@ -483,17 +544,33 @@ def _fetch_newsapi(query: str, api_key: str, base_url: str) -> list:
         "apiKey": api_key,
     }
     headers = {"User-Agent": USER_AGENT}
+    http_status = "-"
     try:
         r = requests.get(base_url, params=params, headers=headers, timeout=HTTP_TIMEOUT)
+        http_status = str(r.status_code)
         r.raise_for_status()
         data = r.json()
+    except requests.Timeout:
+        logger.warning("NewsAPI timeout for query '%s'", query)
+        if monitor is not None:
+            monitor.record_call("newsapi", ok=False, http_status="timeout",
+                                items_fetched=0, reason="timeout HTTP")
+        return []
     except (requests.RequestException, ValueError) as e:
-        logger.warning("NewsAPI fetch failed for query '%s': %s", query, e)
+        status = http_status if http_status != "-" else "net_error"
+        logger.warning("NewsAPI fetch failed for query '%s' (status=%s): %s", query, status, e)
+        if monitor is not None:
+            monitor.record_call("newsapi", ok=False, http_status=status,
+                                items_fetched=0, reason=f"HTTP {status}")
         return []
 
     if data.get("status") and data.get("status") != "ok":
         logger.warning("NewsAPI returned status=%s message=%s",
                        data.get("status"), data.get("message"))
+        if monitor is not None:
+            monitor.record_call("newsapi", ok=False, http_status=http_status,
+                                items_fetched=0,
+                                reason=f"API status={data.get('status')}")
         return []
 
     items = []
@@ -514,24 +591,30 @@ def _fetch_newsapi(query: str, api_key: str, base_url: str) -> list:
         except Exception as e:
             logger.warning("NewsAPI entry parse failed: %s", e)
     logger.info("NewsAPI query='%s': %d items", query[:40], len(items))
+    if monitor is not None:
+        monitor.record_call("newsapi", ok=True, http_status=http_status,
+                            items_fetched=len(items),
+                            reason="" if items else "0 reçus")
     return items
 
 
-def _collect_structured() -> list:
+def _collect_structured(monitor: "SourceMonitor | None" = None) -> list:
     """Poll GNews + NewsAPI sur toutes les STRUCTURED_QUERIES.
-    Clé absente → skip propre (log + 0 item, zéro invention).
+    Clé absente → skip propre (log + 0 item, zéro invention) + record_skip.
     """
     raw = []
     for name, kind, env_key, base_url in STRUCTURED_SOURCES:
         api_key = os.environ.get(env_key, "").strip()
         if not api_key:
             logger.info("Structured source %s: no API key (%s) → skip", name, env_key)
+            if monitor is not None:
+                monitor.record_skip(name, reason=f"pas de clé API ({env_key} absent)")
             continue
         for query in STRUCTURED_QUERIES:
             if kind == "gnews":
-                raw.extend(_fetch_gnews(query, api_key, base_url))
+                raw.extend(_fetch_gnews(query, api_key, base_url, monitor=monitor))
             elif kind == "newsapi":
-                raw.extend(_fetch_newsapi(query, api_key, base_url))
+                raw.extend(_fetch_newsapi(query, api_key, base_url, monitor=monitor))
             else:
                 logger.warning("Unknown structured kind: %s", kind)
     return raw
@@ -541,7 +624,7 @@ def _collect_structured() -> list:
 # Collecte unifiée — Phase 2.2
 # ============================================================
 
-def collect_all(commit_seen: bool = True) -> dict:
+def collect_all(commit_seen: bool = True, monitor: "SourceMonitor | None" = None) -> dict:
     """Poll mainstream + early-signal + structured (GNews/NewsAPI).
     Dédup cross-source via cache SQLite + Jaccard.
     Pré-filtre finance (blacklist puis whitelist).
@@ -558,6 +641,10 @@ def collect_all(commit_seen: bool = True) -> dict:
     _ensure_db()
     recent_titles = _get_recent_titles()
 
+    # Crée un monitor par défaut si non fourni — chaque appel est tracé.
+    if monitor is None:
+        monitor = SourceMonitor()
+
     raw = []
 
     # 1) RSS mainstream (hors Reuters mort)
@@ -565,20 +652,24 @@ def collect_all(commit_seen: bool = True) -> dict:
         if name.startswith("reuters_"):
             continue
         try:
-            raw.extend(_fetch_rss(name, url))
+            raw.extend(_fetch_rss(name, url, monitor=monitor))
         except Exception as e:
             logger.warning("RSS mainstream %s crashed: %s — skip", name, e)
+            monitor.record_call(name, ok=False, http_status="crash",
+                                items_fetched=0, reason=f"exception: {type(e).__name__}")
 
     # 2) RSS early-signal (sources officielles)
     for name, url, _interval in EARLY_SIGNAL_FEEDS:
         try:
-            raw.extend(_fetch_rss(name, url))
+            raw.extend(_fetch_rss(name, url, monitor=monitor))
         except Exception as e:
             logger.warning("RSS early-signal %s crashed: %s — skip", name, e)
+            monitor.record_call(name, ok=False, http_status="crash",
+                                items_fetched=0, reason=f"exception: {type(e).__name__}")
 
     # 3) Sources structurées (GNews + NewsAPI)
     try:
-        raw.extend(_collect_structured())
+        raw.extend(_collect_structured(monitor=monitor))
     except Exception as e:
         logger.warning("Structured collect crashed: %s — skip", e)
 
@@ -602,9 +693,22 @@ def collect_all(commit_seen: bool = True) -> dict:
     filtered = [it for it in deduped if is_finance_relevant(it.title, it.summary)]
     skipped = len(deduped) - len(filtered)
 
+    # Renseigne items_kept (post-dédup + filtre finance) par source dans le monitor.
+    # ⚠️ items_fetched (déjà enregistré) = bruts reçus.
+    #    items_kept (ici) = survivants après dédup + blacklist + whitelist finance.
+    # Le delta dit si c'est le FILTRE qui jette tout (vs flux qui ne reçoit rien).
+    kept_by_source: dict = {}
+    for it in filtered:
+        kept_by_source[it.source] = kept_by_source.get(it.source, 0) + 1
+    # S'assure que les flux appelés mais avec 0 kept apparaissent quand même
+    for h_name in list(monitor.by_name.keys()):
+        kept_by_source.setdefault(h_name, 0)
+    monitor.set_items_kept(kept_by_source)
+
     logger.info(
-        "collect_all: raw=%d → deduped=%d → finance_relevant=%d (skipped %d)",
-        len(raw), len(deduped), len(filtered), skipped,
+        "collect_all: raw=%d → deduped=%d → finance_relevant=%d (skipped %d) | "
+        "monitor: %s",
+        len(raw), len(deduped), len(filtered), skipped, monitor.summary(),
     )
 
     return {
@@ -612,6 +716,7 @@ def collect_all(commit_seen: bool = True) -> dict:
         "deduped": deduped,
         "filtered": filtered,
         "skipped_non_finance": skipped,
+        "monitor": monitor,
     }
 
 

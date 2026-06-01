@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from extractor import Extractor  # noqa: E402
 from news_collector import collect_all, mark_title_seen  # noqa: E402
 from repo_publisher import RepoPublisher  # noqa: E402
+from source_monitor import SourceMonitor, write_source_health  # noqa: E402
 
 
 # ============================================================
@@ -69,11 +70,27 @@ def run_one_cycle(publisher: RepoPublisher, extractor: Extractor) -> dict:
 
     # commit_seen=False : on diffère la dédup jusqu'à extraction réussie (idempotence,
     # cf. audit-ia §1). Les titres NON extraits avec succès reviendront au prochain cycle.
-    result = collect_all(commit_seen=False)
+    # monitor : santé des flux ce cycle (appelé/OK/échec/items reçus/items gardés).
+    monitor = SourceMonitor()
+    result = collect_all(commit_seen=False, monitor=monitor)
     raw = result["raw"]
     deduped = result["deduped"]
     filtered = result["filtered"]
     skipped = result["skipped_non_finance"]
+
+    # Persiste source-health.md immédiatement (même si 0 filtered en aval).
+    # Best-effort : ne casse pas le cycle si l'écriture échoue.
+    try:
+        from config import DATA_DIR
+        health_path = DATA_DIR / "source-health.md"
+        write_source_health(monitor, health_path)
+        s = monitor.summary()
+        logger.info(
+            "source-health.md écrit : %d appelés, %d OK, %d échec, %d muets, %d skip",
+            s["called"], s["ok"], s["ko"], s["muet"], s["skip"],
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("source-health write KO (non bloquant) : %s", e)
 
     if not filtered:
         logger.info("No finance-relevant items. raw=%d deduped=%d", len(raw), len(deduped))

@@ -286,7 +286,7 @@ def test_collect_all_polls_early_signal_feeds(monkeypatch):
     """Vérifie que collect_all() poll mainstream ET early-signal."""
     polled_urls = []
 
-    def fake_fetch_rss(name, url):
+    def fake_fetch_rss(name, url, **kwargs):
         polled_urls.append((name, url))
         # Retourne 1 item finance-relevant par feed (pour passer le filtre)
         return [nc.NewsItem(
@@ -298,7 +298,7 @@ def test_collect_all_polls_early_signal_feeds(monkeypatch):
         )]
 
     monkeypatch.setattr(nc, "_fetch_rss", fake_fetch_rss)
-    monkeypatch.setattr(nc, "_collect_structured", lambda: [])
+    monkeypatch.setattr(nc, "_collect_structured", lambda **kwargs: [])
 
     result = nc.collect_all()
 
@@ -326,7 +326,7 @@ def test_collect_all_dead_feed_does_not_break_run(monkeypatch):
     """Un feed qui lève une exception → log + skip, les autres continuent."""
     import requests as _rq
 
-    def fake_fetch_rss(name, url):
+    def fake_fetch_rss(name, url, **kwargs):
         if name == "eia_today_in_energy":
             raise _rq.HTTPError("404 dead feed")
         return [nc.NewsItem(
@@ -337,7 +337,7 @@ def test_collect_all_dead_feed_does_not_break_run(monkeypatch):
         )]
 
     monkeypatch.setattr(nc, "_fetch_rss", fake_fetch_rss)
-    monkeypatch.setattr(nc, "_collect_structured", lambda: [])
+    monkeypatch.setattr(nc, "_collect_structured", lambda **kwargs: [])
 
     # Ne doit PAS lever
     result = nc.collect_all()
@@ -351,7 +351,7 @@ def test_collect_all_dead_feed_does_not_break_run(monkeypatch):
 
 def test_collect_all_cross_source_dedup(monkeypatch):
     """Même titre venant de 2 sources différentes → dédupliqué."""
-    def fake_fetch_rss(name, url):
+    def fake_fetch_rss(name, url, **kwargs):
         # Tous les feeds renvoient le MÊME titre
         return [nc.NewsItem(
             title="Fed hikes rates by 25 basis points",
@@ -361,7 +361,7 @@ def test_collect_all_cross_source_dedup(monkeypatch):
         )]
 
     monkeypatch.setattr(nc, "_fetch_rss", fake_fetch_rss)
-    monkeypatch.setattr(nc, "_collect_structured", lambda: [])
+    monkeypatch.setattr(nc, "_collect_structured", lambda **kwargs: [])
 
     result = nc.collect_all()
 
@@ -372,9 +372,9 @@ def test_collect_all_cross_source_dedup(monkeypatch):
 
 def test_collect_all_structured_integrated_in_pipeline(monkeypatch):
     """Les items GNews/NewsAPI passent le filtre finance + dédup au même titre."""
-    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url: [])
+    monkeypatch.setattr(nc, "_fetch_rss", lambda name, url, **kwargs: [])
 
-    def fake_structured():
+    def fake_structured(**kwargs):
         return [
             nc.NewsItem(
                 title="OPEC announces production cut to support oil prices",
@@ -402,7 +402,7 @@ def test_collect_all_structured_integrated_in_pipeline(monkeypatch):
 
 def test_collect_all_blacklist_applied_uniformly(monkeypatch):
     """Blacklist appliquée sur mainstream + early-signal + structured."""
-    def fake_fetch_rss(name, url):
+    def fake_fetch_rss(name, url, **kwargs):
         return [nc.NewsItem(
             title="Royal wedding shocker — King attends NBA game",
             url="https://x", source=name,
@@ -411,7 +411,7 @@ def test_collect_all_blacklist_applied_uniformly(monkeypatch):
         )]
 
     monkeypatch.setattr(nc, "_fetch_rss", fake_fetch_rss)
-    monkeypatch.setattr(nc, "_collect_structured", lambda: [])
+    monkeypatch.setattr(nc, "_collect_structured", lambda **kwargs: [])
 
     result = nc.collect_all()
     # Tout est blacklisté

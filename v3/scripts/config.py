@@ -50,7 +50,9 @@ RSS_FEEDS = [
     ("investing_econ",   "https://www.investing.com/rss/news_25.rss",                900),
     ("investing_forex",  "https://www.investing.com/rss/news_1.rss",                 900),
     ("investing_commod", "https://www.investing.com/rss/news_11.rss",                900),
-    ("investing_stocks", "https://www.investing.com/rss/news_25.rss",                900),
+    # Fix 31/05 : avant pointait vers news_25.rss (= dup de investing_econ → muet par dédup).
+    # news_287.rss = stock-market-news (testé HTTP 200 + items frais).
+    ("investing_stocks", "https://www.investing.com/rss/news_287.rss",               900),
 ]
 
 # ============================================================
@@ -85,7 +87,9 @@ EARLY_SIGNAL_FEEDS = [
     # Actifs sous-couverts — Google News RSS ciblé (testé : ~100 items/requête)
     ("gnews_coffee",  "https://news.google.com/rss/search?q=coffee+prices+arabica+robusta&hl=en-US&gl=US&ceid=US:en", 3600),
     ("gnews_cocoa",   "https://news.google.com/rss/search?q=cocoa+prices+Ivory+Coast+Ghana&hl=en-US&gl=US&ceid=US:en", 3600),
-    ("gnews_wheat",   "https://news.google.com/rss/search?q=wheat+grain+prices+harvest&hl=en-US&gl=US&ceid=US:en",     3600),
+    # Fix 31/05 : query précédente (wheat+grain+prices+harvest) renvoyait ~0-2 titres
+    # sur Google News RSS. Query élargie + opérateur OR pour fertilité.
+    ("gnews_wheat",   "https://news.google.com/rss/search?q=wheat+OR+grain+OR+%22soft+commodities%22+harvest+USDA+Black+Sea&hl=en-US&gl=US&ceid=US:en", 3600),
     ("gnews_copper",  "https://news.google.com/rss/search?q=copper+prices+LME+China+demand&hl=en-US&gl=US&ceid=US:en", 3600),
     ("gnews_cac40",   "https://news.google.com/rss/search?q=CAC+40+bourse+Paris+France&hl=fr&gl=FR&ceid=FR:fr",        3600),
 ]

@@ -28,13 +28,15 @@ Coefficient par horizon qui **module la `pertinence`** déjà en place (validé 
 
 ## 3. Fraîcheur (2 seuils binaires, aucun decay continu)
 - `event_date` parsé depuis `pubDate` RSS ; fallback = date d'ingestion (marqué `event_date_source=fallback`).
-- **STALE = 30j** : event_date plus vieux → exclu du pool (l'archive 2025 re-publiée ne pollue pas).
-- **Gate override = 72h** : la news ne peut **renverser** le quant (= déclencher un **changement de tendance**) que si : fraîcheur ≤72h ET nature ∈ {structurel, ponctuel} ET materiality=high ET reliability≠rumor. Sinon, pas d'inversion. *(C'est LE point qui sert la détection de changement de tendance.)*
+- **🔑 PREMIER-VU FAIT FOI (anti-repost, règle Thomas)** : si un même `event_id` (match exact OU flou) a déjà été enregistré un jour précédent, la fraîcheur se calcule sur la **date la PLUS ANCIENNE jamais vue** (`canonical_event_date = MIN(event_date)` sur TOUT l'historique events-log, pas seulement la fenêtre 48h). Une news reçue en retard / re-publiée **ne peut PAS passer pour fraîche** ni déclencher un faux changement de tendance. C'est la priorité absolue : on se base toujours sur la première occurrence.
+- **STALE = 30j** : `canonical_event_date` plus vieux → exclu du pool (l'archive 2025 re-publiée ne pollue pas).
+- **Gate override = 72h** : la news ne peut **renverser** le quant (= déclencher un **changement de tendance**) que si : `canonical_event_date` ≤72h ET nature ∈ {structurel, ponctuel} ET materiality=high ET reliability≠rumor. Sinon, pas d'inversion. *(C'est LE point qui sert la détection de changement de tendance — et le « premier-vu » empêche un repost de le déclencher à tort.)*
 
 ## 4. event_id + déduplication
 - `event_id` = SHA-256/12 de `normalise(trigger)+"|"+actif`.
-- Dédup exacte (event_id) + dédup floue (Levenshtein normalisée ≤0.15) sur fenêtre 48h/actif.
-- Conservation : materiality > reliability > event_date récent > source.
+- Dédup exacte (event_id) sur **tout l'historique** + dédup floue (Levenshtein normalisée ≤0.15) sur fenêtre 48h/actif.
+- **Conservation de la LIGNE** : on garde la meilleure occurrence (materiality > reliability > source) MAIS on **stampe toujours `canonical_event_date` = la date la PLUS ANCIENNE** des occurrences (cf. §3 premier-vu fait foi). Ne JAMAIS prendre la date la plus récente pour la fraîcheur.
+- Les reposts détectés → `dedup_status="repost"`, exclus du scoring courant (déjà comptés la 1re fois), mais appendés (traçabilité).
 - Garde-fou anti-sur-dédup : si >30% droppés/actif/24h → mode dégradé (SHA exact seul).
 
 ## 5. Schéma (append-only, par nom de colonne)

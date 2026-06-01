@@ -1,127 +1,102 @@
-# Audit requêtes news — œil « News Trader senior » (desk macro/commodities) — ROUND 2
+# Audit requêtes news — œil « News Trader senior » (desk macro/commodities) — ROUND 3
 
-> **NOTE : 9/10** (round 1 : ~6,5/10). Les 2 TROUS et 3 des 4 PARTIELS sont comblés ; l'intrus DAX est sorti. Reste 1 point pour le 10/10 : quelques **catalyseurs de tendance « violents/spécifiques »** non explicités dans les mots-clés (gel café, tenders GASC blé) + 2 RSS dédiés manquants.
+> **NOTE : 10/10** (round 1 : ~6,5/10 · round 2 : 9/10). Les 3 derniers affinages P2 du round 2 sont appliqués et bien formulés ; le dégroupage Fed/BCE résout un déséquilibre latent. Chaque actif a désormais ses **vrais drivers de tendance** câblés (requête dédiée + RSS pour les actifs idiosyncratiques), sans bruit excessif.
 >
-> **Mission** : ré-auditer la PERTINENCE des requêtes/mots-clés news (`STRUCTURED_QUERIES` GNews/NewsAPI + `EARLY_SIGNAL_FEEDS`) vs l'objectif unique : **justesse de la TENDANCE directionnelle** sur 12 actifs. **La vitesse de capture est hors-sujet**. On juge : les mots-clés ramènent-ils le **bon driver de tendance** par actif, ni trop étroit, ni noyé dans le bruit ?
+> **Mission** : ré-auditer la PERTINENCE des requêtes/mots-clés news (`STRUCTURED_QUERIES` = 14 requêtes GNews/NewsAPI + `EARLY_SIGNAL_FEEDS` = 22 flux) vs l'objectif unique : **justesse de la TENDANCE directionnelle** sur 12 actifs. **La vitesse de capture est hors-sujet**. On juge : les mots-clés ramènent-ils le **bon driver de tendance** par actif, ni trop étroit, ni noyé dans le bruit ?
 >
-> Auteur : audit desk. Date : 2026-06-01. Round 2 (post-corrections). Périmètre : `v3/scripts/config.py`.
+> Périmètre NEWS uniquement. Le **positionnement CFTC** et les **données CBOE/options** relèvent du pipeline data (hors périmètre de cet audit, par construction).
+>
+> Auteur : audit desk. Date : 2026-06-01. Round 3 (post-corrections round 2). Périmètre : `v3/scripts/config.py`.
 
-## Manques pour 10/10 (liste exacte)
+## TL;DR (verdict desk round 3)
 
-Trois affinages, tous **P2** (le squelette est désormais correct, ce sont des catalyseurs de pointe) :
+- **Les 3 affinages P2 du round 2 sont appliqués et bien faits** :
+  1. **Café Q8** + `frost Brazil OR drought Minas Gerais` → LE catalyseur de tendance violente sur l'arabica est désormais explicite, plus seulement capté par ricochet « Brazil harvest ».
+  2. **Blé Q10** + `Egypt GASC OR Australia wheat` → la jambe **demande importateur n°1** (tenders GASC) et l'**offre hémisphère sud** (Australie) sont câblées.
+  3. **Or** : flux RSS dédié `gnews_gold_cb` (achats banques centrales / réserves / PBoC / WGC) → l'Or a enfin un **capteur RSS hors-quota** pour son volet demande officielle, en plus de la query API Q2.
+- **Bonus (autres experts), tous pertinents côté tendance** :
+  - **Fed / BCE DÉGROUPÉS** (Q4 bloc US, Q5 bloc EU) → correction la plus structurante du round : Fed et BCE poussent l'EUR/USD en **directions opposées** ; les fusionner masquait le signal de divergence. Désormais chaque banque centrale a sa requête, et EUR/USD (Q7) capte le différentiel.
+  - **S&P driver-isé** (Q6 : earnings beat / EPS surprise / guidance / correction) → sort du capteur indice générique pour viser le vrai moteur de tendance (saison des résultats + régime).
+  - **VIX + causes AMONT** (Q14 + `gnews_vix` : war / escalation / sanctions / bank failure / sovereign default) → capte la **peur avant le spike**, pas seulement le symptôme « VIX/risk-off ». Excellent réflexe news-trader.
+  - **Nasdaq + guidance/capex** (Q13 : + earnings guidance + data center capex) → ajoute le pivot baissier (guidance) et le driver haussier 2024-2026 (capex hyperscalers) au complexe semi.
+  - **Flux dédiés** `gnews_ecb_policy` (équilibre le déséquilibre 4 flux Fed/US des RSS) et `gnews_silver_industrial` (demande PV/solaire/grèves mines) → couvrent les angles morts RSS des actifs FX/argent.
 
-1. **Café — catalyseur « gel » non explicité.** La requête capte récolte/Brésil/Vietnam, mais LE déclencheur de tendance violente sur l'arabica est le **gel/sécheresse Minas Gerais**. Ajouter `frost Brazil OR drought Minas Gerais` (Q7). Sans ça, un spike de gel n'est capté que par ricochet « Brazil harvest ».
-2. **Blé — demande importateur absente.** WASDE/mer Noire/US OK, mais le **signal de demande directionnel** = tenders **GASC Égypte** (1er importateur mondial) + récolte **Australie/Argentine** (offre HS). Ajouter `Egypt GASC wheat tender OR Australia wheat OR Argentina wheat` (Q9).
-3. **2 RSS dédiés manquants** côté `EARLY_SIGNAL_FEEDS` : un flux **or-banques-centrales** (`gnews_gold_cb`) et le mot **`Nvidia`/`SOX`** est dans la query API mais le RSS `gnews_nasdaq` est bien là — OK. Manque surtout `gnews_gold_cb` pour donner à l'Or un capteur RSS dédié au volet demande officielle (aujourd'hui seul mining_com + query API). **Optionnel** : le volet CB or est déjà dans Q2, donc impact faible.
-
-Affinages cosmétiques (n'enlèvent pas de point mais cités) : Cacao → maladies `Black Pod / Swollen Shoot` ; Cuivre → `Peru OR China stimulus / property` ; S&P → `high yield OR credit spreads` pour le volet crédit.
+- **Couverture driver : 12/12 actifs en « OK net ».** 0 OK−, 0 TROU, 0 intrus.
+- **Bruit maîtrisé** : le seul filet large résiduel (Q4 Fed, Q5 BCE) est un capteur **macro multi-actifs assumé** (or, indices, EUR/USD, blé via DXY), pas du bruit.
 
 ---
 
-## TL;DR (verdict desk round 2)
+## Tableau d'audit par actif — ROUND 3
 
-- **Les 3 corrections P0/P1 du round 1 sont appliquées et bien faites** : Nasdaq a sa requête dédiée (Nvidia/semi/TSMC/export/Big Tech earnings) **+ RSS** ; VIX a sa requête + RSS (volatility/risk-off/selloff/flight to safety) ; DAX est retiré ; S&P sort en requête propre ; Or enrichi (central bank gold buying / PBoC / real yields) ; Argent dégroupé + PV/solaire/ratio ; EUR/USD resserré sur le différentiel Fed-BCE ; Cacao + EUDR ; Blé + WASDE ; Q3 agri générique redondante supprimée.
-- **Couverture driver désormais correcte sur 10/12 actifs en « OK net »**, 2 en « OK avec catalyseur de pointe manquant » (Café gel, Blé GASC).
-- **Bruit fortement réduit** : plus de DAX, plus de `forex/yen` fourre-tout, dégroupage des métaux. Le filet large résiduel (Q4 Fed/CPI) est légitime (macro transverse).
-- **Aucun TROU restant.** Le bloc actions/vol US, point noir du round 1, est désormais câblé.
-
----
-
-## Tableau d'audit par actif — ROUND 2
-
-| # | Actif | Driver(s) de tendance desk | Requête(s)/feed(s) qui le captent | Round 1 | **Round 2** |
+| # | Actif | Driver(s) de tendance desk | Requête(s)/feed(s) qui le captent | R2 | **R3** |
 |---|---|---|---|---|---|
-| 1 | **Pétrole (Brent)** | OPEC+, stocks EIA, géopol M-O, demande Chine, DXY | Q1 + EIA + oilprice | OK | **OK** |
-| 2 | **Or** | Taux réels, **achats CB/PBoC**, DXY, risk-off | Q2 enrichi (central bank gold buying/PBoC/real yields) | PARTIEL | **OK** (RSS CB en option) |
-| 3 | **Argent** | Or, **demande PV/solaire+indus**, ratio Au/Ag | Q3 (silver industrial/solar PV/gold silver ratio) + mining_com | PARTIEL | **OK** |
-| 4 | **Cuivre** | PMI Chine, LME/SHFE, grèves Chili/Pérou | Q10 (LME/Chile/China demand) + mining_com | OK | **OK** |
-| 5 | **Café** | **Gel/sécheresse Brésil**, stocks ICE, Vietnam robusta | Q7 (Brazil/Vietnam harvest) + gnews_coffee | OK | **OK−** (manque `frost`) |
-| 6 | **Cacao** | Météo+arrivées CI/Ghana, grindings, EUDR | Q8 (+ grindings + EUDR deforestation) + gnews_cocoa | OK | **OK** |
-| 7 | **Blé** | WASDE, sécheresse Plaines, mer Noire, **tenders Égypte** | Q9 (Black Sea/Russia/US crop/WASDE) + gnews_wheat | OK | **OK−** (manque GASC/Australie) |
-| 8 | **CAC 40** | Politique FR/budget, OAT-Bund, LVMH, Total | Q11 (+ France politics budget) + gnews_cac40 | OK | **OK** |
-| 9 | **S&P 500** | Fed/taux, VIX/risk-off, crédit HY, méga-caps | Q5 dédié (S&P/Wall Street/US stocks/earnings) + Q4 | PARTIEL | **OK** (crédit HY en bonus) |
-| 10 | **Nasdaq** | **Nvidia/IA/semi/SOX, export chips, méga-caps** | Q12 dédié + gnews_nasdaq | **TROU** | **OK** |
-| 11 | **VIX** | **Volatilité/risk-off/selloff/safe-haven** | Q13 dédié + gnews_vix | **TROU** | **OK** |
-| 12 | **EUR/USD** | **Différentiel Fed-BCE**, DXY, stress EZ | Q6 resserré (ECB rate/Fed ECB divergence/dollar index) + Q4 | PARTIEL | **OK** |
+| 1 | **Pétrole (Brent)** | OPEC+, stocks EIA, géopol M-O, demande Chine, DXY | Q1 + EIA (×2) + oilprice | OK | **OK** |
+| 2 | **Or** | Taux réels, **achats CB/PBoC**, DXY, risk-off | Q2 (CB gold/WGC/PBoC/real yields) + **`gnews_gold_cb`** + mining_com | OK | **OK** (RSS CB ajouté) |
+| 3 | **Argent** | Or, **demande PV/solaire+indus**, ratio Au/Ag | Q3 (silver indus/solar PV/ratio) + **`gnews_silver_industrial`** + mining_com | OK | **OK** (RSS dédié ajouté) |
+| 4 | **Cuivre** | PMI Chine, LME/SHFE, grèves Chili/Pérou | Q11 (LME/Chile/China demand) + mining_com + gnews_copper | OK | **OK** |
+| 5 | **Café** | **Gel/sécheresse Brésil**, stocks ICE, Vietnam robusta | Q8 (+ **frost Brazil/drought Minas Gerais**) + gnews_coffee | OK− | **OK** |
+| 6 | **Cacao** | Météo+arrivées CI/Ghana, grindings, EUDR | Q9 (grindings + EUDR) + gnews_cocoa | OK | **OK** |
+| 7 | **Blé** | WASDE, sécheresse Plaines, mer Noire, **tenders GASC** | Q10 (+ **Egypt GASC + Australia wheat**) + gnews_wheat | OK− | **OK** |
+| 8 | **CAC 40** | Politique FR/budget, OAT-Bund, LVMH, Total | Q12 (+ France politics budget) + gnews_cac40 | OK | **OK** |
+| 9 | **S&P 500** | Fed/taux, earnings/EPS, régime/correction | Q6 (earnings beat/EPS/guidance/correction) + Q4 | OK | **OK** (driver-isé) |
+| 10 | **Nasdaq** | **Nvidia/IA/semi, export chips, guidance, capex** | Q13 (+ guidance + data center capex) + gnews_nasdaq | OK | **OK** |
+| 11 | **VIX** | Volatilité/risk-off + **causes amont (war/sanctions/bank failure)** | Q14 (+ war/escalation/sanctions/bank failure/sovereign default) + gnews_vix | OK | **OK** (causes amont) |
+| 12 | **EUR/USD** | **Différentiel Fed-BCE**, DXY, stress EZ | Q7 (Fed ECB divergence/dollar index) + Q4 (Fed) + Q5 (BCE) + gnews_ecb_policy | OK | **OK** (Fed/BCE dégroupés) |
 
-**Bilan round 2** : **10 OK nets** · **2 OK− (catalyseur de pointe à expliciter : Café gel, Blé GASC)** · **0 TROU · 0 intrus**.
-(Round 1 : 5 OK · 4 PARTIELS · 2 TROUS · 1 intrus DAX.)
-
----
-
-## Détail desk — ce qui a basculé en OK
-
-**Nasdaq — TROU → OK.** `Nvidia OR semiconductor OR AI chips OR TSMC OR chip export controls OR Big Tech earnings` (Q12) + `gnews_nasdaq`. Capte enfin le driver dominant 2024-2026 : idiosyncrasie tech/IA, semis, restrictions export Chine, earnings méga-caps. C'est la correction la plus importante du round et elle est bien ciblée. Affinage marginal possible : `SOX` / `hyperscaler capex`, mais non bloquant (TSMC + semiconductor couvrent déjà le complexe).
-
-**VIX — TROU → OK.** `stock market volatility OR VIX OR risk-off OR market selloff OR flight to safety` (Q13) + `gnews_vix`. Le sentiment/risk-off — driver par nature de la vol — est désormais capté. Aligné. RAS.
-
-**Or — PARTIEL → OK.** Q2 ajoute `central bank gold buying OR WGC OR PBoC gold OR real yields`. Les deux jambes du moteur de tendance (taux réels **et** demande officielle) sont câblées. Seul résidu : pas de RSS dédié `gnews_gold_cb` (le volet CB ne vit que dans la query API GNews/NewsAPI, soumise au quota) — d'où le « RSS en option » dans les manques.
-
-**Argent — PARTIEL → OK.** Dégroupé de l'or et enrichi : `silver industrial demand OR solar photovoltaic OR gold silver ratio`. Le différenciateur argent vs or (demande PV + ratio) est explicite. Aligné fiche.
-
-**S&P 500 — PARTIEL → OK.** Sort de l'ancien bucket pollué : `S&P 500 OR Wall Street OR US stocks OR earnings season`. Requête propre, DAX évacué. Bonus possible non bloquant : `high yield OR credit spreads OR recession` pour le volet crédit/régime.
-
-**EUR/USD — PARTIEL → OK.** Resserré : `EUR USD OR ECB rate decision OR Fed ECB divergence OR dollar index`. Le `yen`/`forex` fourre-tout du round 1 est retiré, le différentiel de politique monétaire est explicite. Aligné.
-
-**Cacao / Blé — affinés.** Cacao + `EUDR deforestation` (régulation = driver d'offre structurel) ✓. Blé + `WASDE USDA` ✓. Restent les catalyseurs de **demande** (GASC) et offre Sud (Australie/Argentine) pour le 10/10 — cf. manques.
+**Bilan round 3** : **12 OK nets** · **0 OK− · 0 TROU · 0 intrus**.
+(R2 : 10 OK · 2 OK− · 0 TROU · 0 intrus. R1 : 5 OK · 4 PARTIELS · 2 TROUS · 1 intrus.)
 
 ---
 
-## Bruit / hors-objectif — ROUND 2
+## Détail desk — ce qui a basculé en OK net
 
-- **DAX retiré** ✓ — plus d'intrus consommant du quota.
-- **Q6 nettoyé** ✓ — `yen` et `forex` génériques supprimés ; resserrage sur EUR/USD + Fed-BCE.
-- **Métaux dégroupés** ✓ — Or, Argent, Cuivre ont chacun leur requête dédiée ; plus de `platinum` parasite.
-- **Q4 `Fed OR FOMC OR ECB OR inflation OR CPI`** : conservé, **légitime** — macro-driver transverse (or, indices, EUR/USD, blé via DXY). Ce n'est pas du bruit, c'est un capteur multi-actifs.
-- **Risque résiduel faible** : chaque actif a maintenant soit une requête dédiée, soit (pour le macro) une requête transverse assumée. Plus d'actif « orphelin » dépendant d'un bucket large.
+**Café — OK− → OK.** `frost Brazil OR drought Minas Gerais` ajouté à Q8. Sur l'arabica, le gel Minas Gerais est le catalyseur de tendance le plus violent (spikes +30/+50 %). Avant, capté seulement par ricochet « Brazil harvest » — souvent trop tard pour le sens de tendance. Désormais explicite. Aligné.
 
----
+**Blé — OK− → OK.** `Egypt GASC OR Australia wheat` ajouté à Q10. Deux jambes désormais câblées : **demande** (GASC = 1er importateur mondial, ses tenders donnent le ton du prix CME/Euronext) et **offre hémisphère sud** (Australie, contre-saison vs Plaines US). Combiné à WASDE + mer Noire déjà présents, le driver de tendance blé est complet.
 
-## Mots-clés à ajouter pour viser 10/10 (formulations exactes)
+**Or — RSS dédié ajouté.** `gnews_gold_cb` (`central bank gold` / `gold reserves` / `PBoC gold` / `WGC`) donne à l'Or un capteur RSS **hors-quota API** sur son driver structurel 2022-2026 (achats officiels). Le volet ne dépend plus uniquement de la query Q2 soumise au quota GNews/NewsAPI. Robustesse de couverture renforcée.
 
-```python
-# Q7 Café — expliciter le catalyseur de tendance violent (gel)
-"coffee prices OR arabica OR robusta OR Brazil harvest OR Vietnam coffee OR frost Brazil OR drought Minas Gerais",
+**Fed/BCE dégroupés — correction structurante.** En round 2, Fed et BCE cohabitaient dans une requête macro unique. Or sur l'EUR/USD ils agissent en **sens opposé** (Fed hawkish → USD up → EUR/USD down ; BCE hawkish → inverse). Les séparer (Q4 Fed/FOMC/Powell, Q5 ECB/Lagarde/Eurozone inflation) permet de lire la **divergence**, qui EST le driver de tendance de la paire. Q7 EUR/USD capte explicitement « Fed ECB divergence ». Très bon.
 
-# Q9 Blé — ajouter demande importateur (GASC) + offre hémisphère sud
-"wheat prices OR Black Sea grain OR Russia wheat OR US wheat crop OR WASDE USDA OR Egypt GASC tender OR Australia wheat",
-```
+**VIX — causes amont.** Q14 et `gnews_vix` ajoutent les déclencheurs en amont (war / escalation / sanctions / bank failure / sovereign default) aux symptômes (VIX/risk-off/selloff). C'est exactement le réflexe news-trader : un trader de vol veut capter la **cause de la peur** avant que le VIX ne spike, pas la confirmation après coup.
 
-```python
-# EARLY_SIGNAL_FEEDS — RSS dédié or/banques centrales (donne à l'Or un capteur RSS hors quota API)
-("gnews_gold_cb", "https://news.google.com/rss/search?q=%22central+bank+gold%22+OR+%22PBoC+gold%22+OR+%22gold+demand+WGC%22&hl=en-US&gl=US&ceid=US:en", 3600),
-# + SOURCE_WEIGHTS : "gnews_gold_cb": 0.8
-```
-
-Cosmétiques (facultatifs, n'affectent pas la note) :
-- Cacao Q8 : `OR Black Pod OR Swollen Shoot` (maladies = driver offre structurel).
-- Cuivre Q10 : `OR Peru copper OR China stimulus OR China property`.
-- S&P Q5 : `OR high yield OR credit spreads` (volet crédit/régime de marché).
-- Nasdaq Q12 : `OR SOX OR hyperscaler capex` (le complexe semi est déjà bien couvert via TSMC+semiconductor).
+**S&P / Nasdaq — driver-isés.** S&P (Q6) vise la saison des résultats (earnings beat/EPS surprise/guidance) + le régime (correction), au lieu d'un capteur indice générique. Nasdaq (Q13) ajoute « earnings guidance » (pivot baissier sur surévaluation) et « data center capex » (moteur haussier hyperscalers/IA) au complexe semi. Les deux indices captent leurs vrais moteurs idiosyncratiques.
 
 ---
 
-## Verdict & priorisation — ROUND 2
+## Bruit / hors-objectif — ROUND 3
 
-**La couverture mots-clés est-elle alignée sur la justesse de tendance ? → OUI, à 9/10.**
+- **0 intrus** — DAX toujours sorti (hors périmètre).
+- **Fed/BCE dégroupés ≠ inflation de bruit** : deux requêtes ciblées valent mieux qu'une requête macro fourre-tout — chacune ramène un signal directionnel propre (US vs EU).
+- **Métaux dégroupés** (Or/Argent/Cuivre requêtes dédiées) + RSS dédiés argent et or-CB → plus aucun actif métal « orphelin » d'un bucket large.
+- **VIX élargi aux causes amont** : le risque serait de ramener du bruit géopolitique non-marché ; atténué par la co-occurrence avec les symptômes marché (`market selloff`/`risk-off`) et le poids RSS modéré (0.8). Acceptable : sur le VIX, manquer une cause amont coûte plus cher qu'un faux positif géopol.
+- **Risque résiduel** : négligeable. Chaque actif a soit une requête dédiée, soit une requête transverse macro assumée. Le poids des agrégateurs (gnews_* 0.8, gnews/newsapi 0.7) borne leur influence dans le scoring downstream.
 
-Le bloc actions/vol US — point noir structurel du round 1 — est résolu : Nasdaq et VIX ont chacun requête **+** RSS dédiés, captant leurs vrais drivers (Nvidia/semi/export pour le Nasdaq, risk-off/volatilité pour le VIX). Les 3 PARTIELS métaux/FX (Or-CB, Argent-PV, EUR/USD-Fed/BCE) sont comblés, le S&P a sa requête propre, l'intrus DAX est sorti et le bruit FX/métaux est nettoyé. C'est un travail de desk désormais solide sur les 12 actifs.
+---
 
-Le point manquant pour le 10/10 n'est plus structurel mais **fin** : deux **catalyseurs de tendance « de pointe »** (gel café, tenders GASC blé) sont captés seulement par ricochet, et l'Or n'a pas de RSS dédié pour son volet demande officielle (uniquement la query API soumise au quota). Ces ajouts sont P2, à faible coût, et porteraient la couverture à l'exhaustivité des drivers.
+## Pourquoi 10/10 (et pas un demi-point retenu)
 
-### Top 3 affinages pour le 10/10
-1. **[P2] Q7 Café — `frost Brazil OR drought Minas Gerais`** : le gel est LE catalyseur de tendance violente sur l'arabica.
-2. **[P2] Q9 Blé — `Egypt GASC tender OR Australia wheat`** : capter la jambe demande (importateur n°1) et l'offre Sud.
-3. **[P2] RSS `gnews_gold_cb`** : capteur RSS hors-quota pour le volet achats banques centrales de l'or.
+Côté **NEWS**, la couverture des drivers de tendance est désormais **exhaustive sur les 12 actifs** : chaque actif a son ou ses drivers dominants explicités en mots-clés, les actifs idiosyncratiques (Or, Argent, Café, Blé, Nasdaq, VIX, EUR/USD) ont en plus un RSS dédié hors-quota, et le bruit est borné par le dégroupage + la pondération. Les 2 OK− du round 2 (Café gel, Blé GASC) sont comblés ; le manque #3 (RSS or-CB) aussi. Le dégroupage Fed/BCE corrige un déséquilibre latent qui n'avait pas coûté de point au round 2 mais aurait pu fausser la lecture EUR/USD.
 
-> Conforme à `project-context.md` : ces affinages renforcent la **justesse de la tendance** (couverture du driver), pas la vitesse. À valider par Thomas avant modif `config.py` (pas de modif silencieuse + bump `PROMPT_VERSION` si le mapping article→actif change).
+Il ne reste que des **affinages cosmétiques** (ci-dessous), qui ne changent pas la justesse de tendance et ne justifient donc pas de retenir un demi-point côté news.
+
+---
+
+## Affinages cosmétiques (facultatifs — n'affectent PAS la note 10/10)
+
+- Cacao Q9 : `OR Black Pod OR Swollen Shoot` (maladies = driver offre structurel CI/Ghana).
+- Cuivre Q11 : `OR Peru copper OR China stimulus OR China property` (PMI/relance Chine + Pérou 2e producteur).
+- S&P Q6 : `OR high yield OR credit spreads` (volet crédit/régime — déjà partiellement via « correction »).
+- Café Q8 : `OR ICE coffee stocks` (le niveau des stocks certifiés ICE module l'ampleur du spike gel).
+
+Ces ajouts captent des **drivers de second ordre** ; les drivers de premier ordre sont tous déjà couverts. À considérer uniquement si le quota API le permet.
 
 ---
 
 ## Handoff
 
-- **Livrable** : `v3/audit/audit-requetes-news-newstrader.md` (ce fichier, round 2, écrase round 1).
-- **Note** : **9/10** (vs ~6,5/10 round 1). 10 OK nets, 2 OK− (Café gel, Blé GASC), 0 TROU, 0 intrus.
-- **Constat** : toutes les corrections P0/P1 du round 1 sont appliquées et pertinentes. Reste 3 affinages P2 pour le 10/10 (cf. section dédiée), à coût quasi nul.
-- **Action attendue** : si Thomas valide, appliquer les 2 reformulations Q7/Q9 + le RSS `gnews_gold_cb` → @fullstack, avec bump `PROMPT_VERSION` et tests verts.
-- **Hors périmètre** : ne touche ni la vitesse de capture (hors-sujet par `project-context.md`) ni le scoring numérique (couvert par les fiches).
+- **Livrable** : `v3/audit/audit-requetes-news-newstrader.md` (ce fichier, round 3, écrase round 2).
+- **Note** : **10/10** (R1 ~6,5 · R2 9 · R3 10). 12 OK nets, 0 OK−, 0 TROU, 0 intrus.
+- **Constat** : les 3 affinages P2 du round 2 (Café gel Q8, Blé GASC Q10, RSS or-CB) sont appliqués et bien formulés. Bonus pertinents : Fed/BCE dégroupés, S&P/Nasdaq driver-isés, VIX causes amont, flux ECB/silver dédiés. Côté NEWS, la couverture des drivers de tendance est exhaustive sur les 12 actifs.
+- **Action attendue** : aucune obligatoire. Affinages cosmétiques optionnels listés ci-dessus, à arbitrer selon quota API uniquement.
+- **Hors périmètre** : positionnement CFTC + données CBOE/options (pipeline data) ; vitesse de capture (hors-sujet par `project-context.md`) ; scoring numérique (fiches actifs).

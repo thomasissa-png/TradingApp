@@ -126,7 +126,7 @@ STRUCTURED_QUERIES = [
     "cocoa prices OR Ivory Coast OR Ghana cocoa OR cocoa grindings OR EUDR deforestation",
     "wheat prices OR Black Sea grain OR Russia wheat OR US wheat crop OR WASDE OR Egypt GASC OR Australia wheat",  # Blé + demande importateur
     "copper prices OR LME copper OR Chile mine OR China copper demand",
-    "CAC 40 OR French stocks OR LVMH OR TotalEnergies OR France politics budget",
+    "CAC 40 OR SBF 120 OR LVMH OR TotalEnergies OR profit warning France OR résultats trimestriels OR France budget politics",  # + earnings mid-cap / profit warnings (dernier fix CAC, audit R3)
     "Nvidia OR semiconductor OR AI chips OR TSMC OR chip export controls OR earnings guidance OR data center capex",  # Nasdaq + pivot baissier
     # VIX : causes AMONT (war/escalation/...) en plus des symptômes → capter la peur AVANT le spike
     "stock market volatility OR VIX OR risk-off OR market selloff OR war OR escalation OR sanctions OR bank failure OR sovereign default",

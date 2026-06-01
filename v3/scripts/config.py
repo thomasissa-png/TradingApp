@@ -93,8 +93,13 @@ EARLY_SIGNAL_FEEDS = [
     ("gnews_copper",  "https://news.google.com/rss/search?q=copper+prices+LME+China+demand&hl=en-US&gl=US&ceid=US:en", 3600),
     ("gnews_cac40",   "https://news.google.com/rss/search?q=CAC+40+bourse+Paris+France&hl=fr&gl=FR&ceid=FR:fr",        3600),
     # Ajout audit requêtes (round 2) : combler les 2 trous Nasdaq (tech/IA/semi) et VIX (volatilité/risk-off)
-    ("gnews_nasdaq",  "https://news.google.com/rss/search?q=Nvidia+OR+semiconductor+OR+%22AI+chips%22+OR+TSMC+OR+%22chip+export%22+OR+%22Big+Tech+earnings%22&hl=en-US&gl=US&ceid=US:en", 3600),
-    ("gnews_vix",     "https://news.google.com/rss/search?q=%22stock+market+volatility%22+OR+VIX+OR+%22risk-off%22+OR+%22market+selloff%22+OR+%22flight+to+safety%22&hl=en-US&gl=US&ceid=US:en", 3600),
+    ("gnews_nasdaq",  "https://news.google.com/rss/search?q=Nvidia+OR+semiconductor+OR+%22AI+chips%22+OR+TSMC+OR+%22chip+export%22+OR+%22earnings+guidance%22+OR+%22data+center+capex%22&hl=en-US&gl=US&ceid=US:en", 3600),
+    # Round 3 : VIX aligné sur les CAUSES amont (war/escalation/sanctions/bank failure) pas seulement les symptômes
+    ("gnews_vix",     "https://news.google.com/rss/search?q=%22market+selloff%22+OR+%22risk-off%22+OR+war+OR+escalation+OR+sanctions+OR+%22bank+failure%22+OR+%22sovereign+default%22&hl=en-US&gl=US&ceid=US:en", 3600),
+    # Round 3 : équilibrage BCE (vs déséquilibre 4 flux Fed/US), demande Argent industrielle, achats or banques centrales
+    ("gnews_ecb_policy",       "https://news.google.com/rss/search?q=%22ECB+minutes%22+OR+%22Lagarde+speech%22+OR+%22Eurozone+GDP%22+OR+%22EU+trade+balance%22&hl=en-US&gl=US&ceid=US:en", 3600),
+    ("gnews_silver_industrial","https://news.google.com/rss/search?q=silver+demand+OR+%22solar+panels%22+OR+%22photovoltaic+silver%22+OR+%22silver+mining+strike%22&hl=en-US&gl=US&ceid=US:en", 3600),
+    ("gnews_gold_cb",          "https://news.google.com/rss/search?q=%22central+bank+gold%22+OR+%22gold+reserves%22+OR+%22PBoC+gold%22+OR+WGC+gold&hl=en-US&gl=US&ceid=US:en", 3600),
 ]
 
 # ============================================================
@@ -112,16 +117,19 @@ STRUCTURED_QUERIES = [
     "oil OR brent OR WTI OR OPEC OR crude inventories",
     "gold price OR central bank gold buying OR WGC OR PBoC gold OR real yields",          # Or
     "silver price OR silver industrial demand OR solar photovoltaic OR gold silver ratio",  # Argent
-    "Fed OR FOMC OR ECB OR inflation OR CPI",
-    "S&P 500 OR Wall Street OR US stocks OR earnings season",                              # S&P (DAX retiré)
+    # Round 3 : Fed et BCE DÉGROUPÉS (directions opposées sur EUR/USD, US vs EU)
+    "Fed OR FOMC OR interest rate decision OR federal funds rate OR Powell speech",        # bloc US
+    "ECB OR European Central Bank OR Eurozone inflation OR Lagarde speech OR ECB rate",    # bloc EU
+    "S&P 500 earnings OR corporate earnings beat OR EPS surprise OR earnings guidance OR market correction",  # S&P (driver-isé)
     "EUR USD OR ECB rate decision OR Fed ECB divergence OR dollar index",                  # EUR/USD resserré
-    "coffee prices OR arabica OR robusta OR Brazil harvest OR Vietnam coffee",
+    "coffee prices OR arabica OR robusta OR Brazil harvest OR frost Brazil OR drought Minas Gerais",  # Café + gel/sécheresse
     "cocoa prices OR Ivory Coast OR Ghana cocoa OR cocoa grindings OR EUDR deforestation",
-    "wheat prices OR Black Sea grain OR Russia wheat OR US wheat crop OR WASDE USDA",
+    "wheat prices OR Black Sea grain OR Russia wheat OR US wheat crop OR WASDE OR Egypt GASC OR Australia wheat",  # Blé + demande importateur
     "copper prices OR LME copper OR Chile mine OR China copper demand",
     "CAC 40 OR French stocks OR LVMH OR TotalEnergies OR France politics budget",
-    "Nvidia OR semiconductor OR AI chips OR TSMC OR chip export controls OR Big Tech earnings",  # Nasdaq
-    "stock market volatility OR VIX OR risk-off OR market selloff OR flight to safety",          # VIX
+    "Nvidia OR semiconductor OR AI chips OR TSMC OR chip export controls OR earnings guidance OR data center capex",  # Nasdaq + pivot baissier
+    # VIX : causes AMONT (war/escalation/...) en plus des symptômes → capter la peur AVANT le spike
+    "stock market volatility OR VIX OR risk-off OR market selloff OR war OR escalation OR sanctions OR bank failure OR sovereign default",
 ]
 
 STRUCTURED_SOURCES = [
@@ -155,6 +163,7 @@ SOURCE_WEIGHTS = {
     # Actifs sous-couverts — Google News RSS ciblé (agrégateur, bruit modéré)
     "gnews_coffee": 0.8, "gnews_cocoa": 0.8, "gnews_wheat": 0.8,
     "gnews_copper": 0.8, "gnews_cac40": 0.8, "gnews_nasdaq": 0.8, "gnews_vix": 0.8,
+    "gnews_ecb_policy": 0.8, "gnews_silver_industrial": 0.8, "gnews_gold_cb": 0.8,
     # Sources structurées (agrégateurs API) — bruit élevé mais couverture large
     "gnews": 0.7, "newsapi": 0.7,
 }

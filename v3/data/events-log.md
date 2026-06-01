@@ -854,3 +854,84 @@ Append-only. Édité par v3/scripts/agent_news.py (GitHub Actions cron).
 | 2026-02-16 |  | BoE-AI | Bank of England holds AI roundtables with regulated firms |  |  | 1 | boe_news | EU | central_bank |  |  | low | confirmed |
 | 2026-02-09 |  | BoE-statistical | Bank of England publishes green notice on significant proposals for reporting |  |  | 1 | boe_news | EU | central_bank |  |  | low | confirmed |
 | 2026-02-04 |  | FX market data | Publication des résultats de l'enquête semestrielle sur le turnover FX au Royaume-Uni (octobre 2025) |  |  | 1 | boe_news | EU | macro |  |  | low | confirmed |
+<!-- batch 2026-06-01T06:16:14Z : 80 events -->
+| 2026-06-01 |  | Tech product launch | Nvidia announces new AI chip for personal computers, CEO calls it 'reinvention of the computer' | NASDAQ |  | 1 | bbc_business | US | earnings |  | NASDAQ:LONG:high;SP500:LONG:medium | high | confirmed |
+| 2026-05-31 |  | China coal mine disaster | China's worst coal mining disaster in 15 years, highlighting safety issues and potential supply disruptions | COPPER |  | 1 | bbc_business | CN | commodity |  | COPPER:SHORT:low | medium | confirmed |
+| 2026-05-30 |  |  | Article sur le chômage des jeunes dans une région britannique |  |  | 1 | bbc_business | EU | other |  |  | low | reported |
+| 2026-06-01 |  | Iran-Moyen-Orient | Nouvelles frappes aériennes mutuelles entre Iran et États-Unis autour du détroit d'Ormuz | BRENT |  | 1 | bbc_world | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-05-31 |  | Iran-Moyen-Orient | Trump demande des modifications à l'accord US-Iran concernant le détroit d'Ormuz et l'uranium enrichi | BRENT |  | 1 | bbc_world | Moyen-Orient | geopolitical |  | BRENT:SHORT:medium;GOLD:SHORT:low | medium | reported |
+| 2026-05-31 |  | Ukraine-Russia | Russian drone attacks on public buses in Kherson, killing three transport workers |  |  | 1 | bbc_world | UA | geopolitical |  |  | low | reported |
+| 2026-06-01 |  | Tech-product launch | Nvidia unveils Arm-based PC chip for laptops from major OEMs | NASDAQ |  | 1 | cnbc_top | US | earnings |  | NASDAQ:LONG:high;SP500:LONG:medium | high | confirmed |
+| 2026-06-01 |  | AI-robotics partnership | Nvidia selects Unitree for humanoid robot platform; Unitree eyes IPO | NASDAQ |  | 1 | cnbc_top | US | earnings |  | NASDAQ:LONG:medium | medium | reported |
+| 2026-06-01 |  | Israel-Liban-Hezbollah | Israel expands Lebanon offensive, ceasefire hopes fade | BRENT |  | 1 | cnbc_top | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-06-01 |  | AI expansion | Runway, soutenu par Nvidia, annonce une expansion majeure à Londres | NASDAQ |  | 1 | cnbc_top | EU | earnings |  | NASDAQ:LONG:medium | medium | confirmed |
+| 2026-05-30 |  | Defense sector outlook | Analysts predict 2026 consolidation for European defense stocks after spending boom |  |  | 1 | cnbc_top | EU | macro |  |  | medium | reported |
+| 2026-06-01 |  | Chine-PMI manufacturier | PMI manufacturier chinois (Caixin) meilleur que prévu en mai, malgré des données officielles plus faibles | COPPER |  | 1 | cnbc_top | CN | macro |  | COPPER:LONG:medium;BRENT:LONG:low | medium | confirmed |
+| 2026-05-31 |  | Asia-Pacific security | IISS Shangri-La Dialogue 2026: discussions on defense spending, China, and Ukraine lessons |  |  | 1 | cnbc_top | Global | geopolitical |  |  | low | confirmed |
+| 2026-06-01 |  | Iran-Moyen-Orient | Incertitude persistante sur les négociations USA-Iran, marchés mitigés en Asie |  |  | 1 | cnbc_top | Moyen-Orient | geopolitical |  |  | low | reported |
+| 2026-06-01 |  | JGB yields spike | Japanese bond yields hit 40-year high amid budget concerns and PM Takaichi's 'red flag' comment |  |  | 1 | cnbc_top | Global | macro |  |  | high | confirmed |
+| 2026-06-01 |  | Biotech FDA | JPMorgan upgrade Replimune sur chemin de resoumission FDA |  |  | 1 | investing_news | US | earnings |  |  | low | reported |
+| 2026-06-01 |  |  | Jyske Bank rachète 49 625 actions en semaine 22 |  |  | 1 | investing_news | EU | other |  |  | low | confirmed |
+| 2026-06-01 |  | Tech rally | Softbank hits record high, overtakes Toyota as Japan's biggest company | NASDAQ |  | 1 | investing_news | US | earnings |  | NASDAQ:LONG:medium | medium | confirmed |
+| 2026-06-01 |  |  | Jyske Bank rachète ses propres actions pour 50,3 millions de couronnes en semaine 22 |  |  | 1 | investing_news | EU | other |  |  | low | confirmed |
+| 2026-06-01 |  | Analyst rating | Goldman Sachs initiates Octave Intelligence at neutral |  |  | 1 | investing_news | US | earnings |  |  | low | confirmed |
+| 2026-06-01 |  | Analyst upgrade | Goldman Sachs initiates HawkEye 360 with buy rating |  |  | 1 | investing_news | US | earnings |  |  | low | confirmed |
+| 2026-06-01 |  | Fed-FOMC | Powell met en garde contre la politisation de la Fed |  |  | 1 | investing_news | US | central_bank |  |  | low | confirmed |
+| 2026-06-01 |  |  | Sampo rachète 2,47 millions d'actions en semaine 22 |  |  | 1 | investing_news | EU | other |  |  | low | confirmed |
+| 2026-06-01 |  | Iran-US diplomacy | Trump déclare que l'Iran veut vraiment conclure un accord avec les États-Unis | BRENT |  | 1 | investing_news | Moyen-Orient | geopolitical |  | BRENT:SHORT:medium;GOLD:SHORT:low | medium | reported |
+| 2026-06-01 |  | Tech-hardware | Nvidia dévoile un nouveau processeur pour PC Windows et des offres IA | NASDAQ |  | 1 | investing_econ | US | earnings |  | NASDAQ:LONG:high;SP500:LONG:medium | high | confirmed |
+| 2026-06-01 |  | South China Sea | Philippines and Vietnam upgrade ties, reaffirm South China Sea peace as non-negotiable |  |  | 1 | investing_econ | Global | geopolitical |  |  | low | confirmed |
+| 2026-06-01 |  | Japan equity rally | Nikkei 225 dépasse 67 000 points pour la première fois, porté par l'IA ; SoftBank devient la plus grande capitalisation japonaise |  |  | 1 | investing_econ | Global | macro |  |  | high | confirmed |
+| 2026-06-01 |  | Asie-Marchés | Hausse des actions asiatiques portée par l'IA, malgré les incertitudes sur l'accord iranien | SP500 |  | 1 | investing_econ | Global | macro |  | SP500:LONG:medium;NASDAQ:LONG:medium | medium | confirmed |
+| 2026-06-01 |  | UAW strike | UAW calls for midnight strike at GM pickup truck axle supplier | SP500 |  | 1 | investing_econ | US | supply_chain |  | SP500:SHORT:medium | medium | confirmed |
+| 2026-06-01 |  | Nvidia partnership speculation | LG shares hit record highs amid Nvidia partnership speculations | NASDAQ |  | 1 | investing_econ | US | earnings |  | NASDAQ:LONG:low | medium | rumor |
+| 2026-06-01 |  | Iran-Moyen-Orient | Incertitude sur un cessez-le-feu iranien, données PMI chinoises mitigées | EURUSD |  | 1 | investing_forex | Moyen-Orient | geopolitical |  | EURUSD:LONG:medium;BRENT:SHORT:low | medium | reported |
+| 2026-06-01 |  | ECB-digital currency | ECB's Schnabel says rising stablecoin use could cement dollar dominance |  |  | 1 | investing_forex | EU | central_bank |  |  | low | confirmed |
+| 2026-06-01 |  | Iran-Moyen-Orient | Frappes entre US et Iran, Israël avance au Liban | BRENT |  | 1 | investing_commod | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-06-01 |  | Iran-Moyen-Orient | Incertitude sur le cessez-le-feu iranien et risques d'inflation | GOLD |  | 1 | investing_commod | Moyen-Orient | geopolitical |  | GOLD:LONG:medium | medium | reported |
+| 2026-06-01 |  | Israel-Lebanon | Escalade du conflit entre Israël et le Liban, hausse des prix du pétrole | BRENT |  | 1 | investing_commod | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-05-31 |  | UE-Russie sanctions | UE envisage de geler le plafonnement du prix du pétrole russe en raison du conflit au Moyen-Orient | BRENT |  | 1 | investing_commod | EU | geopolitical |  | BRENT:LONG:medium | medium | reported |
+| 2026-06-01 |  | Oil demand-supply | Goldman Sachs note: demand destruction from higher prices may offset supply risks, sees both upside and downside risks | BRENT |  | 1 | oilprice | Global | commodity |  | BRENT:SHORT:medium | medium | reported |
+| 2026-06-01 |  | Israel-Liban-Moyen-Orient | Expansion de l'offensive israélienne au Liban, traversée du Litani, crainte d'escalade régionale | BRENT |  | 1 | oilprice | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-05-30 |  | China oil demand | Chinese refiners reduce oil purchases due to price surge, but reserves may force future buying | BRENT |  | 1 | oilprice | CN | commodity |  | BRENT:LONG:medium | medium | reported |
+| 2026-01-14 |  | UK-EU financial regulation | UK and EU regulators sign MoU to strengthen oversight of critical third parties (CTPs) |  |  | 1 | boe_news | EU | regulatory |  |  | low | confirmed |
+| 2026-01-13 |  | Fed-FOMC | Déclaration de soutien des banquiers centraux internationaux à Powell après son discours du 11 janvier 2026 | EURUSD |  | 1 | boe_news | Global | central_bank |  | EURUSD:SHORT:medium;SP500:LONG:medium;GOLD:SHORT:low | medium | confirmed |
+| 2026-05-29 |  | BOJ-JGB | BOJ publie calendrier d'achats d'obligations d'État pour avril-juin 2026 |  |  | 1 | boj_news | JP | central_bank |  |  | low | confirmed |
+| 2026-05-27 |  | BOJ | Discours du gouverneur Ueda à la conférence BOJ-IMES |  |  | 1 | boj_news | JP | central_bank |  |  | low | confirmed |
+| 2026-05-26 |  | US-inflation | Indicateurs pour Core CPI à venir |  |  | 1 | boj_news | US | macro |  |  | low | reported |
+| 2026-05-25 |  | Credit conditions | Average contract interest rates on loans and discounts for March released |  |  | 1 | boj_news | US | macro |  |  | low | confirmed |
+| 2026-05-22 |  |  | Information générale sur les obligations d'État japonaises détenues par la BoJ |  |  | 1 | boj_news | Global | other |  |  | low | confirmed |
+| 2026-05-22 |  |  | Publication d'un papier de recherche sur les attentes de croissance des salaires et d'inflation |  |  | 1 | boj_news | Global | other |  |  | low | confirmed |
+| 2026-05-22 |  | BOJ-FX | Analyse BOJ du marché des changes japonais basée sur enquête BIS 2025 |  |  | 1 | boj_news | Global | central_bank |  |  | low | confirmed |
+| 2026-05-22 |  | BoJ | Publication des comptes de la Banque du Japon au 20 mai |  |  | 1 | boj_news | JP | macro |  |  | low | confirmed |
+| 2026-05-22 |  |  | Publication d'un article de recherche sur les retombées spatiales des baisses de prix des terres après le typhon Hagibis |  |  | 1 | boj_news | Global | other |  |  | low | confirmed |
+| 2026-05-21 |  |  | Revue de la BOJ sur les assureurs-vie internationaux, sans annonce de politique monétaire |  |  | 1 | boj_news | Global | other |  |  | low | confirmed |
+| 2026-05-20 |  |  | Enquête sur le marché obligataire (mai 2026) sans données spécifiques |  |  | 1 | boj_news | US | other |  |  | low | reported |
+| 2026-05-18 |  | BOJ | Publication des soldes des comptes courants par secteur de la BOJ pour avril |  |  | 1 | boj_news | JP | macro |  |  | low | confirmed |
+| 2026-05-14 |  | scam warning | Warning against scams using Bank of Japan's name |  |  | 1 | boj_news | JP | regulatory |  |  | low | confirmed |
+| 2026-05-13 |  | Monetary aggregates | Publication des données de masse monétaire (M2) pour avril |  |  | 1 | boj_news | US | macro |  |  | low | confirmed |
+| 2026-05-11 |  | BoJ-Japan | Publication des transactions BoJ avec le gouvernement pour avril |  |  | 1 | boj_news | JP | central_bank |  |  | low | confirmed |
+| 2026-05-11 |  | BoJ-monetary-policy | Publication des transactions de la Banque du Japon et de la base monétaire pour avril |  |  | 1 | boj_news | JP | central_bank |  |  | low | confirmed |
+| 2026-05-11 |  | BoJ | Bank of Japan conducts market operations in April |  |  | 1 | boj_news | JP | central_bank |  |  | low | confirmed |
+| 2026-05-07 |  | BoJ | BoJ announces collateral accepted at end of April |  |  | 1 | boj_news | JP | central_bank |  |  | low | confirmed |
+| 2026-05-07 |  |  | Publication des comptes de la Banque du Japon au 30 avril |  |  | 1 | boj_news | Global | other |  |  | low | confirmed |
+| 2026-04-30 |  | Fed-FOMC | Publication du calendrier des opérations de fourniture de dollars US (mai-sept 2026) |  |  | 1 | boj_news | US | central_bank |  |  | low | confirmed |
+| 2026-04-30 |  |  | Annonce d'un atelier de recherche conjoint BOK/ERI - BOJ/IMES en 2026 |  |  | 1 | boj_news | Global | other |  |  | low | confirmed |
+| 2026-06-01 |  | India PMI | India manufacturing PMI rose in May despite cost pressures |  |  | 1 | investing_economy | Global | macro |  |  | low | confirmed |
+| 2026-06-01 |  | Japan PMI | Japan factory PMI shows slowing growth and rising cost pressures |  |  | 1 | investing_economy | Global | macro |  |  | medium | confirmed |
+| 2026-06-01 |  | China PMI | China manufacturing PMI beats expectations in May | COPPER |  | 1 | investing_economy | CN | macro |  | COPPER:LONG:medium;BRENT:LONG:medium | medium | confirmed |
+| 2026-06-01 |  | South Korea trade | South Korea export growth hits four-decade high, chip sales record on AI boom | NASDAQ |  | 1 | investing_economy | Global | macro |  | NASDAQ:LONG:medium;SP500:LONG:medium | high | confirmed |
+| 2026-06-01 |  | Asie-Pacifique PMI | PMI manufacturier sud-coréen au plus haut depuis 5 ans | SP500 |  | 1 | investing_economy | Global | macro |  | SP500:LONG:low;COPPER:LONG:medium | medium | confirmed |
+| 2026-05-29 |  | Eurozone inflation | Mixed inflation data in Euro zone, bond yields steady |  |  | 1 | investing_economy | EU | macro |  |  | low | confirmed |
+| 2025-11-29 |  | Coffee prices | Statista report on average coffee prices 2014-2027 |  |  | 1 | gnews_coffee | Global | commodity |  |  | low | reported |
+| 2026-03-02 |  | Coffee supply | Supply concerns boost coffee prices | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | medium | reported |
+| 2026-03-10 |  | Coffee | Coffee prices fall after 1.5-week rally | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:high | medium | confirmed |
+| 2025-12-02 |  | Soft commodities supply | World Bank reports recovery in coffee and cocoa supply, leading to price moderation | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:high;COCOA:SHORT:high | medium | confirmed |
+| 2026-02-20 |  | Coffee prices | Arabica coffee prices drop to seven-month low | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:high | medium | confirmed |
+| 2025-12-23 |  | Coffee price forecast | Rabobank sees Arabica futures down by about a third by end of 2026 | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:medium | medium | reported |
+| 2026-03-09 |  | Shipping threats | Coffee prices supported by ongoing shipping threats | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | medium | reported |
+| 2025-12-06 |  | Coffee supply | Brazilian robusta coffee growers push for quality improvements | COFFEE |  | 1 | gnews_coffee | BR | commodity |  | COFFEE:LONG:low | low | reported |
+| 2026-02-13 |  | Coffee demand | Renewed roaster demand pushing coffee prices higher | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | medium | reported |
+| 2026-03-19 |  | Supply disruption | Coffee prices jump due to supply disruptions | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | medium | reported |
+| 2026-05-04 |  | Coffee price decline | Coffee futures down in April, ICO composite indicator price fell 12.6% since start of year | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:high | medium | confirmed |
+| 2026-01-20 |  | Coffee supply | Brazil rains improve coffee crop conditions, prices retreat | COFFEE |  | 1 | gnews_coffee | BR | commodity |  | COFFEE:SHORT:high | medium | confirmed |

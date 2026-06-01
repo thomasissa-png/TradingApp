@@ -93,9 +93,17 @@ ROOT = Path(__file__).resolve().parents[1]
 FICHES_DIR = ROOT / "config" / "fiches"
 BULLETINS_DIR = ROOT / "data" / "bulletins"
 PRIX_EMISSION_DIR = ROOT / "data" / "prix-emission"
+DECISION_LOG_DIR = ROOT / "data" / "decision-log"
 PERFORMANCE_FILE = ROOT / "data" / "performance.md"
 PERFORMANCE_AB_FILE = ROOT / "data" / "performance-ab.md"
 CALIBRATION_FILE = ROOT / "data" / "calibration.md"
+
+# News-driven : seuil ratio_news (en %) si news_dominant absent du record.
+# Le decision-log expose `news_dominant` (bool) et `ratio_news` (float en %) au
+# niveau cellule. On préfère news_dominant (autoritatif) ; à défaut on bascule
+# sur ratio_news > 50 % (équivalent du `ratio_news > 0.5` du brief, en %).
+NEWS_RATIO_THRESHOLD_PCT = 50.0
+NEWS_RATIONALE_MAXLEN = 140  # tronque le synthese_rationale dans le bloc bulletin
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +334,11 @@ class Measure:
     note: str = ""
     # A/B : outcome pondéré (None si bulletin sans annotation pondérée)
     outcome_pond: Optional[str] = None
+    # Tag news-driven (Bilan des news) — None si decision-log d'émission introuvable.
+    # Aucune supposition : si la cellule (actif×horizon) n'est pas retrouvée dans
+    # le decision-log de la date d'émission → news_driven reste None.
+    news_driven: Optional[bool] = None
+    news_rationale: Optional[str] = None  # synthese_rationale du critère news dominant, court
 
 
 def measure_cell(
@@ -627,6 +640,96 @@ def _today_paris(now: Optional[datetime] = None) -> date:
     return now.date()
 
 
+# ---------------------------------------------------------------------------
+# Lookup news-driven dans le decision-log de la date d'émission
+# ---------------------------------------------------------------------------
+
+def _extract_news_rationale(record: dict) -> Optional[str]:
+    """Extrait le synthese_rationale du 1er critère news dominant du record.
+
+    On cherche un critère avec `nature` non vide et `synthese_rationale` non vide.
+    Tronqué à NEWS_RATIONALE_MAXLEN. Retourne None si introuvable.
+    """
+    criteres = record.get("criteres") or []
+    if not isinstance(criteres, list):
+        return None
+    for c in criteres:
+        if not isinstance(c, dict):
+            continue
+        nature = c.get("nature")
+        rat = c.get("synthese_rationale")
+        if nature and rat and isinstance(rat, str) and rat.strip():
+            rat = rat.strip()
+            if len(rat) > NEWS_RATIONALE_MAXLEN:
+                rat = rat[: NEWS_RATIONALE_MAXLEN - 1].rstrip() + "…"
+            return rat
+    return None
+
+
+def load_news_driven_map(
+    bulletin_date: date,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+) -> Dict[Tuple[str, str], Tuple[bool, Optional[str]]]:
+    """Retrouve par cellule (actif, horizon) si la décision était news-driven.
+
+    Scanne tous les fichiers `decision-log/YYYY-MM-DD-HHMM.jsonl` dont le
+    bulletin_date == bulletin_date. Pour chaque cellule (actif, horizon), garde
+    le DERNIER record (le bulletin du jour reflète le dernier run). Une cellule
+    est news-driven si `news_dominant=True` OU `ratio_news > 50` (NEWS_RATIO_THRESHOLD_PCT).
+
+    Retourne un mapping (actif_name, horizon) -> (news_driven: bool, rationale: Optional[str]).
+    Si le dossier n'existe pas ou aucun fichier pour cette date → dict vide
+    (les Measures correspondantes garderont news_driven=None, zéro invention).
+    """
+    result: Dict[Tuple[str, str], Tuple[bool, Optional[str]]] = {}
+    if not decision_log_dir.exists():
+        return result
+    prefix = bulletin_date.isoformat()
+    files = sorted(decision_log_dir.glob(f"{prefix}-*.jsonl"))
+    if not files:
+        return result
+    # On itère dans l'ordre chronologique : le dernier record écrase
+    # le précédent pour une même cellule → reflète le dernier run du jour.
+    for fp in files:
+        try:
+            with fp.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(rec, dict):
+                        continue
+                    # filtre paranoïaque : le bulletin_date du record DOIT
+                    # correspondre (zéro confusion entre fichiers).
+                    if rec.get("bulletin_date") != prefix:
+                        continue
+                    actif = rec.get("actif")
+                    horizon = rec.get("horizon")
+                    if not actif or horizon not in HORIZONS:
+                        continue
+                    news_dom = rec.get("news_dominant")
+                    ratio_news = rec.get("ratio_news")
+                    is_news = False
+                    if isinstance(news_dom, bool):
+                        is_news = news_dom
+                    elif isinstance(ratio_news, (int, float)):
+                        is_news = ratio_news > NEWS_RATIO_THRESHOLD_PCT
+                    # Si ni l'un ni l'autre n'est défini → on ne tagge PAS
+                    # (zéro invention : la cellule reste sans tag pour ce run).
+                    elif news_dom is None and ratio_news is None:
+                        continue
+                    rationale = _extract_news_rationale(rec) if is_news else None
+                    result[(str(actif), str(horizon))] = (bool(is_news), rationale)
+        except OSError as e:
+            logger.warning("decision-log illisible %s : %s", fp, e)
+            continue
+    return result
+
+
 def measure(
     today: Optional[date] = None,
     bulletins_dir: Path = BULLETINS_DIR,
@@ -672,6 +775,15 @@ def measure(
             continue
         bdate = cells[0].bulletin_date
         prix_emis = load_prix_emission(bdate, prix_emission_dir)
+        # Lookup news-driven : best-effort. Si le decision-log de la date
+        # d'émission est introuvable → news_map vide, les Measures gardent
+        # news_driven=None (pas de supposition).
+        # Lecture dynamique du module attr DECISION_LOG_DIR (testable via
+        # monkeypatch de l'attribut, qui ne change pas la valeur par défaut).
+        news_map = load_news_driven_map(
+            bdate,
+            decision_log_dir=sys.modules[__name__].DECISION_LOG_DIR,
+        )
         for cell in cells:
             # n'inclure que les horizons échus à `today`
             echeance = cell.bulletin_date + timedelta(days=HORIZON_DAYS[cell.horizon])
@@ -686,6 +798,11 @@ def measure(
             p_emis = prix_emis.get(ticker)
             p_courant = _get_current(ticker) if ticker else None
             m = measure_cell(cell, fiche_key, fiche, p_emis, p_courant)
+            # Tag news-driven (None si decision-log d'émission introuvable
+            # pour cette cellule — zéro invention).
+            nd = news_map.get((cell.actif_name, cell.horizon))
+            if nd is not None:
+                m.news_driven, m.news_rationale = nd
             measures.append(m)
 
     # Agrégation par cellule
@@ -1099,6 +1216,129 @@ def write_performance_ab(content: str, path: Path = PERFORMANCE_AB_FILE) -> Path
 
 
 # ---------------------------------------------------------------------------
+# Bilan des news (calls passés) — bloc bulletin
+# ---------------------------------------------------------------------------
+
+# Regex utilisée pour repérer / remplacer le bloc dans le bulletin.
+# Capture depuis "## Bilan des news" jusqu'au prochain "## " ou fin de fichier.
+BILAN_NEWS_BLOCK_RE = re.compile(
+    r"## Bilan des news[^\n]*\n.*?(?=\n## |\Z)",
+    re.DOTALL,
+)
+
+# Regex pour insérer juste après le bloc "## Briefing du jour"
+BRIEFING_BLOCK_END_RE = re.compile(
+    r"(## Briefing du jour[^\n]*\n.*?)(?=\n## |\Z)",
+    re.DOTALL,
+)
+
+
+def render_bilan_news(measures: List[Measure]) -> str:
+    """Construit le bloc « ## Bilan des news (calls passés) ».
+
+    - Liste les Measures news-driven (news_driven=True) avec outcome VRAI ou FAUSSE.
+    - Mini-score en tête : "X VRAI / Y FAUX sur Z mesurés".
+    - Les FAUX sont listés en premier (mis en avant), puis les VRAI.
+    - Si aucune mesure news-driven échue → message warm-up.
+    """
+    lines: List[str] = []
+    lines.append("## Bilan des news (calls passés)")
+    lines.append("")
+
+    news_meas = [
+        m for m in measures
+        if m.news_driven is True and m.outcome in (OUTCOME_VRAI, OUTCOME_FAUSSE)
+    ]
+    if not news_meas:
+        lines.append("_Aucun call porté par les news n'est encore arrivé à échéance._")
+        lines.append("")
+        return "\n".join(lines)
+
+    n_vrai = sum(1 for m in news_meas if m.outcome == OUTCOME_VRAI)
+    n_faux = sum(1 for m in news_meas if m.outcome == OUTCOME_FAUSSE)
+    n_total = len(news_meas)
+    lines.append(f"**News-driven : {n_vrai} VRAI / {n_faux} FAUX sur {n_total} mesurés**")
+    lines.append("")
+
+    # Tri : FAUX d'abord (mis en avant), puis VRAI ; au sein de chaque groupe,
+    # plus récent en premier (par échéance décroissante).
+    def _sort_key(m: Measure) -> Tuple[int, date]:
+        # 0 pour FAUX (avant), 1 pour VRAI ; échéance négative pour décroissant
+        return (0 if m.outcome == OUTCOME_FAUSSE else 1, m.echeance)
+
+    sorted_meas = sorted(news_meas, key=lambda m: _sort_key(m))
+    # Inverser l'ordre temporel intra-groupe (plus récent d'abord)
+    # On regroupe par outcome puis trie chaque sous-liste par échéance desc.
+    faux = sorted(
+        [m for m in news_meas if m.outcome == OUTCOME_FAUSSE],
+        key=lambda m: m.echeance, reverse=True,
+    )
+    vrai = sorted(
+        [m for m in news_meas if m.outcome == OUTCOME_VRAI],
+        key=lambda m: m.echeance, reverse=True,
+    )
+    sorted_meas = faux + vrai
+
+    for m in sorted_meas:
+        icon = "❌" if m.outcome == OUTCOME_FAUSSE else "✅"
+        delta_txt = (
+            f"{m.delta_pct:+.2f}%" if m.delta_pct is not None else "delta n/d"
+        )
+        sens = "hausse" if m.cell.conclusion == "LONG" else "baisse"
+        rat = f" ({m.news_rationale})" if m.news_rationale else ""
+        if m.outcome == OUTCOME_FAUSSE:
+            line = (
+                f"- {icon} **{m.cell.actif_name} {m.horizon} {m.cell.conclusion}** — "
+                f"porté par news{rat} → FAUX (réel {delta_txt} vs prévu {sens}) "
+                f"[émis {m.cell.bulletin_date.isoformat()}]"
+            )
+        else:
+            line = (
+                f"- {icon} **{m.cell.actif_name} {m.horizon} {m.cell.conclusion}** — "
+                f"porté par news{rat} → VRAI ({delta_txt}) "
+                f"[émis {m.cell.bulletin_date.isoformat()}]"
+            )
+        lines.append(line)
+    lines.append("")
+    return "\n".join(lines)
+
+
+def inject_bilan_news_into_bulletin(
+    bulletin_path: Path,
+    bilan_md: str,
+) -> bool:
+    """Insère/remplace le bloc « ## Bilan des news » juste après le briefing.
+
+    Comportements :
+    - Si bloc déjà présent → remplacement.
+    - Sinon, si "## Briefing du jour" existe → insertion juste après ce bloc.
+    - Sinon, insertion en tête (best-effort).
+
+    Retourne True si écrit, False si bulletin absent.
+    """
+    if not bulletin_path.exists():
+        logger.warning("bulletin introuvable pour Bilan des news : %s", bulletin_path)
+        return False
+    content = bulletin_path.read_text(encoding="utf-8")
+    block = bilan_md.rstrip() + "\n\n"
+
+    if BILAN_NEWS_BLOCK_RE.search(content):
+        new_content = BILAN_NEWS_BLOCK_RE.sub(block.rstrip(), content, count=1)
+    else:
+        m = BRIEFING_BLOCK_END_RE.search(content)
+        if m:
+            insert_at = m.end()
+            new_content = (
+                content[:insert_at].rstrip() + "\n\n" + block + content[insert_at:].lstrip("\n")
+            )
+        else:
+            # Pas de briefing : on préfixe le bulletin (best-effort)
+            new_content = block + content
+    bulletin_path.write_text(new_content, encoding="utf-8")
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Entrée principale
 # ---------------------------------------------------------------------------
 
@@ -1148,6 +1388,19 @@ def run(
         logger.info("calibration.md écrit : %s (ECE=%s)", calib_path, calib.ece if calib else "n/a")
     except Exception as e:  # noqa: BLE001
         logger.warning("calibration KO (non bloquant) : %s", e)
+
+    # Bilan des news (calls passés) — bloc bulletin (best-effort, non bloquant).
+    # Injecté dans le bulletin du jour, juste après le Briefing.
+    try:
+        today_bulletin = bulletins_dir / f"bulletin-{today.isoformat()}.md"
+        bilan_md = render_bilan_news(measures)
+        ok = inject_bilan_news_into_bulletin(today_bulletin, bilan_md)
+        if ok:
+            logger.info("Bilan des news injecté dans %s", today_bulletin)
+        else:
+            logger.info("Bulletin du jour absent — Bilan des news non injecté")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Bilan des news KO (non bloquant) : %s", e)
 
     # A/B : ±1 vs pondéré (best-effort, non bloquant)
     try:

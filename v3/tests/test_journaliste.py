@@ -557,3 +557,284 @@ def test_run_stamp_today_false_n_ecrase_pas(tmp_path, fiches_dict):
     )
     # aucun fichier prix-emission du jour
     assert not (prix / f"{today.isoformat()}.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Bilan des news (calls passés) — tag news_driven + bloc bulletin
+# ---------------------------------------------------------------------------
+
+def _write_decision_log(
+    dl_dir: Path,
+    bulletin_date: date,
+    suffix: str,
+    rows: list,
+) -> Path:
+    """Écrit un decision-log JSONL minimal.
+
+    rows = [(actif, horizon, news_dominant, ratio_news, rationale or None), ...]
+    """
+    dl_dir.mkdir(parents=True, exist_ok=True)
+    path = dl_dir / f"{bulletin_date.isoformat()}-{suffix}.jsonl"
+    with path.open("w", encoding="utf-8") as fh:
+        for actif, horizon, news_dom, ratio_news, rationale in rows:
+            criteres = []
+            if rationale is not None:
+                criteres.append({
+                    "cle": "news_x",
+                    "nom": "News X",
+                    "nature": "ponctuel",
+                    "synthese_rationale": rationale,
+                })
+            rec = {
+                "bulletin_date": bulletin_date.isoformat(),
+                "actif": actif,
+                "horizon": horizon,
+                "news_dominant": news_dom,
+                "ratio_news": ratio_news,
+                "criteres": criteres,
+            }
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return path
+
+
+def test_load_news_driven_map_news_dominant_true(tmp_path):
+    dl_dir = tmp_path / "decision-log"
+    bdate = date(2026, 5, 1)
+    _write_decision_log(
+        dl_dir, bdate, "1200",
+        [("Pétrole (Brent)", "24h", True, 72.0, "Escalade Ormuz — 3 news SHORT haute matérialité.")],
+    )
+    mp = jr.load_news_driven_map(bdate, decision_log_dir=dl_dir)
+    assert ("Pétrole (Brent)", "24h") in mp
+    is_news, rat = mp[("Pétrole (Brent)", "24h")]
+    assert is_news is True
+    assert rat is not None and "Ormuz" in rat
+
+
+def test_load_news_driven_map_ratio_news_above_threshold(tmp_path):
+    dl_dir = tmp_path / "decision-log"
+    bdate = date(2026, 5, 1)
+    # news_dominant manquant → fallback sur ratio_news > 50 %
+    _write_decision_log(
+        dl_dir, bdate, "1300",
+        [("Or", "24h", None, 60.0, "News dominantes Or.")],
+    )
+    mp = jr.load_news_driven_map(bdate, decision_log_dir=dl_dir)
+    assert mp[("Or", "24h")][0] is True
+
+
+def test_load_news_driven_map_not_news_driven(tmp_path):
+    dl_dir = tmp_path / "decision-log"
+    bdate = date(2026, 5, 1)
+    _write_decision_log(
+        dl_dir, bdate, "1400",
+        [("Or", "24h", False, 10.0, None)],
+    )
+    mp = jr.load_news_driven_map(bdate, decision_log_dir=dl_dir)
+    assert mp[("Or", "24h")] == (False, None)
+
+
+def test_load_news_driven_map_no_decision_log_returns_empty(tmp_path):
+    # Zéro invention : si decision-log d'émission introuvable → dict vide.
+    dl_dir = tmp_path / "decision-log"
+    bdate = date(2026, 5, 1)
+    mp = jr.load_news_driven_map(bdate, decision_log_dir=dl_dir)
+    assert mp == {}
+
+
+def test_load_news_driven_map_last_run_wins(tmp_path):
+    """Si plusieurs runs le même jour, le dernier écrase le précédent."""
+    dl_dir = tmp_path / "decision-log"
+    bdate = date(2026, 5, 1)
+    # Run 1 : non news-driven
+    _write_decision_log(
+        dl_dir, bdate, "0800",
+        [("Or", "24h", False, 5.0, None)],
+    )
+    # Run 2 : news-driven (sorted glob → "0800" puis "1800" → dernier gagne)
+    _write_decision_log(
+        dl_dir, bdate, "1800",
+        [("Or", "24h", True, 80.0, "News Or majeure.")],
+    )
+    mp = jr.load_news_driven_map(bdate, decision_log_dir=dl_dir)
+    assert mp[("Or", "24h")][0] is True
+    assert "News Or majeure" in mp[("Or", "24h")][1]
+
+
+def test_render_bilan_news_warmup_si_aucune_mesure():
+    md = jr.render_bilan_news([])
+    assert "## Bilan des news" in md
+    assert "Aucun call porté par les news" in md
+
+
+def test_render_bilan_news_mini_score_et_faux_en_avant(fiche_petrole, fiche_or):
+    """Test critique : une conclusion news-driven FAUSSE apparaît avec ❌ + mini-score correct."""
+    # 2 mesures news-driven : Pétrole FAUSSE + Or VRAI
+    c_pet = _cell("LONG", "24h", score=2.0, bdate=date(2026, 5, 1), actif="Pétrole (Brent)")
+    m_pet = jr.measure_cell(c_pet, "petrole", fiche_petrole, 100.0, 98.8)  # -1.2 % > seuil 1 % LONG → FAUSSE
+    m_pet.news_driven = True
+    m_pet.news_rationale = "Escalade Ormuz — 3 news SHORT haute matérialité."
+
+    c_or = _cell("SHORT", "24h", score=-1.5, bdate=date(2026, 5, 1), actif="Or")
+    m_or = jr.measure_cell(c_or, "or", fiche_or, 100.0, 98.3)  # -1.7 % > seuil 0.8 % SHORT → VRAI
+    m_or.news_driven = True
+
+    # 1 mesure non news-driven : ne doit PAS apparaître
+    c_other = _cell("LONG", "24h", score=1.0, bdate=date(2026, 5, 1), actif="Or")
+    m_other = jr.measure_cell(c_other, "or", fiche_or, 100.0, 102.0)
+    m_other.news_driven = False
+
+    md = jr.render_bilan_news([m_pet, m_or, m_other])
+    # Mini-score : 1 VRAI / 1 FAUX sur 2 mesurés
+    assert "1 VRAI / 1 FAUX sur 2" in md
+    # FAUSSE avec ❌ + sens prévu (hausse pour LONG)
+    assert "❌" in md
+    assert "Pétrole (Brent)" in md
+    assert "FAUX" in md
+    assert "prévu hausse" in md
+    # rationale tronqué visible
+    assert "Ormuz" in md
+    # VRAI avec ✅
+    assert "✅" in md
+    # FAUX listé avant VRAI
+    idx_faux = md.index("❌")
+    idx_vrai = md.index("✅")
+    assert idx_faux < idx_vrai
+
+
+def test_inject_bilan_news_apres_briefing(tmp_path):
+    bp = tmp_path / "bulletin-2026-05-29.md"
+    bp.write_text(
+        "# Bulletin Analyste — 2026-05-29\n\n"
+        "## Briefing du jour\n\n"
+        "Quelques news.\n\n"
+        "## Matrice\n\n"
+        "table...\n",
+        encoding="utf-8",
+    )
+    ok = jr.inject_bilan_news_into_bulletin(bp, "## Bilan des news (calls passés)\n\n_test_\n")
+    assert ok
+    content = bp.read_text(encoding="utf-8")
+    # ordre : Briefing → Bilan des news → Matrice
+    i_brief = content.index("## Briefing du jour")
+    i_bilan = content.index("## Bilan des news")
+    i_matrice = content.index("## Matrice")
+    assert i_brief < i_bilan < i_matrice
+
+
+def test_inject_bilan_news_remplace_bloc_existant(tmp_path):
+    bp = tmp_path / "bulletin-2026-05-29.md"
+    bp.write_text(
+        "# Bulletin Analyste — 2026-05-29\n\n"
+        "## Briefing du jour\n\nXxx.\n\n"
+        "## Bilan des news (calls passés)\n\n_ancien_\n\n"
+        "## Matrice\n\nm\n",
+        encoding="utf-8",
+    )
+    ok = jr.inject_bilan_news_into_bulletin(bp, "## Bilan des news (calls passés)\n\n_nouveau_\n")
+    assert ok
+    content = bp.read_text(encoding="utf-8")
+    assert "_nouveau_" in content
+    assert "_ancien_" not in content
+    # une seule occurrence du titre
+    assert content.count("## Bilan des news") == 1
+
+
+def test_run_injecte_bilan_news_avec_news_driven_false_du_decision_log(tmp_path, fiches_dict):
+    """End-to-end : decision-log marque la cellule news-driven, le bulletin du
+    jour reçoit le bloc Bilan des news avec ❌ et le mini-score correct."""
+    bulletins = tmp_path / "bulletins"
+    prix = tmp_path / "prix-emission"
+    perf = tmp_path / "performance.md"
+    dl = tmp_path / "decision-log"
+
+    # Émission : 2026-05-28, bulletin LONG 24h sur Pétrole
+    bdate = date(2026, 5, 28)
+    _write_bulletin(bulletins, bdate, [("Pétrole (Brent)", ("LONG", 2.0), ("LONG", 1.0), ("LONG", 0.5))])
+    _write_prix_emission(prix, bdate, {"BZ=F": 100.0})
+
+    # decision-log d'émission : cellule 24h marquée news-driven
+    _write_decision_log(
+        dl, bdate, "0900",
+        [
+            ("Pétrole (Brent)", "24h", True, 75.0, "Escalade Ormuz — news SHORT dominantes."),
+            ("Pétrole (Brent)", "7j", False, 5.0, None),
+            ("Pétrole (Brent)", "1m", False, 5.0, None),
+        ],
+    )
+
+    # Aujourd'hui : 2026-05-29 → 24h échue. Bulletin du jour existe.
+    today = date(2026, 5, 29)
+    _write_bulletin(bulletins, today, [("Pétrole (Brent)", ("LONG", 1.0), ("LONG", 1.0), ("LONG", 1.0))])
+
+    # Briefing déjà présent dans le bulletin du jour (pour test injection après briefing)
+    today_bp = bulletins / f"bulletin-{today.isoformat()}.md"
+    txt = today_bp.read_text(encoding="utf-8")
+    txt = txt.replace("# Bulletin Analyste — 2026-05-29\n",
+                      "# Bulletin Analyste — 2026-05-29\n\n## Briefing du jour\n\nDu texte briefing.\n")
+    today_bp.write_text(txt, encoding="utf-8")
+
+    # Prix courant : -1.2 % → seuil 24h Pétrole = 1.0 % → LONG FAUSSE.
+    now = datetime(2026, 5, 29, 19, 0, tzinfo=timezone.utc)
+    # Monkeypatcher DECISION_LOG_DIR pour pointer sur notre tmp via attribut module.
+    orig_dl = jr.DECISION_LOG_DIR
+    jr.DECISION_LOG_DIR = dl
+    try:
+        jr.run(
+            today=today, now=now,
+            bulletins_dir=bulletins, prix_emission_dir=prix, performance_path=perf,
+            fiches=fiches_dict, fetch_price=lambda t: 98.8 if t == "BZ=F" else 100.0,
+            stamp_today=False,
+        )
+    finally:
+        jr.DECISION_LOG_DIR = orig_dl
+
+    # Vérifications
+    content = today_bp.read_text(encoding="utf-8")
+    assert "## Bilan des news (calls passés)" in content
+    # mini-score : 0 VRAI / 1 FAUX sur 1 mesuré (seule la cellule 24h est échue)
+    assert "0 VRAI / 1 FAUX sur 1" in content
+    assert "❌" in content
+    assert "Pétrole (Brent) 24h LONG" in content
+    assert "FAUX" in content
+    assert "prévu hausse" in content
+    assert "Ormuz" in content
+    # Bloc placé après Briefing, avant Matrice
+    i_brief = content.index("## Briefing du jour")
+    i_bilan = content.index("## Bilan des news")
+    i_matrice = content.index("## Matrice")
+    assert i_brief < i_bilan < i_matrice
+
+
+def test_run_injecte_bilan_news_warmup_si_aucune_news_driven(tmp_path, fiches_dict):
+    """Si decision-log absent → news_driven None → bloc warm-up affiché."""
+    bulletins = tmp_path / "bulletins"
+    prix = tmp_path / "prix-emission"
+    perf = tmp_path / "performance.md"
+
+    bdate = date(2026, 5, 28)
+    _write_bulletin(bulletins, bdate, [("Pétrole (Brent)", ("LONG", 2.0), ("LONG", 1.0), ("LONG", 0.5))])
+    _write_prix_emission(prix, bdate, {"BZ=F": 100.0})
+
+    today = date(2026, 5, 29)
+    _write_bulletin(bulletins, today, [("Pétrole (Brent)", ("LONG", 1.0), ("LONG", 1.0), ("LONG", 1.0))])
+
+    now = datetime(2026, 5, 29, 19, 0, tzinfo=timezone.utc)
+    # decision-log inexistant (dossier vide)
+    empty_dl = tmp_path / "decision-log"
+    orig_dl = jr.DECISION_LOG_DIR
+    jr.DECISION_LOG_DIR = empty_dl
+    try:
+        jr.run(
+            today=today, now=now,
+            bulletins_dir=bulletins, prix_emission_dir=prix, performance_path=perf,
+            fiches=fiches_dict, fetch_price=lambda t: 102.0,
+            stamp_today=False,
+        )
+    finally:
+        jr.DECISION_LOG_DIR = orig_dl
+
+    today_bp = bulletins / f"bulletin-{today.isoformat()}.md"
+    content = today_bp.read_text(encoding="utf-8")
+    assert "## Bilan des news (calls passés)" in content
+    assert "Aucun call porté par les news" in content

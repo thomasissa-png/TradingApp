@@ -1,2 +1,2 @@
-Cycle contrôle plan horizon — 2026-06-01 14:54 CEST
-Vérifie : Or 24h & VIX 1m SHORT, drapeau news, Pétrole/S&P inchangés.
+Cycle contrôle Phase 2 news — 2026-06-01 20:36 CEST
+Vérifie : nature classée, dédup/premier-vu, coef_nature, métriques p2_/T1/T2.

@@ -7,7 +7,7 @@ famille: "agri-softs"
 news_zone: "CI + GH"
 version: 2
 seuils_reussite_pct:
-  "24h": 1.5
+  "24h": 1.0   # resserré 1.5→1.0 (audit 01/06 : vol journalière réelle ~1-2%, 1.5 jetait trop de mesures)
   "7j": 4.0
   "1m": 10.0
 

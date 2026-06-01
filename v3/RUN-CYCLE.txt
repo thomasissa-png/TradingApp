@@ -1,2 +1,1 @@
-Cycle contrôle post-correctifs — 2026-06-01 08:47 CEST
-Vérifie : PROBA_SCALE=15 (Brier non saturés), reliability propagée, alertes chevauchement 7j/1m.
+Validation workflow restructuré (guard + redondance) — 2026-06-01 09:12 CEST

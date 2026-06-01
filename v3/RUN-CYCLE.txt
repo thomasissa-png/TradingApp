@@ -1,2 +1,2 @@
-Cycle contrôle Phase 2 COMPLET — 2026-06-01 20:50 CEST
-Vérifie : nature sur critères, coef_nature appliqué, T1/T2 calculés, biais.
+Cycle contrôle ajustements Phase 2 — 2026-06-01 21:17 CEST
+Vérifie : T1 (faux flips évités) >0, classification v2.3, override.

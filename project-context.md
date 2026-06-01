@@ -1,7 +1,7 @@
 # Contexte Projet — TradingApp v3
 
 > Lu par tous les agents avant toute action.
-> **Repo privé** (données financières personnelles). Dernière mise à jour : 2026-05-30.
+> **Repo privé** (données financières personnelles). Dernière mise à jour : 2026-06-01.
 > **Source de vérité produit complète : vault Drive `Bourse/Bourse.md`** (ce fichier en est le résumé technique).
 
 ## En une phrase
@@ -30,11 +30,14 @@ But = **être certain de la TENDANCE par actif**, pour **suivre les vagues de ha
 
 Taux de réussite > **70 %** + Brier < 0,25 par cellule (30 dernières conclusions). Mesure A/B dans `v3/data/performance-ab.md`. Kill criterion : `v3/KILL-CRITERION.md`.
 
-## État (30/05/2026)
+## État (01/06/2026)
 
-- ✅ Système v3 implémenté et testé (**217 tests**, dont intégration sur le vrai chemin).
-- ✅ Audits croisés (`v3/audit/`) + corrections préopératoires (idempotence, kill criterion, pyproject réparé, repo nettoyé).
-- ⬜ **À venir, dans l'ordre** : backtest du moteur de tendance (historique) → durcir la mesure (non-chevauchant, multiple-testing, calibration Brier) → mode shadow ~30 j → Manager + source_monitor → émission Argos (post-shadow).
+- ✅ Système v3 en **mode shadow** (cron 3×/jour, rien émis). **360 tests** verts.
+- ✅ Pipeline complet sur vraies données : **indices via ETF Twelve** (SPY/QQQ/FCHI/VIXY… — yfinance bloqué sur les runners CI), métaux/commodities Twelve, taux FRED, vol CBOE, news DeepSeek. 0 tie-break, ~117 critères/run.
+- ✅ **Boucle prédiction→mesure fermée** : prix d'émission stampés, conclusions VRAI/FAUX (Journaliste), KPI Wilson/Brier en warm-up.
+- ✅ Session 01/06 (cf. Historique) : synthèse directionnelle 2 niveaux + contexte-prix, rate-limiter Twelve (attend, RPM=55), PROBA_SCALE=15, **plan horizon** (pertinence recalibrée + cap anti-inversion news α=0.8 + drapeau 📰 si news>50%).
+- ⚠️ **GitHub `schedule` retardé de 1-3h** (comportement GitHub normal, PAS un bug — 6 runs schedule prouvés les 30-31/05). Parade : redondance ×3 par créneau (cron `:12/:27/:42`) + garde-fou anti-doublon (skip si snapshot <2h). Fallback fiables : push `v3/RUN-CYCLE.txt` ou `workflow_dispatch`. Pinger externe (cron-job.org) en option pour l'heure pile. **Ne plus churner le cron** (re-registration fait sauter l'occurrence suivante).
+- ⬜ **À venir** : backtest moteur de tendance → durcir mesure (non-chevauchant, multiple-testing) → ~30 j shadow → **Phase 2 news** (tracer `event_id`/date + flag nature : structurel/ponctuel/déjà-price — cause racine du biais news) → émission post-shadow.
 
 ## Garde-fous
 
@@ -50,4 +53,7 @@ Taux de réussite > **70 %** + Brier < 0,25 par cellule (30 dernières conclusio
 
 | Date | Agent | Livrable | Décisions clés |
 |---|---|---|---|
-| 2026-06-01 | @data-analyst | `v3/audit/revue-plan-horizon-analyst.md` | Reject decay_factor global (doublon pertinence). Verdict : (a)+(c) — recalibrer 4 pertinences (or.yml, petrole.yml, vix.yml) + cap anti-inversion α=0.8. Ajouter ratio_news dans decision-log. |
+| 2026-06-01 | orchestration + @fullstack | Correctifs pipeline run quotidien | Routing IA-first réparé, prix d'émission, symboles Twelve validés. Synthèse directionnelle 2 niveaux + contexte-prix. **Indices via ETF Twelve** (yfinance bloqué CI). **Rate-limiter Twelve** : attend au lieu de rejeter, `TWELVE_RPM=55` (plan Grow). PROBA_SCALE 10→15, propagation reliability, garde chevauchement 7j/1m. |
+| 2026-06-01 | 3 experts (Analyst / News Trader / Spéculateur) | `v3/audit/chaine-*.md` + `coherence-3-experts.md` | Audit des runs dans l'ordre d'édition. Cohérence : 2 faux positifs écartés sur preuve (signe géopol déjà câblé `ia_synthese` ; contamination 2025 filtrée par cutoff lookback). **Trio = panel d'audit officiel** (`v3/audit/README.md`). |
+| 2026-06-01 | @fullstack + 3 experts (validé Thomas) | **Plan horizon** (`revue-plan-horizon-*.md`) | Constat : DeepSeek = 1 direction/actif **horizon-agnostique** ; l'horizon est géré par `pertinence` par critère. **PAS de decay_factor global** (rejeté 3/3 : doublon + casserait l'OPEC structurel). Retenu : recalibrer pertinence (or/petrole/vix, OPEC 7j-1m préservé) + cap anti-inversion α=0.8 (override si high+confirmed) + `ratio_news`/drapeau 📰. Preuve : Or 24h & VIX 1m → SHORT, Pétrole/S&P inchangés. |
+| 2026-06-01 | infrastructure (orch) | Workflow `cycle-decision` | Diagnostic : `schedule` GitHub retardé 1-3h (pas une panne). Redondance ×3 + garde-fou anti-doublon. Read/write permissions activées. |

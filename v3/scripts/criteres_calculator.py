@@ -1326,18 +1326,23 @@ def build_critere_value(
         weighting = wg.load_weighting()
         if cle in triplets:
             entry = triplets[cle]
+            synth_rationale = ""
             if isinstance(entry, dict):
                 val = int(entry.get("valeur", 0))
                 mat = entry.get("materiality", "")
                 rel = entry.get("reliability", "")
                 source_track = entry.get("source_track", "")
+                # Persistance "pourquoi" DeepSeek (demande Thomas 2026-06-01) :
+                # le rationale de la synthèse directionnelle, posé par
+                # triggers_classifier.classify_all_with_meta. Vide si critère non-IA.
+                synth_rationale = str(entry.get("synthese_rationale", "") or "")
             else:
                 val = int(entry)
                 mat = ""
                 rel = ""
                 source_track = "legacy"
             valeur_ponderee = weighting.weight_direction(val, mat, rel)
-            return {
+            out: Dict[str, Any] = {
                 "valeur": val,
                 "valeur_normalisee": float(val),
                 "valeur_ponderee": valeur_ponderee,
@@ -1346,6 +1351,9 @@ def build_critere_value(
                 "source_track": source_track,
                 "ts": ts,
             }
+            if synth_rationale:
+                out["synthese_rationale"] = synth_rationale
+            return out
         SKIP_COUNTER[f"triplet_no_cfg:{cle}"] += 1
         return {
             "valeur": 0,

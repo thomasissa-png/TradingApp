@@ -267,6 +267,10 @@ class CritereResult:
     reliability: str = ""
     source_track: str = ""
     cle_courante: str = ""
+    # Persistance "pourquoi" DeepSeek (demande Thomas 2026-06-01) : rationale et
+    # bucket de conviction de la synthèse directionnelle. Vide si critère non-news
+    # ou si l'extractor n'a pas produit de synthèse (rétro-compat zéro invention).
+    synthese_rationale: str = ""
 
 
 @dataclass
@@ -368,10 +372,14 @@ def score_actif(
         mat = ""
         rel = ""
         src_track = ""
+        synth_rationale = ""
         if isinstance(raw, dict):
             mat = str(raw.get("materiality", "") or "")
             rel = str(raw.get("reliability", "") or "")
             src_track = str(raw.get("source_track", "") or "")
+            # Synthèse DeepSeek (uniquement présente pour les triplets news
+            # qui sont passés par le chemin ia_synthese / ia_synthese_faible).
+            synth_rationale = str(raw.get("synthese_rationale", "") or "")
         criteres_res.append(
             CritereResult(
                 id=crit.get("id"),
@@ -393,6 +401,7 @@ def score_actif(
                 reliability=rel,
                 source_track=src_track,
                 cle_courante=str(cle or ""),
+                synthese_rationale=synth_rationale,
             )
         )
 
@@ -542,11 +551,28 @@ def render_bulletin(
     lines.append(f"- Fiches hash : {fiches_h}")
     lines.append(f"- Fraîcheur : {freshness_msg}")
     lines.append("")
+    # Pré-calcul des flips AVANT le rendu matrice (l'ordre d'affichage est :
+    # Briefing → Flips vs veille → Matrice → Détail → Limites — demande Thomas
+    # 2026-06-01 : remonter les changements de position en tête de bulletin).
+    flips: List[str] = []
+    for r in results:
+        veille = veille_conclusions.get(r.nom.lower(), {})
+        for h in HORIZONS:
+            v = veille.get(h)
+            if v and v != r.conclusions[h]:
+                flips.append(f"- {r.nom} [{h}] : {v} → {r.conclusions[h]} (score {r.scores[h]:+.2f})")
+    lines.append("## Flips vs veille")
+    if flips:
+        lines.extend(flips)
+    else:
+        # Placeholder court pour que la section existe toujours (la sous-nav
+        # HTML s'appuie sur les ## h2 — supprimer la section casserait la nav).
+        lines.append("_Aucun changement de position vs veille._")
+    lines.append("")
     lines.append("## Matrice (12 actifs × 3 horizons) — primaire ±1, pondéré en annotation")
     lines.append("")
     lines.append("| Actif | 24h | 7j | 1m |")
     lines.append("|---|---|---|---|")
-    flips: List[str] = []
     for r in results:
         cells = []
         for h in HORIZONS:
@@ -570,19 +596,8 @@ def render_bulletin(
             coin_flip_flag = " ⚪" if abs(score) < 0.05 else ""
             cells.append(f"{conc} ({score:+.2f}){tie}{gate_flag}{pond_str}{news_flag}{coin_flip_flag}")
         lines.append(f"| {r.nom} | {cells[0]} | {cells[1]} | {cells[2]} |")
-        veille = veille_conclusions.get(r.nom.lower(), {})
-        for h in HORIZONS:
-            v = veille.get(h)
-            if v and v != r.conclusions[h]:
-                flips.append(f"- {r.nom} [{h}] : {v} → {r.conclusions[h]} (score {r.scores[h]:+.2f})")
     lines.append("")
     lines.append("**Légende** : ⚑ gate actif · 📰 news>50% du quant (abs/abs) · ⚪ quasi coin-flip (|score|<0.05) — signal non-actionnable, la règle jamais-neutre tranche par défaut · ⚠ divergence pm1/pondéré")
-    lines.append("")
-    lines.append("## Flips vs veille")
-    if flips:
-        lines.extend(flips)
-    else:
-        lines.append("- (aucun)")
     lines.append("")
     lines.append("## Détail par actif")
     for r in results:
@@ -660,7 +675,7 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
                             facteur = None
                     except ZeroDivisionError:
                         facteur = None
-                contribs.append({
+                contrib_entry: Dict[str, Any] = {
                     "cle": c.cle_courante,
                     "nom": c.nom,
                     "type_norm": c.type_norm,
@@ -677,7 +692,16 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
                     "facteur": facteur,
                     "contrib_pm1": c.contributions.get(h, 0.0),
                     "contrib_pond": c.contributions_pond.get(h, 0.0),
-                })
+                }
+                # Persistance "pourquoi" DeepSeek (demande Thomas 2026-06-01) :
+                # pour les critères news (source_track="ia_*"), on persiste
+                # synthese_rationale + conviction (=materiality bucket high/medium/low).
+                # Zéro invention : on n'ajoute les champs QUE si le rationale existe
+                # réellement dans le meta du triplet (critères non-news → rien).
+                if c.source_track.startswith("ia") and c.synthese_rationale:
+                    contrib_entry["synthese_rationale"] = c.synthese_rationale
+                    contrib_entry["conviction"] = c.materiality
+                contribs.append(contrib_entry)
             # --- Observabilité ratio_news (Point 4 plan horizon) ----------
             cap_info = r.news_cap_info.get(h, {}) if r.news_cap_info else {}
             news_total = float(cap_info.get("news_total_pm1", 0.0))

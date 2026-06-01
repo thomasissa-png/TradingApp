@@ -1,2 +1,2 @@
-Témoin diagnostic schedule — 2026-06-01 08:13 CEST
-Objectif : prouver que pipeline + Actions sont vivants (le cron de 7h n'a pas déclenché).
+Cycle contrôle post-correctifs — 2026-06-01 08:47 CEST
+Vérifie : PROBA_SCALE=15 (Brier non saturés), reliability propagée, alertes chevauchement 7j/1m.

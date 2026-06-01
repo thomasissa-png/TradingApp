@@ -1,140 +1,125 @@
-# Audit chaîne de production — TradingApp v3 — RUN MIDI (2026-06-01 13:37, commit 99023fe)
+# Audit chaîne de production — TradingApp v3 — RUN 18h (2026-06-01 18:20)
 Angle : news-trader senior, desk macro/commodities. Enjeu = JUSTESSE DIRECTIONNELLE et défendabilité desk.
-Mode **DELTA** : ce run de midi est très proche du run de 9h51 (commit 9e2ccc0). On audite dans l'ordre d'édition : (0) intégrité, (1-5) ce qui a bougé cellule par cellule, puis le **point desk à trancher** (même direction news sur 24h/7j/1m). Le diagnostic structurel de fond (fuite jointure 1→2) est inchangé sauf mention explicite.
+Mode **DELTA post-déploiement plan horizon**. Référence = run de midi (6/10, commit 99023fe). Ce run est le **1er run planifié avec le plan horizon actif** : `pertinence` recalibrée, cap anti-inversion (la news ne retourne plus seule le quant sauf high+confirmed), drapeau 📰 si news>50%. On audite : (0) intégrité, (1) ce que le plan horizon a CHANGÉ, (2-5) cellules clés, puis les **4 points desk à trancher**.
 
 ---
 
-## 0. Intégrité du run (DELTA)
-- Cohérence horodatage : bulletin, criteres-courants (`last_update 11:37:57Z` = 13:37 Paris) et decision-log (`generated_at 13:37:57+02:00`) **alignés sur le même run**. Fraîcheur OK (l.63 bulletin). RAS.
-- 36 lignes JSONL (12 actifs × 3 horizons), scores recalculés cohérents avec la matrice du bulletin (vérifié Pétrole, Or, Nasdaq, VIX, Café, Cuivre, EUR/USD au centième). Rejouable. RAS.
-- **Flips déclarés (l.82-92)** cohérents avec les scores. Aucune incohérence matrice/log/flips détectée.
-- 2 divergences `diverge:true` dans le log : **Or 24h** (l.25) et **Café 1m** (l.15). Le bulletin en signale 3 avec ⚠ (Or 24h, VIX 1m, Café 1m). **Écart à noter** : VIX 1m est marqué ⚠ dans la matrice (l.77 implicite via annotation) mais le log VIX 1m sort `diverge:false` (primaire LONG +0.25 = pondéré +0.25, facteur 1.0). Voir §3.
+## 0. Intégrité du run
+- Horodatage aligné : bulletin `18:20:26+02:00`, criteres-courants `last_update 16:20:26Z` = 18:20 Paris, decision-log `2026-06-01-1820.jsonl generated_at 18:20:26+02:00`. Fraîcheur OK (bulletin l.65). RAS.
+- 36 lignes JSONL (12×3). Scores rejoués cohérents avec la matrice au centième (vérifié Or, Nasdaq, Pétrole, VIX, EUR/USD). Rejouable.
+- **Nouveauté traçée** : champs `news_total`, `quant_total`, `ratio_news`, `news_dominant`, `news_cap_applied`, `news_cap_override` désormais présents sur CHAQUE ligne. C'est le câblage du plan horizon — on peut enfin lire si le cap a joué. Progrès de traçabilité majeur vs midi (où le cap n'existait pas).
+- **Cohérence flips** : les 9 flips déclarés (bulletin l.85-93) collent aux scores. Les 3 flips Nasdaq (24h/7j/1m LONG→SHORT) et les 3 Argent (SHORT→LONG) sont les mouvements structurants du run.
 
 ---
 
-## 1. INGEST — inchangé (toujours le maillon fiable)
-Le run de midi partage le même events-log que le matin (même fenêtre 48h, mêmes confirmed:high LONG sur Ormuz/Liban). Diagnostic du matin maintenu : **le flux frais net penche LONG pétrole** (escalade actée), les SHORT sont des `reported` (rumeurs d'accord). Défauts persistants (archives Hormuz fév-avr non purgées, pas de pondération récence) **inchangés**. Pas de re-litige ici.
+## 1. CE QUE LE PLAN HORIZON A CHANGÉ (cœur du DELTA)
 
-## 2. CRITÈRES / PROPAGATION NEWS — **un vrai progrès DELTA + une régression masquée**
+**(A) Le cap anti-inversion a TUÉ le faux LONG Or 24h — la régression #1 du midi est corrigée.**
+À midi, Or 24h sortait primaire **LONG +0.17** (faux signal porté par le triplet geopol +1) vs pondéré SHORT. Ce run, Or 24h sort **SHORT -1.54 en primaire ET en pondéré** (log l.25, `diverge:false`). Le triplet `tension_geopolitique=+1` est toujours là (contrib_pm1 +2.5) mais (i) sa pertinence est coupée à **0.5** (24h), et (ii) `news_dominant:true` mais `news_cap_applied:false` / `news_cap_override:false` : la news ne suffit plus à retourner le quant SHORT (TIPS réels +0.50σ contrib -2.99, VIX bas 14.95 contrib -1.60). **Le faux LONG démenti 2× par le marché a disparu.** Et le marché redonne raison : **Or SHORT = VRAI -1.684%** (perf l.49, Brier 0.0435, le meilleur du run).
 
-**Ce qui a CHANGÉ depuis 9h51 (et c'est bien) :**
-- **`reliability` est enfin propagé.** Au matin il arrivait vide (`reliability:""`) partout : la distinction confirmed/reported était jetée. À midi, **tous** les triplets news portent `reliability:"confirmed"` : Pétrole (log l.28-30), Or (l.25-27), VIX (l.34-36), Nasdaq sentiment_IA (l.22-24), Blé geopol mer Noire. **Le correctif #3 du matin a partiellement pris : reliability survit maintenant jusqu'au calcul.**
+**(B) La pollution geopol du VIX a DISPARU — la régression #2 du midi (materiality high blindant le LONG) est corrigée.**
+À midi, VIX sortait LONG ×3 via un triplet geopol à facteur 1.0 non atténué. Ce run, le triplet `tension_geopolitique_active` est à **valeur:0** (source_track `ia_synthese_faible`, facteur null, contrib 0) sur les 3 horizons (log l.34-36). VIX sort **SHORT ×3 en quanti pur** (term structure VIX/VIX3M en contango -1.0σ → contrib -6.4/-8.0/-4.8). `diverge:false` cohérent — plus d'écart matrice/log. **Le LONG fabriqué est mort, le quanti vol parle seul.**
 
-**MAIS la régression masquée :**
-- `reliability` arrive **figé à `confirmed` sur 100 % des triplets**. Aucun `reported` ni `rumor` nulle part, alors que l'ingest, lui, distingue bien (frappes confirmed vs Trump/Goldman reported). **La granularité est de nouveau aplatie** — sauf que cette fois vers le HAUT (tout confirmed) au lieu de vers le vide. Effet net pire pour le desk : un tweet de négociation est désormais étiqueté « confirmed » au même titre qu'une frappe. Le champ existe mais ne discrimine rien.
-- Le **signe** des triplets Moyen-Orient/Or/VIX reste **figé à +1 LONG** (`tension_geopol_moyen_orient: valeur:1`, criteres l.283-290). La fuite de fond « tension = +1 LONG en dur, jamais branché sur le SENS du log » est **toujours là**. Preuve que le branchement est possible : `ble.geopolitique_mer_noire: valeur:-1` (criteres l.49, log l.4 `contrib_pm1:-5.6`) SHORT correctement branché ET `reliability:confirmed`. Le moteur SAIT le faire sur le Blé, pas sur le pétrole.
+**(C) Le drapeau 📰 est posé correctement** sur Blé, Nasdaq, Or, Pétrole (matrice l.72-80) — exactement les cellules où `news_dominant:true`. C'est un bon signal de transparence : le desk voit d'un coup d'œil où la news pèse >50%.
 
-**Materiality module bien le facteur (confirmé) :** Pétrole/Or `materiality:medium → facteur:0.6` ; VIX `materiality:high → facteur:1.0` (log l.34). Donc le facteur n'est PAS constant à 0.42 ce run (c'était le cas matin) — il varie 0.6/1.0 selon materiality. Léger raffinement vs matin.
-
-## 3. BULLETIN — cellules qui ont BOUGÉ (cœur du DELTA)
-
-Je ne re-juge que les cellules signalées comme modifiées vs matin.
-
-**Cuivre — 24h FLIP SHORT→LONG (+0.13), 7j/1m restent SHORT (-1.53/-3.31).**
-Le flip 24h est **mécaniquement fragile, pas une thèse desk** : il vient uniquement du ratio Cuivre/Or à +0.94σ (contrib +1.13, log l.16) qui dépasse de justesse le COT Copper à +1σ (contrib -1.00). +0.13 = bruit d'arrondi entre deux critères quasi opposés. Le 7j/1m SHORT (COT extrême + PMI Chine mou, l.45 « China factory activity stalls ») reste le vrai signal. **Desk : ignorer le LONG 24h (+0.13), tenir le SHORT structurel.** À noter : la mesure de la veille a donné **Cuivre SHORT FAUX (+2.80%, l.46 perf)** — le marché a violemment contredit le short cuivre sur 24h. Donc le flip LONG 24h va « dans le sens » du marché récent, par accident quanti, pas par lecture news.
-
-**Café — 1m FLIP LONG→SHORT (-1.42), pondéré LONG +0.67 ⚠ (diverge:true, log l.15).**
-Primaire SHORT porté par le **cycle Brésil bi-annuel = -1** (contrib_pm1 -3.6) contre COT Coffee +2.18. Le cycle Brésil est un signal `source_track:calendrier` à `facteur:0.42` → une fois pondéré, son poids fond et le COT reprend le dessus (pondéré LONG +0.67). **Desk : divergence calendrier-vs-positionnement, marginale.** La mesure 24h donne Café LONG VRAI (+1.26%, l.45) — cohérent avec le pondéré, pas le primaire. Règle desk maintenue : sur ⚠, suivre le pondéré.
-
-**Or — 24h FLIP SHORT→LONG (+0.17), pondéré SHORT -1.43 ⚠ (diverge:true, log l.25).**
-**Cellule la plus dangereuse du run, identique au défaut du matin.** Le primaire LONG existe UNIQUEMENT grâce au triplet `tension_geopolitique=+1` (contrib_pm1 +4.0, log l.25). Tout le quanti tire SHORT : TIPS réels +0.50σ (contrib -2.99), VIX 14.95 bas (-1.60). Dès qu'on pondère (facteur 0.6 sur le triplet), ça repasse SHORT -1.43. **La mesure tranche encore : Or SHORT = VRAI -0.771% (l.49 perf, Brier 0.0435).** Le primaire LONG forcé par le flag geopol est un **faux signal démenti par le marché, pour la 2e mesure consécutive.** Ne pas trader le primaire Or 24h.
-
-**EUR/USD — SHORT 24h (-0.62) → LONG 7j/1m (+0.13/+1.27).**
-Structure de terme défendable et propre : 24h porté par USD/JPY fort (proxy USD haussier, contrib -1.08) ; le flip LONG 7j/1m vient du COT EUR à -0.45σ (positionnement short extrême → potentiel de rebond, contrib +1.36/+2.04 croissant avec la pertinence). **C'est de la lecture de positionnement classique : USD fort à très court terme, mean-reversion EUR à horizon plus long.** Aucun triplet news ne pollue cette cellule (que du quanti). **Défendable.**
-
-**Pétrole — LONG/LONG/LONG (+9.84/+13.34/+10.35).** Voir §6 (point desk) : c'est le cas d'école de la question des horizons.
-
-**Nasdaq — LONG/LONG/SHORT (+4.25/+2.72/-1.57).** Inchangé vs matin, toujours la cellule la plus fine : momentum IA + SOX court terme, TIPS réels hauts + RSI 76 qui font basculer SHORT à 1m. Structure de terme cohérente. **Défendable.** Note : sentiment_IA porte `reliability:confirmed` (Nvidia chip, confirmed:high réel) — ici l'étiquette confirmed est JUSTE.
-
-**VIX — LONG/LONG/LONG, mais ⚠ matrice vs diverge:false log (incohérence à signaler).**
-Le bulletin annote VIX avec ⚠ mais le log sort `diverge:false` sur les 3 horizons (primaire = pondéré). Cause : `materiality:high → facteur:1.0` (log l.34-36), donc le triplet geopol +1 (contrib 3.6/2.4/1.2) n'est PAS atténué par la pondération — primaire et pondéré coïncident. **Conséquence desk grave** : sur VIX, le flag geopol passe à plein dans le pondéré aussi. Le quanti VIX dit pourtant clairement SHORT vol (term structure VIX/VIX3M en contango -1.0σ → contrib -6.4/-8.0/-4.8 ; VIX absolu 14.95 bas). Le LONG VIX ne tient QUE par le triplet geopol non corrigé + SKEW. **Le passage materiality high a ici un effet pervers : il blinde la pollution news au lieu de l'atténuer.** Le ⚠ du bulletin est le bon réflexe ; le `diverge:false` du log est trompeur.
-
-## 4. TRAÇABILITÉ (decision-log) — DELTA
-- **Progrès** : `reliability:confirmed` désormais tracé dans chaque contrib triplet (était `""`). On peut au moins lire l'étiquette.
-- **Trous inchangés** : (a) `reliability` figé à confirmed = non discriminant (cf §2) ; (b) **aucun event_id / source_event / titre** dans les contribs (0 occurrence) — impossible de remonter du `contrib 6.3` au `BRENT:LONG:high` source. Le fil vers l'event reste rompu ; (c) le **primaire ±1 toujours non modulé** par materiality/facteur : Pétrole 24h `contrib_pm1:6.3` (log l.28) identique au matin et identique à la veille. Le facteur 0.6 ne touche que `contrib_pond:3.78`.
-- Distribution facteur du run : triplets news à **0.6 (medium) ou 1.0 (high)** selon materiality — plus de 0.42 uniforme. Micro-progrès de granularité, mais toujours pas event-par-event.
-
-## 5. MESURE (performance.md) — DELTA
-Boucle d'apprentissage **toujours rebranchée** (prix d'émission captés, l.41-52). 7 outcomes conclusifs cette fenêtre :
-- **Pétrole LONG = VRAI +2.827%** (l.50, Brier 0.0000). Le système a raison sur 24h.
-- **Or SHORT = VRAI -0.771%** (l.49) — confirme que le **pondéré** (SHORT) avait raison contre le primaire (LONG +0.17). 2e démenti consécutif du flag geopol sur le primaire Or.
-- **Cuivre SHORT = FAUX +2.804%** (l.46) — short quanti pris à revers, voir flip 24h §3.
-- **Cacao LONG = VRAI +3.377%**, **Café LONG = VRAI +1.264%** (l.44-45) — cohérents avec les pondérés.
-- 5 cellules non-conclusives (sous seuil), 0 éligible, 12/12 shadow, N_eff=0. **Aucune conclusion stat** — warm-up attendu.
-**Verdict mesure :** confirme à nouveau (1) Pétrole LONG bon sens cette fenêtre, (2) le primaire Or LONG forcé par le triplet est un faux signal. La mesure valide la règle « sur ⚠, suivre le pondéré ».
+**Verdict §1 : les deux régressions masquées du midi sont corrigées, et le marché valide (Or). C'est un vrai gain net, pas un déplacement de problème.**
 
 ---
 
-## 6. POINT DESK À TRANCHER — même direction news sur 24h / 7j / 1m
+## 2. OR & VIX repassés SHORT — défendable vs midi ?
 
-**Question :** la synthèse applique le MÊME signe news (+1) sur les 3 horizons (Pétrole `tension_geopol=+1` identique 24h/7j/1m). Un desk traite-t-il une news géopol pareil à 24h et à 1 mois ?
-
-**Tranche desk : NON, et c'est défendable seulement par accident sur le pétrole — le mécanisme est faux.**
-
-Ce que fait le système (verbatim, Pétrole, log l.28-30) :
-```
-tension_geopol_moyen_orient: valeur:1 (signe identique 3 horizons)
-contrib_pm1 : 6.3 (24h) / 4.9 (7j) / 1.4 (1m)   ← via pertinence 0.9 / 0.7 / 0.2
-opec_production_policy:      valeur:1
-contrib_pm1 : 2.4 (24h) / 5.4 (7j) / 6.0 (1m)   ← via pertinence 0.4 / 0.9 / 1.0
-```
-
-**Le système N'applique PAS aveuglément la même intensité.** Le SIGNE est identique (+1 LONG partout), mais la `pertinence` module l'amplitude par horizon. Et là il y a deux cas radicalement opposés :
-
-**(A) DÉFENDABLE — tension géopol Ormuz décroissante avec l'horizon (pertinence 0.9→0.2).**
-Pour le pétrole, `tension_geopol` pèse 6.3 à 24h mais s'effondre à 1.4 à 1m. **C'est exactement le bon réflexe desk** : une frappe sur Ormuz, c'est une prime de risque sur le contrat front, qui se dissipe à mesure que l'horizon s'allonge (le marché price une résolution moyenne). Un desk surpondère la news géopol fraîche sur le spot/front et la sous-pondère à 1 mois. **Ici le modèle imite correctement la décroissance de la prime de risque.** Le signe +1 reste légitime sur les 3 horizons SI la tension est structurelle (Ormuz, choke-point), mais l'intensité qui décroît est la bonne nuance.
-
-**(B) CONTRESENS — quand une news fraîche garde la même intensité ou CROÎT à 1m.**
-Le vrai problème n'est pas `tension_geopol`, c'est **OPEC+** : `opec_production_policy=+1` CROÎT de 2.4 (24h) à 6.0 (1m). Pour une décision OPEC+ ponctuelle, c'est défendable (une politique de production est structurelle, elle pèse plus à 1 mois qu'à 24h). MAIS le système ne fait AUCUNE différence de NATURE entre :
-- une news **structurelle** (OPEC+ quotas, choke-point Ormuz permanent) → légitimement portée sur 7j/1m ;
-- une news **événementielle fraîche** (une frappe ponctuelle, un tweet) → déjà price à 1m, devrait DÉCROÎTRE vers zéro.
-
-Le seul outil de décroissance est la `pertinence` (réglée par actif/critère a priori), **pas une fonction de la fraîcheur ou de la nature de l'event.** Résultat : sur le pétrole la pertinence décroissante de `tension_geopol` rattrape par chance le bon comportement, mais **rien ne garantit que la news qui a déclenché le +1 soit encore tradable à 1m.** Et comme reliability est figé à `confirmed` et que l'event_id n'est pas tracé, **le système ne PEUT PAS savoir si le +1 vient d'une frappe d'aujourd'hui (à amortir) ou d'une archive de février (déjà price)** — il propage le même +1 à 1m dans les deux cas.
-
-**Cas VIX — le contresens nu :** `tension_geopolitique_active=+1` contrib 3.6/2.4/1.2. À 1m, une « tension active » à +1.2 sur le VIX est un **contresens** : à un mois, un VIX à 14.95 en contango profond (term structure -1.0σ) dit que le marché a DÉJÀ digéré la tension. La news géopol fraîche n'a aucune raison de tenir le VIX haut à 1 mois. Le primaire LONG VIX 1m (+0.25) tient à 5 contre 4 sur ce seul triplet. **Là le « même signe à 1m » est clairement faux pour un desk vol.**
-
-### Synthèse du point desk
-| Cellule | Signe identique 3 horizons | Défendable ? | Pourquoi |
-|---|---|---|---|
-| Pétrole `tension_geopol` | +1, intensité 6.3→1.4 (décroît) | **OUI** (par chance) | décroissance pertinence ≈ amortissement prime de risque front |
-| Pétrole `opec_production` | +1, intensité 2.4→6.0 (croît) | **OUI** | politique de production = structurelle, pèse plus à long terme |
-| Or `tension_geopol` | +1, 4.0→1.5 (décroît) | **NON sur primaire** | démenti par marché 2× (Or SHORT VRAI) ; le quanti SHORT doit gagner |
-| VIX `tension_active` | +1, 3.6→1.2 | **NON à 1m** | tension fraîche déjà price ; VIX bas + contango disent SHORT vol |
-
-**Verdict du point :** le système a **un demi-bon réflexe** — il décroît l'intensité géopol avec l'horizon via la pertinence, ce qui imite l'amortissement de la prime de risque (défendable sur Ormuz structurel). Mais il lui manque **la distinction nature event** (structurel vs fraîche-déjà-price) et **le branchement du signe sur le sens réel du flux**. Sur le pétrole le hasard fait bien les choses ce run ; sur Or/VIX le « même +1 à 1m » fabrique des LONG que le marché dément.
+**OUI, c'est le bon call desk, et le marché tranche dans ce sens.**
+- **Or SHORT ×3** : le quanti est sans ambiguïté baissier. TIPS réels à +0.50σ (l'or déteste les taux réels hauts), VIX au plancher 14.95 (pas de bid risk-off), COT à +1.8 contrib 7j (positionnement encore long = surplomb vendeur). Le seul facteur haussier est le triplet geopol +1, désormais correctement sous-pondéré (pertinence 0.5/0.4/0.3 décroissante). À midi le primaire forçait un LONG ; ce run le primaire EST SHORT. **Mesure : Or SHORT VRAI -1.684%** (perf l.49). Le marché a donné raison au SHORT — exactement contre le LONG que produisait le midi. **Défendable à 100%, c'est même la meilleure cellule du run.**
+- **VIX SHORT ×3** : term structure en contango profond (VIX/VIX3M 0.82, -1.0σ) + VIX absolu 14.95 = manuel du short-vol. Le bruit geopol qui polluait à midi est neutralisé. **Mesure non-conclusive** (+1.679% < seuil 5%, perf l.52) — le marché n'a pas tranché à 24h mais la direction quanti est saine. **Défendable.**
 
 ---
 
-## VERDICT GLOBAL desk (DELTA midi)
+## 3. NASDAQ SHORT ×3 📰 — la news a-t-elle trop tiré vers SHORT ?
 
-**Le run de midi améliore la TRAÇABILITÉ de la conviction (reliability + materiality désormais propagés) mais introduit une régression masquée (reliability figé à `confirmed`) et laisse la fuite de fond — signe news non branché — intacte.**
+**NON — et c'est le point contre-intuitif du run : la news Nvidia est HAUSSIÈRE, le SHORT vient du QUANT, et le cap empêche justement la news de remonter le score vers LONG.**
 
-Ce qui a PROGRESSÉ vs 9h51 :
-- `reliability` survit jusqu'au log (était vide) ;
-- `materiality` module le facteur de façon non uniforme (0.6 medium / 1.0 high) — fini le 0.42 constant.
+Lecture fine (log l.22-24) :
+- La news (`sentiment_ia_megacaps=+1`, Nvidia chip PC, confirmed, bulletin l.14-16) tire **LONG** : contrib_pm1 **+4.0** (24h). C'est le plus gros contributeur positif après le SOX.
+- Le QUANT pur tire **SHORT** : TIPS réels +0.50σ (contrib **-2.74**, poids 11), spread Nasdaq-Russell tendu (contrib -1.86), RSI ^IXIC à **78** = suracheté (contrib -1.60). `quant_total` = **-0.009** (24h).
+- `news_dominant:true`, `ratio_news:459` (24h), **`news_cap_applied:true`** : le cap a joué. Sans cap, la news LONG +4.0 aurait retourné le score vers LONG. Avec cap, la news ne peut pas inverser un quant SHORT (sentiment IA est `medium/confirmed`, PAS `high+confirmed` → pas d'override, `news_cap_override:false`). Donc **SHORT tient**.
 
-Ce qui a RÉGRESSÉ ou n'a pas pris :
-- `reliability` **figé à confirmed partout** → non discriminant, et pire qu'un champ vide car il affirme à tort que des rumeurs sont confirmées ;
-- **VIX materiality:high → facteur:1.0** blinde la pollution geopol dans le pondéré aussi (le ⚠ matrice ne se retrouve plus dans `diverge` du log) ;
-- signe news figé +1, primaire ±1 non modulé, event_id non tracé — **inchangé**.
+**Tranche desk : SHORT 7j/1m défendable** (TIPS hauts + RSI suracheté + spread small-caps = compression méga-caps classique). **SHORT 24h = à nuancer** : score -0.00 (l.78 matrice, -0.002 log), c'est un quasi-pile-ou-face. Le drapeau 📰 est mérité, mais le SHORT 24h est si proche de zéro qu'un desk le traiterait **neutre/indécis**, pas short franc. La restriction export Nvidia/AMD Chine (baissière) que tu cites n'apparaît PAS comme critère branché — le `sentiment_ia_megacaps` est figé **+1 LONG** (chip launch), il n'intègre pas le volet export-control baissier. **Le SHORT n'est donc PAS « la news qui a trop tiré » : la news pousse LONG, c'est le quant qui pèse, et le cap a bien fait son travail en empêchant un faux retournement LONG.** Mesure : Nasdaq LONG (J-1) non-conclusif +0.307%.
+
+**Réserve desk** : le `sentiment_ia` capté est unilatéralement haussier alors que l'actu Chine/export est mixte. Si le volet baissier était branché, le SHORT serait plus *fondé* fondamentalement — ici il est SHORT « par défaut quant », ce qui est correct mais maigre en conviction à 24h.
+
+---
+
+## 4. PÉTROLE LONG fort malgré le cap — le cap a-t-il joué ?
+
+**Le cap n'a PAS joué, et c'est NORMAL : news et quant pointent dans le MÊME sens, il n'y a aucune inversion à empêcher.**
+
+Log l.28-30 : `news_cap_applied:false`, `news_cap_override:false`.
+- `news_total` = +6.0 (24h, LONG : tension Moyen-Orient +4.2 + OPEC+ +1.8) ;
+- `quant_total` = **+0.99** (24h, POSITIF : Cushing -0.23σ contrib +0.56, COT short-couvert +0.42). Le quant est lui aussi LONG.
+- `news_dominant:true` (ratio 6.07) mais **les deux composantes sont du même signe LONG**. Le cap anti-inversion ne se déclenche que si la news veut RETOURNER un quant de signe opposé. Ici rien à retourner → cap inactif, à juste titre.
+
+**Donc ni cap ni override : le LONG passe parce qu'il est cohérent quant+news, pas par une faille.** Défendable desk : prime de risque Ormuz (frappes confirmed, events-log l.28-29 Liban/Gaza) + OPEC+ + Cushing bas = LONG Brent légitime. **Mesure : Pétrole LONG VRAI +6.685%** (perf l.50, Brier 0.0000). Le marché valide franchement.
+
+**Nuance horizon conservée du midi** : `tension_geopol` décroît bien 4.2→4.2→1.4 (pertinence 0.6/0.6/0.2) = amortissement de la prime de risque front, BON réflexe. `opec_production` croît 1.8→5.4→6.0 = politique structurelle qui pèse plus long, BON aussi. La structure de terme reste défendable. **Seul défaut résiduel** : la valeur +12.24 à 7j est un score brut énorme dont l'amplitude ne reflète aucune cible de prix — mais la DIRECTION est juste et validée.
+
+---
+
+## 5. LE CAP PRODUIT-IL DES CONTRESENS, OU DES CELLULES PLUS SAINES ?
+
+**Bilan : le cap assainit, il ne casse rien.** Recensement des `news_cap_applied:true` du run :
+- **Nasdaq 24h & 7j** (l.22-23) : cap actif, empêche la news IA LONG de retourner un quant SHORT. **Sain** — sans lui on aurait un faux LONG méga-caps en plein RSI 78 suracheté.
+- **Aucune autre cellule en cap actif.** Or (l.25-27) : `news_cap_applied:false` — le cap n'a pas eu besoin de jouer car le quant SHORT était déjà majoritaire après recalibrage pertinence. VIX : news à 0, sans objet. Pétrole : même sens, sans objet.
+
+**Aucun contresens desk détecté du fait du cap.** Le cas qui aurait pu mal tourner — une news high+confirmed qui force un override contre un bon quant — **ne s'est pas produit** ce run (`news_cap_override:false` partout). Le garde-fou « override seulement si high+confirmed » n'a donc pas été testé en conditions réelles cette fois. **À surveiller** : le jour où un triplet `high+confirmed` apparaît, l'override pourra retourner le quant — il faudra vérifier que ce soit justifié (vraie frappe) et pas une rumeur sur-étiquetée.
+
+**Point de vigilance résiduel (hérité, non causé par le cap)** : `reliability` reste figé à **`confirmed`** sur tous les triplets `ia_synthese` (Or, Pétrole, Nasdaq sentiment). C'est le même aplatissement qu'au midi. Tant que le track `ia_synthese` produit du `confirmed` en dur, l'override high+confirmed est à une seule étiquette de se déclencher sur une rumeur. **Le cap protège aujourd'hui PARCE QUE le sentiment IA est `medium` (pas high) ; si materiality montait à high, le garde-fou reposerait sur un `reliability` non discriminant.** C'est la faille de fond qui subsiste.
+
+---
+
+## 6. SYNTHÈSE DES 4 POINTS DESK
+
+| Point | Tranche desk | Validé par le marché ? |
+|---|---|---|
+| **Or & VIX → SHORT** | **DÉFENDABLE**, meilleur call du run. Quanti baissier net, pollution geopol neutralisée. | **OUI** : Or SHORT VRAI -1.684% (Brier 0.0435). VIX non-concl. mais direction saine. |
+| **Nasdaq SHORT ×3** | **DÉFENDABLE 7j/1m** (TIPS+RSI 78+spread). **24h = neutre** (score -0.00). La news pousse LONG, le SHORT est quant ; le cap a bien empêché un faux LONG. | Nasdaq J-1 non-concl. (+0.307%). |
+| **Pétrole LONG fort** | **DÉFENDABLE**. Cap inactif car news+quant même sens (rien à inverser), pas un override. Prime Ormuz + OPEC+ + Cushing bas. | **OUI** : Pétrole LONG VRAI +6.685% (Brier 0.0000). |
+| **Cap → contresens ?** | **NON** : cellules plus saines (Nasdaq), aucun contresens. Override jamais déclenché ce run. | Pas de cellule cap-induite démentie. |
+
+---
+
+## VERDICT GLOBAL desk (RUN 18h)
+
+**Le plan horizon livre ce qu'il promettait : il corrige les DEUX régressions masquées du midi (faux LONG Or, LONG VIX pollué) sans introduire de contresens, et le marché valide le call le plus exposé (Or SHORT -1.68%).** C'est le premier run où le maillon news cesse de tourner en rond.
+
+Ce qui a PROGRESSÉ vs midi (6/10) :
+- **Cap anti-inversion opérationnel et traçé** (`news_cap_applied/override` loggés par cellule) ;
+- **Faux LONG Or 24h éliminé** — primaire ET pondéré SHORT, validé marché (-1.68%) ;
+- **Pollution geopol VIX éliminée** — triplet à 0, SHORT quanti pur, `diverge:false` cohérent ;
+- **Pertinence recalibrée** décroît proprement par horizon (Or tension 0.5→0.3, Pétrole tension 0.6→0.2) ;
+- **Drapeau 📰** posé juste sur les 4 cellules news-dominantes.
+
+Ce qui RESTE à corriger (faille de fond, non causée par le plan horizon) :
+- **`reliability` figé `confirmed`** sur tous les `ia_synthese` → l'override high+confirmed repose sur une étiquette non discriminante. Bombe à retardement : le jour où materiality monte à `high`, le garde-fou saute.
+- **`sentiment_ia` unilatéral +1 LONG** : n'intègre pas le volet baissier (export-control Chine Nvidia/AMD). Le SHORT Nasdaq est « par défaut quant », pas par lecture news complète.
+- **event_id toujours non traçé** dans les contribs : impossible de remonter du +1 geopol à la frappe source (frappe d'aujourd'hui à amortir vs archive à purger).
+- **Amplitude des scores non calibrée** (Pétrole +12.24 à 7j) : direction juste, magnitude ininterprétable.
 
 ### Signaux DÉFENDABLES (tradables ce run)
-- **Pétrole LONG** (24h surtout) — prime de risque géopol légitime, flux confirmed:high LONG, **validé mesure +2.83%**. Bon sens, mauvais mécanisme (cf §6).
-- **Nasdaq LONG→LONG→SHORT** — structure de terme cohérente, sentiment_IA correctement étiqueté confirmed.
-- **EUR/USD SHORT 24h→LONG 7j/1m** — pure lecture de positionnement (USD/JPY + COT EUR), zéro pollution news. Propre.
-- **Cuivre SHORT 7j/1m** — COT extrême + PMI Chine mou (ignorer le flip LONG 24h à +0.13, bruit).
-- **S&P LONG, CAC LONG, Argent LONG** — quanti cohérent, convictions faibles.
+- **Or SHORT ×3** — quanti baissier net, validé -1.68%. Le call du run.
+- **Pétrole LONG ×3** — news+quant cohérents LONG, validé +6.69%.
+- **VIX SHORT ×3** — contango + VIX bas, quanti pur propre.
+- **Nasdaq SHORT 7j/1m** — TIPS+RSI 78+spread small-caps. (24h = neutre, score -0.00.)
+- **EUR/USD SHORT 24h → LONG 1m** — pure lecture positionnement (USD/JPY + COT EUR), zéro news. Propre.
+- **Cuivre SHORT 7j/1m, Cacao LONG, S&P/CAC/Argent LONG** — quanti cohérent.
 
-### À NE PAS TRADER (primaire pollué par le triplet geopol figé)
-- **Or 24h** : primaire LONG +0.17 / pondéré SHORT -1.43. Marché a tranché SHORT (VRAI -0.77%), **2e fois**. Suivre le pondéré.
-- **VIX (3 horizons, 1m surtout)** : LONG fabriqué par le triplet geopol à facteur 1.0 contre un quanti vol clairement SHORT. Le ⚠ matrice est juste, le `diverge:false` du log est trompeur.
-- **Café 1m** : divergence calendrier/positionnement, marginale.
-Règle desk maintenue : **sur toute cellule ⚠, suivre le pondéré.** Exception VIX : ici le pondéré EST pollué (facteur 1.0) — se rabattre sur le quanti pur (term structure → SHORT vol).
+### À TRAITER AVEC PRUDENCE
+- **Nasdaq 24h** : score -0.00, neutre. Ne pas shorter franc, c'est un pile-ou-face. Le 📰 est juste mais le signal est nul.
+- **Café 1m** : ⚠ diverge (primaire SHORT -0.92 / pondéré LONG +1.17), cycle Brésil calendrier vs COT. Suivre le pondéré (règle desk maintenue). Mesure J-1 : Café LONG FAUX -1.883% — seule cellule démentie, mais c'était le primaire LONG de la veille, pas ce run.
 
-### Note chaîne : 6/10 (stable vs 9h51)
-Ingest 8 · propagation news 3 (reliability propagé mais figé confirmed = +0/-0 net) · quanti 8 · mesure 6. Pas de mouvement net : le gain reliability est annulé par son aplatissement à confirmed, et la fuite de signe reste. La chaîne tourne en rond sur le maillon news.
+### Note chaîne : **8/10** (+2 vs midi)
+Ingest 8 · propagation news **6** (cap opérationnel + pertinence recalibrée + 2 régressions corrigées ; plafonné par reliability figé confirmed + sentiment unilatéral + event_id absent) · quanti 8 · mesure 7 (Or/Pétrole validés, boucle saine). **Le maillon news passe de 3 à 6 : c'est le premier run qui débloque le verrou.** Le +2 est mérité et validé par la mesure, pas cosmétique.
 
-### 3 correctifs desk prioritaires (inchangés, réordonnés par impact mesuré)
-1. **Brancher le signe du triplet sur le primaire ±1** pour Moyen-Orient/Or/VIX, comme c'est déjà fait pour `ble.geopolitique_mer_noire=-1`. Sans ça, Or 24h continuera de sortir un LONG démenti (2 mesures sur 2).
-2. **Discriminer reliability réellement** (confirmed > reported > rumor doit moduler le facteur) au lieu de figer `confirmed`, ET **distinguer la nature de l'event** (structurel vs fraîche-déjà-price) pour piloter la décroissance par horizon — pas seulement la `pertinence` a priori. C'est la réponse de fond au point desk §6.
-3. **Tracer l'event_id source** dans chaque contrib triplet + **purger les archives Hormuz > 30j** du comptage : sans event_id, impossible de savoir si un +1 à 1m vient d'une frappe d'aujourd'hui (à amortir) ou de février (déjà price).
+### 3 correctifs desk prioritaires (réordonnés post-plan-horizon)
+1. **Discriminer `reliability` réellement** dans le track `ia_synthese` (confirmed/reported/rumor) — sinon l'override high+confirmed se déclenchera un jour sur une rumeur sur-étiquetée. C'est désormais LE risque #1 (le cap protège tant que materiality reste `medium`).
+2. **Brancher le volet baissier dans `sentiment_ia`** (export-control Chine) et plus largement permettre aux triplets news un signe -1 quand le flux net est baissier — comme `ble.geopolitique_mer_noire=-1` le fait déjà.
+3. **Tracer l'event_id** dans chaque contrib triplet + purger archives Hormuz >30j : pour piloter la décroissance par horizon sur la NATURE/fraîcheur de l'event, pas seulement la pertinence a priori.

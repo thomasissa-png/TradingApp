@@ -92,6 +92,9 @@ EARLY_SIGNAL_FEEDS = [
     ("gnews_wheat",   "https://news.google.com/rss/search?q=wheat+OR+grain+OR+%22soft+commodities%22+harvest+USDA+Black+Sea&hl=en-US&gl=US&ceid=US:en", 3600),
     ("gnews_copper",  "https://news.google.com/rss/search?q=copper+prices+LME+China+demand&hl=en-US&gl=US&ceid=US:en", 3600),
     ("gnews_cac40",   "https://news.google.com/rss/search?q=CAC+40+bourse+Paris+France&hl=fr&gl=FR&ceid=FR:fr",        3600),
+    # Ajout audit requêtes (round 2) : combler les 2 trous Nasdaq (tech/IA/semi) et VIX (volatilité/risk-off)
+    ("gnews_nasdaq",  "https://news.google.com/rss/search?q=Nvidia+OR+semiconductor+OR+%22AI+chips%22+OR+TSMC+OR+%22chip+export%22+OR+%22Big+Tech+earnings%22&hl=en-US&gl=US&ceid=US:en", 3600),
+    ("gnews_vix",     "https://news.google.com/rss/search?q=%22stock+market+volatility%22+OR+VIX+OR+%22risk-off%22+OR+%22market+selloff%22+OR+%22flight+to+safety%22&hl=en-US&gl=US&ceid=US:en", 3600),
 ]
 
 # ============================================================
@@ -102,18 +105,23 @@ EARLY_SIGNAL_FEEDS = [
 
 # Requêtes finance ciblées sur les 12 actifs (énergie / métaux / agri / indices / FX / macro)
 STRUCTURED_QUERIES = [
-    "oil OR brent OR WTI OR OPEC",
-    "gold OR silver OR copper OR platinum",
-    "wheat OR corn OR coffee OR cocoa OR sugar",
+    # Round 2 (audit requêtes 3 experts) : DAX retiré (hors périmètre), Q3 agri générique
+    # redondante supprimée, gold/silver/copper dégroupés, + Nasdaq(IA/semi) + VIX(volatilité),
+    # Or (achats banques centrales) et Argent (demande industrielle/solaire) enrichis,
+    # Cacao (EUDR) et Blé (WASDE) complétés, EUR/USD resserré sur le différentiel Fed-BCE.
+    "oil OR brent OR WTI OR OPEC OR crude inventories",
+    "gold price OR central bank gold buying OR WGC OR PBoC gold OR real yields",          # Or
+    "silver price OR silver industrial demand OR solar photovoltaic OR gold silver ratio",  # Argent
     "Fed OR FOMC OR ECB OR inflation OR CPI",
-    "Nasdaq OR S&P 500 OR CAC 40 OR DAX",
-    "EUR USD OR yen OR dollar index OR forex",
-    # Requêtes dédiées aux actifs sous-couverts (audit 30/05) — agri / cuivre / CAC
+    "S&P 500 OR Wall Street OR US stocks OR earnings season",                              # S&P (DAX retiré)
+    "EUR USD OR ECB rate decision OR Fed ECB divergence OR dollar index",                  # EUR/USD resserré
     "coffee prices OR arabica OR robusta OR Brazil harvest OR Vietnam coffee",
-    "cocoa prices OR Ivory Coast OR Ghana cocoa OR cocoa grindings",
-    "wheat prices OR Black Sea grain OR Russia wheat OR US wheat crop",
+    "cocoa prices OR Ivory Coast OR Ghana cocoa OR cocoa grindings OR EUDR deforestation",
+    "wheat prices OR Black Sea grain OR Russia wheat OR US wheat crop OR WASDE USDA",
     "copper prices OR LME copper OR Chile mine OR China copper demand",
     "CAC 40 OR French stocks OR LVMH OR TotalEnergies OR France politics budget",
+    "Nvidia OR semiconductor OR AI chips OR TSMC OR chip export controls OR Big Tech earnings",  # Nasdaq
+    "stock market volatility OR VIX OR risk-off OR market selloff OR flight to safety",          # VIX
 ]
 
 STRUCTURED_SOURCES = [
@@ -146,7 +154,7 @@ SOURCE_WEIGHTS = {
     "investing_economy": 0.9,
     # Actifs sous-couverts — Google News RSS ciblé (agrégateur, bruit modéré)
     "gnews_coffee": 0.8, "gnews_cocoa": 0.8, "gnews_wheat": 0.8,
-    "gnews_copper": 0.8, "gnews_cac40": 0.8,
+    "gnews_copper": 0.8, "gnews_cac40": 0.8, "gnews_nasdaq": 0.8, "gnews_vix": 0.8,
     # Sources structurées (agrégateurs API) — bruit élevé mais couverture large
     "gnews": 0.7, "newsapi": 0.7,
 }

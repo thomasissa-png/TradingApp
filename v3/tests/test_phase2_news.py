@@ -498,3 +498,208 @@ def test_step5_t1_t2_metrics_computed():
     # Au moins un horizon doit montrer un faux flip évité (deja_cote vs quant opposé)
     t1_totals = [r["p2_T1_faux_flips_evites"] for r in records]
     assert sum(t1_totals) >= 1, f"T1 doit avoir détecté un faux flip évité, got {t1_totals}"
+
+
+# ============================================================
+# Étape 6 — Propagation nature CHEMIN SYNTHÈSE COMPLET
+#  triggers_classifier → criteres_calculator → scoring → decision-log
+#  Diagnostic : 33 critères ia_synthese dans le run réel avaient
+#  nature=null et coef_nature=null (bug de propagation).
+# ============================================================
+
+def test_step6_criteres_calculator_propage_nature():
+    """build_critere_value (criteres_calculator) DOIT propager `nature`,
+    `event_id`, `event_date`, `freshness_days` du dict triplet vers le
+    dict de sortie (= raw consommé par scoring_analyste)."""
+    import criteres_calculator as cc
+    triplets = {
+        "geopolitique_test": {
+            "valeur": 1,
+            "materiality": "high",
+            "reliability": "confirmed",
+            "source_track": "ia_synthese",
+            "synthese_rationale": "Test rationale",
+            "nature": "structurel",
+            "event_id": "EID_TEST_1",
+            "event_date": "2026-05-30T12:00:00+00:00",
+            "event_date_source": "rss",
+            "freshness_days": "1.50",
+        },
+    }
+    crit = {
+        "cle_courante": "geopolitique_test",
+        "normalisation": "triplet",
+        "source": "news",
+    }
+    out = cc.build_critere_value(
+        "test_fiche", crit, triplets,
+        triggers_cfg={}, events=[], now=datetime.now(timezone.utc),
+    )
+    assert out is not None
+    # Propagation Phase 2 (le bug initial : ces clés manquaient toutes)
+    assert out["nature"] == "structurel", (
+        "BUG : nature non propagée de triplets vers le raw du scoring"
+    )
+    assert out["event_id"] == "EID_TEST_1"
+    assert out["event_date"] == "2026-05-30T12:00:00+00:00"
+    assert out["freshness_days"] == "1.50"
+    # Rétro-compat : les anciens champs sont toujours là
+    assert out["source_track"] == "ia_synthese"
+    assert out["materiality"] == "high"
+    assert out["synthese_rationale"] == "Test rationale"
+
+
+def test_step6_chemin_complet_synthese_active_coef_nature():
+    """End-to-end du chemin synthèse :
+       criteres_calculator → scoring_analyste → decision-log.
+       Un critère ia_synthese avec nature=ponctuel DOIT voir son coef_nature[1m]=0.15
+       réellement appliqué (et tracé dans le decision-log).
+    """
+    import criteres_calculator as cc
+    import scoring_analyste as sa
+
+    triplets = {
+        "news_synth": {
+            "valeur": 1,
+            "materiality": "medium",
+            "reliability": "confirmed",
+            "source_track": "ia_synthese",
+            "synthese_rationale": "Synthèse DeepSeek test",
+            "nature": "ponctuel",
+            "event_id": "EID_SYNTH",
+            "event_date": "2026-05-30T12:00:00+00:00",
+            "event_date_source": "rss",
+            "freshness_days": "1.00",
+        },
+    }
+    crit_news = {
+        "cle_courante": "news_synth",
+        "normalisation": "triplet",
+        "source": "news",
+    }
+    raw = cc.build_critere_value(
+        "test_fiche", crit_news, triplets,
+        triggers_cfg={}, events=[], now=datetime.now(timezone.utc),
+    )
+
+    # Fiche pour score_actif (format attendu par scoring_analyste)
+    fiche = {
+        "actif": "TEST",
+        "criteres": [{
+            "id": "n", "nom": "News synth", "cle_courante": "news_synth",
+            "normalisation": "triplet", "poids": 1.0, "signe": 1,
+            "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0},
+        }],
+    }
+    valeurs = {"news_synth": raw}
+    res = sa.score_actif("test", fiche, valeurs)
+    c = res.criteres[0]
+
+    # CRITICAL : CritereResult.nature DOIT être renseignée (preuve que le
+    # chemin a transporté nature jusqu'au scoring).
+    assert c.nature == "ponctuel", (
+        f"BUG nature : attendu 'ponctuel', got '{c.nature}'. "
+        "Le chemin criteres_calculator → scoring n'a pas propagé nature."
+    )
+    # coef_nature[1m] = 0.15 (ponctuel décay long) → contribution = 1*1*(1.0*0.15)*1
+    assert abs(c.coef_nature_applied["1m"] - 0.15) < 1e-9
+    assert abs(c.contributions["1m"] - 0.15) < 1e-6
+    # 24h : ponctuel × 1.0 → identité
+    assert abs(c.contributions["24h"] - 1.0) < 1e-6
+
+    # Decision-log : la nature ET coef_nature DOIVENT être présentes
+    records = sa.build_decision_log_records([res], datetime.now(timezone.utc))
+    for rec in records:
+        crit_log = rec["criteres"][0]
+        assert crit_log.get("nature") == "ponctuel", (
+            f"Decision-log {rec['horizon']} : nature manquante "
+            f"(bug initial : 33 critères ia_synthese avec nature=null)"
+        )
+        assert crit_log.get("coef_nature") is not None
+        # M5 (composition nature) doit être non-vide pour cet horizon
+        assert rec["p2_M5_nature_composition"], (
+            f"M5 vide alors qu'on a un critère news avec nature : {rec}"
+        )
+        assert rec["p2_M5_nature_composition"].get("ponctuel", 0) >= 1
+
+
+def test_step6_chemin_synthese_faible_propage_nature():
+    """Chemin ia_synthese_faible (val=0, conviction faible) :
+    nature dominante des candidats DOIT être posée pour activer M5/T2."""
+    import criteres_calculator as cc
+    import scoring_analyste as sa
+
+    # Simule la sortie de triggers_classifier pour le chemin faible :
+    # val=0, source_track=ia_synthese_faible, nature posée (notre fix)
+    triplets = {
+        "news_faible": {
+            "valeur": 0,
+            "materiality": "",
+            "reliability": "",
+            "source_track": "ia_synthese_faible",
+            "synthese_rationale": "Conviction faible",
+            "nature": "structurel",  # nature dominante des candidats
+        },
+    }
+    crit = {
+        "cle_courante": "news_faible",
+        "normalisation": "triplet",
+        "source": "news",
+    }
+    raw = cc.build_critere_value(
+        "f", crit, triplets, triggers_cfg={}, events=[],
+        now=datetime.now(timezone.utc),
+    )
+    assert raw["nature"] == "structurel"
+    fiche = {
+        "actif": "TEST",
+        "criteres": [{
+            "id": "f", "nom": "News faible", "cle_courante": "news_faible",
+            "normalisation": "triplet", "poids": 1.0, "signe": 1,
+            "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0},
+        }],
+    }
+    res = sa.score_actif("test", fiche, {"news_faible": raw})
+    c = res.criteres[0]
+    assert c.nature == "structurel"
+    # Decision-log : nature + coef_nature doivent apparaître (même sans event_id)
+    records = sa.build_decision_log_records([res], datetime.now(timezone.utc))
+    for rec in records:
+        crit_log = rec["criteres"][0]
+        assert crit_log.get("nature") == "structurel", (
+            "BUG chemin ia_synthese_faible : nature non loggée dans decision-log"
+        )
+        assert crit_log.get("coef_nature") is not None
+
+
+def test_step6_triggers_classifier_pose_nature_meme_sans_best_ev():
+    """Si DeepSeek tranche LONG/SHORT high mais qu'aucun event matchant
+    n'est trouvé (best_ev=None), la nature DOIT quand même être dans le meta
+    (fallback 'ponctuel') — bug initial : nature manquait → null en aval."""
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    # Un seul event hors-fenêtre (cutoff = now - 7j par défaut)
+    events = []  # zéro candidat → best_ev sera None
+    synthese = {
+        "direction": "LONG",
+        "conviction": "high",
+        "rationale": "Rationale haute conviction",
+    }
+    # Stub minimal : choisir un (actif, cle) qui a un scope IA
+    # On utilise un mock direct via API privée pour rester focalisé
+    from triggers_classifier import _resolve_triplet_with_meta, CRITERION_SCOPE
+    if not CRITERION_SCOPE:
+        pytest.skip("CRITERION_SCOPE vide (config absente)")
+    actif_key, cle = next(iter(CRITERION_SCOPE.keys()))
+    val, meta = _resolve_triplet_with_meta(
+        events, actif_key, cle,
+        long_keywords=[], short_keywords=[],
+        lookback_days=7, now=now, synthese=synthese,
+    )
+    # high conviction → val_signed = ±1
+    assert val in (1, -1)
+    # CRITICAL : nature DOIT être posée même sans best_ev (fallback)
+    assert meta.get("nature") == "ponctuel", (
+        f"BUG : nature absente du meta synthèse haute-conviction sans best_ev. "
+        f"meta={meta}"
+    )

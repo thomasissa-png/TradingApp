@@ -1063,17 +1063,23 @@ def _resolve_triplet_impl(
                 actif_key, cle, direction, conviction, best_rel or "<none>", rationale[:160],
             )
             # Phase 2 meta — dérivés du best_ev (event source de la synthèse)
+            # Nature : DOIT toujours être posée pour activer coef_nature côté
+            # scoring. Si best_ev absent (cas rare : direction DeepSeek sans
+            # event matchant en mémoire) → fallback "ponctuel" (conservateur,
+            # cohérent avec l'extracteur). Zéro invention : c'est un défaut
+            # documenté, pas une fabrication de données.
             synth_meta: Dict[str, str] = {
                 "materiality": conviction,  # propage le bucket pour valeur_pondérée
                 "reliability": best_rel,
                 "source_track": "ia_synthese",
                 "synthese_rationale": rationale,
+                "nature": (best_ev.get("nature", "ponctuel") if best_ev is not None
+                           else "ponctuel"),
             }
             if best_ev is not None:
                 cdt = best_ev.get("_canonical_dt") or best_ev.get("_dt")
                 freshness_days = (now - cdt).total_seconds() / 86400.0 if isinstance(cdt, datetime) else 0.0
                 synth_meta.update({
-                    "nature": best_ev.get("nature", "ponctuel"),
                     "event_id": best_ev.get("event_id", ""),
                     "event_date": cdt.isoformat() if isinstance(cdt, datetime) else "",
                     "event_date_source": best_ev.get("event_date_source", ""),
@@ -1086,11 +1092,34 @@ def _resolve_triplet_impl(
             "synthese[%s/%s] faible/neutral (dir=%s conv=%s) -> 0 (niveau 2 : prix tranchera)",
             actif_key, cle, direction or "?", conviction or "?",
         )
+        # Phase 2 — même en niveau-2 (val=0), on remonte la nature dominante
+        # des events scope-validés pour que M5 (composition nature) et T2
+        # (vrais flips qualifiés) reflètent l'activité réelle. Sélection :
+        # event le plus matériel parmi les candidats dans la fenêtre, puis
+        # le plus frais. Fallback "ponctuel" si aucun candidat exploitable.
+        cutoff_synth = now - timedelta(days=lookback_days)
+        best_nat_ev: Optional[dict] = None
+        best_nat_key: Tuple[int, datetime] = (-1, datetime.min.replace(tzinfo=timezone.utc))
+        for ev in _candidates_for(events, actif_key, cle):
+            dt = ev.get("_dt")
+            if not isinstance(dt, datetime):
+                continue
+            if dt < cutoff_synth or dt > now:
+                continue
+            mat = (ev.get("materiality") or "").strip().lower()
+            weight = _MAT_WEIGHT.get(mat, 1)
+            key = (weight, dt)
+            if key > best_nat_key:
+                best_nat_key = key
+                best_nat_ev = ev
+        nat_faible = (best_nat_ev.get("nature", "ponctuel")
+                      if best_nat_ev is not None else "ponctuel")
         return 0, {
             "materiality": "",
             "reliability": "",
             "source_track": "ia_synthese_faible",
             "synthese_rationale": rationale,
+            "nature": nat_faible,
         }
 
     cutoff = now - timedelta(days=lookback_days)
@@ -1175,12 +1204,17 @@ def _resolve_triplet_impl(
                 actif_key, cle, ia_long[2] or "?", dt_long.isoformat(),
                 ia_short[2] or "?", dt_short.isoformat(),
             )
+            # Phase 2 — nature : on prend celle de l'event le plus frais
+            # entre les deux (à matérialité égale, c'est le signal le plus
+            # actif). Permet à M5 / T1-T2 de refléter le contexte du conflit.
+            conflict_ev = ia_long[4] if dt_long >= dt_short else ia_short[4]
             return 0, {
                 "materiality": "",
                 "reliability": "",
                 "source_track": "ia_conflict",
                 "conflict_long_materiality": ia_long[2] or "",
                 "conflict_short_materiality": ia_short[2] or "",
+                "nature": conflict_ev.get("nature", "ponctuel"),
             }
         return 0, {}
 

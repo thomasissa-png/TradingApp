@@ -772,9 +772,15 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
                 if c.event_id:
                     contrib_entry["event_id"] = c.event_id
                     contrib_entry["event_date"] = c.event_date
-                    contrib_entry["nature"] = c.nature
                     contrib_entry["event_date_source"] = c.event_date_source
                     contrib_entry["freshness_days"] = round(c.freshness_days, 3)
+                # Nature + coef_nature : on persiste dès qu'on a une nature
+                # même sans event_id (cas ia_synthese_faible : DeepSeek a tranché
+                # "faible/neutral" → val=0 et pas d'event source explicite, mais
+                # la nature dominante des candidats reste pertinente pour M5/T1/T2).
+                if c.nature and (c.source_track.startswith("ia")
+                                 or c.source_track == "keyword"):
+                    contrib_entry["nature"] = c.nature
                     contrib_entry["coef_nature"] = c.coef_nature_applied.get(h, 1.0)
                 contribs.append(contrib_entry)
             # --- Observabilité ratio_news (Point 4 plan horizon) ----------

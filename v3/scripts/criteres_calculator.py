@@ -1327,6 +1327,8 @@ def build_critere_value(
         if cle in triplets:
             entry = triplets[cle]
             synth_rationale = ""
+            # Phase 2 — meta propagée par triggers_classifier (nature, event_id, ...)
+            p2_meta: Dict[str, Any] = {}
             if isinstance(entry, dict):
                 val = int(entry.get("valeur", 0))
                 mat = entry.get("materiality", "")
@@ -1336,6 +1338,13 @@ def build_critere_value(
                 # le rationale de la synthèse directionnelle, posé par
                 # triggers_classifier.classify_all_with_meta. Vide si critère non-IA.
                 synth_rationale = str(entry.get("synthese_rationale", "") or "")
+                # Phase 2 — propage nature + meta event source pour le scoring
+                # (scoring_analyste lit raw.get("nature") → CritereResult.nature
+                # → coef_nature appliqué + métriques M5/T1/T2 + decision-log).
+                for k in ("nature", "event_id", "event_date",
+                          "event_date_source", "freshness_days"):
+                    if k in entry and entry[k] not in (None, ""):
+                        p2_meta[k] = entry[k]
             else:
                 val = int(entry)
                 mat = ""
@@ -1353,6 +1362,9 @@ def build_critere_value(
             }
             if synth_rationale:
                 out["synthese_rationale"] = synth_rationale
+            # Phase 2 — nature & meta event (clés ajoutées seulement si présentes,
+            # zéro invention : un critère sans event source ne porte pas de nature).
+            out.update(p2_meta)
             return out
         SKIP_COUNTER[f"triplet_no_cfg:{cle}"] += 1
         return {

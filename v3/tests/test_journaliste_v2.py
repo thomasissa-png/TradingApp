@@ -290,9 +290,13 @@ class TestComputeCalibration:
         assert 0.0 <= result.ece <= 1.0
 
     def test_parfaitement_calibre_proba_egal_taux(self):
-        """Si tous VRAI avec proba=0.7, ECE ~ |0.7 - 1.0| = 0.3 (surestimation)."""
-        ms = _measures_seq([jr.OUTCOME_VRAI] * 20, horizon="24h", step=1, score=2.0)
-        # score=2.0 → proba=0.7, tous VRAI → taux=1.0 → surestimation
+        """Si tous VRAI avec proba=0.7, ECE ~ |0.7 - 1.0| = 0.3 (surestimation).
+
+        Audit 2026-06-01 : PROBA_SCALE est passé de 10 à 15 → on adapte le score
+        pour conserver l'intention (proba=0.7). score=3.0 → proba=0.5+3/15=0.7.
+        """
+        ms = _measures_seq([jr.OUTCOME_VRAI] * 20, horizon="24h", step=1, score=3.0)
+        # score=3.0 (avec PROBA_SCALE=15) → proba=0.7, tous VRAI → taux=1.0 → surestimation
         result = jr.compute_calibration(ms)
         assert result is not None
         # ECE = |0.7 - 1.0| * 20/20 = 0.3 (approximativement)

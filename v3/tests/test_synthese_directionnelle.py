@@ -291,6 +291,56 @@ def test_classify_uses_synthese_long_high(triggers_cfg, now_fixed):
     assert "OPEC" in petrole_iran.get("synthese_rationale", "")
 
 
+def test_classify_synthese_propagates_reliability(triggers_cfg, now_fixed):
+    """Audit 2026-06-01 : la reliability de l'event source le plus matériel
+    DOIT être propagée dans le meta du critère (chemin ia_synthese).
+    Avant le correctif : reliability=''. Après : reliability='confirmed'."""
+    events = [
+        _make_event(
+            "2026-05-27", "rumeur preliminaire",
+            [{"asset": "BRENT", "direction": "LONG", "confidence": "low"}],
+            materiality="low", reliability="rumor",
+        ),
+        _make_event(
+            "2026-05-28", "frappes Iran sur Ormuz",
+            [{"asset": "BRENT", "direction": "LONG", "confidence": "high"}],
+            materiality="high", reliability="confirmed",
+        ),
+    ]
+    ext = _make_fake_extractor({
+        "direction": "LONG", "conviction": "high", "rationale": "Ormuz dominant",
+    })
+    res = tc.classify_all_with_meta(
+        events=events, today=now_fixed, triggers_cfg=triggers_cfg, extractor=ext,
+    )
+    petrole_iran = res.get("petrole", {}).get("tension_geopol_moyen_orient")
+    assert petrole_iran is not None
+    assert petrole_iran["source_track"] == "ia_synthese"
+    # Reliability dérivée de l'event 'high'/'confirmed' (le plus matériel)
+    assert petrole_iran["reliability"] == "confirmed"
+
+
+def test_classify_synthese_reliability_empty_when_no_matching_event(triggers_cfg, now_fixed):
+    """Red line zéro invention : si AUCUN event candidat ne porte la direction
+    de la synthèse → reliability reste '' (on documente l'absence)."""
+    # La synthèse dit LONG mais l'unique event a un impact SHORT → pas de match
+    events = [_make_event(
+        "2026-05-28", "demand soft",
+        [{"asset": "BRENT", "direction": "SHORT", "confidence": "medium"}],
+        materiality="medium", reliability="reported",
+    )]
+    ext = _make_fake_extractor({
+        "direction": "LONG", "conviction": "high", "rationale": "synthèse contradictoire",
+    })
+    res = tc.classify_all_with_meta(
+        events=events, today=now_fixed, triggers_cfg=triggers_cfg, extractor=ext,
+    )
+    petrole_iran = res.get("petrole", {}).get("tension_geopol_moyen_orient")
+    assert petrole_iran is not None
+    assert petrole_iran["source_track"] == "ia_synthese"
+    assert petrole_iran["reliability"] == ""
+
+
 def test_classify_uses_synthese_short_medium(triggers_cfg, now_fixed):
     events = [_make_event(
         "2026-05-28", "demand weakness Brent",

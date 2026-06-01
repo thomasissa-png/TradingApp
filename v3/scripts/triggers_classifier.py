@@ -717,13 +717,37 @@ def _resolve_triplet_impl(
         rationale = str(synthese.get("rationale", ""))[:300]
         if conviction in ("high", "medium") and direction in ("LONG", "SHORT"):
             val_signed = 1 if direction == "LONG" else -1
+            # Audit 2026-06-01 : propagation reliability depuis l'event source
+            # le plus matériel ayant produit la direction de la synthèse.
+            # La synthèse DeepSeek ne renvoie pas de reliability → on la dérive
+            # de l'event "gagnant" (matérialité décroissante, puis date décroissante)
+            # parmi les candidats scope-validés qui portent un impact IA dans la
+            # direction de la synthèse. Si aucun event matchant → "" (red line
+            # zéro invention : on documente l'absence plutôt que de mentir).
+            cutoff_synth = now - timedelta(days=lookback_days)
+            best_rel: str = ""
+            best_key: Tuple[int, datetime] = (-1, datetime.min.replace(tzinfo=timezone.utc))
+            for ev in _candidates_for(events, actif_key, cle):
+                dt = ev.get("_dt")
+                if not isinstance(dt, datetime):
+                    continue
+                if dt < cutoff_synth or dt > now:
+                    continue
+                if _ia_direction_for(ev, actif_key) != direction:
+                    continue
+                mat = (ev.get("materiality") or "").strip().lower()
+                weight = _MAT_WEIGHT.get(mat, 1)
+                key = (weight, dt)
+                if key > best_key:
+                    best_key = key
+                    best_rel = (ev.get("reliability") or "").strip().lower()
             logger.info(
-                "synthese[%s/%s] -> %s (conviction=%s) : %s",
-                actif_key, cle, direction, conviction, rationale[:160],
+                "synthese[%s/%s] -> %s (conviction=%s, reliability=%s) : %s",
+                actif_key, cle, direction, conviction, best_rel or "<none>", rationale[:160],
             )
             return val_signed, {
                 "materiality": conviction,  # propage le bucket pour valeur_pondérée
-                "reliability": "",
+                "reliability": best_rel,
                 "source_track": "ia_synthese",
                 "synthese_rationale": rationale,
             }

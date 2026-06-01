@@ -231,6 +231,20 @@ def test_proba_from_score_borne():
     assert jr.proba_from_score(2.0, "LONG", scale=10.0) == pytest.approx(0.7)  # 0.5 + 0.2
 
 
+def test_proba_scale_default_is_15():
+    """Audit 2026-06-01 : PROBA_SCALE 10→15 pour réduire saturation Brier
+    sur les scores ±5-14 observés en prod (Pétrole +9.99, Blé -5.68)."""
+    assert jr.PROBA_SCALE == 15.0
+    # Avec scale=15, |score|=5 → proba=0.5+5/15=0.833 (pas saturée à 1.0 comme avant)
+    assert jr.proba_from_score(5.0, "LONG") == pytest.approx(0.5 + 5.0 / 15.0)
+    # |score|=7.5 sature désormais (0.5 + 0.5 = 1.0)
+    assert jr.proba_from_score(7.5, "LONG") == pytest.approx(1.0)
+    # |score|=10 → toujours saturé
+    assert jr.proba_from_score(10.0, "LONG") == pytest.approx(1.0)
+    # |score|=3 → 0.5 + 0.2 = 0.7 (au lieu de 0.8 avec scale=10)
+    assert jr.proba_from_score(3.0, "LONG") == pytest.approx(0.7)
+
+
 # ---------------------------------------------------------------------------
 # compute_kpi : taux 30 dernières, Brier, distribution, statut éligible vs shadow
 # ---------------------------------------------------------------------------
@@ -335,6 +349,49 @@ def test_compute_kpi_distribution_long_short_alerte():
     k = jr.compute_kpi(ms)
     assert k.distrib_long_pct == pytest.approx(100.0)
     assert any("biais" in a for a in k.alertes)
+
+
+def test_compute_kpi_alerte_chevauchement_7j_1m():
+    """Audit 2026-06-01 : pour 7j et 1m, une note explicite doit signaler
+    que N_eff est déflaté par chevauchement tant que N_eff < N_EFFECTIVE_MIN.
+    Pour 24h (pas non-chevauchant = 1j) → pas d'alerte chevauchement."""
+    # Cas 7j : 10 mesures quotidiennes → N_eff faible (chevauchement)
+    ms_7j = []
+    for i in range(10):
+        m = _make_measure(jr.OUTCOME_VRAI, echeance=date(2026, 1, 1) + timedelta(days=i))
+        m.cell.horizon = "7j"
+        m.horizon = "7j"
+        ms_7j.append(m)
+    k = jr.compute_kpi(ms_7j)
+    assert k.horizon == "7j"
+    assert k.n_effective < jr.N_EFFECTIVE_MIN
+    assert any("chevauchement" in a and "÷9 pour 7j" in a for a in k.alertes), (
+        f"Alerte chevauchement manquante pour 7j. Alertes: {k.alertes}"
+    )
+
+    # Cas 1m
+    ms_1m = []
+    for i in range(10):
+        m = _make_measure(jr.OUTCOME_VRAI, echeance=date(2026, 1, 1) + timedelta(days=i))
+        m.cell.horizon = "1m"
+        m.horizon = "1m"
+        ms_1m.append(m)
+    k_1m = jr.compute_kpi(ms_1m)
+    assert k_1m.horizon == "1m"
+    assert any("chevauchement" in a and "÷60 pour 1m" in a for a in k_1m.alertes), (
+        f"Alerte chevauchement manquante pour 1m. Alertes: {k_1m.alertes}"
+    )
+
+    # Cas 24h : pas d'alerte chevauchement (pas non-chevauchant = 1j → pas de déflation)
+    ms_24h = []
+    for i in range(10):
+        m = _make_measure(jr.OUTCOME_VRAI, echeance=date(2026, 1, 1) + timedelta(days=i))
+        ms_24h.append(m)
+    k_24h = jr.compute_kpi(ms_24h)
+    assert k_24h.horizon == "24h"
+    assert not any("chevauchement" in a for a in k_24h.alertes), (
+        f"Pas d'alerte chevauchement attendue pour 24h. Alertes: {k_24h.alertes}"
+    )
 
 
 def test_compute_kpi_garde_les_30_dernieres():

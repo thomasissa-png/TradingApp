@@ -61,7 +61,7 @@ JOURNALISTE_VERSION = "v3.1.0"
 HORIZONS: Tuple[str, ...] = ("24h", "7j", "1m")
 HORIZON_DAYS: Dict[str, int] = {"24h": 1, "7j": 7, "1m": 30}
 WINDOW = 30                  # KPI sur 30 dernières conclusions terminées
-PROBA_SCALE = 10.0           # score / PROBA_SCALE pour dériver la proba (param documenté)
+PROBA_SCALE = 15.0           # score / PROBA_SCALE (calibration empirique en attente, 15 réduit la saturation Brier sur scores ±5-14 — audit 2026-06-01)
 TARGET_TAUX = 70.0           # seuil éligibilité (Bourse.md)
 DISTRIB_MIN = 30.0           # alerte distribution LONG/SHORT hors [30, 70] %
 DISTRIB_MAX = 70.0
@@ -593,6 +593,17 @@ def compute_kpi(measures_for_cell: List[Measure]) -> CellKPI:
     # Alerte rétro-compat sur n_total (warm-up fenêtre brute)
     if kpi.n_total < WINDOW:
         kpi.alertes.append(f"{kpi.n_total}/{WINDOW} mesures terminées (fenêtre brute warm-up)")
+
+    # Audit 2026-06-01 : note explicite déflation N_eff par chevauchement
+    # 7j : pas non-chevauchant = 7j calendaires → ~5j ouvrés, mais bulletins quotidiens
+    #       → ratio N_eff/N_total ≈ 1/9 (chevauchement ~86 % constaté par l'Analyst)
+    # 1m : pas = 30j → ratio ≈ 1/60 (chevauchement ~97 %)
+    # Tant que N_eff < N_EFFECTIVE_MIN, signaler que le KPI brut est trompeur.
+    if horizon in ("7j", "1m") and kpi.n_effective < N_EFFECTIVE_MIN:
+        ratio_txt = "÷9 pour 7j" if horizon == "7j" else "÷60 pour 1m"
+        kpi.alertes.append(
+            f"N_eff déflaté par chevauchement ({ratio_txt}) — KPI non significatif tant que N_eff < {N_EFFECTIVE_MIN}"
+        )
 
     # Distribution L/S
     if kpi.distrib_long_pct is not None:

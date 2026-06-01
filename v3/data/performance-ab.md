@@ -1,6 +1,6 @@
 # Performance A/B — ±1 (baseline) vs pondéré (secondaire)
 
-- Généré : 2026-06-01T14:58:20.364939+02:00
+- Généré : 2026-06-01T18:22:37.817580+02:00
 - Fenêtre KPI : 30 dernières conclusions terminées par cellule
 - Cible : 70% (Bourse.md)
 
@@ -11,13 +11,13 @@ pas dans le dénominateur pondéré (colonne N_pond < N_pm1 normal au démarrage
 
 | Actif | Horizon | N_pm1 | Taux_pm1 | Brier_pm1 | N_pond | Taux_pond | Brier_pond |
 |---|---|---|---|---|---|---|---|
-| Argent | 24h | 0 | — | — | 0 | — | — |
+| Argent | 24h | 1 | 100.0% | 0.1464 | 1 | 100.0% | 0.1464 |
 | Blé | 24h | 0 | — | — | 0 | — | — |
 | CAC 40 | 24h | 0 | — | — | 0 | — | — |
-| Cacao | 24h | 1 | 100.0% | 0.1930 | 1 | 100.0% | 0.1930 |
-| Café (Arabica) | 24h | 0 | — | — | 0 | — | — |
+| Cacao | 24h | 0 | — | — | 0 | — | — |
+| Café (Arabica) | 24h | 1 | 0.0% | 0.3729 | 1 | 0.0% | 0.3560 |
 | Cuivre | 24h | 1 | 0.0% | 0.2663 | 1 | 0.0% | 0.2663 |
-| EUR/USD | 24h | 0 | — | — | 0 | — | — |
+| EUR/USD | 24h | 1 | 100.0% | 0.2203 | 1 | 100.0% | 0.2203 |
 | Nasdaq | 24h | 0 | — | — | 0 | — | — |
 | Or | 24h | 1 | 100.0% | 0.0435 | 1 | 100.0% | 0.0484 |
 | Pétrole (Brent) | 24h | 1 | 100.0% | 0.0000 | 1 | 100.0% | 0.0364 |
@@ -25,4 +25,4 @@ pas dans le dénominateur pondéré (colonne N_pond < N_pm1 normal au démarrage
 | VIX | 24h | 0 | — | — | 0 | — | — |
 
 ## Synthèse globale (cellules avec ≥1 mesure pondérée)
-- Delta taux moyen (pondéré − ±1) : **+0.00 pts** sur 4 cellules
+- Delta taux moyen (pondéré − ±1) : **+0.00 pts** sur 6 cellules

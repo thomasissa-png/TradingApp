@@ -1,122 +1,107 @@
-# Audit requêtes news — œil SPÉCULATEUR (trend-follower 24h/7j/1m)
+# Audit requêtes news — œil SPÉCULATEUR (trend-follower 24h/7j/1m) — ROUND 2
 
-> Date : 2026-06-01 · Auditeur : expert Spéculateur (panel des 3 experts) · Cible : `v3/scripts/config.py` (STRUCTURED_QUERIES, EARLY_SIGNAL_FEEDS, RSS_FEEDS) + 12 fiches `v3/config/fiches/`.
-> Question unique : **est-ce que ce que ramènent les requêtes m'aide à SUIVRE / RETOURNER une vraie vague de tendance, ou est-ce du bruit qui me fait flipper à tort ?**
+> Date : 2026-06-01 · Auditeur : expert Spéculateur (panel des 3 experts) · Cible : `v3/scripts/config.py` (STRUCTURED_QUERIES = 13 requêtes, EARLY_SIGNAL_FEEDS dont gnews_nasdaq/gnews_vix).
+> Re-audit après application des corrections round 1. Question unique : **est-ce que ce que ramènent les requêtes m'aide à SUIVRE / RETOURNER une vraie vague de tendance, ou est-ce encore du bruit qui me fait flipper à tort ?**
 
-## TL;DR (brutal)
+## NOTE : 8/10
 
-- **Set actuel = MOITIÉ utile pour un trend-follower.** Bon sur les commodités (catalyseurs durs : OPEC, récolte, mine). Aveugle sur les 2 vagues les plus rentables à suivre en 2025-2026 : **la vague tech/IA (Nasdaq) et la vague de volatilité/risk-off (VIX)**.
-- **Faille structurelle** : 2 fiches déclarent un critère news (`sentiment_ia_megacaps` Nasdaq, `tension_geopolitique_active` VIX) **mais AUCUNE requête ne ramène le sujet**. Le critère existe, le carburant n'arrive jamais → critère muet → poids gaspillé.
-- **3 ajouts changeraient tout** (cf. §4) : (A) requête Tech-IA/Nvidia/chips, (B) requête volatilité/risk-off/war, (C) requête earnings méga-caps.
+**+3 points vs round 1 (était ~5,5/10 implicite).** Mes deux cécités (Nasdaq tech/IA, VIX volatilité) sont **comblées en couverture** : le carburant arrive enfin aux critères `sentiment_ia_megacaps` et `tension_geopolitique_active`. Bon travail. Je ne mets pas 10/10 pour **3 raisons précises et corrigibles** (cf. §3) :
+
+1. **VIX requêté à l'envers** — la requête VIX ramène les SYMPTÔMES (`VIX`, `volatility`, `selloff`, `flight to safety`) au lieu des CAUSES (`war`, `escalation`, `bank failure`, `default`, `sanctions`). Un trend-follower de la vague de peur arrive donc encore EN RETARD : il voit la volatilité quand elle a déjà doublé, pas le choc qui la déclenche. **C'est mon manque n°1 pour le 10/10.**
+2. **Q5 indices encore 75 % rétroviseur** — `S&P 500 OR Wall Street OR US stocks OR earnings season` : 3 termes sur 4 sont des noms d'indices génériques qui ramènent « Wall Street closes higher / S&P ends mixed ». Seul `earnings season` est un driver. Q5 reste **génératrice nette de faux flips**.
+3. **Nasdaq sans guidance/capex** — la requête Nvidia/semi/IA est bonne sur le choc d'offre (chips, export controls) mais rate le driver de RETOURNEMENT le plus violent : la **guidance** (`guidance cut`, `earnings miss`, `data center capex`). On capte la vague IA montante, on rate son pivot baissier.
+
+**Pour 10/10 : 3 micro-corrections (§3), zéro nouvelle requête, zéro coût.**
 
 ---
 
-## 1. Catalyseurs de vague vs bruit — verdict par requête
+## 1. Mes 2 cécités round 1 — sont-elles comblées ?
 
-Échelle de notation (point de vue « ça m'aide à rester du bon côté de la vague ? ») :
-**A = catalyseur dur** (provoque/confirme une vague, mots-clés à effet directionnel) ·
-**B = mixte** (un peu de driver, beaucoup de compte-rendu) ·
-**C = bruit** (surtout opinion/compte-rendu, génère de faux flips).
+| Cécité round 1 | Statut round 2 | Détail |
+|---|---|---|
+| **Nasdaq — vague tech/IA non requêtée** | **🟢 COMBLÉE (couverture)** | Q12 `Nvidia OR semiconductor OR AI chips OR TSMC OR chip export controls OR Big Tech earnings` + `gnews_nasdaq`. Le critère `sentiment_ia_megacaps` (fiche nasdaq.yml, poids 5) reçoit enfin du carburant. ✅ |
+| **VIX — vague volatilité/risk-off non requêtée** | **🟡 PARTIELLEMENT COMBLÉE** | Q13 `stock market volatility OR VIX OR risk-off OR market selloff OR flight to safety` + `gnews_vix`. Le critère `tension_geopolitique_active` reçoit du carburant MAIS via les symptômes, pas les causes (cf. §3.1). ⚠️ |
 
-| # | Requête | Note | Catalyseurs durs qu'elle ramène | Bruit qu'elle ramène |
+**Verdict cécités** : la cécité Nasdaq est levée nette. La cécité VIX est **déplacée, pas levée** — on est passé de « rien » à « du rétroviseur de volatilité ». Mieux que 0, mais ce n'est pas le carburant amont qu'un trend-follower de la peur exige.
+
+---
+
+## 2. Note par requête (les 13) — driver vs rétroviseur
+
+Échelle : **A = catalyseur dur** (crée/retourne une vague) · **B = mixte** · **C = bruit rétroviseur** (faux flips).
+
+| # | Requête (abrégée) | Note R2 | Évolution | Commentaire trend-follower |
 |---|---|---|---|---|
-| 1 | oil OR brent OR WTI OR **OPEC** | **A** | décisions OPEC+ (quotas), sanctions, stocks EIA, Détroit d'Ormuz | « oil edges higher », notes de courtiers |
-| 2 | gold OR silver OR copper OR platinum | **B** | achats banques centrales (or), grève mine (cuivre/platine) | « gold rises on safe-haven », commentaires |
-| 3 | wheat OR corn OR coffee OR cocoa OR sugar | **B** | sécheresse, USDA WASDE, embargo | round-up matières premières génériques |
-| 4 | Fed OR FOMC OR **ECB** OR inflation OR **CPI** | **A** | décision de taux, surprise CPI, ton hawkish/dovish, minutes | « investors await the Fed », prévisions d'analystes |
-| 5 | Nasdaq OR S&P 500 OR CAC 40 OR DAX | **C** | quasi rien de causal | **100 % de « index closes higher/lower », « Wall St mixed »** = pur compte-rendu rétroviseur |
-| 6 | EUR USD OR yen OR dollar index OR forex | **B/C** | intervention BoJ, écart de taux | « euro slips vs dollar », analyse technique de blog |
-| 7 | coffee/arabica/robusta/**Brazil/Vietnam harvest** | **A** | gel/sécheresse Brésil, récolte Vietnam, ICE stocks | |
-| 8 | cocoa/**Ivory Coast/Ghana**/grindings | **A** | maladie cabosses, météo Afrique de l'Ouest, grindings | |
-| 9 | wheat/**Black Sea/Russia**/US crop | **A** | corridor grain, frappes ports, conditions de culture | |
-| 10 | copper/LME/**Chile mine**/China demand | **A** | grève mine Chili, stimulus/demande Chine, stocks LME | |
-| 11 | CAC 40/**LVMH/Total/France budget** | **B** | résultats poids lourds, risque budgétaire/politique FR | « le CAC termine en hausse » |
+| 1 | oil/brent/WTI/OPEC/crude inventories | **A** | = | Catalyseur dur OPEC+/stocks. Inchangé, solide. |
+| 2 | gold/central bank gold buying/WGC/PBoC/real yields | **A** | ⬆ (B→A) | Enrichi achats BC + taux réels = vrais drivers de l'or. Excellent. |
+| 3 | silver/industrial demand/solar PV/gold-silver ratio | **A-** | ⬆ (B→A-) | Demande indus./solaire = driver structurel argent. Très bon. |
+| 4 | Fed/FOMC/ECB/inflation/CPI | **A** | = | Régime macro. Inchangé, solide. |
+| 5 | **S&P 500 / Wall Street / US stocks / earnings season** | **C+** | ⬆ (C→C+) | DAX retiré (bien), `earnings season` ajouté (1 driver). Mais 3/4 termes = noms d'indices → **toujours « closes higher » dominant**. Reste du bruit. ⚠️ |
+| 6 | EUR USD/ECB rate/Fed-ECB divergence/dollar index | **A-** | ⬆ (B/C→A-) | Resserré sur le différentiel Fed-BCE = LE driver d'EUR/USD. Gros progrès. |
+| 7 | coffee/arabica/robusta/Brazil/Vietnam | **A** | = | Récolte/gel. Solide. |
+| 8 | cocoa/Ivory Coast/Ghana/grindings/EUDR | **A** | ⬆ | + EUDR = driver réglementaire réel. Très bon. |
+| 9 | wheat/Black Sea/Russia/US crop/WASDE | **A** | = | Géopol + WASDE. Solide. |
+| 10 | copper/LME/Chile mine/China demand | **A** | = | Grève mine + Chine. Solide. |
+| 11 | CAC 40/LVMH/Total/France budget | **B+** | = | Poids lourds + budget FR = drivers réels, mais « CAC 40 » ramène du compte-rendu. |
+| 12 | **Nvidia/semi/AI chips/TSMC/chip export/Big Tech earnings** | **A-** | 🆕 | Choc d'offre chips = driver dur. Manque guidance/capex pour le pivot (cf. §3.3). |
+| 13 | **volatility/VIX/risk-off/selloff/flight to safety** | **B-** | 🆕 | Carburant présent MAIS = symptômes (rétroviseur de vol), pas causes amont (cf. §3.1). ⚠️ |
 
-**Lecture trend-follower** : les requêtes commodités (1,2,3,7-11) et macro (4) ramènent du **driver de vague** — exactement ce qui CRÉE une tendance OPEC/récolte/taux durable. La requête **5 (indices) est du bruit pur en l'état** : « S&P closes higher » ne dit rien sur la prochaine vague, c'est le rétroviseur. La requête **6 (FX) est faible** : du compte-rendu, peu de drivers.
-
----
-
-## 2. Actifs aveugles à leur vague
-
-Pour chaque actif : la **vague que doit suivre le trader**, et si une requête la ramène vraiment.
-
-| Actif | Vague réelle à suivre | Requête qui l'alimente | Couverture | Critère news de la fiche | Carburant arrive ? |
-|---|---|---|---|---|---|
-| Brent | choc offre OPEC+ / sanctions / Ormuz | #1 + EIA RSS + oilprice | ✅ forte | triplet géopol/offre | OUI |
-| Or | risk-off + achats BC + taux réels | #2 + macro #4 | 🟡 moyenne | — surtout numérique | partiel |
-| Argent | suit l'or + demande indus. | #2 + investing_metals | 🟡 moyenne | — | partiel |
-| Cuivre | grève mine + demande Chine | #10 dédiée + mining_com | ✅ forte | demande Chine | OUI |
-| Café | gel/sécheresse Brésil | #7 dédiée + gnews_coffee | ✅ forte | météo/récolte | OUI |
-| Cacao | maladie + météo Afrique Ouest | #8 dédiée + gnews_cocoa | ✅ forte | offre Afrique | OUI |
-| Blé | guerre/corridor Black Sea + USDA | #9 dédiée + gnews_wheat | ✅ forte | géopol/récolte | OUI |
-| CAC 40 | poids lourds + budget/politique FR | #11 dédiée + gnews_cac40 | 🟡 moyenne | résultats/politique FR | partiel |
-| S&P 500 | régime macro + earnings larges | #5 (bruit) + macro #4 | 🔴 faible | — | NON utile |
-| **Nasdaq** | **vague tech/IA — Nvidia, chips, capex IA, guidance méga-caps** | **AUCUNE** (#5 = bruit) | **🔴 NULLE** | **`sentiment_ia_megacaps` (L1=Tech-IA)** | **NON — critère muet** |
-| **VIX** | **vague de volatilité / risk-off — guerre, krach, choc systémique** | **AUCUNE** (rien sur war/risk-off/vol) | **🔴 NULLE** | **`tension_geopolitique_active` (L1=Géopolitique)** | **NON — critère muet** |
-| EUR/USD | divergence Fed/BCE + intervention BoJ | #4 + #6 (faible) | 🟡 moyenne | — | partiel |
-
-### Les 2 cécités graves (confirmées dans les fiches)
-
-**Nasdaq — la vague tech/IA n'est PAS requêtée.** La fiche `nasdaq.yml` a un critère `id:6 sentiment_ia_megacaps` (source `events-log L1=Tech-IA`, poids 5, pertinence 24h=0.8 / 7j=0.9). Or **aucune requête GNews/NewsAPI ni RSS ne contient `Nvidia`, `AI`, `chip`, `semiconductor`, `earnings`, `Microsoft`, `guidance`**. La requête #5 ne ramène que « Nasdaq closes higher ». Conséquence trend-follower : **la plus grosse vague directionnelle de 2023-2026 (rallye IA) ne déclenche jamais le critère news.** On suit la vague tech avec UNIQUEMENT du numérique (SOX, breadth, TIPS) — donc on rate les **retournements amorcés par une news** (mauvaise guidance Nvidia, restriction export chips) tant que le prix n'a pas déjà tourné. Pour un trend-follower, **rater le pivot = se retrouver à contre-sens sur 7j-1m.**
-
-**VIX — la vague de volatilité / risk-off n'est PAS requêtée.** La fiche `vix.yml` a un critère `id:8 tension_geopolitique_active` (source `events-log L1=Géopolitique`, poids 4, pertinence 24h=0.9) ET un GATE `id:9` (FOMC/CPI/ECB imminent). Mais **aucune requête ne ramène `war`, `conflict`, `sanctions`, `risk-off`, `selloff`, `volatility`, `crash`, `escalation`**. Le seul carburant indirect = la géopol qui transpire de #1 (pétrole) et #9 (blé). Conséquence : **le système ne voit la montée de volatilité que par les chiffres CBOE (term structure, put/call) — qui montent APRÈS le choc.** Un trend-follower de la vague de peur a besoin du **catalyseur (escalade, choc systémique) AVANT que le VIX n'ait déjà doublé.** Là, il arrive en retard sur chaque spike.
+**Bilan** : 8 requêtes en **A/A-** (vs 6 en round 1), 1 en B+, 1 en B-, 1 en C+. La dérive « rétroviseur » résiduelle se concentre sur **Q5 (indices) et Q13 (VIX)**.
 
 ---
 
-## 3. Mots-clés bruit (faux flips) vs drivers durs
+## 3. Ce qu'il manque pour 10/10 — 3 corrections, 0 coût
 
-| À BANNIR / dé-pondérer (font de faux flips) | Pourquoi c'est du poison trend-follower |
-|---|---|
-| `closes higher/lower`, `edges up`, `ends mixed`, `Wall St rises` | **Rétroviseur pur** : décrit la bougie passée, déclenche un flip qui suit le bruit intraday |
-| `forecast`, `analysts expect`, `price target`, `outlook` | **Opinion** : avis de courtier ≠ catalyseur, crée des signaux sans événement réel |
-| `could`, `may`, `fears`, `concerns` (titres sans fait) | conditionnel/sentiment → faux positifs L1 |
-| `rallies on optimism`, `slips on caution` | habillage narratif d'un mouvement déjà coté (déjà-price) |
+### 3.1 — VIX : requêter les CAUSES, pas les symptômes (manque n°1)
 
-| DRIVERS DURS à privilégier (créent/retournent une vague) | Effet directionnel |
-|---|---|
-| `OPEC+ cuts/raises quotas`, `sanctions`, `embargo`, `strike`, `mine halt` | choc d'offre → vague durable |
-| `drought`, `frost`, `harvest`, `disease`, `crop damage`, `USDA WASDE` | choc agri → vague saisonnière |
-| `rate decision`, `hike/cut`, `hawkish/dovish`, `CPI surprise` | régime macro → vague taux/FX/indices |
-| `guidance cut/raised`, `earnings beat/miss`, `export ban (chips)`, `capex` | choc méga-cap → vague tech |
-| `war`, `escalation`, `attack`, `default`, `bank failure` | choc systémique → vague risk-off / VIX |
+**Problème** : `volatility OR VIX OR selloff OR flight to safety` décrit un marché qui A DÉJÀ paniqué. Pour un trend-follower, c'est le rétroviseur le plus cher : quand « market selloff » sort dans les titres, le VIX a déjà fait +50 %, la vague est à moitié jouée. Le critère fiche est `tension_geopolitique_active` (L1=Géopolitique) — il veut de la **géopol amont**, qui n'arrive PAS via ces mots.
 
-**Garde-fou déjà en place (bon point)** : la fiche Phase 2 prévoit le flag `nature` DeepSeek excluant `verbal / deja_cote / non_tradable` du scoring — c'est exactement le filtre anti-bruit qu'il faut. **Mais il filtre en aval ; il ne crée pas le carburant manquant en amont.** Ajouter les bonnes requêtes reste indispensable.
+**Correction** — remplacer Q13 par un mix cause+symptôme :
+```
+"war OR escalation OR military strike OR sanctions OR bank failure OR sovereign default OR market selloff OR risk-off OR VIX"
+```
+Garder `gnews_vix` mais réécrire sa query de la même façon (ajouter `war OR escalation OR sanctions OR %22bank+failure%22`). Effet : on capte le **choc systémique AVANT le spike VIX** → on entre/retourne la vague de peur au bon moment, pas après.
 
----
+### 3.2 — Q5 indices : tuer le rétroviseur ou la dé-pondérer (manque n°2)
 
-## 4. Priorité — 3 ajouts qui changent le plus la justesse de tendance
+**Problème** : 3 termes sur 4 (`S&P 500`, `Wall Street`, `US stocks`) ramènent du compte-rendu de clôture = faux flips intraday sur un actif 7j/1m.
 
-Classés par impact sur le nombre de cellules dont la vague devient suivable.
+**Correction** — réécrire en drivers :
+```
+"stock market selloff OR market correction OR earnings season OR Fed rate stocks OR megacap tech OR market rally breadth"
+```
+**À défaut**, baisser le poids de la source qui porte Q5 (la requête structurée gnews/newsapi est déjà à 0,7 — acceptable, mais le flag `nature` DeepSeek devra impérativement filtrer `deja_cote` sur cette requête).
 
-**P1 — Requête Tech-IA (débloque Nasdaq + une partie de S&P).**
-`Nvidia OR semiconductor OR AI chips OR Microsoft OR Apple OR earnings guidance OR data center capex`
-+ RSS Google News dédié `gnews_tech_ai`. **Alimente enfin `sentiment_ia_megacaps`.** Impact : la plus grosse vague directionnelle du marché devient pilotable côté news → meilleurs pivots 7j/1m sur Nasdaq.
+### 3.3 — Nasdaq : ajouter le driver de RETOURNEMENT (guidance/capex)
 
-**P2 — Requête Volatilité / Risk-off (débloque VIX + protège tous les indices).**
-`war OR escalation OR sanctions OR selloff OR risk-off OR market crash OR financial crisis OR geopolitical`
-+ RSS `gnews_riskoff`. **Alimente `tension_geopolitique_active` (VIX) et le GATE régime extrême (Nasdaq/S&P).** Impact : on capte la vague de peur AVANT le doublement du VIX, et on coupe/retourne les indices au bon moment.
+**Problème** : Q12 capte le choc d'offre (chips, export controls) mais pas le pivot baissier le plus brutal de la vague IA : une **guidance ratée** ou un **doute sur le capex data center**. C'est exactement ce qui retourne le Nasdaq en 7j.
 
-**P3 — Durcir la requête #5 indices (transformer du bruit en driver).**
-Remplacer `Nasdaq OR S&P 500 OR CAC 40 OR DAX` (compte-rendu) par des drivers :
-`stock market selloff OR Fed rate stocks OR earnings season OR tech megacap OR market correction OR rally`
-Impact : moins de faux flips « closes higher », plus de catalyseurs d'indices. À défaut, **baisser le poids/fiabilité de #5** pour qu'elle ne génère plus de signaux directionnels.
+**Correction** — étendre Q12 :
+```
+"Nvidia OR semiconductor OR AI chips OR TSMC OR chip export controls OR earnings guidance OR data center capex OR Big Tech earnings"
+```
+(ajout `earnings guidance OR data center capex`, qui peut remplacer la fin redondante si on veut rester court.)
 
-> Note coût : ces 3 ajouts = +2 requêtes structurées et +2 RSS Google News (même mécanique éprouvée que `gnews_copper`/`gnews_coffee`, ~100 items/requête). Marginal sur le budget GNews. **Anti-timeout du système non concerné** (ingest est borné).
+> **Coût des 3 corrections** : ZÉRO requête ajoutée (on réécrit Q5, Q12, Q13 + 1 query RSS gnews_vix). Aucun impact moteur/budget/anti-timeout.
 
 ---
+
+## 4. Pourquoi 8 et pas 9
+
+Les 3 manques ci-dessus ne sont pas cosmétiques : **Q13 (VIX cause manquante)** laisse le trader systématiquement en retard sur la vague la plus rentable à retourner (la peur), et **Q5 (rétroviseur)** continue d'injecter des faux flips dans le scoring indices. Le flag `nature` DeepSeek en aval mitige le bruit Q5 mais **ne fabrique pas** le carburant géopol amont qui manque à Q13 — un filtre n'invente pas une donnée absente. Tant que Q13 reste en symptômes, le pivot VIX se prend en retard. C'est structurel, pas filtrable.
 
 ## 5. Verdict final
 
-**Le set actuel sert un trend-follower de commodités — PAS un trend-follower d'indices/volatilité.**
+- **Commodités (1,2,3,7,8,9,10)** : 🟢 excellent. Drivers durs partout. Rien à toucher.
+- **Macro/FX (4,6)** : 🟢 très bon. Q6 EUR/USD enfin sur le différentiel Fed-BCE.
+- **Nasdaq (12)** : 🟢 cécité comblée. Manque guidance/capex pour le pivot (§3.3).
+- **VIX (13)** : 🟡 carburant présent mais à l'envers (symptômes ≠ causes). **Manque n°1 du 10/10** (§3.1).
+- **S&P (5)** : 🟡 amélioré (DAX retiré, earnings ajouté) mais reste 75 % rétroviseur (§3.2).
+- **CAC (11)** : 🟢 OK (drivers FR présents).
 
-- **OUI** sur 7 actifs (Brent, Cuivre, Café, Cacao, Blé + partiellement Or/Argent) : requêtes pleines de **catalyseurs durs** qui créent de vraies vagues. C'est du bon travail (les requêtes dédiées #7-11 de l'audit 30/05 ont corrigé les commodités).
-- **NON** sur **Nasdaq et VIX** : deux fiches déclarent un critère news, **aucune requête ne l'alimente** → critère muet, vague non suivie, **retournements ratés**. C'est la cécité la plus chère pour un spéculateur 7j/1m.
-- **FAIBLE** sur **S&P 500 et EUR/USD** : couverts par du compte-rendu (#5) et de la macro indirecte, peu de drivers propres.
-
-**Chiffré** : sur 12 actifs, **~5 pleinement servis, 4 partiels, 3 mal/non servis (Nasdaq, VIX, S&P)**. La requête #5 (indices) est aujourd'hui **génératrice nette de bruit**. **Les 3 ajouts P1-P3 feraient passer la couverture utile de ~58 % à ~92 %** sans toucher au moteur ni au budget.
+**Chiffré** : sur 13 requêtes, **8 pleinement drivers (A/A-)**, 2 partielles (B+/B-), 1 résiduelle bruit (C+). Couverture utile passée de ~58 % (round 1) à **~85 %**. Les 3 micro-corrections §3 fermeraient les 15 % restants → **10/10 sans nouvelle requête ni surcoût.**
 
 ### Handoff
-
-- **Action immédiate** : ajouter P1 + P2 dans `STRUCTURED_QUERIES` + 2 RSS dans `EARLY_SIGNAL_FEEDS` ; arbitrer P3 (réécrire ou dé-pondérer #5). Validation Thomas requise (modif requêtes = pas de modif silencieuse, cf. garde-fous).
-- **À mesurer en shadow** : taux de déclenchement de `sentiment_ia_megacaps` (Nasdaq) et `tension_geopolitique_active` (VIX) avant/après — doivent passer de ~0 à non-nul.
-- **Dépend de** : prompt DeepSeek doit savoir classer L1=Tech-IA et L1=Géopolitique (déjà prévu dans les fiches) ; flag `nature` Phase 2 fera le tri anti-bruit en aval.
+- **Action immédiate (3 edits)** : réécrire Q5 (drivers), Q12 (+ guidance/capex), Q13 (+ war/escalation/bank failure/default) + aligner la query RSS `gnews_vix`. Validation Thomas requise (modif requêtes = pas de modif silencieuse, garde-fous).
+- **À mesurer en shadow** : sur Q13, le critère `tension_geopolitique_active` doit se déclencher sur un événement géopol AVANT le pic VIX (latence négative vs CBOE) — pas après.
+- **Dépend de** : prompt DeepSeek classe L1=Géopolitique et L1=Tech-IA (déjà prévu) ; flag `nature` filtre `deja_cote` en aval (mitige Q5, ne corrige PAS Q13).

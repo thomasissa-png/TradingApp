@@ -1016,3 +1016,84 @@ Append-only. Édité par v3/scripts/agent_news.py (GitHub Actions cron).
 | 2026-03-06 |  | Coffee supply | Possible supply disruptions boosting coffee prices | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:medium | medium | reported |
 | 2025-11-07 |  | Weather-Coffee | Conditions météo favorables entraînant une baisse des prix du café | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:high | medium | confirmed |
 | 2025-11-04 |  | Coffee supply-demand | Coffee futures soared in first session of November; world exports flat in 2024/25 | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | medium | reported |
+<!-- batch 2026-06-01T07:15:35Z : 80 events -->
+| 2026-06-01 |  | Iran-Moyen-Orient | Frappes américaines sur des sites radar iraniens et attaques de missiles/drones signalées au Koweït, troisième escalade en une semaine autour du détroit d'Ormuz | BRENT |  | 1 | bbc_world | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:high;SP500:SHORT:medium;EURUSD:SHORT:low | high | confirmed |
+| 2026-05-31 |  | Iran-Moyen-Orient | Guerre Iran: perte de 1 milliard de barils, choc offre pétrole/gaz, routes commerciales modifiées | BRENT |  | 1 | oilprice | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:high;SP500:SHORT:high;CAC40:SHORT:medium;EURUSD:SHORT:medium | high | reported |
+| 2026-05-29 |  | US crude oil exports | Port of Corpus Christi devient le plus grand hub d'exportation de pétrole brut américain | BRENT |  | 1 | oilprice | US | commodity |  | BRENT:SHORT:low | low | confirmed |
+| 2025-12-24 |  | Coffee supply shock | Indonesian flooding supporting Robusta price rise | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | medium | reported |
+| 2025-12-09 |  | Coffee supply | Brazil coffee report: robusta filling in for lower expected arabica output | COFFEE |  | 1 | gnews_coffee | BR | commodity |  | COFFEE:LONG:medium | medium | reported |
+| 2026-04-13 |  | Coffee | Trade ideas for Coffee Robusta Jul 2026 contract published | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:low | low | reported |
+| 2025-12-08 |  | Coffee supply | Brazil crop recovery expected to push coffee prices lower | COFFEE |  | 1 | gnews_coffee | BR | commodity |  | COFFEE:SHORT:high | medium | reported |
+| 2025-12-21 |  | Coffee supply | Bumper crop causes Robusta and arabica coffee prices to slip | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:high | medium | reported |
+| 2025-12-09 |  | Coffee supply | Coffee futures at lowest since September, Vietnam exports recovering | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:high | medium | reported |
+| 2025-08-18 |  | Coffee supply recovery | Coffee prices drop as supply recovers after climate setbacks | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:high | medium | reported |
+| 2025-06-17 |  | Coffee price correction | Coffee prices fall after a sharp rise, as reported by FoodNavigator.com | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:medium | medium | reported |
+| 2025-07-07 |  | Coffee supply chain | Coffee prices dropping as supply chains are restored | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:high | medium | reported |
+| 2025-07-10 |  | Tariffs-Brazil | US imposes 50% tariffs on Brazil, coffee prices rise | COFFEE |  | 1 | gnews_coffee | US | commodity |  | COFFEE:LONG:high | high | reported |
+| 2026-02-25 |  | climate-coffee | Climate change shrinking India's coffee production | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:low | low | reported |
+| 2025-05-20 |  | Soft commodities | World Bank report: beverage prices soften but risks remain | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:medium;COCOA:SHORT:medium | low | confirmed |
+| 2026-03-14 |  | Coffee | Coffee prices dip slightly amid global market fluctuations | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:low | low | reported |
+| 2025-02-12 |  | Coffee supply shock | Coffee prices at record highs due to tight global supplies | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | high | confirmed |
+| 2025-06-03 |  | Coffee supply | Brazil harvest pressures causing coffee price retreat | COFFEE |  | 1 | gnews_coffee | BR | commodity |  | COFFEE:SHORT:high | medium | reported |
+| 2025-05-23 |  | Coffee supply-demand | Coffee futures fall to one-month lows on better market prospects and increased certified inventories | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:high | medium | confirmed |
+| 2024-02-15 |  | Coffee supply-demand | Robusta coffee prices hit 29-year high due to rising demand | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | high | reported |
+| 2025-01-07 |  | Soft commodities supply | Cocoa and coffee prices rebound on renewed supply concerns | COCOA |  | 1 | gnews_coffee | Global | commodity |  | COCOA:LONG:high;COFFEE:LONG:high | medium | reported |
+| 2024-11-28 |  | Coffee supply | Coffee prices rising due to supply constraints, expected to worsen | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | medium | reported |
+| 2025-06-02 |  | Coffee futures contract change | Arabica coffee futures contracts to shift to metrics in 2028 | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:low | low | reported |
+| 2025-03-12 |  | Coffee price forecast | Publication d'une prévision de prix du café 2025-2030 par Capital.com | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:low | low | reported |
+| 2025-10-07 |  | Coffee supply | Uganda coffee prices stable while global markets surge | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:low | low | reported |
+| 2024-04-19 |  | Coffee | Arabica prices hit 18-month high, driven by robusta and cacao | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | medium | reported |
+| 2025-04-24 |  | Coffee supply-demand | Arabica coffee prices up 93% YoY, Robusta up 55% | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | high | reported |
+| 2025-04-15 |  | Coffee market | Article spéculatif sur la hausse du robusta pour des raisons potentiellement non fondamentales | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:low | low | rumor |
+| 2024-06-06 |  | Coffee supply | Robusta supply constraints pushing up coffee prices | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | medium | reported |
+| 2024-11-29 |  | Coffee supply shock | Coffee prices surge to 47-year highs | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | high | confirmed |
+| 2025-03-03 |  | Coffee supply | Brazil's coffee stockpiles dwindle, prices hit record highs | COFFEE |  | 1 | gnews_coffee | BR | commodity |  | COFFEE:LONG:high | high | confirmed |
+| 2025-03-12 |  | Coffee price forecast | Third-party roundup of coffee price forecasts on Capital.com | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:low | low | reported |
+| 2024-12-10 |  | Coffee supply-demand | Coffee prices hit record high on global markets, consumers face price rises | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | high | confirmed |
+| 2025-05-12 |  | Coffee supply-demand | Robusta coffee revival continues, implications for producers | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:low | low | reported |
+| 2024-05-16 |  | Coffee supply | Robusta futures hit 45-year record high | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | high | confirmed |
+| 2025-06-03 |  | Coffee prices | Decreasing Robusta coffee prices cause worry among growers in Kodagu | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:medium | low | reported |
+| 2022-06-07 |  | Coffee market | Article spéculatif sur substitution robusta/arabica si prix arabica augmentent |  |  | 1 | gnews_coffee | Global | commodity |  |  | low | rumor |
+| 2025-06-27 |  | Coffee supply-demand | Article sur les dynamiques de marché global impactant les prix du café ougandais | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:low | low | reported |
+| 2024-03-29 |  | Coffee supply | Coffee prices in Vietnam exceed 100,000 VND, London futures ease from highs | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:medium | medium | reported |
+| 2024-08-26 |  | Coffee supply-demand | Coffee prices rising, robusta approaching arabica levels | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | medium | reported |
+| 2024-07-10 |  | Coffee supply shock | Robusta coffee prices hit record high due to tightening supplies | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:high | high | confirmed |
+| 2024-09-26 |  | Coffee price inversion | Robusta coffee price exceeds Arabica in Vietnam, a rare inversion | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:medium | medium | reported |
+| 2026-02-18 |  | Cocoa supply | Ivory Coast considers cutting cocoa producer price, following Ghana | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:medium | medium | reported |
+| 2025-10-02 |  | Cocoa supply | Ghana raises cocoa price following Ivory Coast's move | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | medium | confirmed |
+| 2026-05-27 |  | Dollar strength | Dollar strength pushes cocoa prices lower | COCOA |  | 1 | gnews_cocoa | Global | macro |  | COCOA:SHORT:high;EURUSD:SHORT:medium | medium | confirmed |
+| 2026-03-16 |  | Cocoa supply-demand | Cocoa price slump affecting farmers in Ghana and Ivory Coast | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:medium | medium | reported |
+| 2026-03-08 |  | Cocoa supply-demand | Chocolate market slump affecting cocoa farmers in Ghana and Ivory Coast | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:medium | medium | reported |
+| 2026-02-19 |  | Cocoa supply | Ivory Coast considers cutting cocoa producer price, following Ghana, amid global market slump | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:medium | medium | reported |
+| 2025-10-02 |  | Cocoa supply | Ivory Coast and Ghana boost farmer pay for cocoa beans, causing cocoa prices to slump | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | medium | confirmed |
+| 2026-03-08 |  | cocoa supply | Rotting cocoa and commodity crash push West African farmers to seek other options | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:medium | medium | reported |
+| 2026-03-07 |  | Cocoa supply | Ivory Coast considers cutting cocoa producer price after Ghana's move | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:medium | medium | reported |
+| 2026-02-26 |  | Cocoa supply crisis | Crise des ventes de cacao en Côte d'Ivoire et Ghana | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | medium | reported |
+| 2026-02-25 |  | Cocoa supply | Unsold cocoa stocks in Ivory Coast may soar due to price standoff | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:medium | medium | reported |
+| 2025-09-30 |  | Cocoa supply | Ivory Coast may set 2025-26 cocoa price above Ghana, signaling tighter supply | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | medium | reported |
+| 2026-03-05 |  | Cocoa supply shock | Ivory Coast cocoa growers face 60% price cut on their produce | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | high | reported |
+| 2026-02-18 |  | cocoa demand shock | Cocoa prices extend slump as demand craters | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | high | reported |
+| 2026-04-08 |  | Cocoa-Dollar | Cocoa prices jump as the dollar retreats | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | medium | confirmed |
+| 2026-02-26 |  | Cocoa supply | Ivory Coast to cut farmer cocoa price with earlier start of mid-crop | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:medium | medium | reported |
+| 2026-05-21 |  | Cocoa supply-demand | Dollar strength and rising ICE inventories undercut cocoa prices | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | medium | reported |
+| 2026-02-23 |  | Cocoa pricing | Ivory Coast minister says mid-crop cocoa price to be announced by end of month | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:medium | medium | confirmed |
+| 2026-04-30 |  | Cocoa supply disruption | Ghana cocoa regulator says buyers divert funds to buy smuggled beans, indicating supply chain issues | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | medium | reported |
+| 2026-01-22 |  | Cocoa supply intervention | Ivory Coast government plans to buy entire cocoa stockpile to support prices at two-year low | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | high | reported |
+| 2026-02-27 |  | Cocoa supply | Ivory Coast resumes mid-crop cocoa sales after dropping premiums | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | medium | confirmed |
+| 2026-03-23 |  | cocoa supply | Expectations of a bumper West African cocoa crop | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | medium | reported |
+| 2026-02-19 |  | Cocoa pricing | Ivory Coast sets cocoa farmgate price at 2,800 FCFA/kg, aiming for stability amid global volatility | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:medium | medium | confirmed |
+| 2025-10-02 |  | Cocoa supply | Ivory Coast raises cocoa farmer price payments, but cross-border smuggling fears persist | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:medium | medium | reported |
+| 2026-04-02 |  | Cocoa supply-demand | Cocoa prices crash, hurting West African farmers despite strong global demand | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | medium | reported |
+| 2026-02-04 |  | Cocoa supply crisis | Ivory Coast cocoa crisis signaling supply shortage for the year | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | high | reported |
+| 2025-10-08 |  | Cocoa sell-off | Cocoa prices plunge to 20-month low, banks warn of extreme sell-off risks | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | high | confirmed |
+| 2026-03-25 |  | Cocoa supply | Amélioration des perspectives de récolte en Afrique de l'Ouest | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | medium | reported |
+| 2025-08-18 |  | Cocoa supply disruption | Ghana cocoa farmers revolt over prices, threaten mass smuggling | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | high | reported |
+| 2026-03-13 |  | cocoa supply | Ghana's cocoa sector faces falling prices, indicating oversupply or demand weakness | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | medium | reported |
+| 2026-03-09 |  | Cocoa pricing | Ivory Coast lowers cocoa producer price below Ghana's level | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:medium | medium | reported |
+| 2026-05-05 |  | cocoa supply | Weak outlook for West African cocoa crop drives prices up | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | medium | reported |
+| 2026-02-26 |  | Cocoa supply shock | Ivory Coast president Ouattara announces major reforms in cocoa sector due to crisis | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | high | reported |
+| 2026-03-10 |  | Cocoa supply-demand | Cocoa prices rally on report of large export purchases | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | medium | reported |
+| 2026-03-16 |  | Cocoa-Dollar | Cocoa prices rebound as the dollar weakens | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | medium | reported |
+| 2026-02-17 |  | Cocoa pricing dispute | Ivory Coast Finance Minister's claim about cocoa price vs Ghana is fact-checked as false | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:low | low | reported |
+| 2025-09-24 |  | Cocoa supply | Cocoa price drops >40% on improved harvest outlook and easing drought concerns | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | high | reported |
+| 2026-03-04 |  | Cocoa | Cocoa prices rise due to dollar weakness and short covering | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:medium | medium | reported |

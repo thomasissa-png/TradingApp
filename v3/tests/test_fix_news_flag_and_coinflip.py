@@ -204,6 +204,59 @@ def test_build_html_generates_non_empty_index(tmp_path, monkeypatch):
         assert latest.name in content, f"Bulletin {latest.name} non embarqué dans index.html"
 
 
+def test_build_html_contains_color_classes_and_help_box():
+    """Vérifie que l'index.html généré contient les classes de colorisation
+    .dir-long / .dir-short et l'encart repliable 'Comment lire les scores'."""
+    script = ROOT / "scripts" / "build_html.py"
+    res = subprocess.run(
+        [sys.executable, str(script)],
+        capture_output=True, text=True, cwd=str(ROOT.parent),
+    )
+    assert res.returncode == 0, f"build_html.py a échoué : {res.stderr}"
+    out = ROOT / "data" / "index.html"
+    content = out.read_text(encoding="utf-8")
+    # Classes CSS de colorisation
+    assert ".dir-long" in content, "Classe CSS .dir-long absente"
+    assert ".dir-short" in content, "Classe CSS .dir-short absente"
+    # Fonction JS de colorisation et son appel
+    assert "colorizeDirections" in content, "Fonction colorizeDirections absente"
+    # Encart d'aide repliable
+    assert "Comment lire les scores" in content, "Encart d'aide absent"
+    assert "help-box" in content, "Classe help-box absente"
+    assert "<details" in content, "Balise <details> de l'encart absente"
+
+
+def test_build_html_contains_sticky_legend_and_subnav():
+    """Vérifie la présence de la barre de légende compacte toujours-visible
+    (sticky) et de la sous-navigation d'ancres intra-bulletin."""
+    script = ROOT / "scripts" / "build_html.py"
+    res = subprocess.run(
+        [sys.executable, str(script)],
+        capture_output=True, text=True, cwd=str(ROOT.parent),
+    )
+    assert res.returncode == 0, f"build_html.py a échoué : {res.stderr}"
+    out = ROOT / "data" / "index.html"
+    content = out.read_text(encoding="utf-8")
+    # Barre de légende compacte toujours-visible
+    assert "legend-bar" in content, "Barre de légende compacte absente"
+    assert "force de conviction" in content, "Texte de légende des scores absent"
+    assert "non-actionnable" in content, "Mention non-actionnable absente"
+    # Sous-navigation d'ancres intra-bulletin
+    assert 'id="subnav"' in content, "Élément subnav absent"
+    assert "buildSubnav" in content, "Fonction buildSubnav absente"
+    assert "Sauter à" in content, "Label de sous-nav absent"
+    # Hamburger mobile + sidebar toggle
+    assert 'id="hamburger"' in content, "Bouton hamburger absent"
+    assert "openSidebarMobile" in content, "Fonction openSidebarMobile absente"
+    # Wrapping tables (scroll horizontal mobile)
+    assert "wrapTables" in content, "Fonction wrapTables absente"
+    assert "table-wrap" in content, "Classe CSS table-wrap absente"
+    # Sidebar : badge "dernier" sur le plus récent
+    assert "badge-latest" in content, "Badge 'dernier' absent"
+    # Position sticky utilisée pour la légende
+    assert "position: sticky" in content or "position:sticky" in content
+
+
 def test_build_html_escapes_backticks_and_dollar_brace():
     """Vérifie que l'échappement gère les caractères dangereux."""
     sys.path.insert(0, str(ROOT / "scripts"))

@@ -112,14 +112,18 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
   :root {{
-    --bg: #fafafa;
+    --bg: #f8fafc;
     --bg-panel: #ffffff;
     --border: #e2e8f0;
-    --text: #1e293b;
+    --border-strong: #cbd5e1;
+    --text: #0f172a;
     --text-muted: #64748b;
     --accent: #2563eb;
     --accent-bg: #eff6ff;
     --code-bg: #f1f5f9;
+    --row-alt: #f8fafc;
+    --badge-bg: #16a34a;
+    --badge-text: #ffffff;
   }}
   * {{ box-sizing: border-box; }}
   html, body {{ margin: 0; padding: 0; height: 100%; }}
@@ -127,19 +131,34 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background: var(--bg);
     color: var(--text);
-    line-height: 1.55;
+    line-height: 1.6;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
   }}
   header {{
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
     padding: 12px 20px;
-    position: sticky; top: 0; z-index: 10;
+    position: sticky; top: 0; z-index: 20;
   }}
-  header h1 {{ margin: 0; font-size: 17px; font-weight: 600; }}
+  header .header-row {{ display: flex; align-items: center; gap: 12px; }}
+  header h1 {{ margin: 0; font-size: 17px; font-weight: 600; flex: 1; }}
   header .meta {{ font-size: 12px; color: var(--text-muted); margin-top: 4px; }}
   header .meta-note {{ margin-left: 8px; }}
   header .legend {{ font-size: 12px; color: var(--text-muted); margin-top: 6px; }}
   header .legend code {{ background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 11px; }}
+  /* Hamburger (mobile uniquement) */
+  .hamburger {{
+    display: none;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 16px;
+    cursor: pointer;
+    color: var(--text);
+  }}
+  .hamburger:hover {{ background: var(--accent-bg); }}
   .layout {{
     display: flex;
     height: calc(100vh - 86px);
@@ -154,107 +173,460 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
   aside ul {{ list-style: none; margin: 0; padding: 8px 0; }}
   aside li {{ padding: 0; }}
   aside a {{
-    display: block; padding: 8px 16px; color: var(--text);
-    text-decoration: none; font-size: 13px; border-left: 3px solid transparent;
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 16px; color: var(--text);
+    text-decoration: none; font-size: 13.5px; border-left: 3px solid transparent;
+    line-height: 1.35;
   }}
   aside a:hover {{ background: var(--accent-bg); }}
   aside a.active {{ background: var(--accent-bg); border-left-color: var(--accent); font-weight: 600; }}
+  aside a.latest {{ font-weight: 600; }}
+  aside .badge-latest {{
+    background: var(--badge-bg); color: var(--badge-text);
+    font-size: 10px; font-weight: 700;
+    padding: 2px 6px; border-radius: 10px;
+    text-transform: uppercase; letter-spacing: 0.3px;
+    flex-shrink: 0;
+  }}
+  aside .item-date {{ flex: 1; }}
   main {{
     flex: 1;
     overflow-y: auto;
-    padding: 24px 36px;
+    padding: 0;
     max-width: 100%;
+    position: relative;
   }}
+  .content-inner {{
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px 32px 48px 32px;
+  }}
+  /* Barre de légende sticky (toujours visible au-dessus du bulletin) */
+  .legend-bar {{
+    position: sticky; top: 0; z-index: 5;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+  }}
+  .legend-bar .legend-inner {{
+    max-width: 900px; margin: 0 auto;
+    display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+  }}
+  .legend-bar code {{ background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 12px; }}
+  /* Sous-navigation d'ancres intra-bulletin */
+  .subnav {{
+    position: sticky; top: 41px; z-index: 4;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 20px;
+    font-size: 13px;
+  }}
+  .subnav .subnav-inner {{
+    max-width: 900px; margin: 0 auto;
+    display: flex; flex-wrap: wrap; gap: 4px 4px; align-items: center;
+  }}
+  .subnav a {{
+    color: var(--accent);
+    text-decoration: none;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--accent-bg);
+    font-size: 12.5px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }}
+  .subnav a:hover {{ border-color: var(--accent); }}
+  .subnav .subnav-label {{ color: var(--text-muted); font-size: 12px; margin-right: 4px; }}
   main h1, main h2, main h3 {{ color: var(--text); }}
-  main h1 {{ font-size: 22px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }}
-  main h2 {{ font-size: 18px; margin-top: 24px; }}
-  main h3 {{ font-size: 15px; }}
-  main table {{ border-collapse: collapse; margin: 12px 0; font-size: 13px; width: 100%; }}
-  main table th, main table td {{
-    border: 1px solid var(--border); padding: 6px 10px; text-align: left;
+  main h1 {{ font-size: 26px; border-bottom: 2px solid var(--border); padding-bottom: 10px; margin-top: 8px; }}
+  main h2 {{ font-size: 20px; margin-top: 36px; padding-bottom: 6px; border-bottom: 1px solid var(--border); scroll-margin-top: 100px; }}
+  main h3 {{ font-size: 16px; margin-top: 24px; scroll-margin-top: 100px; }}
+  main p {{ margin: 10px 0; }}
+  /* Wrapper de table pour scroll horizontal mobile propre */
+  .table-wrap {{
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 14px 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
   }}
-  main table th {{ background: var(--code-bg); font-weight: 600; }}
+  main table {{ border-collapse: collapse; margin: 0; font-size: 13.5px; width: 100%; }}
+  main table th, main table td {{
+    border-bottom: 1px solid var(--border);
+    padding: 9px 12px; text-align: left;
+    vertical-align: top;
+  }}
+  main table th {{
+    background: #f1f5f9; font-weight: 600;
+    border-bottom: 2px solid var(--border-strong);
+    position: sticky; top: 0;
+    white-space: nowrap;
+  }}
+  main table tbody tr:nth-child(even) {{ background: var(--row-alt); }}
+  main table tbody tr:hover {{ background: var(--accent-bg); }}
   main code {{ background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 13px; }}
   main pre {{ background: var(--code-bg); padding: 12px; border-radius: 6px; overflow-x: auto; }}
   main pre code {{ background: none; padding: 0; }}
   main blockquote {{
-    border-left: 4px solid var(--border); margin: 12px 0; padding: 4px 16px;
+    border-left: 4px solid var(--border-strong); margin: 12px 0; padding: 4px 16px;
     color: var(--text-muted);
   }}
+  main ul, main ol {{ padding-left: 24px; }}
+  main li {{ margin: 4px 0; }}
+  /* Colorisation directionnelle LONG/SHORT et scores signés */
+  .dir-long {{ color: #15803d; font-weight: 600; }}
+  .dir-short {{ color: #b91c1c; font-weight: 600; }}
+  /* Encart "Comment lire les scores" (détaillé, replié par défaut) */
+  .help-box {{
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin: 20px 0 0 0;
+    padding: 0;
+    font-size: 13.5px;
+  }}
+  .help-box > summary {{
+    cursor: pointer;
+    padding: 10px 14px;
+    font-weight: 600;
+    color: var(--text);
+    list-style: none;
+    user-select: none;
+  }}
+  .help-box > summary::-webkit-details-marker {{ display: none; }}
+  .help-box > summary::before {{
+    content: "▸"; display: inline-block; margin-right: 8px;
+    transition: transform 0.15s ease;
+    color: var(--text-muted);
+  }}
+  .help-box[open] > summary::before {{ transform: rotate(90deg); }}
+  .help-box .help-body {{
+    padding: 4px 18px 14px 18px;
+    color: var(--text);
+    line-height: 1.6;
+  }}
+  .help-box .help-body p {{ margin: 8px 0; }}
+  .help-box .help-body ul {{ margin: 6px 0 6px 18px; padding: 0; }}
+  .help-box .help-body li {{ margin: 3px 0; }}
+  .help-box .help-body code {{
+    background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 12px;
+  }}
+  /* Overlay mobile pour fermer la sidebar */
+  .sidebar-overlay {{
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(15, 23, 42, 0.4);
+    z-index: 15;
+  }}
+  .sidebar-overlay.open {{ display: block; }}
+  /* MOBILE */
   @media (max-width: 768px) {{
-    .layout {{ flex-direction: column; height: auto; }}
-    aside {{ width: 100%; max-height: 200px; border-right: none; border-bottom: 1px solid var(--border); }}
-    main {{ padding: 16px 18px; }}
+    body {{ font-size: 15.5px; }}
+    .hamburger {{ display: inline-block; }}
+    header h1 {{ font-size: 15.5px; }}
+    .layout {{ height: calc(100vh - 86px); }}
+    aside {{
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      width: 82%; max-width: 320px;
+      transform: translateX(-100%);
+      transition: transform 0.2s ease;
+      z-index: 25;
+      box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+      max-height: none;
+      border-right: 1px solid var(--border);
+    }}
+    aside.open {{ transform: translateX(0); }}
+    main {{ width: 100%; }}
+    .content-inner {{ padding: 12px 14px 32px 14px; }}
+    .legend-bar {{ padding: 8px 12px; font-size: 12px; }}
+    .subnav {{ padding: 6px 12px; top: 39px; }}
+    .subnav a {{ font-size: 12px; padding: 3px 8px; }}
+    main h1 {{ font-size: 22px; }}
+    main h2 {{ font-size: 18px; margin-top: 28px; scroll-margin-top: 130px; }}
+    main h3 {{ font-size: 15.5px; scroll-margin-top: 130px; }}
+    .help-box {{ font-size: 13px; }}
   }}
 </style>
 </head>
 <body>
 <header>
-  <h1>TradingApp v3 — Bulletins</h1>
+  <div class="header-row">
+    <button class="hamburger" id="hamburger" aria-label="Ouvrir la liste des bulletins" aria-expanded="false">☰</button>
+    <h1>TradingApp v3 — Bulletins</h1>
+  </div>
   <div class="meta">Généré : {generated_at}{truncated_note}</div>
   <div class="legend">
-    Légende :
+    Légende symboles :
     <code>⚑</code> flip ·
     <code>📰</code> news&gt;50% (abs/abs) ·
     <code>⚪</code> coin-flip (|score|&lt;0.05, non-actionnable) ·
     <code>⚠</code> divergence pm1/pondéré
   </div>
 </header>
+<div class="sidebar-overlay" id="sidebar-overlay"></div>
 <div class="layout">
-  <aside>
+  <aside id="sidebar">
     <ul id="bulletin-list"></ul>
   </aside>
-  <main id="bulletin-content">
-    <p>Chargement...</p>
+  <main id="bulletin-main">
+    <div class="legend-bar" id="legend-bar">
+      <div class="legend-inner">
+        <span><span class="dir-long">🟢 LONG</span> = hausse</span>
+        <span>·</span>
+        <span><span class="dir-short">🔴 SHORT</span> = baisse</span>
+        <span>·</span>
+        <span><code>|score|</code> = force de conviction (≈ 50% + |score|/15, max à 7,5)</span>
+        <span>·</span>
+        <span>⚪ &lt;0.05 = non-actionnable</span>
+        <span>·</span>
+        <span>📰 news&gt;50%</span>
+        <span>·</span>
+        <span>⚑ gate</span>
+        <span>·</span>
+        <span>⚠ divergence pm1/pondéré</span>
+      </div>
+    </div>
+    <nav class="subnav" id="subnav" aria-label="Sections du bulletin">
+      <div class="subnav-inner">
+        <span class="subnav-label">Sauter à :</span>
+        <span id="subnav-links"></span>
+      </div>
+    </nav>
+    <div class="content-inner">
+      <details class="help-box">
+        <summary>❓ Comment lire les scores (détails complets)</summary>
+        <div class="help-body">
+          <p><strong>Signe = direction</strong> : <span class="dir-long">vert = LONG (hausse)</span>, <span class="dir-short">rouge = SHORT (baisse)</span>.</p>
+          <p><strong>Grandeur = force de conviction</strong> (et non un % de mouvement attendu). Probabilité ≈ <code>50% + |score|/15</code>, plafonnée à 100%.</p>
+          <p>Repères :</p>
+          <ul>
+            <li><code>|score| ~0</code> (&lt;0.05, ⚪) → ~50%, pile ou face, <strong>non-actionnable</strong></li>
+            <li><code>|score| ≈ 1,5</code> → ~60% de conviction</li>
+            <li><code>|score| ≈ 3,75</code> → ~75% de conviction</li>
+            <li><code>|score| ≥ 7,5</code> → 100%, conviction maximale</li>
+          </ul>
+          <p><code>[pond: …]</code> = même score en version <strong>pondérée</strong> (news × matérialité × fiabilité), branche B du test A/B.</p>
+          <p><strong>Symboles</strong> : <code>⚑</code> gate · <code>📰</code> news&gt;50% du quant · <code>⚪</code> quasi coin-flip non-actionnable · <code>⚠</code> divergence pm1/pondéré.</p>
+        </div>
+      </details>
+      <div id="bulletin-content">
+        <p>Chargement...</p>
+      </div>
+    </div>
   </main>
 </div>
 <script>
 const BULLETINS = {bulletins_js};
 
+// Colorisation idempotente des cellules de tableau :
+// - "LONG" / "SHORT" enveloppés dans <span class="dir-long|dir-short">
+// - Nombres signés +x.xx / -x.xx envloppés de même
+// On opère sur l'HTML interne de chaque <td> mais en évitant de re-traiter
+// du contenu déjà enveloppé (idempotent) et sans toucher aux attributs des
+// balises (regex anti-attribut via lookbehind sur '>').
+function colorizeDirections(root) {{
+  if (!root) return;
+  const tds = root.querySelectorAll('td');
+  tds.forEach(td => {{
+    // Skip si déjà colorisé (idempotent)
+    if (td.dataset.colorized === '1') return;
+    let html = td.innerHTML;
+    // Découpe sur les balises pour n'opérer que sur les segments de texte.
+    // Cela évite d'altérer href="..." ou autres attributs.
+    const parts = html.split(/(<[^>]+>)/g);
+    for (let i = 0; i < parts.length; i++) {{
+      const seg = parts[i];
+      if (!seg || seg.startsWith('<')) continue;  // balise → inchangée
+      let s = seg;
+      // 1) Mots LONG / SHORT (bordés par non-alphanum)
+      s = s.replace(/\\bLONG\\b/g, '<span class="dir-long">LONG</span>');
+      s = s.replace(/\\bSHORT\\b/g, '<span class="dir-short">SHORT</span>');
+      // 2) Scores signés explicites : +1.23 / -0.45 / +12 / -7.5
+      //    Borné à gauche par début, espace, parenthèse, deux-points ou crochet
+      //    pour éviter d'attraper "x+1" dans une formule éventuelle.
+      s = s.replace(/(^|[\\s(\\[:])\\+(\\d+(?:[.,]\\d+)?)/g, '$1<span class="dir-long">+$2</span>');
+      s = s.replace(/(^|[\\s(\\[:])-(\\d+(?:[.,]\\d+)?)/g, '$1<span class="dir-short">-$2</span>');
+      parts[i] = s;
+    }}
+    td.innerHTML = parts.join('');
+    td.dataset.colorized = '1';
+  }});
+}}
+
+// Formate une date lisible depuis l'ID du bulletin (ex "2026-06-01" ou "2026-06-01T18h00").
+// Retourne {{ short: "dim. 1 juin", time: "18h" | "" }}.
+function formatBulletinDate(id) {{
+  const DAYS = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
+  const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin',
+                  'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+  const m = id.match(/^(\\d{{4}})-(\\d{{2}})-(\\d{{2}})(?:[Tt_-]?(\\d{{1,2}})[hH:]?(\\d{{0,2}}))?/);
+  if (!m) return {{ short: id, time: '' }};
+  const y = parseInt(m[1], 10), mo = parseInt(m[2], 10), d = parseInt(m[3], 10);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  const dayName = DAYS[dt.getUTCDay()];
+  const monthName = MONTHS[mo - 1] || '';
+  const short = `${{dayName}} ${{d}} ${{monthName}}`;
+  let time = '';
+  if (m[4]) {{
+    const hh = m[4].padStart(2, '0');
+    const mm = (m[5] || '').padStart(2, '0');
+    time = mm && mm !== '00' ? `${{hh}}h${{mm}}` : `${{hh}}h`;
+  }}
+  return {{ short, time }};
+}}
+
 function renderList(activeId) {{
   const ul = document.getElementById('bulletin-list');
   ul.innerHTML = '';
+  // Le plus récent = index 0 (BULLETINS déjà triés décroissant par build_payload).
+  const latestId = BULLETINS.length > 0 ? BULLETINS[0].id : null;
   BULLETINS.forEach(b => {{
     const li = document.createElement('li');
     const a = document.createElement('a');
     a.href = '#' + encodeURIComponent(b.id);
-    a.textContent = b.label;
+    const dt = formatBulletinDate(b.id);
+    const dateSpan = document.createElement('span');
+    dateSpan.className = 'item-date';
+    dateSpan.textContent = dt.time ? `${{dt.short}} — ${{dt.time}}` : dt.short;
+    a.appendChild(dateSpan);
+    if (b.id === latestId) {{
+      a.classList.add('latest');
+      const badge = document.createElement('span');
+      badge.className = 'badge-latest';
+      badge.textContent = 'dernier';
+      a.appendChild(badge);
+    }}
     if (b.id === activeId) a.classList.add('active');
     a.onclick = (e) => {{
       e.preventDefault();
       selectBulletin(b.id);
+      closeSidebarMobile();
     }};
     li.appendChild(a);
     ul.appendChild(li);
   }});
 }}
 
+// Enveloppe chaque <table> dans une <div class="table-wrap"> pour scroll horizontal mobile propre.
+// Idempotent : skip si déjà enveloppé.
+function wrapTables(root) {{
+  if (!root) return;
+  root.querySelectorAll('table').forEach(t => {{
+    if (t.parentElement && t.parentElement.classList.contains('table-wrap')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap';
+    t.parentNode.insertBefore(wrap, t);
+    wrap.appendChild(t);
+  }});
+}}
+
+// Slugify simple pour ancres (cohérent avec le rendu marked par défaut, mais on
+// génère nos propres ids pour ne pas dépendre du slugger interne).
+function slugify(s) {{
+  return s.toLowerCase()
+    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}}
+
+// Construit la sous-navigation d'ancres à partir des <h2> du bulletin.
+// Réécrit les ids des <h2> pour des ancres prévisibles et stables.
+function buildSubnav(root) {{
+  const links = document.getElementById('subnav-links');
+  const subnav = document.getElementById('subnav');
+  if (!links || !subnav) return;
+  links.innerHTML = '';
+  const h2s = root.querySelectorAll('h2');
+  if (h2s.length === 0) {{
+    subnav.style.display = 'none';
+    return;
+  }}
+  subnav.style.display = '';
+  h2s.forEach((h, i) => {{
+    const raw = (h.textContent || '').trim();
+    // Label court : premier mot significatif (Briefing / Matrice / Flips / Détail / Limites…)
+    let label = raw.split(/[ —–\\-:(]/)[0] || raw;
+    if (label.length > 22) label = label.slice(0, 22) + '…';
+    const id = `sec-${{i}}-${{slugify(raw).slice(0, 40)}}`;
+    h.id = id;
+    const a = document.createElement('a');
+    a.href = '#' + id;
+    a.textContent = label;
+    a.onclick = (e) => {{
+      e.preventDefault();
+      const target = document.getElementById(id);
+      if (target) target.scrollIntoView({{behavior: 'smooth', block: 'start'}});
+    }};
+    if (i > 0) links.appendChild(document.createTextNode(' '));
+    links.appendChild(a);
+  }});
+}}
+
 function selectBulletin(id) {{
   const b = BULLETINS.find(x => x.id === id);
-  const main = document.getElementById('bulletin-content');
+  const content = document.getElementById('bulletin-content');
+  const mainEl = document.getElementById('bulletin-main');
   if (!b) {{
-    main.innerHTML = '<p>Bulletin introuvable.</p>';
+    content.innerHTML = '<p>Bulletin introuvable.</p>';
     return;
   }}
   if (typeof marked !== 'undefined') {{
     marked.setOptions({{gfm: true, breaks: false}});
-    main.innerHTML = marked.parse(b.markdown);
+    content.innerHTML = marked.parse(b.markdown);
+    colorizeDirections(content);
+    wrapTables(content);
+    buildSubnav(content);
   }} else {{
     // Fallback : affichage brut si marked n'a pas chargé (offline)
     const pre = document.createElement('pre');
     pre.textContent = b.markdown;
-    main.innerHTML = '';
-    main.appendChild(pre);
+    content.innerHTML = '';
+    content.appendChild(pre);
+    // Pas de sous-nav en mode fallback
+    const subnav = document.getElementById('subnav');
+    if (subnav) subnav.style.display = 'none';
   }}
   history.replaceState(null, '', '#' + encodeURIComponent(id));
   renderList(id);
-  main.scrollTop = 0;
+  if (mainEl) mainEl.scrollTop = 0;
+}}
+
+// --- Sidebar mobile (hamburger + overlay) ---
+function openSidebarMobile() {{
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-overlay').classList.add('open');
+  const h = document.getElementById('hamburger');
+  if (h) h.setAttribute('aria-expanded', 'true');
+}}
+function closeSidebarMobile() {{
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+  const h = document.getElementById('hamburger');
+  if (h) h.setAttribute('aria-expanded', 'false');
 }}
 
 // Init : hash ou plus récent
 (function init() {{
+  // Bind hamburger + overlay
+  const hb = document.getElementById('hamburger');
+  if (hb) hb.addEventListener('click', () => {{
+    const isOpen = document.getElementById('sidebar').classList.contains('open');
+    if (isOpen) closeSidebarMobile(); else openSidebarMobile();
+  }});
+  const ov = document.getElementById('sidebar-overlay');
+  if (ov) ov.addEventListener('click', closeSidebarMobile);
+  document.addEventListener('keydown', (e) => {{
+    if (e.key === 'Escape') closeSidebarMobile();
+  }});
+
   if (BULLETINS.length === 0) {{
     document.getElementById('bulletin-content').innerHTML = '<p>Aucun bulletin disponible.</p>';
+    const subnav = document.getElementById('subnav');
+    if (subnav) subnav.style.display = 'none';
     return;
   }}
   const hash = decodeURIComponent((location.hash || '').replace(/^#/, ''));

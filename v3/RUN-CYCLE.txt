@@ -1,1 +1,1 @@
-Validation workflow restructuré (guard + redondance) — 2026-06-01 09:12 CEST
+Run midi MANUEL (le schedule de 12h n'a pas déclenché) — 2026-06-01 13:35 CEST

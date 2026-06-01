@@ -6,11 +6,13 @@ name: cycle-decision
 # quotas GNews/NewsAPI : 3 runs/j × 6 requêtes = 18/j, sous le free tier 100/j).
 #
 # Cron UTC (pas de DST auto) : 05h/10h/16h UTC = 07h/12h/18h Paris été (CEST) / 06h/11h/17h hiver (CET).
-# Minute décalée à :17 (hors heure pleine) : GitHub abandonne fréquemment les schedules postés
-# à :00 pile sous forte charge (cf. incident 2026-06-01 où le run de 7h n'a jamais déclenché).
+# REDONDANCE : 3 tentatives par créneau (:12, :27, :42) pour contrer l'abandon silencieux
+# des schedules GitHub sous charge (incident 2026-06-01 : le run de 7h posté à :00 n'a jamais
+# déclenché). Un garde-fou (step "Skip redundant") fait no-op les tentatives 2 et 3 si un
+# snapshot a déjà été produit dans les 2h → 1 seul run réel par créneau.
 on:
   schedule:
-    - cron: "17 5,10,16 * * *"
+    - cron: "12,27,42 5,10,16 * * *"
   workflow_dispatch: {}
   # Répétition manuelle sans bouton (mobile) : pousser v3/RUN-CYCLE.txt déclenche un cycle.
   push:
@@ -32,9 +34,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 50
+
+      - name: Guard — skip redundant intra-slot schedule attempts
+        id: guard
+        run: |
+          # Redondance cron (3 tentatives/créneau). On ne lance le pipeline que si AUCUN
+          # snapshot n'a été produit dans les 2 dernières heures (= même créneau déjà traité).
+          # Les déclenchements manuels (push RUN-CYCLE.txt / workflow_dispatch) passent toujours.
+          if [ "${GITHUB_EVENT_NAME}" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "Déclenchement manuel → run."; exit 0
+          fi
+          last=$(git log -1 --format=%ct --grep="decision snapshot" 2>/dev/null || echo 0)
+          now=$(date +%s)
+          if [ "${last:-0}" -gt 0 ] && [ $((now - last)) -lt 7200 ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Snapshot il y a $(((now-last)/60)) min → tentative redondante, SKIP."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Pas de snapshot récent → run."
+          fi
 
       - name: Setup Python
+        if: steps.guard.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -42,11 +64,13 @@ jobs:
           cache-dependency-path: v3/requirements.txt
 
       - name: Install dependencies
+        if: steps.guard.outputs.run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r v3/requirements.txt
 
       - name: 1. Ingest news (RSS + early-signal + GNews/NewsAPI + extraction DeepSeek)
+        if: steps.guard.outputs.run == 'true'
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
@@ -57,6 +81,7 @@ jobs:
         run: python v3/scripts/agent_news.py
 
       - name: 2. Bulletin (critères + scoring + briefing)
+        if: steps.guard.outputs.run == 'true'
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
@@ -69,12 +94,14 @@ jobs:
         run: python v3/scripts/run_bulletin.py
 
       - name: 3. Mesure perf (Journaliste — conclusions échues + prix d'émission)
+        if: steps.guard.outputs.run == 'true'
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           LOG_LEVEL: INFO
         run: python v3/scripts/run_journaliste.py
 
       - name: Commit and push snapshot
+        if: steps.guard.outputs.run == 'true'
         run: |
           git config user.name  "tradingapp-bot"
           git config user.email "tradingapp-bot@users.noreply.github.com"

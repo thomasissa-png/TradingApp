@@ -73,8 +73,17 @@ _REL_SET = set(RELIABILITIES)
 MATERIALITIES: Tuple[str, ...] = ("high", "medium", "low")
 _MAT_SET = set(MATERIALITIES)
 
+# Phase 2 — taxonomie persistance (axe News Trader, validé Thomas).
+# - structurel : driver durable (OPEC, Ormuz, récolte, embargo) → porte la tendance
+# - ponctuel   : choc court (frappe isolée, chiffre macro hebdo) → s'amortit
+# - deja_cote  : compte-rendu de ce qui s'est passé (« S&P a monté 9 semaines »)
+# - verbal     : déclaration, rumeur, « envisage », « pourrait »
+NATURES: Tuple[str, ...] = ("structurel", "ponctuel", "deja_cote", "verbal")
+_NAT_SET = set(NATURES)
+
 # Version du prompt — bumper à chaque évolution sémantique du schéma.
-PROMPT_VERSION = "v2.1"
+# v2.2 (Phase 2 news) : ajout du champ `nature` au schéma DeepSeek.
+PROMPT_VERSION = "v2.2"
 
 
 # ============================================================
@@ -101,6 +110,8 @@ class ExtractedEvent:
     news_zone: str = ""
     reliability: str = ""
     materiality: str = "low"
+    # Phase 2 — persistance / amortissement (axe News Trader)
+    nature: str = "ponctuel"  # fallback conservateur si absent / hors-énum
     # Méta
     error: str = ""
     tokens_in: int = 0
@@ -129,6 +140,7 @@ SCHEMA :
   "news_zone": "<US | EU | EU-FR | BR | CN | RU | UA | AU | Moyen-Orient | Global>",
   "reliability": "<confirmed | reported | rumor>",
   "materiality": "<high | medium | low>",
+  "nature": "<structurel | ponctuel | deja_cote | verbal>",
   "impacts": [
     { "asset": "<id de la liste fermée>",
       "direction": "<LONG | SHORT>",
@@ -138,6 +150,17 @@ SCHEMA :
 
 RÈGLES :
 1. AUCUNE INVENTION. Doute -> impacts:[], materiality:"low".
+9. nature : axe PERSISTANCE de l'événement (sert à distinguer une news qui
+   crée/confirme une tendance d'un compte-rendu déjà cuit) :
+   - "structurel" : driver durable (OPEC quota change, blocage d'Ormuz, embargo,
+     récolte saisonnière, sanctions, accord commercial). Mouvement qui TIENT à 1 mois.
+   - "ponctuel" : choc court et isolé (frappe unique, statistique macro hebdo,
+     incident industriel ponctuel). S'amortit en quelques jours.
+   - "deja_cote" : compte-rendu de ce qui s'est passé / récap performance
+     (« S&P 500 a monté 9 semaines d'affilée », « pire mois depuis 2020 »,
+     « récap hebdo des marchés »). L'info est DÉJÀ dans le prix → on l'écarte.
+   - "verbal" : déclaration, rumeur, « envisage », « pourrait », « selon des sources »,
+     officiel qui menace sans agir. Pas encore un fait → faible persistance.
 2. impacts = SEULEMENT des actifs de la liste fermée réellement et directionnellement
    impactés. Un event peut en toucher plusieurs (ex: escalade géopol -> GOLD LONG,
    BRENT LONG, VIX LONG, SP500 SHORT). Aucun actif clair OU impact incertain/neutre
@@ -161,7 +184,7 @@ Réponds avec UNIQUEMENT le JSON."""
 
 # Few-shots : 3 exemples calibrés pour ancrer le jugement.
 FEW_SHOTS: List[Tuple[str, str]] = [
-    # (a) Escalade géopol multi-actifs (haute matérialité, multi-impacts)
+    # (a) Escalade géopol multi-actifs (haute matérialité, multi-impacts) — structurel
     (
         "TITRE : Iran retaliates with airstrikes on US bases, Brent jumps 5%",
         json.dumps({
@@ -171,6 +194,7 @@ FEW_SHOTS: List[Tuple[str, str]] = [
             "news_zone": "Moyen-Orient",
             "reliability": "confirmed",
             "materiality": "high",
+            "nature": "structurel",
             "impacts": [
                 {"asset": "BRENT",  "direction": "LONG",  "confidence": "high"},
                 {"asset": "GOLD",   "direction": "LONG",  "confidence": "high"},
@@ -189,10 +213,11 @@ FEW_SHOTS: List[Tuple[str, str]] = [
             "news_zone": "EU",
             "reliability": "confirmed",
             "materiality": "low",
+            "nature": "ponctuel",
             "impacts": [],
         }, ensure_ascii=False),
     ),
-    # (c) Rumeur M&A -> reliability:rumor, materiality:medium, confidence:low
+    # (c) Rumeur M&A -> reliability:rumor, nature=verbal (déclaration/rumeur)
     (
         "TITRE : Sources say Microsoft in early talks to acquire AI startup Anthropic",
         json.dumps({
@@ -202,9 +227,24 @@ FEW_SHOTS: List[Tuple[str, str]] = [
             "news_zone": "US",
             "reliability": "rumor",
             "materiality": "medium",
+            "nature": "verbal",
             "impacts": [
                 {"asset": "NASDAQ", "direction": "LONG", "confidence": "low"},
             ],
+        }, ensure_ascii=False),
+    ),
+    # (d) Compte-rendu de marché → deja_cote (info déjà dans le prix)
+    (
+        "TITRE : S&P 500 logs ninth weekly gain in a row, longest streak since 2004",
+        json.dumps({
+            "category": "macro",
+            "subcat": "Equity recap",
+            "trigger": "Le S&P 500 enchaîne 9 semaines de hausse consécutives",
+            "news_zone": "US",
+            "reliability": "confirmed",
+            "materiality": "low",
+            "nature": "deja_cote",
+            "impacts": [],
         }, ensure_ascii=False),
     ),
 ]
@@ -467,6 +507,9 @@ class Extractor:
                 news_zone=str(data.get("news_zone") or "")[:30],
                 reliability=_norm_enum(data.get("reliability"), _REL_SET, default=""),
                 materiality=_norm_enum(data.get("materiality"), _MAT_SET, default="low"),
+                # Phase 2 — nature : fallback "ponctuel" (conservateur : ne déclenche
+                # ni l'amortissement deja_cote/verbal, ni le bonus structurel).
+                nature=_norm_enum(data.get("nature"), _NAT_SET, default="ponctuel"),
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
                 duration_ms=duration_ms,

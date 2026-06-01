@@ -289,9 +289,9 @@ def test_extract_normalizes_bad_enums(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_event_log_line_extracted_v2():
-    """La ligne markdown produite par news_collector doit avoir 14 colonnes
-    (colonne `latence` conservée vide pour ne pas casser les parsers) et
-    encoder impacts en compact avec buckets confidence."""
+    """La ligne markdown produite par news_collector doit avoir 19 colonnes
+    (v2.2 Phase 2 : +event_id, +event_date, +nature, +dedup_status, +stale)
+    et encoder impacts en compact avec buckets confidence."""
     item = nc.NewsItem(
         title="Iran retaliates",
         url="https://example.com",
@@ -310,22 +310,26 @@ def test_event_log_line_extracted_v2():
         news_zone="Moyen-Orient",
         reliability="confirmed",
         materiality="high",
+        nature="structurel",
     )
     line = item.as_event_log_line_extracted(e)
-    # 14 colonnes (pipes externes inclus = 15 pipes) — INCHANGÉ
-    assert line.count("|") == 15
+    # 19 colonnes (pipes externes inclus = 20 pipes) — v2.2 Phase 2
+    assert line.count("|") == 20
     assert "BRENT:LONG:high;GOLD:LONG:medium" in line
     assert "geopolitical" in line
     assert "confirmed" in line
     assert "Iran-Moyen-Orient" in line  # subcat dans L2
+    assert "structurel" in line  # nature présente
     # Colonne latence présente mais vide (pos 6 dans la ligne)
     parts = [p.strip() for p in line.strip("|").split("|")]
-    assert len(parts) == 14
+    assert len(parts) == 19
     assert parts[5] == ""  # latence vide
+    # event_id (pos 14) : 12 hex
+    assert len(parts[14]) == 12
 
 
 def test_event_log_line_raw_v2():
-    """La ligne brute (sans extraction) doit avoir 14 colonnes vides."""
+    """La ligne brute (sans extraction) doit avoir 19 colonnes v2.2."""
     item = nc.NewsItem(
         title="Some news",
         url="x",
@@ -333,7 +337,12 @@ def test_event_log_line_raw_v2():
         published=datetime(2026, 5, 29, tzinfo=timezone.utc),
     )
     line = item.as_event_log_line_raw()
-    assert line.count("|") == 15
+    # 19 colonnes (20 pipes externes inclus)
+    assert line.count("|") == 20
+    parts = [p.strip() for p in line.strip("|").split("|")]
+    assert len(parts) == 19
+    # event_id calculé même en mode brut (sur trigger seul)
+    assert len(parts[14]) == 12
 
 
 # ---------------------------------------------------------------------------

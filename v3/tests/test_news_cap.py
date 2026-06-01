@@ -49,12 +49,19 @@ def _fiche(quant_signe: int = 1, news_signe: int = 1) -> dict:
 
 
 def _valeurs(quant_val: float, news_val: float, mat: str = "medium",
-             rel: str = "confirmed") -> dict:
+             rel: str = "confirmed", nature: str = "ponctuel",
+             freshness_days: float = 1.0) -> dict:
+    """Helper Phase 2 : `nature` et `freshness_days` ajoutés pour permettre l'override
+    raffiné. Défaut : ponctuel (coef 24h=1.0, neutre pour les tests legacy) + frais (1j).
+    Les tests qui veulent l'override passent explicitement nature="structurel"."""
     return {
         "quant": {"valeur": quant_val, "source_track": "twelvedata"},
         "news": {
             "valeur": news_val, "source_track": "ia_synthese",
             "materiality": mat, "reliability": rel,
+            "nature": nature,
+            "freshness_days": freshness_days,
+            "event_id": "TEST", "event_date_source": "rss",
         },
     }
 
@@ -91,18 +98,20 @@ def test_cap_news_long_vs_quant_short_no_flip():
 
 
 def test_cap_override_high_confirmed_flips():
-    """Override : news high+confirmed garde son poids plein → le quant peut flipper."""
+    """Override Phase 2 : news high+confirmed+structurel+frais ≤72h → pas de cap.
+    Le quant peut flipper."""
     fiche = _fiche()
-    vals = _valeurs(quant_val=1.0, news_val=-1.0, mat="high", rel="confirmed")
+    vals = _valeurs(quant_val=1.0, news_val=-1.0, mat="high", rel="confirmed",
+                    nature="structurel", freshness_days=1.0)
     res = sa.score_actif("test", fiche, vals)
-    # Quant +10, news -10, override actif → pas de cap → score = 0 → tie-break.
-    # Avec un quant et une news qui se compensent strictement, le tie-break
-    # reprend la veille (None ici) ou LONG par défaut. On vérifie surtout que
-    # le cap n'a PAS été appliqué.
     info = res.news_cap_info["24h"]
     assert info["override_high_confirmed"] is True
     assert info["cap_applied"] is False
-    assert res.scores["24h"] == pytest.approx(0.0)
+    # structurel × pertinence 1.0 × 24h coef 0.8 → news_contrib = -1*10*0.8 = -8
+    # quant +10 + news -8 → score = +2 (au lieu de 0 sans coef_nature).
+    # Le but de ce test : vérifier que le CAP n'est pas appliqué.
+    # Score exact dépend du coef_nature 24h = 0.8 pour structurel.
+    assert res.scores["24h"] == pytest.approx(2.0)
 
 
 def test_cap_override_only_medium_confirmed_does_not_apply():
@@ -115,12 +124,39 @@ def test_cap_override_only_medium_confirmed_does_not_apply():
 
 
 def test_cap_override_high_unconfirmed_does_not_apply():
-    """Override exige high ET confirmed. high+rumored ⇒ cap appliqué."""
+    """Override exige reliability ≠ rumor (spec Phase 2). high+rumor ⇒ cap appliqué."""
     fiche = _fiche()
-    vals = _valeurs(quant_val=1.0, news_val=-1.0, mat="high", rel="rumored")
+    vals = _valeurs(quant_val=1.0, news_val=-1.0, mat="high", rel="rumor")
     res = sa.score_actif("test", fiche, vals)
     assert res.news_cap_info["24h"]["override_high_confirmed"] is False
     assert res.news_cap_info["24h"]["cap_applied"] is True
+
+
+def test_cap_override_blocked_by_nature_verbal_phase2():
+    """Phase 2 : même high+confirmed, si nature=verbal → override BLOQUÉ.
+    Note : verbal a déjà coef 24h=0.3 → contribution news fortement amortie
+    en amont. L'override n'est pas nécessaire pour bloquer le flip — le coef
+    suffit. Le test vérifie le drapeau override (jamais autorisé)."""
+    fiche = _fiche()
+    vals = _valeurs(quant_val=1.0, news_val=-1.0, mat="high", rel="confirmed",
+                    nature="verbal")
+    res = sa.score_actif("test", fiche, vals)
+    assert res.news_cap_info["24h"]["override_high_confirmed"] is False
+
+
+def test_cap_override_blocked_by_staleness_phase2():
+    """Phase 2 : même high+confirmed+structurel, si event > 72h → override BLOQUÉ.
+    On vérifie le drapeau override (le cap peut ne pas s'appliquer si les
+    contributions sont équilibrées ; ce qui compte est qu'override=False)."""
+    fiche = _fiche()
+    # 5j = 120h > 72h
+    vals = _valeurs(quant_val=1.0, news_val=-1.0, mat="high", rel="confirmed",
+                    nature="structurel", freshness_days=5.0)
+    res = sa.score_actif("test", fiche, vals)
+    assert res.news_cap_info["24h"]["override_high_confirmed"] is False
+    # Cap appliqué car structurel à 24h coef=0.8 → news=-8, quant=+10. abs(news)=8
+    # est <= quant_alpha = 8. Égalité limite : cap_applied dépend de strict ">".
+    # Ce qu'on garantit : pas d'override (vieille news → pas de flip autorisé).
 
 
 def test_cap_no_op_when_signs_aligned():

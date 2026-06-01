@@ -37,6 +37,7 @@ Interface stable (consommée par criteres_calculator.py) :
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import unicodedata
@@ -45,6 +46,15 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import yaml
+
+# rapidfuzz : dédup floue par Levenshtein normalisée (Phase 2).
+# Import optionnel : si absent → garde-fou auto bascule SHA exact seul (mode dégradé).
+try:
+    from rapidfuzz import fuzz as _rf_fuzz  # type: ignore
+    _RAPIDFUZZ_OK = True
+except ImportError:  # pragma: no cover — fallback dégradé
+    _rf_fuzz = None
+    _RAPIDFUZZ_OK = False
 
 logger = logging.getLogger("triggers_classifier")
 
@@ -135,6 +145,275 @@ IA_ASSET_TO_ACTIF: Dict[str, str] = {
 
 # Matérialité IA → poids (pour départager LONG/SHORT de même date)
 _MAT_WEIGHT = {"high": 3, "medium": 2, "low": 1, "": 1}
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — event_id, normalisation, dédup, fraîcheur (premier-vu fait foi)
+# ---------------------------------------------------------------------------
+
+# STALE = 30 jours sur canonical_event_date (archive 2025 re-publiée → écartée).
+STALE_DAYS = 30
+# Gate override = 72h : la news ne peut renverser le quant que si fraîche.
+GATE_OVERRIDE_MAX_HOURS = 72
+# Fuzz threshold : Levenshtein normalisée ≤ 0.15 → match (≥85 score rapidfuzz)
+FUZZ_MIN_SCORE = 85
+# Fenêtre dédup floue : 48h autour de l'actif
+FUZZ_WINDOW_HOURS = 48
+# Garde-fou anti-sur-dédup : si >30% droppés/actif/24h → mode dégradé (SHA exact seul)
+DEDUP_DROP_RATIO_GUARD = 0.30
+
+# Coefficients nature × horizon (modulent la pertinence, pas un decay global)
+# Source : spec-phase2-news-UNIFIEE.md §2 — validé Thomas.
+COEF_NATURE: Dict[str, Dict[str, float]] = {
+    "structurel": {"24h": 0.8, "7j": 1.0, "1m": 1.0},
+    "ponctuel":   {"24h": 1.0, "7j": 0.5, "1m": 0.15},
+    "deja_cote":  {"24h": 0.0, "7j": 0.0, "1m": 0.0},
+    "verbal":     {"24h": 0.3, "7j": 0.2, "1m": 0.1},
+}
+# Natures écartées AVANT scoring (filtre amont, voir _candidates_for).
+NATURES_FILTERED_OUT: Set[str] = {"deja_cote"}
+
+
+def _normalise_trigger(s: str) -> str:
+    """Normalisation pour event_id : casefold + sans accents + sans ponctuation
+    + collapse espaces, tronqué 120 chars. Reproductible quel que soit le titre source.
+    """
+    if not s:
+        return ""
+    s2 = _strip_accents(str(s)).casefold()
+    # Remplace toute ponctuation/non-alphanum par espace
+    s2 = re.sub(r"[^a-z0-9\s]", " ", s2)
+    s2 = re.sub(r"\s+", " ", s2).strip()
+    return s2[:120]
+
+
+def compute_event_id(trigger: str, actif: str) -> str:
+    """SHA-256 tronqué 12 hex de `normalise(trigger)+"|"+actif`.
+
+    `actif` peut être vide (mode brut, pas d'extraction) — l'id reste stable
+    sur le couple (trigger, "").
+    """
+    payload = _normalise_trigger(trigger) + "|" + (actif or "").upper()
+    h = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return h[:12]
+
+
+def _parse_event_date_safe(s: str) -> Optional[datetime]:
+    """Parse event_date avec garde-fous : rejette futures (>now+1j) et <2020.
+
+    Retourne None si illisible / incohérent → l'appelant doit fallback à la date
+    d'ingestion + marquer event_date_source="fallback".
+    """
+    dt = _parse_date(s)
+    if dt is None:
+        return None
+    now_utc = datetime.now(timezone.utc)
+    # Rejette futures (tolérance 1 jour pour timezone)
+    if dt > now_utc + timedelta(days=1):
+        return None
+    # Rejette <2020 (archive incohérente)
+    if dt < datetime(2020, 1, 1, tzinfo=timezone.utc):
+        return None
+    return dt
+
+
+def _fuzzy_match_event_id(
+    target_trigger_norm: str,
+    target_actif: str,
+    target_dt: datetime,
+    candidates: List[dict],
+) -> Optional[str]:
+    """Cherche un event_id existant qui matche flou (Levenshtein ≤0.15) le
+    trigger normalisé du target, sur la fenêtre 48h/actif autour de target_dt.
+
+    Retourne le event_id du match le plus ancien si trouvé, sinon None.
+    Si rapidfuzz indisponible → None (mode dégradé : SHA exact seul).
+
+    Optimisation : chaque event candidat est censé porter `_trigger_norm`
+    (calculé une seule fois en amont par _canonicalize_events). Fallback à
+    `_normalise_trigger(c.trigger)` si absent.
+    """
+    if not _RAPIDFUZZ_OK or not target_trigger_norm:
+        return None
+    window_start = target_dt - timedelta(hours=FUZZ_WINDOW_HOURS)
+    window_end = target_dt + timedelta(hours=FUZZ_WINDOW_HOURS)
+    best: Optional[Tuple[datetime, str]] = None  # (dt, event_id) le plus ancien
+    target_actif_u = (target_actif or "").upper()
+    for c in candidates:
+        c_id = c.get("event_id") or ""
+        if not c_id:
+            continue
+        c_dt = c.get("_dt")
+        if not isinstance(c_dt, datetime):
+            continue
+        if c_dt < window_start or c_dt > window_end:
+            continue
+        c_actif = (c.get("cours") or "").upper()
+        # actif vide d'un côté ou de l'autre → on tolère (events bruts)
+        if c_actif and target_actif_u and c_actif != target_actif_u:
+            continue
+        # Utilise le trigger_norm pré-calculé si dispo (perf x40 sur gros logs)
+        c_norm = c.get("_trigger_norm")
+        if c_norm is None:
+            c_norm = _normalise_trigger(c.get("trigger", ""))
+            c["_trigger_norm"] = c_norm
+        if not c_norm:
+            continue
+        score = _rf_fuzz.ratio(target_trigger_norm, c_norm)
+        if score >= FUZZ_MIN_SCORE:
+            if best is None or c_dt < best[0]:
+                best = (c_dt, c_id)
+    return best[1] if best else None
+
+
+def _canonicalize_events(events: List[dict]) -> Dict[str, Any]:
+    """PREMIER-VU FAIT FOI (règle Thomas) : pour chaque event_id, calcule
+    canonical_event_date = MIN(event_date) sur TOUT l'historique events-log,
+    et marque les occurrences ultérieures dedup_status="repost".
+
+    Étapes :
+    1. Match exact event_id sur tout l'historique → groupes par id.
+    2. Match flou (Levenshtein ≤0.15, fenêtre 48h/actif) → fusionne dans le
+       groupe du match le plus ancien (mode dégradé si rapidfuzz absent).
+    3. Pour chaque groupe : canonical_event_date = min des event_date.
+       Toutes les occurrences autres que la plus ancienne → dedup_status="repost".
+    4. Garde-fou : si >30% droppés/actif/24h → bascule en mode dégradé
+       (rétablit le SHA exact seul, pas de fuzzy).
+
+    Mutation in-place : enrichit chaque event avec
+    `_canonical_dt`, `dedup_status` (kept|repost), `stale` (bool).
+
+    Retourne un dict de stats {dropped_total, dropped_by_actif_24h,
+    degraded_mode, fuzzy_collisions}.
+    """
+    stats: Dict[str, Any] = {
+        "dropped_total": 0,
+        "fuzzy_collisions": 0,
+        "degraded_mode": not _RAPIDFUZZ_OK,
+    }
+    if not events:
+        return stats
+
+    # Tri ascendant par date pour pouvoir résoudre canonical en ordre chronologique.
+    events_sorted = sorted(
+        events,
+        key=lambda e: e.get("_dt") or datetime.min.replace(tzinfo=timezone.utc),
+    )
+
+    # PASSE 1 : pour chaque event sans event_id (ancienne ligne legacy), on
+    # calcule un id à la volée à partir de (trigger, cours). C'est nécessaire pour
+    # que la canonisation puisse opérer même sur des lignes pré-Phase 2.
+    # On précalcule aussi _trigger_norm (utilisé par le fuzzy match → perf x40
+    # car on évite de re-normaliser le même trigger 100× dans la fenêtre).
+    for ev in events_sorted:
+        ev["_trigger_norm"] = _normalise_trigger(ev.get("trigger", ""))
+        if not ev.get("event_id"):
+            ev["event_id"] = compute_event_id(ev.get("trigger", ""), ev.get("cours", ""))
+
+    # PASSE 2 : remap fuzzy → on fait pointer l'event sur un id plus ancien
+    # s'il y a match flou dans la fenêtre 48h/actif.
+    # Optimisation : on ne fuzzy-match QUE les events à <48h des autres ; on
+    # maintient une fenêtre glissante (deque) des 48 dernières heures vues.
+    by_id_chrono: Dict[str, List[dict]] = {}
+    by_actif_24h: Dict[str, List[bool]] = {}  # actif -> liste flags (True=dropped)
+    if _RAPIDFUZZ_OK:
+        from collections import deque
+        window: "deque[dict]" = deque()
+        window_delta = timedelta(hours=FUZZ_WINDOW_HOURS)
+        for ev in events_sorted:
+            target_norm = ev.get("_trigger_norm") or ""
+            target_dt = ev.get("_dt")
+            target_actif = ev.get("cours", "")
+            if isinstance(target_dt, datetime) and target_norm:
+                # Élague la fenêtre : retire les events trop vieux pour matcher
+                while window and isinstance(window[0].get("_dt"), datetime) \
+                        and (target_dt - window[0]["_dt"]) > window_delta:
+                    window.popleft()
+                matched = _fuzzy_match_event_id(
+                    target_norm, target_actif, target_dt, list(window),
+                )
+                if matched and matched != ev["event_id"]:
+                    ev["event_id"] = matched
+                    stats["fuzzy_collisions"] += 1
+            window.append(ev)
+
+    # PASSE 3 : grouper par event_id (post-remap), trouver canonical_event_date,
+    # marquer reposts.
+    for ev in events_sorted:
+        by_id_chrono.setdefault(ev["event_id"], []).append(ev)
+
+    drops_per_actif_24h: Dict[str, int] = {}
+    totals_per_actif_24h: Dict[str, int] = {}
+    now_utc = datetime.now(timezone.utc)
+    for ev in events_sorted:
+        actif = (ev.get("cours") or "").upper() or "_NOASSET"
+        if (ev.get("_dt") or now_utc) >= now_utc - timedelta(hours=24):
+            totals_per_actif_24h[actif] = totals_per_actif_24h.get(actif, 0) + 1
+
+    for eid, group in by_id_chrono.items():
+        # canonical = la plus petite date du groupe
+        canonical_dt = min(
+            (g.get("_dt") for g in group if isinstance(g.get("_dt"), datetime)),
+            default=None,
+        )
+        # Première occurrence chronologique
+        first_ev = None
+        for g in sorted(
+            group, key=lambda e: e.get("_dt") or datetime.max.replace(tzinfo=timezone.utc),
+        ):
+            if isinstance(g.get("_dt"), datetime):
+                first_ev = g
+                break
+        for g in group:
+            g["_canonical_dt"] = canonical_dt
+            if canonical_dt is not None:
+                age_days = (now_utc - canonical_dt).total_seconds() / 86400.0
+                g["stale"] = age_days > STALE_DAYS
+            else:
+                g["stale"] = False
+            # Statut dédup : 1re occurrence = kept, autres = repost
+            if first_ev is not None and g is first_ev:
+                g["dedup_status"] = "kept"
+            elif len(group) == 1:
+                g["dedup_status"] = "kept"
+            else:
+                g["dedup_status"] = "repost"
+                stats["dropped_total"] += 1
+                actif = (g.get("cours") or "").upper() or "_NOASSET"
+                if (g.get("_dt") or now_utc) >= now_utc - timedelta(hours=24):
+                    drops_per_actif_24h[actif] = drops_per_actif_24h.get(actif, 0) + 1
+
+    # Garde-fou : si un actif a >30% droppés sur 24h → ré-applique le mode
+    # dégradé sur cet actif (annule la fusion fuzzy, garde SHA exact).
+    # En pratique : si on est en sur-dédup, on désactive fuzzy globalement pour
+    # ce run (les futures ingestions auto-corrigeront).
+    degraded_actifs: List[str] = []
+    for actif, drops in drops_per_actif_24h.items():
+        total = totals_per_actif_24h.get(actif, 0)
+        if total > 0 and drops / total > DEDUP_DROP_RATIO_GUARD:
+            degraded_actifs.append(actif)
+    if degraded_actifs:
+        stats["degraded_actifs"] = degraded_actifs
+        logger.warning(
+            "Phase2 dédup : garde-fou actif (%s) — >30%% droppés/24h → mode dégradé recommandé",
+            ", ".join(degraded_actifs),
+        )
+
+    stats["dropped_by_actif_24h"] = drops_per_actif_24h
+    return stats
+
+
+def is_fresh_for_override(ev: dict, now: Optional[datetime] = None) -> bool:
+    """Frais pour gate override : canonical_event_date ≤ 72h.
+
+    Utilisé par le scoring pour autoriser un override de cap anti-inversion.
+    """
+    now = now or datetime.now(timezone.utc)
+    cdt = ev.get("_canonical_dt") or ev.get("_dt")
+    if not isinstance(cdt, datetime):
+        return False
+    age_h = (now - cdt).total_seconds() / 3600.0
+    return age_h <= GATE_OVERRIDE_MAX_HOURS
 
 
 # ---------------------------------------------------------------------------
@@ -284,11 +563,14 @@ def _parse_date(s: str) -> Optional[datetime]:
 def parse_events_log(path: Path = EVENTS_LOG) -> List[dict]:
     """Parse le tableau markdown. Retourne une liste de dicts triée par date desc.
 
-    Rétro-compat : supporte 2 formats de header
+    Rétro-compat : supporte 3 formats de header
     - Legacy (11 cols) : date|L1|L2|trigger|cours|latence|R|source|news_zone|category|pattern_id
     - v2 directionnel (14 cols) : + impacts|materiality|reliability
+    - v2.2 Phase 2 (19 cols) : + event_id|event_date|nature|dedup_status|stale
 
     Une ligne sans colonnes v2 -> impacts décodés=[], materiality="", reliability="".
+    Une ligne sans colonnes Phase 2 -> event_id calculé à la volée par
+    `_canonicalize_events` (rétro-compat append-only).
     """
     if not path.exists():
         logger.warning("events-log absent (%s) — 0 events", path)
@@ -314,11 +596,14 @@ def parse_events_log(path: Path = EVENTS_LOG) -> List[dict]:
 
     header = rows[0]
     first_is_date = _parse_date(header[0]) is not None
-    # Header par défaut v2 (14 col). Si la ligne a moins de colonnes, on tronque.
+    # Header par défaut v2.2 Phase 2 (19 col). Si la ligne a moins de colonnes,
+    # on tronque (les colonnes manquantes restent à "").
     DEFAULT_HEADERS = [
         "date", "l1", "l2", "trigger", "cours", "latence", "r",
         "source", "news_zone", "category", "pattern_id",
         "impacts", "materiality", "reliability",
+        # Phase 2 — 5 nouvelles colonnes (lecture par NOM, pas position)
+        "event_id", "event_date", "nature", "dedup_status", "stale",
     ]
     if first_is_date:
         headers_l = DEFAULT_HEADERS
@@ -327,14 +612,15 @@ def parse_events_log(path: Path = EVENTS_LOG) -> List[dict]:
         headers_l = [h.lower().strip() for h in header]
         data_rows = rows[1:]
 
-    # FIX bug v2.2 : un fichier peut avoir un header legacy 11 cols puis des
-    # lignes data v2 14 cols (append-only, schéma upgradé en cours de vie).
-    # Si AU MOINS une ligne data a >= 12 colonnes ET les headers ne couvrent
-    # pas `impacts`, on bascule sur DEFAULT_HEADERS (les colonnes 0..10 sont
-    # identiques entre les 2 schémas). Sans ça, impacts/materiality/reliability
-    # sont silencieusement ignorés → tout le routage IA-first est désactivé.
+    # FIX bug v2.2 : un fichier peut avoir un header legacy puis des lignes data
+    # plus riches (append-only, schéma upgradé en cours de vie).
+    # - Si >= 12 colonnes ET pas `impacts` dans headers → upgrade v2 directionnel.
+    # - Si >= 15 colonnes ET pas `event_id` dans headers → upgrade Phase 2.
     if "impacts" not in headers_l:
         if any(len(r) >= 12 for r in data_rows):
+            headers_l = DEFAULT_HEADERS
+    if "event_id" not in headers_l:
+        if any(len(r) >= 15 for r in data_rows):
             headers_l = DEFAULT_HEADERS
 
     events: List[dict] = []
@@ -352,8 +638,26 @@ def parse_events_log(path: Path = EVENTS_LOG) -> List[dict]:
         ev["_dt"] = dt
         # Décode `impacts` compacts en liste de dicts (rétro-compat : vide si absent)
         ev["_impacts"] = _decode_impacts_str(ev.get("impacts", ""))
+        # Phase 2 — event_date du log si présent, sinon fallback = _dt (date d'ingestion)
+        ev_date_raw = ev.get("event_date", "")
+        ev_date_parsed = _parse_event_date_safe(ev_date_raw) if ev_date_raw else None
+        if ev_date_parsed is not None:
+            ev["_event_dt"] = ev_date_parsed
+            ev["event_date_source"] = "rss"
+        else:
+            ev["_event_dt"] = dt
+            ev["event_date_source"] = "fallback"
+        # Nature : fallback "ponctuel" si absente/inconnue (parsing défensif)
+        raw_nature = (ev.get("nature") or "").strip().lower()
+        if raw_nature not in COEF_NATURE:
+            raw_nature = "ponctuel"
+        ev["nature"] = raw_nature
         events.append(ev)
     events.sort(key=lambda e: e["_dt"], reverse=True)
+
+    # Phase 2 — PREMIER-VU FAIT FOI : canonisation event_id + dédup + stale.
+    # Cette passe mute chaque event in-place avec _canonical_dt, dedup_status, stale.
+    _canonicalize_events(events)
     return events
 
 
@@ -515,6 +819,17 @@ def _candidates_for(events: List[dict], actif_key: str, cle: str) -> List[dict]:
     strict = bool(scope.get("strict_actif", False))
     out: List[dict] = []
     for ev in events:
+        # Phase 2 — filtres amont (AVANT cutoff lookback) :
+        # 1. `nature` ∈ filtered_out (deja_cote) → écarté du scoring
+        if ev.get("nature") in NATURES_FILTERED_OUT:
+            continue
+        # 2. stale=True (canonical_event_date > 30j) → écarté (archive re-publiée)
+        if ev.get("stale"):
+            continue
+        # 3. repost (vu une 1re fois → déjà compté) → écarté du scoring courant
+        #    mais conservé dans events-log pour traçabilité.
+        if ev.get("dedup_status") == "repost":
+            continue
         # Filtre catégorie en premier (peu coûteux, s'applique aussi à l'IA)
         if not _event_category_ok(ev, scope):
             continue
@@ -726,6 +1041,7 @@ def _resolve_triplet_impl(
             # zéro invention : on documente l'absence plutôt que de mentir).
             cutoff_synth = now - timedelta(days=lookback_days)
             best_rel: str = ""
+            best_ev: Optional[dict] = None
             best_key: Tuple[int, datetime] = (-1, datetime.min.replace(tzinfo=timezone.utc))
             for ev in _candidates_for(events, actif_key, cle):
                 dt = ev.get("_dt")
@@ -741,16 +1057,29 @@ def _resolve_triplet_impl(
                 if key > best_key:
                     best_key = key
                     best_rel = (ev.get("reliability") or "").strip().lower()
+                    best_ev = ev
             logger.info(
                 "synthese[%s/%s] -> %s (conviction=%s, reliability=%s) : %s",
                 actif_key, cle, direction, conviction, best_rel or "<none>", rationale[:160],
             )
-            return val_signed, {
+            # Phase 2 meta — dérivés du best_ev (event source de la synthèse)
+            synth_meta: Dict[str, str] = {
                 "materiality": conviction,  # propage le bucket pour valeur_pondérée
                 "reliability": best_rel,
                 "source_track": "ia_synthese",
                 "synthese_rationale": rationale,
             }
+            if best_ev is not None:
+                cdt = best_ev.get("_canonical_dt") or best_ev.get("_dt")
+                freshness_days = (now - cdt).total_seconds() / 86400.0 if isinstance(cdt, datetime) else 0.0
+                synth_meta.update({
+                    "nature": best_ev.get("nature", "ponctuel"),
+                    "event_id": best_ev.get("event_id", ""),
+                    "event_date": cdt.isoformat() if isinstance(cdt, datetime) else "",
+                    "event_date_source": best_ev.get("event_date_source", ""),
+                    "freshness_days": f"{freshness_days:.2f}",
+                })
+            return val_signed, synth_meta
         # Conviction faible OU direction NEUTRAL → niveau 2 : critère news = 0.
         # Le prix tranchera via les critères numériques de la cellule.
         logger.info(
@@ -768,9 +1097,10 @@ def _resolve_triplet_impl(
     candidates = _candidates_for(events, actif_key, cle)
 
     # -------- 1) IA-first : un event avec direction IA LONG/SHORT --------
-    # Tuple : (dt, materiality_weight, materiality_raw, reliability_raw)
-    ia_long: Optional[Tuple[datetime, int, str, str]] = None
-    ia_short: Optional[Tuple[datetime, int, str, str]] = None
+    # Tuple : (dt, materiality_weight, materiality_raw, reliability_raw, ev_ref)
+    # ev_ref permet de remonter nature, _canonical_dt, event_date_source au scoring.
+    ia_long: Optional[Tuple[datetime, int, str, str, dict]] = None
+    ia_short: Optional[Tuple[datetime, int, str, str, dict]] = None
     ia_seen_any = False
     # On suit aussi les events où l'IA s'est "exprimée pour cet actif" mais en
     # direction non-tradable (NEUTRAL legacy) : ils ne déclenchent rien et
@@ -792,14 +1122,27 @@ def _resolve_triplet_impl(
         weight = _MAT_WEIGHT.get(mat, 1)
         if direction == "LONG":
             if ia_long is None or (weight, dt) > (ia_long[1], ia_long[0]):
-                ia_long = (dt, weight, mat, rel)
+                ia_long = (dt, weight, mat, rel, ev)
         elif direction == "SHORT":
             if ia_short is None or (weight, dt) > (ia_short[1], ia_short[0]):
-                ia_short = (dt, weight, mat, rel)
+                ia_short = (dt, weight, mat, rel, ev)
     if ia_seen_any:
         # Au moins un event IA tradable cible cet actif → on tranche en IA-only.
-        def _meta_from(t: Tuple[datetime, int, str, str], track: str = "ia") -> Dict[str, str]:
-            return {"materiality": t[2], "reliability": t[3], "source_track": track}
+        def _meta_from(t: Tuple[datetime, int, str, str, dict], track: str = "ia") -> Dict[str, str]:
+            ev_ref = t[4]
+            cdt = ev_ref.get("_canonical_dt") or ev_ref.get("_dt") or t[0]
+            freshness_days = (now - cdt).total_seconds() / 86400.0 if isinstance(cdt, datetime) else 0.0
+            return {
+                "materiality": t[2],
+                "reliability": t[3],
+                "source_track": track,
+                # --- Phase 2 metadata ---
+                "nature": ev_ref.get("nature", "ponctuel"),
+                "event_id": ev_ref.get("event_id", ""),
+                "event_date": cdt.isoformat() if isinstance(cdt, datetime) else "",
+                "event_date_source": ev_ref.get("event_date_source", ""),
+                "freshness_days": f"{freshness_days:.2f}",
+            }
         if ia_long and not ia_short:
             return 1, _meta_from(ia_long)
         if ia_short and not ia_long:
@@ -844,9 +1187,9 @@ def _resolve_triplet_impl(
     # -------- 2) Fallback keyword (IA n'a rien marqué d'exploitable) -----
     if not long_keywords and not short_keywords:
         return 0, {}
-    # Tuple : (dt, materiality, reliability)
-    last_long: Optional[Tuple[datetime, str, str]] = None
-    last_short: Optional[Tuple[datetime, str, str]] = None
+    # Tuple : (dt, materiality, reliability, ev_ref)
+    last_long: Optional[Tuple[datetime, str, str, dict]] = None
+    last_short: Optional[Tuple[datetime, str, str, dict]] = None
     for ev in candidates:
         dt = ev.get("_dt")
         if not isinstance(dt, datetime):
@@ -858,20 +1201,36 @@ def _resolve_triplet_impl(
         rel = (ev.get("reliability") or "").strip().lower()
         if _any_keyword_matches(text, long_keywords):
             if last_long is None or dt > last_long[0]:
-                last_long = (dt, mat, rel)
+                last_long = (dt, mat, rel, ev)
         if _any_keyword_matches(text, short_keywords):
             if last_short is None or dt > last_short[0]:
-                last_short = (dt, mat, rel)
+                last_short = (dt, mat, rel, ev)
+
+    def _kw_meta(t: Tuple[datetime, str, str, dict]) -> Dict[str, str]:
+        ev_ref = t[3]
+        cdt = ev_ref.get("_canonical_dt") or ev_ref.get("_dt") or t[0]
+        freshness_days = (now - cdt).total_seconds() / 86400.0 if isinstance(cdt, datetime) else 0.0
+        return {
+            "materiality": t[1],
+            "reliability": t[2],
+            "source_track": "keyword",
+            "nature": ev_ref.get("nature", "ponctuel"),
+            "event_id": ev_ref.get("event_id", ""),
+            "event_date": cdt.isoformat() if isinstance(cdt, datetime) else "",
+            "event_date_source": ev_ref.get("event_date_source", ""),
+            "freshness_days": f"{freshness_days:.2f}",
+        }
+
     if last_long is None and last_short is None:
         return 0, {}
     if last_long is not None and last_short is None:
-        return 1, {"materiality": last_long[1], "reliability": last_long[2], "source_track": "keyword"}
+        return 1, _kw_meta(last_long)
     if last_short is not None and last_long is None:
-        return -1, {"materiality": last_short[1], "reliability": last_short[2], "source_track": "keyword"}
+        return -1, _kw_meta(last_short)
     # Les deux matchent
     if last_long[0] >= last_short[0]:  # type: ignore[index]
-        return 1, {"materiality": last_long[1], "reliability": last_long[2], "source_track": "keyword"}
-    return -1, {"materiality": last_short[1], "reliability": last_short[2], "source_track": "keyword"}
+        return 1, _kw_meta(last_long)  # type: ignore[arg-type]
+    return -1, _kw_meta(last_short)  # type: ignore[arg-type]
 
 
 def _criterion_has_ia_route(actif_key: str, cle: str) -> bool:
@@ -1060,6 +1419,11 @@ def classify_all_with_meta(
                 entry["source_track"] = meta.get("source_track", "none")
                 if "synthese_rationale" in meta:
                     entry["synthese_rationale"] = meta["synthese_rationale"]
+                # --- Phase 2 metadata (propagation au scoring) ---------------
+                for k in ("nature", "event_id", "event_date",
+                          "event_date_source", "freshness_days"):
+                    if k in meta:
+                        entry[k] = meta[k]
                 actif_out[emit_cle] = entry
             elif t == "calendrier":
                 val = _resolve_calendrier(cle, today_date)

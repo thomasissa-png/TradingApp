@@ -47,37 +47,67 @@ class NewsItem:
     summary: str = ""
 
     def as_event_log_line_raw(self) -> str:
-        """Ligne markdown brute (sans extraction) — schéma v2 directionnel.
+        """Ligne markdown brute (sans extraction) — schéma v2.2 directionnel.
 
-        Colonnes (14) :
+        Colonnes (19) :
         date | L1 | L2 | trigger | cours | latence | R | source | news_zone |
-        category | pattern_id | impacts | materiality | reliability
+        category | pattern_id | impacts | materiality | reliability |
+        event_id | event_date | nature | dedup_status | stale
         """
+        # Lazy import (évite cycle si module utilisé en pure-data tests)
+        from triggers_classifier import compute_event_id  # noqa
         date = self.published.strftime("%Y-%m-%d")
         safe_title = self.title.replace("|", "/").strip()[:250]
-        return (
-            f"| {date} |  |  | {safe_title} |  |  | 1 | "
-            f"{self.source} |  |  |  |  |  |  |"
-        )
+        # En mode brut on ne connaît pas encore d'actif → event_id sur trigger seul.
+        event_id = compute_event_id(safe_title, "")
+        # event_date = pubDate RSS (déjà strftime), source=rss si self.published existe
+        event_date = date
+        # 19 colonnes (v2.2 Phase 2) — toutes vides sauf date, trigger, R, source,
+        # event_id, event_date.
+        cols = [
+            date,           # 1 date
+            "",             # 2 L1
+            "",             # 3 L2
+            safe_title,     # 4 trigger
+            "",             # 5 cours
+            "",             # 6 latence
+            "1",            # 7 R
+            self.source,    # 8 source
+            "",             # 9 news_zone
+            "",             # 10 category
+            "",             # 11 pattern_id
+            "",             # 12 impacts
+            "",             # 13 materiality
+            "",             # 14 reliability
+            event_id,       # 15 event_id
+            event_date,     # 16 event_date
+            "",             # 17 nature
+            "",             # 18 dedup_status
+            "",             # 19 stale
+        ]
+        return "| " + " | ".join(cols) + " |"
 
     def as_event_log_line_extracted(self, e) -> str:
-        """Ligne markdown enrichie — schéma v2 directionnel.
+        """Ligne markdown enrichie — schéma v2.2 directionnel.
 
-        Colonnes (14) : date | L1 | L2 | trigger | cours | latence | R | source |
-        news_zone | category | pattern_id | impacts | materiality | reliability
+        Colonnes (19) : date | L1 | L2 | trigger | cours | latence | R | source |
+        news_zone | category | pattern_id | impacts | materiality | reliability |
+        event_id | event_date | nature | dedup_status | stale
 
-        - L1/L2 conservés pour rétro-compat lecteurs anciens (laissés vides : on
-          ne fait plus de double-taxonomie).
-        - cours = libellé lisible reconstruit à partir des impacts (premier actif).
-        - impacts = encodage compact 'ASSET:DIR:CONF;...' (voir extractor.encode_impacts).
+        - event_id : SHA-256 tronqué 12 hex sur normalise(trigger)+"|"+actif (Phase 2).
+        - event_date : pubDate RSS (premier-vu fait foi calculé en aval par classifier).
+        - nature : axe persistance DeepSeek (structurel/ponctuel/deja_cote/verbal).
+        - dedup_status, stale : laissés vides ici → calculés à la volée par classifier
+          (ne pas geler à l'ingest : la canonisation premier-vu nécessite tout l'historique).
         """
+        # Lazy import pour éviter le coût si non utilisé
+        from extractor import encode_impacts
+        from triggers_classifier import compute_event_id
+
         date = self.published.strftime("%Y-%m-%d")
 
         def safe(v):
             return (str(v) if v is not None else "").replace("|", "/").strip()
-
-        # Lazy import pour éviter le coût si non utilisé
-        from extractor import encode_impacts
 
         impacts_str = encode_impacts(getattr(e, "impacts", []) or [])
         # cours = libellé lisible (premier actif) pour rétro-compat parsers historiques
@@ -86,11 +116,19 @@ class NewsItem:
         if impacts:
             first_asset = impacts[0].asset
 
+        trigger_safe = safe(getattr(e, "trigger", "") or self.title)[:250]
+        # event_id : hash stable trigger+actif. Si impacts vides → "" en actif
+        # (pas d'invention) ; les events sans actif ne participent pas au scoring
+        # mais conservent un id traçable.
+        event_id = compute_event_id(trigger_safe, first_asset)
+        event_date = date  # pubDate RSS ; le canonical_event_date sera dérivé en aval
+        nature = safe(getattr(e, "nature", "")) or "ponctuel"
+
         cols = [
             date,
             "",  # L1 (legacy, vide)
             safe(getattr(e, "subcat", "")),  # L2 = subcat (libre)
-            safe(getattr(e, "trigger", "") or self.title)[:250],
+            trigger_safe,
             first_asset,  # cours = id actif des 12 (ex: BRENT)
             safe(getattr(e, "latence", "")),
             "1",
@@ -101,6 +139,12 @@ class NewsItem:
             impacts_str,
             safe(getattr(e, "materiality", "")),
             safe(getattr(e, "reliability", "")),
+            # --- Phase 2 (5 nouvelles colonnes) ---
+            event_id,
+            event_date,
+            nature,
+            "",  # dedup_status : calculé à la lecture (canonisation premier-vu)
+            "",  # stale : calculé à la lecture (canonical_event_date vs cutoff)
         ]
         return "| " + " | ".join(cols) + " |"
 

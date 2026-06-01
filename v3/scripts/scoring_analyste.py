@@ -267,6 +267,14 @@ class CritereResult:
     reliability: str = ""
     source_track: str = ""
     cle_courante: str = ""
+    # Phase 2 — méta news (axe persistance + fraîcheur premier-vu)
+    nature: str = ""
+    event_id: str = ""
+    event_date: str = ""           # canonical_event_date (ISO)
+    event_date_source: str = ""    # rss | fallback
+    freshness_days: float = 0.0    # delta (now - canonical_event_date) en jours
+    # coef_nature appliqué par horizon (×pertinence) — utile pour debug/decision-log
+    coef_nature_applied: Dict[str, float] = field(default_factory=dict)
     # Persistance "pourquoi" DeepSeek (demande Thomas 2026-06-01) : rationale et
     # bucket de conviction de la synthèse directionnelle. Vide si critère non-news
     # ou si l'extractor n'a pas produit de synthèse (rétro-compat zéro invention).
@@ -351,13 +359,37 @@ def score_actif(
         is_na = (valeur_norm is None) and not is_gate
         # Pondéré : extrait depuis raw (triplet) ou fallback = valeur_norm (numérique).
         valeur_ponderee = extract_valeur_ponderee(crit, raw, valeur_norm)
+
+        # --- Phase 2 — coef_nature × pertinence (news uniquement) -----------
+        # Pour les critères news (source_track="ia*" ou "keyword"), on module
+        # la pertinence par horizon via COEF_NATURE selon la nature DeepSeek.
+        # Critères non-news (quant pur) : coef = 1.0 (neutre).
+        # NB : la nature est dans `raw` (extrait par triggers_classifier).
+        coef_nature_h: Dict[str, float] = {h: 1.0 for h in HORIZONS}
+        if isinstance(raw, dict):
+            raw_nature = str(raw.get("nature", "") or "").lower()
+            raw_src = str(raw.get("source_track", "") or "")
+            # Coef appliqué uniquement aux critères news (sinon news invisible
+            # pour le quant pur — c'est l'objectif Phase 2).
+            is_news = raw_src.startswith("ia") or raw_src == "keyword"
+            if is_news and raw_nature:
+                try:
+                    from triggers_classifier import COEF_NATURE as _COEF
+                except ImportError:
+                    _COEF = {}
+                coef_map = _COEF.get(raw_nature)
+                if coef_map:
+                    coef_nature_h = {h: float(coef_map.get(h, 1.0)) for h in HORIZONS}
+
         contributions: Dict[str, float] = {}
         contributions_pond: Dict[str, float] = {}
         if not is_na and not is_gate and valeur_norm is not None:
             for h in HORIZONS:
-                contributions[h] = valeur_norm * poids * pertinence[h] * signe
+                # pertinence_effective = pertinence × coef_nature (modulation, PAS additive)
+                pert_eff = pertinence[h] * coef_nature_h[h]
+                contributions[h] = valeur_norm * poids * pert_eff * signe
                 vp = valeur_ponderee if valeur_ponderee is not None else valeur_norm
-                contributions_pond[h] = vp * poids * pertinence[h] * signe
+                contributions_pond[h] = vp * poids * pert_eff * signe
         else:
             for h in HORIZONS:
                 contributions[h] = 0.0
@@ -373,6 +405,12 @@ def score_actif(
         rel = ""
         src_track = ""
         synth_rationale = ""
+        # --- Phase 2 méta ---
+        p2_nature = ""
+        p2_event_id = ""
+        p2_event_date = ""
+        p2_event_date_source = ""
+        p2_freshness_days = 0.0
         if isinstance(raw, dict):
             mat = str(raw.get("materiality", "") or "")
             rel = str(raw.get("reliability", "") or "")
@@ -380,6 +418,14 @@ def score_actif(
             # Synthèse DeepSeek (uniquement présente pour les triplets news
             # qui sont passés par le chemin ia_synthese / ia_synthese_faible).
             synth_rationale = str(raw.get("synthese_rationale", "") or "")
+            p2_nature = str(raw.get("nature", "") or "")
+            p2_event_id = str(raw.get("event_id", "") or "")
+            p2_event_date = str(raw.get("event_date", "") or "")
+            p2_event_date_source = str(raw.get("event_date_source", "") or "")
+            try:
+                p2_freshness_days = float(raw.get("freshness_days", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                p2_freshness_days = 0.0
         criteres_res.append(
             CritereResult(
                 id=crit.get("id"),
@@ -402,6 +448,12 @@ def score_actif(
                 source_track=src_track,
                 cle_courante=str(cle or ""),
                 synthese_rationale=synth_rationale,
+                nature=p2_nature,
+                event_id=p2_event_id,
+                event_date=p2_event_date,
+                event_date_source=p2_event_date_source,
+                freshness_days=p2_freshness_days,
+                coef_nature_applied=dict(coef_nature_h),
             )
         )
 
@@ -430,12 +482,23 @@ def score_actif(
                             if not c.source_track.startswith("ia") and not c.is_na and not c.is_gate]
         news_total_p = sum(news_contribs_p)
         quant_total_p = sum(quant_contribs_p)
-        # Override : un critère news high+confirmed sur CET horizon ⇒ pas de cap.
-        # TODO Phase 2 : raffiner avec fraîcheur ≤48h + type=structurel (cf. plan horizon).
+        # Phase 2 — Gate override RAFFINÉ : remplace la règle high+confirmed seule.
+        # La news ne peut renverser le quant (changement de tendance) que si :
+        #   canonical_event_date ≤ 72h
+        #   ET nature ∈ {structurel, ponctuel}
+        #   ET materiality = high
+        #   ET reliability ≠ rumor
+        # Le `reliability` figé n'est plus le seul gardien : la fraîcheur + la
+        # persistance (nature) deviennent les vrais juges. Empêche un repost
+        # (canonical_event_date ancien) de déclencher un faux flip.
+        GATE_MAX_HOURS = 72.0
+        ALLOWED_NATURES = {"structurel", "ponctuel"}
         override = any(
             c.source_track.startswith("ia")
             and c.materiality == "high"
-            and c.reliability == "confirmed"
+            and c.reliability not in ("rumor", "")
+            and c.nature in ALLOWED_NATURES
+            and c.freshness_days * 24.0 <= GATE_MAX_HOURS
             and not c.is_na and not c.is_gate
             and c.contributions[h] != 0.0
             for c in criteres_res
@@ -701,6 +764,18 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
                 if c.source_track.startswith("ia") and c.synthese_rationale:
                     contrib_entry["synthese_rationale"] = c.synthese_rationale
                     contrib_entry["conviction"] = c.materiality
+                # --- Phase 2 — méta news (event_id, event_date, nature, ...)
+                # Sur les critères news uniquement (ia* / keyword), on persiste
+                # la chaîne événement : permet de tracer pourquoi un flip a été
+                # bloqué ou autorisé. Zéro invention : on n'ajoute que si l'event_id
+                # existe réellement (sinon critère quant pur → rien).
+                if c.event_id:
+                    contrib_entry["event_id"] = c.event_id
+                    contrib_entry["event_date"] = c.event_date
+                    contrib_entry["nature"] = c.nature
+                    contrib_entry["event_date_source"] = c.event_date_source
+                    contrib_entry["freshness_days"] = round(c.freshness_days, 3)
+                    contrib_entry["coef_nature"] = c.coef_nature_applied.get(h, 1.0)
                 contribs.append(contrib_entry)
             # --- Observabilité ratio_news (Point 4 plan horizon) ----------
             cap_info = r.news_cap_info.get(h, {}) if r.news_cap_info else {}
@@ -709,6 +784,76 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
             ratio_news = abs(news_total) / (abs(quant_total) + 1e-9)
             news_dominant = ratio_news > 0.5
             score_pm1_val = r.scores.get(h, 0.0)
+
+            # ---------- Phase 2 — métriques shadow (par cellule) -----------
+            # M1 — taux filtrage nature : part des critères news où coef_nature=0
+            #      (= deja_cote écarté, ou critère filtré amont par _candidates_for).
+            # M2 — taux stale : critères news avec freshness_days*24 > 30j*24.
+            # M3 — taux dédup : non-zero dans cap_info (estimation via _resolve_triplet).
+            #      Approximé ici par : critère news avec source_track="" (event repost
+            #      écarté → pas de contribution news).
+            # M4 — gate override BLOQUÉ : il y a un critère news potentiel high+rumor
+            #      OU vieux OU nature interdite ET le cap a été appliqué.
+            # M5 — composition nature : compteurs par nature sur les critères news.
+            # M6 — biais LONG/SHORT (signe du score).
+            # M7 — ratio_news (déjà calculé ci-dessus).
+            news_crits = [c for c in r.criteres
+                          if (c.source_track.startswith("ia") or c.source_track == "keyword")
+                          and not c.is_na and not c.is_gate]
+            n_news = max(len(news_crits), 1)
+            nb_nature_filtered = sum(
+                1 for c in news_crits
+                if c.coef_nature_applied.get(h, 1.0) == 0.0
+            )
+            nb_stale = sum(
+                1 for c in news_crits if c.freshness_days > 30.0
+            )
+            nature_composition: Dict[str, int] = {}
+            for c in news_crits:
+                key = c.nature or "unknown"
+                nature_composition[key] = nature_composition.get(key, 0) + 1
+            bias_long_short = (
+                "LONG" if score_pm1_val > 0 else ("SHORT" if score_pm1_val < 0 else "FLAT")
+            )
+            # M4 — gate override bloqué : potentiel news high non-rumor mais
+            # pas frais OU nature non éligible (deja_cote/verbal).
+            override_potential_blocked = any(
+                c.materiality == "high"
+                and c.reliability not in ("rumor", "")
+                and (c.nature not in ("structurel", "ponctuel")
+                     or c.freshness_days * 24.0 > 72.0)
+                for c in news_crits
+            )
+
+            # T1 — faux flips évités : un flip aurait eu lieu sans Phase 2
+            # (sans filtrage nature) mais est écarté car porté par deja_cote/verbal.
+            # On estime : critères news où coef_nature ∈ {0, <=0.3} ET qui auraient
+            # contribué à inverser le quant (signe news vs quant opposé sans coef).
+            cap_info_h = r.news_cap_info.get(h, {}) if r.news_cap_info else {}
+            quant_total = float(cap_info_h.get("quant_total_pm1", 0.0))
+            t1_faux_flips_evites = 0
+            t2_vrais_flips_qualifies = 0
+            for c in news_crits:
+                coef_h = c.coef_nature_applied.get(h, 1.0)
+                # Contribution "raw" (sans coef_nature) = contribution / coef_h
+                # On reconstitue car contributions[h] est déjà modulée.
+                if c.nature in ("deja_cote", "verbal") and c.contributions.get(h, 0.0) == 0.0:
+                    # Aurait pu peser sans Phase 2 → estime via valeur_norm × poids × pertinence brute
+                    raw_contrib = (
+                        (c.valeur_norm or 0.0) * c.poids * c.pertinence.get(h, 0.0) * c.signe
+                    )
+                    if (raw_contrib > 0 and quant_total < 0) or (raw_contrib < 0 and quant_total > 0):
+                        t1_faux_flips_evites += 1
+                # T2 — vrai flip qualifié : structurel + frais (≤72h) + high
+                if (c.nature == "structurel"
+                        and c.materiality == "high"
+                        and c.freshness_days * 24.0 <= 72.0
+                        and c.contributions.get(h, 0.0) != 0.0):
+                    # Et signe news vs quant opposé (= ça INVERSE le quant)
+                    if ((c.contributions[h] > 0 and quant_total < 0)
+                            or (c.contributions[h] < 0 and quant_total > 0)):
+                        t2_vrais_flips_qualifies += 1
+
             records.append({
                 "bulletin_date": bulletin_date,
                 "generated_at": generated_at,
@@ -717,6 +862,16 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
                 "horizon": h,
                 "score_pm1": score_pm1_val,
                 "score_pond": r.scores_pond.get(h, 0.0),
+                # ----- Phase 2 — métriques shadow (racine) ------------------
+                "p2_M1_nature_filtered_rate": round(nb_nature_filtered / n_news, 3),
+                "p2_M2_stale_rate": round(nb_stale / n_news, 3),
+                "p2_M3_dedup_rate": 0.0,  # calculé hors-scoring (au niveau ingest)
+                "p2_M4_gate_override_blocked": bool(override_potential_blocked),
+                "p2_M5_nature_composition": nature_composition,
+                "p2_M6_bias": bias_long_short,
+                "p2_M7_ratio_news": round(ratio_news, 4),
+                "p2_T1_faux_flips_evites": t1_faux_flips_evites,
+                "p2_T2_vrais_flips_qualifies": t2_vrais_flips_qualifies,
                 "conclusion_pm1": r.conclusions.get(h, ""),
                 "conclusion_pond": r.conclusions_pond.get(h, ""),
                 "diverge": bool(r.diverge.get(h, False)),

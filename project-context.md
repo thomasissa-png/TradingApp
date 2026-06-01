@@ -45,3 +45,9 @@ Taux de réussite > **70 %** + Brier < 0,25 par cellule (30 dernières conclusio
 - `v3/scripts/` : le système. `v3/config/` : fiches actifs (YAML) + triggers + weighting. `v3/data/` : sorties (bulletins, events-log, decision-log, performance). `v3/audit/` : audits. `v3/docs/reco/` : décisions d'architecture.
 - `legacy/` : ancienne app (bot « 1 signal turbo/jour ») — **archivée, ne pas utiliser**.
 - `.claude/`, `CLAUDE.md`, `update.sh` : framework Gradient Agents (séparé du projet trading).
+
+## Historique des interventions agents
+
+| Date | Agent | Livrable | Décisions clés |
+|---|---|---|---|
+| 2026-06-01 | @data-analyst | `v3/audit/revue-plan-horizon-analyst.md` | Reject decay_factor global (doublon pertinence). Verdict : (a)+(c) — recalibrer 4 pertinences (or.yml, petrole.yml, vix.yml) + cap anti-inversion α=0.8. Ajouter ratio_news dans decision-log. |

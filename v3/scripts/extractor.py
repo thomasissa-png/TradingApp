@@ -83,7 +83,7 @@ _NAT_SET = set(NATURES)
 
 # Version du prompt — bumper à chaque évolution sémantique du schéma.
 # v2.2 (Phase 2 news) : ajout du champ `nature` au schéma DeepSeek.
-PROMPT_VERSION = "v2.2"
+PROMPT_VERSION = "v2.3"
 
 
 # ============================================================
@@ -152,10 +152,19 @@ RÈGLES :
 1. AUCUNE INVENTION. Doute -> impacts:[], materiality:"low".
 9. nature : axe PERSISTANCE de l'événement (sert à distinguer une news qui
    crée/confirme une tendance d'un compte-rendu déjà cuit) :
-   - "structurel" : driver durable (OPEC quota change, blocage d'Ormuz, embargo,
-     récolte saisonnière, sanctions, accord commercial). Mouvement qui TIENT à 1 mois.
-   - "ponctuel" : choc court et isolé (frappe unique, statistique macro hebdo,
-     incident industriel ponctuel). S'amortit en quelques jours.
+   - "structurel" : driver SYSTÉMIQUE et DURABLE qui impacte l'OFFRE ou la
+     DEMANDE sur des MOIS (politique OPEC+ de production, blocus prolongé d'un
+     détroit, destruction massive de récolte, embargo, sanctions étendues,
+     accord commercial pluri-annuel). Mouvement qui TIENT à 1 mois.
+   - "ponctuel" : fait DATÉ et CIRCONSCRIT (rapport programmé, audit/AGM/résultats
+     d'une SEULE entreprise, frappe/grève à une date précise, statistique macro
+     hebdo, incident industriel isolé). S'amortit en quelques jours.
+     ⚠ ANTI-PIÈGE : un événement corporate single-name (« audit Cobre Panama
+     vendredi », « décision FDA sur le médicament X », « grève Codelco lundi »)
+     est PONCTUEL — pas structurel. Le ton « important » ne le rend pas systémique.
+     RÈGLE : si le fait est ATTACHÉ À UNE DATE PRÉCISE et UNE SEULE ENTITÉ →
+     `ponctuel`. Si le fait CHANGE LE RÉGIME d'offre/demande sur des MOIS pour
+     TOUT un actif → `structurel`.
    - "deja_cote" : compte-rendu de ce qui s'est passé / récap performance
      (« S&P 500 a monté 9 semaines d'affilée », « pire mois depuis 2020 »,
      « récap hebdo des marchés »). L'info est DÉJÀ dans le prix → on l'écarte.
@@ -233,7 +242,25 @@ FEW_SHOTS: List[Tuple[str, str]] = [
             ],
         }, ensure_ascii=False),
     ),
-    # (d) Compte-rendu de marché → deja_cote (info déjà dans le prix)
+    # (d-anti-piège NT-1) Fait daté single-name → ponctuel, PAS structurel
+    # (audit / AGM / résultats d'UNE entreprise à UNE date → corporate ponctuel)
+    (
+        "TITRE : First Quantum to release Cobre Panama audit results on Friday",
+        json.dumps({
+            "category": "commodity",
+            "subcat": "Single-name corporate audit",
+            "trigger": "Publication audit Cobre Panama (First Quantum) vendredi",
+            "news_zone": "Global",
+            "reliability": "confirmed",
+            "materiality": "medium",
+            # Fait daté, single-name → ponctuel (PAS structurel)
+            "nature": "ponctuel",
+            "impacts": [
+                {"asset": "COPPER", "direction": "LONG", "confidence": "low"},
+            ],
+        }, ensure_ascii=False),
+    ),
+    # (e) Compte-rendu de marché → deja_cote (info déjà dans le prix)
     (
         "TITRE : S&P 500 logs ninth weekly gain in a row, longest streak since 2004",
         json.dumps({

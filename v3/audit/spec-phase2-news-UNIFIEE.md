@@ -26,6 +26,8 @@ Coefficient par horizon qui **module la `pertinence`** déjà en place (validé 
 | `deja_cote` | ~0 | ~0 | ~0 | compte-rendu → écarté du scoring |
 | `verbal` | 0.3 | 0.2 | 0.1 | rumeur/déclaration → plafonné bas |
 
+**Note A3 (décision Thomas, audit run 2053)** — le coef_nature est **VOLONTAIREMENT FLOTTANT** (composition multiplicative avec pertinence, PAS substitution ni decay global). Raison : c'est exactement le mécanisme qui permet à un *ponctuel* de **s'éteindre** sur les longs horizons (×0.15 à 1m) tout en laissant un *structurel* **TENIR** (×1.0 à 7j et 1m → contribution presque pleine). Tout passage à un decay global (ex : décroissance exponentielle uniforme par âge) atomiserait le structurel qu'on VEUT garder → casserait l'objectif tendance. Garde-fou test : `test_step4_coef_structurel_no_atomization` vérifie qu'un structurel high à 1m reste à pleine contribution.
+
 ## 3. Fraîcheur (2 seuils binaires, aucun decay continu)
 - `event_date` parsé depuis `pubDate` RSS ; fallback = date d'ingestion (marqué `event_date_source=fallback`).
 - **🔑 PREMIER-VU FAIT FOI (anti-repost, règle Thomas)** : si un même `event_id` (match exact OU flou) a déjà été enregistré un jour précédent, la fraîcheur se calcule sur la **date la PLUS ANCIENNE jamais vue** (`canonical_event_date = MIN(event_date)` sur TOUT l'historique events-log, pas seulement la fenêtre 48h). Une news reçue en retard / re-publiée **ne peut PAS passer pour fraîche** ni déclencher un faux changement de tendance. C'est la priorité absolue : on se base toujours sur la première occurrence.

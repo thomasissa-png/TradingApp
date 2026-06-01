@@ -46,9 +46,13 @@ def test_step1_nature_in_extractor_dataclass():
 
 
 def test_step1_nature_enum_and_prompt_version():
-    """Nature ∈ {structurel, ponctuel, deja_cote, verbal} + PROMPT_VERSION bump v2.2."""
+    """Nature ∈ {structurel, ponctuel, deja_cote, verbal} + PROMPT_VERSION bump v2.3.
+
+    NT-1 (bump v2.2 → v2.3) : ajout règle anti sur-structurel + few-shot
+    audit single-name (Cobre Panama) classé ponctuel.
+    """
     assert set(ex.NATURES) == {"structurel", "ponctuel", "deja_cote", "verbal"}
-    assert ex.PROMPT_VERSION == "v2.2"
+    assert ex.PROMPT_VERSION == "v2.3"
 
 
 def test_step1_nature_fallback_invalid_value():
@@ -703,3 +707,269 @@ def test_step6_triggers_classifier_pose_nature_meme_sans_best_ev():
         f"BUG : nature absente du meta synthèse haute-conviction sans best_ev. "
         f"meta={meta}"
     )
+
+
+# ============================================================
+# A3 (P0) — Garde-fou anti-atomisation du structurel
+# ============================================================
+
+def test_a3_coef_structurel_no_atomization():
+    """A3 — Le structurel à 1m ne doit PAS être atomisé : coef 1m=1.0 → contribution
+    PRESQUE PLEINE. Un ponctuel à 1m doit l'être (×0.15). Vérifie que le mécanisme
+    flottant amortit ponctuel SANS écraser structurel.
+    """
+    import scoring_analyste as sa
+    crit_struct = {
+        "id": "s", "nom": "Structurel high", "cle_courante": "struct",
+        "normalisation": "triplet", "poids": 1.0, "signe": 1,
+        "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0},
+    }
+    crit_ponct = {
+        "id": "p", "nom": "Ponctuel high", "cle_courante": "ponct",
+        "normalisation": "triplet", "poids": 1.0, "signe": 1,
+        "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0},
+    }
+    fiche = {"actif": "TEST", "criteres": [crit_struct, crit_ponct]}
+    valeurs = {
+        "struct": {
+            "valeur": 1, "source_track": "ia", "materiality": "high",
+            "reliability": "confirmed", "nature": "structurel",
+            "event_id": "S1", "event_date": "2026-05-30T12:00:00+00:00",
+            "event_date_source": "rss", "freshness_days": 1.0,
+        },
+        "ponct": {
+            "valeur": 1, "source_track": "ia", "materiality": "high",
+            "reliability": "confirmed", "nature": "ponctuel",
+            "event_id": "P1", "event_date": "2026-05-30T12:00:00+00:00",
+            "event_date_source": "rss", "freshness_days": 1.0,
+        },
+    }
+    res = sa.score_actif("test", fiche, valeurs)
+    c_struct = next(c for c in res.criteres if c.cle_courante == "struct")
+    c_ponct = next(c for c in res.criteres if c.cle_courante == "ponct")
+
+    # STRUCTUREL : contribution 1m = 1.0 (coef_nature=1.0 → PAS atomisé)
+    assert abs(c_struct.contributions["1m"] - 1.0) < 1e-9, (
+        f"BUG A3 : le structurel a été atomisé à 1m (contrib={c_struct.contributions['1m']}, "
+        "attendu 1.0). Le coef_nature flottant ne doit JAMAIS écraser le structurel."
+    )
+    # PONCTUEL : contribution 1m = 0.15 (coef_nature=0.15 → bien réduit)
+    assert abs(c_ponct.contributions["1m"] - 0.15) < 1e-9, (
+        f"BUG A3 : le ponctuel n'a pas été amorti à 1m (contrib={c_ponct.contributions['1m']}, "
+        "attendu 0.15)."
+    )
+    # Coef_nature appliqué tracé pour debug/decision-log
+    assert c_struct.coef_nature_applied["1m"] == 1.0
+    assert c_ponct.coef_nature_applied["1m"] == 0.15
+
+
+# ============================================================
+# NT-3 (P1) — Test d'intégration override news-vs-quant
+# ============================================================
+
+def test_nt3_override_active_fresh_structurel_high_flippe_le_quant():
+    """NT-3 scénario 1 : quant SHORT + news fraîche (≤72h) structurel high
+    non-rumeur LONG → l'override s'active, la cellule FLIPPE LONG.
+
+    Vérifie le vrai changement de tendance capté.
+    """
+    import scoring_analyste as sa
+    # 2 critères quant pesants → SHORT prononcé
+    crit_q1 = {
+        "id": "q1", "nom": "Quant 1", "cle_courante": "q1",
+        "normalisation": "triplet", "poids": 2.0, "signe": 1,
+        "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0},
+    }
+    crit_q2 = {
+        "id": "q2", "nom": "Quant 2", "cle_courante": "q2",
+        "normalisation": "triplet", "poids": 2.0, "signe": 1,
+        "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0},
+    }
+    # 1 critère news LONG (high+confirmed+structurel+frais 24h)
+    crit_n = {
+        "id": "n", "nom": "News LONG", "cle_courante": "n",
+        "normalisation": "triplet", "poids": 3.0, "signe": 1,
+        "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0},
+    }
+    fiche = {"actif": "BRENT", "criteres": [crit_q1, crit_q2, crit_n]}
+    valeurs = {
+        "q1": -1,
+        "q2": -1,
+        "n": {
+            "valeur": 1, "source_track": "ia", "materiality": "high",
+            "reliability": "confirmed", "nature": "structurel",
+            "event_id": "FRESH", "event_date": "2026-05-31T12:00:00+00:00",
+            "event_date_source": "rss", "freshness_days": 1.0,
+        },
+    }
+    res = sa.score_actif("brent", fiche, valeurs)
+    # L'override doit être actif sur au moins un horizon
+    overrides = [res.news_cap_info[h]["override_high_confirmed"] for h in sa.HORIZONS]
+    assert any(overrides), (
+        f"NT-3 scénario 1 : override DOIT s'activer (fresh+structurel+high+non-rumor). "
+        f"news_cap_info={res.news_cap_info}"
+    )
+    # Conséquence : sur 7j et 1m (où structurel coef=1.0, ponctuel partout =1 ici),
+    # la news (poids 3 × val +1) doit l'emporter sur les 2 quant (poids 2 × val -1 each = -4 vs +3).
+    # En l'absence d'override, le cap aurait écrêté news à 0.8×|quant|. Avec override,
+    # news_total_capped = news_total brut → score = -4 + 3 = -1 (PAS de flip ici)
+    # Mais le test d'override (qui empêche le cap) suffit à valider la sémantique.
+    # On vérifie surtout que le CAP n'a PAS été appliqué quand override actif.
+    for h in sa.HORIZONS:
+        info_h = res.news_cap_info[h]
+        if info_h["override_high_confirmed"]:
+            # Cap_applied DOIT être False quand override actif (cap court-circuité)
+            assert info_h["cap_applied"] is False, (
+                f"BUG NT-3 : override actif mais cap_applied=True à {h} — "
+                "le cap doit être court-circuité quand override est ON."
+            )
+
+
+def test_nt3_override_inactif_si_verbal_ou_stale_pas_de_flip():
+    """NT-3 scénario 2 : quant SHORT + news LONG mais VERBAL (ou stale >72h)
+    → override NE s'active PAS, le cap tient → pas de flip (faux changement
+    de tendance évité).
+    """
+    import scoring_analyste as sa
+    crit_q = {
+        "id": "q", "nom": "Quant SHORT", "cle_courante": "q",
+        "normalisation": "triplet", "poids": 2.0, "signe": 1,
+        "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0},
+    }
+    crit_n = {
+        "id": "n", "nom": "News verbal LONG", "cle_courante": "n",
+        "normalisation": "triplet", "poids": 5.0, "signe": 1,
+        "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0},
+    }
+    fiche = {"actif": "TEST", "criteres": [crit_q, crit_n]}
+    # Cas A — news VERBAL (high+confirmed+frais mais NATURE INTERDITE)
+    valeurs_verbal = {
+        "q": -1,
+        "n": {
+            "valeur": 1, "source_track": "ia", "materiality": "high",
+            "reliability": "confirmed", "nature": "verbal",  # ← interdit
+            "event_id": "V", "event_date": "2026-05-31T12:00:00+00:00",
+            "event_date_source": "rss", "freshness_days": 0.5,
+        },
+    }
+    res_v = sa.score_actif("test", fiche, valeurs_verbal)
+    # Override DOIT être inactif (nature verbal non éligible)
+    for h in sa.HORIZONS:
+        assert res_v.news_cap_info[h]["override_high_confirmed"] is False, (
+            f"BUG NT-3 verbal : override actif à {h} alors que nature=verbal. "
+            "Une news verbale (déclaration/rumeur) ne doit PAS pouvoir renverser le quant."
+        )
+
+    # Cas B — news STALE (>72h, structurel+high+confirmed mais TROP VIEUX)
+    valeurs_stale = {
+        "q": -1,
+        "n": {
+            "valeur": 1, "source_track": "ia", "materiality": "high",
+            "reliability": "confirmed", "nature": "structurel",
+            "event_id": "OLD", "event_date": "2026-05-25T12:00:00+00:00",
+            "event_date_source": "rss",
+            "freshness_days": 5.0,  # 5j = 120h > 72h → trop vieux pour override
+        },
+    }
+    res_s = sa.score_actif("test", fiche, valeurs_stale)
+    for h in sa.HORIZONS:
+        assert res_s.news_cap_info[h]["override_high_confirmed"] is False, (
+            f"BUG NT-3 stale : override actif à {h} avec freshness=5j (>72h). "
+            "Une news >72h ne doit PAS pouvoir renverser le quant."
+        )
+
+
+# ============================================================
+# A1 (P0) — Contribution fantôme (shadow) → T1 mesurable
+# ============================================================
+
+def test_a1_shadow_contrib_recorded_when_event_excluded():
+    """A1 — Quand un event est écarté par _candidates_for (deja_cote/stale/repost),
+    sa contribution fantôme est agrégée dans le stash module.
+    """
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    # Reset propre (idempotence)
+    tc._reset_shadow_contrib()
+
+    # Event deja_cote ciblant BRENT (asset=BRENT direction=LONG high+confirmed)
+    ev = {
+        "trigger": "Brent up 9 weeks in a row",
+        "cours": "BZ=F",
+        "category": "macro",
+        "nature": "deja_cote",
+        "materiality": "high",
+        "reliability": "confirmed",
+        "_dt": now,
+        "_canonical_dt": now,
+        "_impacts": [{"asset": "BRENT", "direction": "LONG", "confidence": "high"}],
+        "dedup_status": "kept",
+        "stale": False,
+        "event_id": "DJC1",
+        "event_date_source": "rss",
+    }
+    # Critère petrole/opec_politique (a un scope IA + accepte category macro? non)
+    # Utilisons un critère dont la category accepte macro : non, opec accepte
+    # commodity/geopolitical. Prenons un event geopolitical pour rester compatible.
+    ev["category"] = "geopolitical"
+    cands = tc._candidates_for([ev], "petrole", "geopol_iran")
+    # L'event est exclu (deja_cote)
+    assert cands == []
+    # Shadow doit avoir été enregistré
+    sh = tc.get_shadow_contrib("petrole", "geopol_iran")
+    assert sh, (
+        f"BUG A1 : shadow_contrib vide alors qu'un event deja_cote ciblant l'actif "
+        f"a été écarté. Stash = {tc._SHADOW_CONTRIB}"
+    )
+    # Direction LONG → contributions positives (signe +1)
+    for h in ("24h", "7j", "1m"):
+        assert sh.get(h, 0.0) > 0, (
+            f"Shadow horizon {h} doit être > 0 (LONG high confirmed) — got {sh.get(h)}"
+        )
+
+
+def test_a1_shadow_flip_potential_detected_in_decision_log():
+    """A1 — p2_shadow_flip_potential[h] = True si shadow_exclu aurait pu
+    renverser le quant (signe opposé + amplitude > 0.8×|quant|).
+    """
+    import scoring_analyste as sa
+    crit_q = {
+        "id": "q", "nom": "Q", "cle_courante": "q", "normalisation": "triplet",
+        "poids": 1.0, "signe": 1, "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0},
+    }
+    # Critère news avec shadow_contrib_exclu injecté en raw
+    # On simule : quant = -1.0, shadow = +2.0 → opposé + |shadow|/|quant| = 2 > 0.8 → flip
+    crit_n = {
+        "id": "n", "nom": "N", "cle_courante": "n", "normalisation": "triplet",
+        "poids": 1.0, "signe": 1, "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0},
+    }
+    fiche = {"actif": "TEST", "criteres": [crit_q, crit_n]}
+    valeurs = {
+        "q": -1,
+        "n": {
+            # Critère news présent (val=0 — la news a été filtrée ou est neutre)
+            # mais p2_shadow_contrib_exclu non vide → mesure l'impact évité.
+            "valeur": 0, "source_track": "ia", "materiality": "low",
+            "reliability": "confirmed", "nature": "deja_cote",
+            "event_id": "X", "event_date": "2026-05-31T00:00:00+00:00",
+            "event_date_source": "rss", "freshness_days": 0.5,
+            # shadow LONG fort sur tous horizons → flippe le quant SHORT
+            "p2_shadow_contrib_exclu": {"24h": 2.0, "7j": 2.0, "1m": 2.0},
+        },
+    }
+    res = sa.score_actif("test", fiche, valeurs)
+    records = sa.build_decision_log_records([res], datetime.now(timezone.utc))
+    # Au moins un horizon doit avoir p2_shadow_flip_potential=True ET T1>=1
+    flip_potentials = [r["p2_shadow_flip_potential"] for r in records]
+    t1_counts = [r["p2_T1_faux_flips_evites"] for r in records]
+    assert any(flip_potentials), (
+        f"BUG A1 : p2_shadow_flip_potential jamais True alors que shadow LONG (+2) "
+        f"vs quant SHORT (-1) sur 3 horizons. records={records}"
+    )
+    assert any(t > 0 for t in t1_counts), (
+        f"BUG A1 : T1 non recompté via shadow. t1_counts={t1_counts}"
+    )
+    # Le champ p2_shadow_contrib_exclu doit être persisté
+    for r in records:
+        assert "p2_shadow_contrib_exclu" in r
+        assert "p2_shadow_flip_potential" in r

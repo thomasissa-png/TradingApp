@@ -1345,6 +1345,11 @@ def build_critere_value(
                           "event_date_source", "freshness_days"):
                     if k in entry and entry[k] not in (None, ""):
                         p2_meta[k] = entry[k]
+                # A1 — shadow_contrib_exclu : dict {horizon: float} agrégé par
+                # triggers_classifier sur les events deja_cote/stale/repost.
+                # Propagé tel quel au raw (consommé par scoring pour T1).
+                if "p2_shadow_contrib_exclu" in entry and entry["p2_shadow_contrib_exclu"]:
+                    p2_meta["p2_shadow_contrib_exclu"] = entry["p2_shadow_contrib_exclu"]
             else:
                 val = int(entry)
                 mat = ""

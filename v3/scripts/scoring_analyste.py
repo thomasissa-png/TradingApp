@@ -275,6 +275,9 @@ class CritereResult:
     freshness_days: float = 0.0    # delta (now - canonical_event_date) en jours
     # coef_nature appliqué par horizon (×pertinence) — utile pour debug/decision-log
     coef_nature_applied: Dict[str, float] = field(default_factory=dict)
+    # A1 — shadow_contrib des events EXCLUS sur la cellule (actif×critère).
+    # Dict {horizon: float signé}. Vide si aucune exclusion deja_cote/stale/repost.
+    p2_shadow_contrib_exclu: Dict[str, float] = field(default_factory=dict)
     # Persistance "pourquoi" DeepSeek (demande Thomas 2026-06-01) : rationale et
     # bucket de conviction de la synthèse directionnelle. Vide si critère non-news
     # ou si l'extractor n'a pas produit de synthèse (rétro-compat zéro invention).
@@ -365,6 +368,13 @@ def score_actif(
         # la pertinence par horizon via COEF_NATURE selon la nature DeepSeek.
         # Critères non-news (quant pur) : coef = 1.0 (neutre).
         # NB : la nature est dans `raw` (extrait par triggers_classifier).
+        #
+        # A3 — FLOTTANT VOULU : coef_nature COMPOSE avec pertinence (×, pas ÷),
+        # pour AMORTIR les ponctuel/verbal aux longs horizons (ponctuel 1m=0.15,
+        # verbal 1m=0.10) SANS sur-amortir les structurel (structurel 7j=1.0,
+        # 1m=1.0 → contribution PRESQUE PLEINE). Décision Thomas, audit run 2053 :
+        # le structurel qu'on VEUT garder ne doit JAMAIS être atomisé par cette
+        # multiplication (cf. test_step4_coef_structurel_no_atomization).
         coef_nature_h: Dict[str, float] = {h: 1.0 for h in HORIZONS}
         if isinstance(raw, dict):
             raw_nature = str(raw.get("nature", "") or "").lower()
@@ -411,6 +421,7 @@ def score_actif(
         p2_event_date = ""
         p2_event_date_source = ""
         p2_freshness_days = 0.0
+        p2_shadow_excl: Dict[str, float] = {}
         if isinstance(raw, dict):
             mat = str(raw.get("materiality", "") or "")
             rel = str(raw.get("reliability", "") or "")
@@ -426,6 +437,14 @@ def score_actif(
                 p2_freshness_days = float(raw.get("freshness_days", 0.0) or 0.0)
             except (TypeError, ValueError):
                 p2_freshness_days = 0.0
+            # A1 — shadow_contrib_exclu : dict {horizon: float} si présent
+            raw_shadow = raw.get("p2_shadow_contrib_exclu")
+            if isinstance(raw_shadow, dict):
+                for h_key, v_h in raw_shadow.items():
+                    try:
+                        p2_shadow_excl[str(h_key)] = float(v_h)
+                    except (TypeError, ValueError):
+                        continue
         criteres_res.append(
             CritereResult(
                 id=crit.get("id"),
@@ -454,6 +473,7 @@ def score_actif(
                 event_date_source=p2_event_date_source,
                 freshness_days=p2_freshness_days,
                 coef_nature_applied=dict(coef_nature_h),
+                p2_shadow_contrib_exclu=dict(p2_shadow_excl),
             )
         )
 
@@ -833,23 +853,63 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
 
             # T1 — faux flips évités : un flip aurait eu lieu sans Phase 2
             # (sans filtrage nature) mais est écarté car porté par deja_cote/verbal.
-            # On estime : critères news où coef_nature ∈ {0, <=0.3} ET qui auraient
-            # contribué à inverser le quant (signe news vs quant opposé sans coef).
+            # A1 — NOUVEAU : on utilise la CONTRIBUTION FANTÔME agrégée
+            # (p2_shadow_contrib_exclu) calculée par triggers_classifier sur les
+            # events réellement écartés (deja_cote/stale/repost). Plus besoin
+            # d'estimer via valeur_norm × poids — on a la vraie contribution
+            # qu'aurait eue chaque event exclu.
+            #
+            # shadow_contrib_total[h] = somme des shadow contribs sur tous les
+            #                           critères news de la cellule pour cet horizon.
+            # p2_shadow_flip_potential[h] = True si :
+            #   signe(shadow_total) != signe(quant_total)
+            #   ET |shadow_total| > |quant_total| × 0.8
+            # → la news exclue aurait pu INVERSER le quant (faux changement
+            # de tendance évité par Phase 2).
             cap_info_h = r.news_cap_info.get(h, {}) if r.news_cap_info else {}
             quant_total = float(cap_info_h.get("quant_total_pm1", 0.0))
-            t1_faux_flips_evites = 0
+
+            shadow_total_h = 0.0
+            for c in news_crits:
+                # Le shadow est "pré-poids/signe" → on multiplie ici par poids × signe
+                # pour rendre la contribution comparable à quant_total (qui est
+                # post-poids).
+                sh_raw = c.p2_shadow_contrib_exclu.get(h, 0.0)
+                if sh_raw:
+                    shadow_total_h += sh_raw * c.poids * c.signe
+
+            # Flip potential : aurait inversé le quant (signes opposés + amplitude)
+            SHADOW_FLIP_RATIO = 0.8
+            shadow_flip_potential = False
+            if quant_total != 0.0 and shadow_total_h != 0.0:
+                opposite_signs = (
+                    (shadow_total_h > 0 and quant_total < 0)
+                    or (shadow_total_h < 0 and quant_total > 0)
+                )
+                if opposite_signs and abs(shadow_total_h) > abs(quant_total) * SHADOW_FLIP_RATIO:
+                    shadow_flip_potential = True
+
+            # T1 — recomputé : 1 si la cellule présente un flip potentiel
+            # évité (somme des shadow exclus aurait pu renverser le quant).
+            # Fallback historique : si shadow vide (rétro-compat tests sans
+            # propagation d'events réels), on conserve l'ancienne heuristique
+            # estimative pour ne casser aucun test existant.
+            t1_faux_flips_evites = 1 if shadow_flip_potential else 0
+            if shadow_total_h == 0.0:
+                # Pas de shadow disponible → fallback heuristique legacy
+                # (compte les critères deja_cote/verbal dont le raw_contrib
+                # aurait inversé le quant). Permet aux tests qui injectent
+                # raw=deja_cote sans events réels de continuer à passer.
+                for c in news_crits:
+                    if c.nature in ("deja_cote", "verbal") and c.contributions.get(h, 0.0) == 0.0:
+                        raw_contrib = (
+                            (c.valeur_norm or 0.0) * c.poids * c.pertinence.get(h, 0.0) * c.signe
+                        )
+                        if (raw_contrib > 0 and quant_total < 0) or (raw_contrib < 0 and quant_total > 0):
+                            t1_faux_flips_evites += 1
+
             t2_vrais_flips_qualifies = 0
             for c in news_crits:
-                coef_h = c.coef_nature_applied.get(h, 1.0)
-                # Contribution "raw" (sans coef_nature) = contribution / coef_h
-                # On reconstitue car contributions[h] est déjà modulée.
-                if c.nature in ("deja_cote", "verbal") and c.contributions.get(h, 0.0) == 0.0:
-                    # Aurait pu peser sans Phase 2 → estime via valeur_norm × poids × pertinence brute
-                    raw_contrib = (
-                        (c.valeur_norm or 0.0) * c.poids * c.pertinence.get(h, 0.0) * c.signe
-                    )
-                    if (raw_contrib > 0 and quant_total < 0) or (raw_contrib < 0 and quant_total > 0):
-                        t1_faux_flips_evites += 1
                 # T2 — vrai flip qualifié : structurel + frais (≤72h) + high
                 if (c.nature == "structurel"
                         and c.materiality == "high"
@@ -878,6 +938,9 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
                 "p2_M7_ratio_news": round(ratio_news, 4),
                 "p2_T1_faux_flips_evites": t1_faux_flips_evites,
                 "p2_T2_vrais_flips_qualifies": t2_vrais_flips_qualifies,
+                # A1 — shadow contribution agrégée (sur events deja_cote/stale/repost)
+                "p2_shadow_contrib_exclu": round(shadow_total_h, 6),
+                "p2_shadow_flip_potential": bool(shadow_flip_potential),
                 "conclusion_pm1": r.conclusions.get(h, ""),
                 "conclusion_pond": r.conclusions_pond.get(h, ""),
                 "diverge": bool(r.diverge.get(h, False)),

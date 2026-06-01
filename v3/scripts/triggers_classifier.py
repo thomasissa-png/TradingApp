@@ -164,6 +164,13 @@ DEDUP_DROP_RATIO_GUARD = 0.30
 
 # Coefficients nature × horizon (modulent la pertinence, pas un decay global)
 # Source : spec-phase2-news-UNIFIEE.md §2 — validé Thomas.
+#
+# A3 — DOC : le coef_nature est VOLONTAIREMENT FLOTTANT (composition avec la
+# pertinence, pas substitution). Il joue le rôle d'amortisseur sur les natures
+# faibles (ponctuel sur 7j/1m, verbal partout) SANS sur-amortir les natures
+# fortes (structurel = 0.8/1.0/1.0 → on garde quasi-plein poids long terme,
+# c'est ce qu'on VEUT pour porter la tendance). Tout passage en "decay global"
+# casserait l'objectif tendance : un structurel high doit tenir à 1m.
 COEF_NATURE: Dict[str, Dict[str, float]] = {
     "structurel": {"24h": 0.8, "7j": 1.0, "1m": 1.0},
     "ponctuel":   {"24h": 1.0, "7j": 0.5, "1m": 0.15},
@@ -172,6 +179,87 @@ COEF_NATURE: Dict[str, Dict[str, float]] = {
 }
 # Natures écartées AVANT scoring (filtre amont, voir _candidates_for).
 NATURES_FILTERED_OUT: Set[str] = {"deja_cote"}
+
+# ---------------------------------------------------------------------------
+# A1 — Contribution fantôme (shadow) des events exclus → T1 mesurable
+# ---------------------------------------------------------------------------
+# Quand un event est écarté dans _candidates_for (nature=deja_cote / stale /
+# repost), on calcule la contribution qu'il AURAIT eue s'il avait été retenu,
+# et on l'agrège par cellule (actif_key, cle) × horizon. Le scoring lit ce
+# stash pour mesurer T1 (faux flips évités) : si la somme des shadow_contrib
+# exclus aurait suffi à renverser le signe du quant, Phase 2 a évité un faux
+# changement de tendance.
+#
+# Stocké en module-level (reset au début de classify_all*) — pas thread-safe,
+# mais le pipeline v3 est mono-thread.
+_SHADOW_CONTRIB: Dict[Tuple[str, str], Dict[str, float]] = {}
+
+# Poids materiality / reliability pour la contribution fantôme. On ré-utilise
+# _MAT_WEIGHT (déjà défini plus bas, valeurs high=3/medium=2/low=1) et on
+# normalise à [0..1] pour rester comparable à la pertinence brute.
+_REL_WEIGHT_NORM = {"confirmed": 1.0, "reported": 0.7, "rumor": 0.3, "": 0.5}
+
+
+def _reset_shadow_contrib() -> None:
+    """Reset du stash shadow au début d'un run (idempotence rejeu)."""
+    _SHADOW_CONTRIB.clear()
+
+
+def get_shadow_contrib(actif_key: str, cle: str) -> Dict[str, float]:
+    """Lecture du stash shadow pour une cellule (actif, critère).
+    Retourne un dict horizon → contribution fantôme cumulée (signed), {} si rien.
+    """
+    return dict(_SHADOW_CONTRIB.get((actif_key, cle), {}))
+
+
+def _record_shadow_contrib(
+    ev: dict, actif_key: str, cle: str, crit_pertinence: Optional[Dict[str, float]] = None,
+) -> None:
+    """Calcule shadow_contrib[h] pour un event EXCLU et l'ajoute au stash.
+
+    Formule (approxime les pondérations utilisées en aval — zéro invention :
+    si une valeur manque on retombe à 0, pas d'hypothèse fabriquée) :
+      shadow[h] = signe_direction × poids_materiality × poids_reliability × pertinence[h]
+
+    Le poids du critère YAML n'est pas connu ici (vit dans les fiches scoring) ;
+    on persiste donc une contribution "pré-poids" : le scoring multipliera par
+    `poids × signe` du critère réel quand il agrégera.
+
+    pertinence : si crit_pertinence fourni → utilisé tel quel. Sinon fallback
+    à {24h:1.0, 7j:1.0, 1m:1.0} (pas d'inférence : on signale 0 nulle part car
+    sinon T1 ne mesurerait jamais rien — on prend une pertinence neutre 1.0
+    qui sera modulée par les pondérations matérialité/fiabilité).
+    """
+    # Direction depuis impacts[] IA si disponible (signed)
+    direction_signed = 0
+    impacts = ev.get("_impacts") or []
+    for imp in impacts:
+        asset = imp.get("asset")
+        if asset and IA_ASSET_TO_ACTIF.get(asset) == actif_key:
+            d = imp.get("direction", "")
+            if d == "LONG":
+                direction_signed = 1
+                break
+            if d == "SHORT":
+                direction_signed = -1
+                break
+    if direction_signed == 0:
+        # Pas de direction IA → pas de shadow mesurable (zéro invention)
+        return
+
+    mat = (ev.get("materiality") or "").strip().lower()
+    rel = (ev.get("reliability") or "").strip().lower()
+    w_mat = _MAT_WEIGHT.get(mat, 1) / 3.0  # normalise [1/3..1.0]
+    w_rel = _REL_WEIGHT_NORM.get(rel, 0.5)
+
+    if crit_pertinence is None:
+        crit_pertinence = {"24h": 1.0, "7j": 1.0, "1m": 1.0}
+
+    cell = _SHADOW_CONTRIB.setdefault((actif_key, cle), {})
+    for h in ("24h", "7j", "1m"):
+        pert = float(crit_pertinence.get(h, 0.0) or 0.0)
+        contrib_h = direction_signed * w_mat * w_rel * pert
+        cell[h] = cell.get(h, 0.0) + contrib_h
 
 
 def _normalise_trigger(s: str) -> str:
@@ -819,16 +907,33 @@ def _candidates_for(events: List[dict], actif_key: str, cle: str) -> List[dict]:
     strict = bool(scope.get("strict_actif", False))
     out: List[dict] = []
     for ev in events:
+        # A1 — shadow contribution : avant d'écarter un event pour
+        # nature/stale/repost, on calcule sa contribution fantôme (ce qu'il
+        # AURAIT pesé s'il était passé) et on l'agrège sur la cellule
+        # (actif_key, cle). Permet à T1 de mesurer les faux flips évités.
+        # Pré-requis : l'event doit cibler l'actif (sinon shadow non pertinent).
+        ev_targets_this_actif = (
+            _event_ia_targets_actif(ev, actif_key)
+            or _event_targets_actif(ev, actif_key)
+            or (not strict and _event_matches_domain(ev, scope))
+        )
+
         # Phase 2 — filtres amont (AVANT cutoff lookback) :
         # 1. `nature` ∈ filtered_out (deja_cote) → écarté du scoring
         if ev.get("nature") in NATURES_FILTERED_OUT:
+            if ev_targets_this_actif and _event_category_ok(ev, scope):
+                _record_shadow_contrib(ev, actif_key, cle)
             continue
         # 2. stale=True (canonical_event_date > 30j) → écarté (archive re-publiée)
         if ev.get("stale"):
+            if ev_targets_this_actif and _event_category_ok(ev, scope):
+                _record_shadow_contrib(ev, actif_key, cle)
             continue
         # 3. repost (vu une 1re fois → déjà compté) → écarté du scoring courant
         #    mais conservé dans events-log pour traçabilité.
         if ev.get("dedup_status") == "repost":
+            if ev_targets_this_actif and _event_category_ok(ev, scope):
+                _record_shadow_contrib(ev, actif_key, cle)
             continue
         # Filtre catégorie en premier (peu coûteux, s'applique aussi à l'IA)
         if not _event_category_ok(ev, scope):
@@ -1424,6 +1529,10 @@ def classify_all_with_meta(
     # Synthèses directionnelles par actif (niveau 1). Vide si extractor None.
     syntheses = _compute_syntheses(events, today_dt, extractor)
 
+    # A1 — reset du stash shadow (idempotence rejeu — _candidates_for va
+    # le remplir à mesure des exclusions deja_cote/stale/repost).
+    _reset_shadow_contrib()
+
     out: Dict[str, Dict[str, Dict[str, Any]]] = {}
     for actif_key, criteres in triggers_cfg.items():
         if not isinstance(criteres, dict):
@@ -1458,6 +1567,13 @@ def classify_all_with_meta(
                           "event_date_source", "freshness_days"):
                     if k in meta:
                         entry[k] = meta[k]
+                # A1 — shadow_contrib_exclu agrégé pour cette cellule
+                # (alimenté par _candidates_for sur les events deja_cote/stale/repost).
+                # Lecture sur la PAIRE (actif_key, cle YAML), car le stash est
+                # keyé sur la clé YAML (cle), pas sur emit_cle (cle_courante).
+                shadow = get_shadow_contrib(actif_key, cle)
+                if shadow:
+                    entry["p2_shadow_contrib_exclu"] = shadow
                 actif_out[emit_cle] = entry
             elif t == "calendrier":
                 val = _resolve_calendrier(cle, today_date)
@@ -1508,6 +1624,9 @@ def classify_all(
         today_date = today
 
     syntheses = _compute_syntheses(events, today_dt, extractor)
+
+    # A1 — reset du stash shadow (idempotence rejeu).
+    _reset_shadow_contrib()
 
     out: Dict[str, Dict[str, int]] = {}
     for actif_key, criteres in triggers_cfg.items():

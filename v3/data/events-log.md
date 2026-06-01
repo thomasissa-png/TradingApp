@@ -1097,3 +1097,84 @@ Append-only. Édité par v3/scripts/agent_news.py (GitHub Actions cron).
 | 2026-02-17 |  | Cocoa pricing dispute | Ivory Coast Finance Minister's claim about cocoa price vs Ghana is fact-checked as false | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:low | low | reported |
 | 2025-09-24 |  | Cocoa supply | Cocoa price drops >40% on improved harvest outlook and easing drought concerns | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | high | reported |
 | 2026-03-04 |  | Cocoa | Cocoa prices rise due to dollar weakness and short covering | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:medium | medium | reported |
+<!-- batch 2026-06-01T11:37:57Z : 80 events -->
+| 2026-06-01 |  | Oil supply risk | RAC warns UK pump prices may rise if Iran war continues | BRENT |  | 1 | bbc_business | EU | commodity |  | BRENT:LONG:medium | medium | reported |
+| 2026-06-01 |  | Iran-Moyen-Orient | Satellite images reveal 20 US military sites damaged by Iranian attacks since war start, more extensive than acknowledged | BRENT |  | 1 | bbc_world | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:high;SP500:SHORT:high;NASDAQ:SHORT:medium | high | reported |
+| 2026-06-01 |  | Israel-Hezbollah | Netanyahu ordonne des frappes sur la banlieue de Beyrouth, escalade du conflit avec le Hezbollah | BRENT |  | 1 | bbc_world | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-06-01 |  | Russia sanctions | France saisit un pétrolier russe sanctionné avec l'aide du Royaume-Uni | BRENT |  | 1 | bbc_world | EU-FR | geopolitical |  | BRENT:LONG:medium | medium | confirmed |
+| 2026-06-01 |  | Fed-FOMC | Powell warns political pressure on Fed could damage public trust | SP500 |  | 1 | cnbc_top | US | central_bank |  | SP500:SHORT:medium;NASDAQ:SHORT:medium;EURUSD:LONG:low | medium | confirmed |
+| 2026-06-01 |  |  | SoftBank CEO predicts AI revolution 50x bigger than dot-com boom |  |  | 1 | cnbc_top | US | other |  |  | low | reported |
+| 2026-06-01 |  | Tech sector rally | Nvidia chip 'reinvention' extends software rally, Arm/IBM/HP shares soar pre-market | NASDAQ |  | 1 | cnbc_top | US | earnings |  | NASDAQ:LONG:high;SP500:LONG:medium | high | reported |
+| 2026-06-01 |  |  | Article sur l'impact de l'IA générative sur les startups pré-ChatGPT |  |  | 1 | cnbc_top | US | other |  |  | low | reported |
+| 2026-06-01 |  | Iran-Moyen-Orient | Échanges de tirs entre les États-Unis et l'Iran près du détroit d'Ormuz, hausse des rendements obligataires | BRENT |  | 1 | cnbc_top | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-06-01 |  |  | Étude sur l'adoption de l'IA par les entreprises du S&P 500, mentionnant Nvidia, Meta et Schlumberger |  |  | 1 | cnbc_top | US | other |  |  | low | reported |
+| 2026-06-01 |  | Iran-Moyen-Orient | Reprise des frappes aériennes entre les États-Unis et l'Iran, avec commentaire de Trump | BRENT |  | 1 | cnbc_top | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-06-01 |  | Iran-Moyen-Orient | Israel expands Lebanon offensive, US-Iran talks at impasse, oil up 3% | BRENT |  | 1 | cnbc_top | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-06-01 |  | SoftBank-France investment | SoftBank devient la plus grande capitalisation japonaise et annonce 53 Mds$ d'investissement en France dans l'IA |  |  | 1 | cnbc_top | EU-FR | earnings |  |  | high | confirmed |
+| 2026-05-29 |  | Fed-FOMC | Fed Governor Bowman warns against hiking rates despite inflation spike, citing energy and tariff effects | SP500 |  | 1 | cnbc_finance | US | central_bank |  | SP500:LONG:high;NASDAQ:LONG:high;EURUSD:SHORT:medium;GOLD:LONG:medium | high | confirmed |
+| 2026-06-01 |  |  | Partenariat entre KIDZ AI et ICreate sur une plateforme de robotique éducative |  |  | 1 | investing_news | Global | other |  |  | low | reported |
+| 2026-06-01 |  | Corporate restructuring | FedEx completes freight unit spin-off, stock rises |  |  | 1 | investing_news | US | earnings |  |  | medium | confirmed |
+| 2026-06-01 |  | Iran-Moyen-Orient | Tensions Iran mais optimisme Nvidia compense, futures US en hausse | SP500 |  | 1 | investing_news | US | geopolitical |  | SP500:LONG:medium;NASDAQ:LONG:medium;VIX:SHORT:low | medium | confirmed |
+| 2026-06-01 |  |  | Downgrade d'une action biotech par un analyste |  |  | 1 | investing_news | US | other |  |  | low | confirmed |
+| 2026-06-01 |  | Analyst downgrade | H.C. Wainwright downgrades Cardiff Oncology after license termination |  |  | 1 | investing_news | US | earnings |  |  | low | confirmed |
+| 2026-06-01 |  |  | Achat d'actions par dirigeant de Matador Resources |  |  | 1 | investing_news | US | other |  |  | low | confirmed |
+| 2026-06-01 |  | Analyst rating | Mizuho réitère son rating sur NiSource suite à des deals data centers |  |  | 1 | investing_news | US | earnings |  |  | low | reported |
+| 2026-06-01 |  | Analyst upgrade | Mizuho raises Arm Holdings price target citing CPU strength | NASDAQ |  | 1 | investing_news | US | earnings |  | NASDAQ:LONG:low | low | reported |
+| 2026-06-01 |  | Analyst rating | Mizuho réitère surperformance Costco après résultats T3 |  |  | 1 | investing_news | US | earnings |  |  | low | confirmed |
+| 2026-06-01 |  | Analyst upgrade | Mizuho raises Dell price target to $500 citing AI positioning | SP500 |  | 1 | investing_news | US | earnings |  | SP500:LONG:low;NASDAQ:LONG:low | medium | reported |
+| 2026-06-01 |  | IPO | ERock vise 5 milliards de valorisation en IPO US, porté par le boom de l'IA | NASDAQ |  | 1 | investing_econ | US | earnings |  | NASDAQ:LONG:medium | medium | reported |
+| 2026-06-01 |  |  | AMD stock sliding, reason unclear from title |  |  | 1 | investing_econ | US | other |  |  | low | reported |
+| 2026-06-01 |  |  | Titre non informatif sur baisse de Qualcomm |  |  | 1 | investing_econ | US | other |  |  | low | reported |
+| 2026-06-01 |  |  | Titre interrogatif sans fait nouveau |  |  | 1 | investing_econ | US | other |  |  | low | rumor |
+| 2026-06-01 |  |  | Apotex launches $1 billion IPO |  |  | 1 | investing_econ | US | other |  |  | low | confirmed |
+| 2026-06-01 |  | Tech-AI | Nvidia CEO dismisses AI disruption fears, software stocks rally | NASDAQ |  | 1 | investing_econ | US | earnings |  | NASDAQ:LONG:high;SP500:LONG:medium | high | confirmed |
+| 2026-06-01 |  | Equity strategy | Morgan Stanley turns more positive on cyclicals as earnings momentum broadens | SP500 |  | 1 | investing_econ | US | macro |  | SP500:LONG:medium | medium | reported |
+| 2026-06-01 |  | Fed-FOMC | Incertitude sur le cessez-le-feu iranien et inquiétudes sur les taux de la Fed | EURUSD |  | 1 | investing_forex | US | macro |  | EURUSD:SHORT:medium;GOLD:LONG:medium | medium | reported |
+| 2026-06-01 |  | Iran-Moyen-Orient | Nouvelles frappes américano-iraniennes renforcent les craintes d'inflation | GOLD |  | 1 | investing_commod | Moyen-Orient | geopolitical |  | GOLD:SHORT:medium;BRENT:LONG:high;SP500:SHORT:medium | high | confirmed |
+| 2026-06-01 |  |  | Morning Bid: AI and 1984 |  |  | 1 | investing_commod | Global | other |  |  | low | rumor |
+| 2026-06-01 |  | Iran-Moyen-Orient | Frappes américaines sur sites militaires iraniens et représailles de Téhéran | BRENT |  | 1 | investing_commod | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high;VIX:LONG:medium;SP500:SHORT:medium | high | confirmed |
+| 2026-06-01 |  | Iran-Moyen-Orient | Iran accuse les États-Unis de positions contradictoires et Israël d'attaques au Liban, retardant la diplomatie | BRENT |  | 1 | investing_commod | Moyen-Orient | geopolitical |  | BRENT:LONG:medium;GOLD:LONG:medium;VIX:LONG:low | medium | reported |
+| 2026-06-01 |  | LNG-India | India's LNG industry seeks government support as LNG is 42% cheaper than diesel for freight | BRENT |  | 1 | oilprice | CN | commodity |  | BRENT:SHORT:low | medium | reported |
+| 2026-06-01 |  | Iran-Moyen-Orient | Trump demande des révisions à l'accord de paix iranien, menaçant la réouverture du détroit d'Ormuz | BRENT |  | 1 | oilprice | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:medium;VIX:LONG:medium;SP500:SHORT:medium | high | reported |
+| 2026-06-01 |  | Russia sanctions enforcement | French Navy seizes Russia-linked oil tanker in Atlantic under sanctions | BRENT |  | 1 | oilprice | EU-FR | geopolitical |  | BRENT:LONG:medium | medium | confirmed |
+| 2026-06-01 |  | Russia sanctions evasion | Danish shipyard servicing Russian Yamal LNG carriers despite EU sanctions, enabling continued Arctic LNG exports | BRENT |  | 1 | oilprice | EU | supply_chain |  | BRENT:SHORT:medium | medium | reported |
+| 2026-06-01 |  | Jet fuel price freeze India | Indian refiners freeze domestic jet fuel prices after airlines request relief; international jet fuel prices also reduced. | BRENT |  | 1 | oilprice | BR | commodity |  | BRENT:SHORT:low | low | reported |
+| 2026-06-01 |  | Gold macro catalysts | Article listant pétrole, inflation et NFP comme catalyseurs pour l'or |  |  | 1 | investing_commodities | US | macro |  |  | low | reported |
+| 2026-06-01 |  | Oil geopolitics | Analysis: oil peace dividend real but normalization gradual | BRENT |  | 1 | investing_commodities | Moyen-Orient | commodity |  | BRENT:SHORT:low | low | reported |
+| 2026-06-01 |  | Gold market positioning | Weak hands sold gold, strong hands maintain positions | GOLD |  | 1 | investing_commodities | Global | commodity |  | GOLD:LONG:low | low | reported |
+| 2026-06-01 |  | inflation | Inflation persistante, or en gyration | GOLD |  | 1 | investing_commodities | US | macro |  | GOLD:LONG:medium | medium | reported |
+| 2026-06-01 |  | Gold sentiment | Sentiment baissier sur l'or malgré conflit Iran et hausse pétrole | GOLD |  | 1 | investing_commodities | Global | commodity |  | GOLD:SHORT:medium | medium | reported |
+| 2026-06-01 |  |  | Analyse technique sur l'or, pas d'événement factuel |  |  | 1 | investing_commodities | Global | other |  |  | low | rumor |
+| 2026-06-01 |  |  | Analyse technique et prévisions haussières sur l'or |  |  | 1 | investing_commodities | Global | other |  |  | low | rumor |
+| 2026-06-01 |  | Silver PMI cycle | VC PMI monthly cycle suggests bullish silver price move | SILVER |  | 1 | investing_commodities | US | commodity |  | SILVER:LONG:low | low | reported |
+| 2026-06-01 |  | Silver technical analysis | Silver at critical inflection point with bullish signals from VC PMI, cycle, and Square of 9 | SILVER |  | 1 | investing_commodities | Global | commodity |  | SILVER:LONG:low | low | reported |
+| 2026-06-01 |  | Fed-FOMC | Focus sur la Fed, momentum baissier sur l'or | GOLD |  | 1 | investing_commodities | US | macro |  | GOLD:SHORT:medium | medium | reported |
+| 2026-06-01 |  | ECB-survey | Publication des résultats de l'enquête ECB Consumer Expectations pour avril 2026 |  |  | 1 | ecb_press | EU | macro |  |  | low | confirmed |
+| 2026-06-01 |  | India PMI | India manufacturing PMI hits three-month high in May |  |  | 1 | investing_economy | Global | macro |  |  | low | confirmed |
+| 2026-06-01 |  | Russia-Industrial Production | Russian factory orders decline accelerated in May | BRENT |  | 1 | investing_economy | RU | macro |  | BRENT:SHORT:low | medium | confirmed |
+| 2026-06-01 |  | PMI | Absa PMI manufacturing en baisse en mai en Afrique du Sud |  |  | 1 | investing_economy | Global | macro |  |  | low | confirmed |
+| 2026-06-01 |  | UK-Inflation | UK manufacturers raise prices at fastest pace in nearly 4 years, PMI shows | EURUSD |  | 1 | investing_economy | EU | macro |  | EURUSD:SHORT:medium | medium | confirmed |
+| 2025-02-14 |  | Coffee supply-demand | Reuters report predicts Arabica coffee prices to fall 30% by end-2025 | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:high | high | reported |
+| 2023-08-17 |  | Coffee supply | Article spéculant sur une convergence des prix arabica-robusta due à des problèmes d'offre |  |  | 1 | gnews_coffee | Global | commodity |  |  | low | reported |
+| 2025-04-10 |  | Coffee price | Article sur l'impact du prix du café Arabica sur le NYSE | COFFEE |  | 1 | gnews_coffee | US | commodity |  | COFFEE:LONG:low | low | reported |
+| 2024-08-06 |  | Coffee supply chain | Coffee bean import costs to Australia at record highs | COFFEE |  | 1 | gnews_coffee | AU | commodity |  | COFFEE:LONG:medium | medium | confirmed |
+| 2022-06-15 |  | Coffee supply | Improved supply expectations for Arabica and Robusta coffee | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:SHORT:high | medium | reported |
+| 2024-09-09 |  | Coffee supply-demand | Article sur l'impact des prix du robusta sur les marchés mondiaux et consommateurs | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:low | low | reported |
+| 2024-09-06 |  | Coffee prices | Analysis and forecast of Arabica coffee bean prices | COFFEE |  | 1 | gnews_coffee | Global | commodity |  | COFFEE:LONG:low | low | reported |
+| 2026-03-17 |  | Cocoa supply shock | Ivory Coast government confirms 60% cut in cocoa farmer pay due to global price fall | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | high | confirmed |
+| 2026-02-24 |  | Cocoa supply glut | Crise des stocks invendus chez le plus grand producteur de cacao | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | high | reported |
+| 2026-03-06 |  | Cocoa supply-demand | Cocoa price slumps despite EU deforestation law | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | medium | reported |
+| 2026-04-14 |  | Cocoa demand | Optimisme sur la demande de cacao, rally des prix | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | medium | reported |
+| 2026-02-27 |  | Cocoa supply-demand | Cocoa prices fall due to robust supplies and slack demand | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | medium | reported |
+| 2026-03-11 |  | Cocoa supply | Cocoa farmers abandoning chocolate production, potential supply decline | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:medium | medium | reported |
+| 2026-02-26 |  | Cocoa supply crisis | Crise du cacao en Afrique de l'Ouest, causes et conséquences analysées | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | medium | reported |
+| 2026-04-30 |  | cocoa supply-demand | Cocoa prices jump amid steady chocolate demand | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | medium | reported |
+| 2026-02-27 |  | Cocoa supply | Ghana cocoa farmers to receive double Ivory Coast rate, signaling potential supply disruption or policy shift | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:medium | medium | reported |
+| 2026-03-10 |  | Shipping threats | Cocoa prices extend rally due to shipping threats | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | medium | reported |
+| 2026-02-19 |  | Cocoa supply-demand | Cocoa prices sharply lower due to rising supplies and faltering demand | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | high | confirmed |
+| 2026-03-26 |  | Cocoa supply-demand | Cocoa producers in Ivory Coast suffer due to global price fall | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:medium | medium | reported |
+| 2026-04-24 |  | cocoa demand | Cocoa prices fall due to weak global demand | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | medium | reported |
+| 2026-02-02 |  | Cocoa supply shock | Cocoa swollen shoot disease threatens 15% of Ivory Coast supply | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | high | reported |
+| 2026-02-24 |  | cocoa supply | Cocoa prices settle lower due to abundant supplies | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:SHORT:high | medium | confirmed |
+| 2026-01-20 |  | Cocoa supply intervention | Ivory Coast regulator to buy 100,000 tons of surplus cocoa | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:high | high | confirmed |
+| 2026-02-27 |  | Cocoa pricing | Ivory Coast sets cocoa farmgate price at 800-1000 CFA/kg | COCOA |  | 1 | gnews_cocoa | Global | commodity |  | COCOA:LONG:medium | medium | reported |

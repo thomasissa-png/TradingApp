@@ -1,2 +1,2 @@
-Cycle contrôle Phase 2 news — 2026-06-01 20:36 CEST
-Vérifie : nature classée, dédup/premier-vu, coef_nature, métriques p2_/T1/T2.
+Cycle contrôle Phase 2 COMPLET — 2026-06-01 20:50 CEST
+Vérifie : nature sur critères, coef_nature appliqué, T1/T2 calculés, biais.

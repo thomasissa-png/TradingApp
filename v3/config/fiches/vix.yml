@@ -119,7 +119,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 4
-    pertinence: { "24h": 0.9, "7j": 0.6, "1m": 0.3 }
+    pertinence: { "24h": 0.9, "7j": 0.6, "1m": 0.1 }
     effet_long: "Event L1=Géopolitique actif 3j"
     effet_short: "Détente"
 

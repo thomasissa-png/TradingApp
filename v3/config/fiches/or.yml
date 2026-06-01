@@ -90,7 +90,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 5
-    pertinence: { "24h": 0.8, "7j": 0.5, "1m": 0.3 }
+    pertinence: { "24h": 0.5, "7j": 0.4, "1m": 0.3 }
     effet_long: "Escalade 7j (guerre/sanctions/terrorisme)"
     effet_short: "Détente"
 

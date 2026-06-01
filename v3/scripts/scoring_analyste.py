@@ -282,6 +282,8 @@ class ActifResult:
     conclusions_pond: Dict[str, str] = field(default_factory=dict)
     tie_break_notes_pond: Dict[str, str] = field(default_factory=dict)
     diverge: Dict[str, bool] = field(default_factory=dict)
+    # --- Diagnostic cap news/quant (Point 3 plan horizon) -----------------
+    news_cap_info: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 def _conclusion_from_score(score: float) -> Optional[str]:
@@ -401,16 +403,74 @@ def score_actif(
     conclusions_pond: Dict[str, str] = {}
     tie_notes_pond: Dict[str, str] = {}
     diverge: Dict[str, bool] = {}
+    # --- Cap anti-inversion news/quant (Point 3 plan horizon) --------------
+    # Diagnostic par horizon, pour traçabilité dans build_decision_log_records.
+    news_cap_info: Dict[str, Dict[str, Any]] = {}
     for h in HORIZONS:
+        # Sépare news (source_track démarre par "ia") vs quant (tout le reste).
+        # Les critères is_na/is_gate ont contributions=0, donc neutres dans la somme.
+        news_contribs = [c.contributions[h] for c in criteres_res
+                         if c.source_track.startswith("ia") and not c.is_na and not c.is_gate]
+        quant_contribs = [c.contributions[h] for c in criteres_res
+                          if not c.source_track.startswith("ia") and not c.is_na and not c.is_gate]
+        news_total = sum(news_contribs)
+        quant_total = sum(quant_contribs)
+        news_contribs_p = [c.contributions_pond[h] for c in criteres_res
+                           if c.source_track.startswith("ia") and not c.is_na and not c.is_gate]
+        quant_contribs_p = [c.contributions_pond[h] for c in criteres_res
+                            if not c.source_track.startswith("ia") and not c.is_na and not c.is_gate]
+        news_total_p = sum(news_contribs_p)
+        quant_total_p = sum(quant_contribs_p)
+        # Override : un critère news high+confirmed sur CET horizon ⇒ pas de cap.
+        # TODO Phase 2 : raffiner avec fraîcheur ≤48h + type=structurel (cf. plan horizon).
+        override = any(
+            c.source_track.startswith("ia")
+            and c.materiality == "high"
+            and c.reliability == "confirmed"
+            and not c.is_na and not c.is_gate
+            and c.contributions[h] != 0.0
+            for c in criteres_res
+        )
+        ALPHA = 0.8
+        applied = False
+        news_total_capped = news_total
+        news_total_capped_p = news_total_p
+        if not override:
+            # PM1 : cap si signes opposés ET news > quant en valeur absolue (sinon
+            # news_total est déjà ≤ quant_total*α, pas besoin de capper).
+            if (news_total > 0 > quant_total) or (news_total < 0 < quant_total):
+                cap_abs = abs(quant_total) * ALPHA
+                if abs(news_total) > cap_abs:
+                    sign_n = 1.0 if news_total > 0 else -1.0
+                    news_total_capped = cap_abs * sign_n
+                    applied = True
+            # Pondéré : même logique en parallèle.
+            if (news_total_p > 0 > quant_total_p) or (news_total_p < 0 < quant_total_p):
+                cap_abs_p = abs(quant_total_p) * ALPHA
+                if abs(news_total_p) > cap_abs_p:
+                    sign_p = 1.0 if news_total_p > 0 else -1.0
+                    news_total_capped_p = cap_abs_p * sign_p
+        # Stocke le diagnostic (lu par build_decision_log_records).
+        news_cap_info[h] = {
+            "news_total_pm1": news_total,
+            "quant_total_pm1": quant_total,
+            "news_total_pm1_capped": news_total_capped,
+            "news_total_pond": news_total_p,
+            "quant_total_pond": quant_total_p,
+            "news_total_pond_capped": news_total_capped_p,
+            "cap_applied": applied,
+            "override_high_confirmed": override,
+            "alpha": ALPHA,
+        }
         # --- Baseline ±1 (primaire, sortie de référence) ------------------
-        scores[h] = round(sum(c.contributions[h] for c in criteres_res), 6)
+        scores[h] = round(quant_total + news_total_capped, 6)
         conc = _conclusion_from_score(scores[h])
         if conc is None:
             conc, note = tie_break(criteres_res, h, veille_conclusions.get(h))
             tie_notes[h] = note
         conclusions[h] = conc
         # --- Pondéré (secondaire, loggé) ----------------------------------
-        scores_pond[h] = round(sum(c.contributions_pond[h] for c in criteres_res), 6)
+        scores_pond[h] = round(quant_total_p + news_total_capped_p, 6)
         conc_p = _conclusion_from_score(scores_pond[h])
         if conc_p is None:
             conc_p, note_p = tie_break(criteres_res, h, veille_conclusions.get(h), use_pond=True)
@@ -429,6 +489,7 @@ def score_actif(
         conclusions_pond=conclusions_pond,
         tie_break_notes_pond=tie_notes_pond,
         diverge=diverge,
+        news_cap_info=news_cap_info,
     )
 
 
@@ -498,7 +559,12 @@ def render_bulletin(
             score_p = r.scores_pond.get(h, 0.0)
             div_flag = " ⚠" if r.diverge.get(h) else ""
             pond_str = f" [pond:{conc_p} {score_p:+.2f}]{div_flag}" if conc_p else ""
-            cells.append(f"{conc} ({score:+.2f}){tie}{gate_flag}{pond_str}")
+            # Drapeau news_dominant (Point 4) : 📰 si abs(news)>50% abs(quant)
+            cap_info = r.news_cap_info.get(h, {}) if r.news_cap_info else {}
+            n_tot = abs(float(cap_info.get("news_total_pm1", 0.0)))
+            q_tot = abs(float(cap_info.get("quant_total_pm1", 0.0)))
+            news_flag = " 📰" if (n_tot / (q_tot + 1e-9)) > 0.5 else ""
+            cells.append(f"{conc} ({score:+.2f}){tie}{gate_flag}{pond_str}{news_flag}")
         lines.append(f"| {r.nom} | {cells[0]} | {cells[1]} | {cells[2]} |")
         veille = veille_conclusions.get(r.nom.lower(), {})
         for h in HORIZONS:
@@ -606,6 +672,12 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
                     "contrib_pm1": c.contributions.get(h, 0.0),
                     "contrib_pond": c.contributions_pond.get(h, 0.0),
                 })
+            # --- Observabilité ratio_news (Point 4 plan horizon) ----------
+            cap_info = r.news_cap_info.get(h, {}) if r.news_cap_info else {}
+            news_total = float(cap_info.get("news_total_pm1", 0.0))
+            quant_total = float(cap_info.get("quant_total_pm1", 0.0))
+            ratio_news = abs(news_total) / (abs(quant_total) + 1e-9)
+            news_dominant = ratio_news > 0.5
             records.append({
                 "bulletin_date": bulletin_date,
                 "generated_at": generated_at,
@@ -618,6 +690,12 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
                 "conclusion_pond": r.conclusions_pond.get(h, ""),
                 "diverge": bool(r.diverge.get(h, False)),
                 "criteres": contribs,
+                "news_total": news_total,
+                "quant_total": quant_total,
+                "ratio_news": ratio_news,
+                "news_dominant": news_dominant,
+                "news_cap_applied": bool(cap_info.get("cap_applied", False)),
+                "news_cap_override": bool(cap_info.get("override_high_confirmed", False)),
             })
     return records
 

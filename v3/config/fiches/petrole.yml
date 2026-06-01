@@ -48,7 +48,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 7
-    pertinence: { "24h": 0.9, "7j": 0.7, "1m": 0.2 }
+    pertinence: { "24h": 0.6, "7j": 0.6, "1m": 0.2 }
     effet_long: "Escalade 7j (frappes, blocus, sanctions)"
     effet_short: "Détente (accord, cessez-le-feu)"
 
@@ -74,7 +74,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 6
-    pertinence: { "24h": 0.4, "7j": 0.9, "1m": 1.0 }
+    pertinence: { "24h": 0.3, "7j": 0.9, "1m": 1.0 }
     effet_long: "Cut de production annoncé (30j)"
     effet_short: "Hike production OU dispute interne"
 

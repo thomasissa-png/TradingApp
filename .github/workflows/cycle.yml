@@ -6,9 +6,11 @@ name: cycle-decision
 # quotas GNews/NewsAPI : 3 runs/j × 6 requêtes = 18/j, sous le free tier 100/j).
 #
 # Cron UTC (pas de DST auto) : 05h/10h/16h UTC = 07h/12h/18h Paris été (CEST) / 06h/11h/17h hiver (CET).
+# Minute décalée à :17 (hors heure pleine) : GitHub abandonne fréquemment les schedules postés
+# à :00 pile sous forte charge (cf. incident 2026-06-01 où le run de 7h n'a jamais déclenché).
 on:
   schedule:
-    - cron: "0 5,10,16 * * *"
+    - cron: "17 5,10,16 * * *"
   workflow_dispatch: {}
   # Répétition manuelle sans bouton (mobile) : pousser v3/RUN-CYCLE.txt déclenche un cycle.
   push:

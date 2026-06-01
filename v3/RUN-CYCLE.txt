@@ -1,2 +1,2 @@
-Cycle décisif rate-limit — 2026-05-31T22:02:13Z
-Vérifie : indices ETF remontent (couverture ~110, CAC plus en tie-break).
+Témoin diagnostic schedule — 2026-06-01 08:13 CEST
+Objectif : prouver que pipeline + Actions sont vivants (le cron de 7h n'a pas déclenché).

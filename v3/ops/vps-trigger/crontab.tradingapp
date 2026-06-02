@@ -1,0 +1,24 @@
+# ---------------------------------------------------------------------------
+# TradingApp — déclenchement fiable du cycle 3×/jour (7h / 12h / 18h Paris).
+#
+# Le cron LOCAL du VPS remplace le scheduler GitHub (qui droppe des créneaux).
+# Le cycle tourne sur GitHub Actions ; ces lignes ne sont qu'une horloge.
+#
+# ⚠️ workflow_dispatch CONTOURNE le garde-fou anti-doublon du workflow
+#    (cycle.yml ligne 44) → UN SEUL tir par créneau. Ne PAS dédoubler les lignes.
+#
+# CRON_TZ rend l'heure robuste au changement d'heure (CEST été / CET hiver) :
+# fire exact à 7h/12h/18h Paris toute l'année, un seul tir par créneau.
+# Supporté par cronie (Ubuntu 24.04) et systemd-cron. Si non supporté,
+# utiliser le bloc UTC plus bas à la place.
+# ---------------------------------------------------------------------------
+
+CRON_TZ=Europe/Paris
+0 7,12,18 * * * /home/thomas/tradingapp/trigger-cycle.sh
+
+# --- Fallback si CRON_TZ n'est pas supporté par le cron du VPS ---------------
+# Décommenter UNE seule des deux lignes selon la saison (le cron natif est en UTC) :
+#   Été   (CEST = UTC+2) : 7h/12h/18h Paris = 05/10/16 UTC
+# 0 5,10,16 * * * /home/thomas/tradingapp/trigger-cycle.sh
+#   Hiver (CET  = UTC+1) : 7h/12h/18h Paris = 06/11/17 UTC
+# 0 6,11,17 * * * /home/thomas/tradingapp/trigger-cycle.sh

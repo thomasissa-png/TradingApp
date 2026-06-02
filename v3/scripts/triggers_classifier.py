@@ -292,7 +292,9 @@ def _parse_event_date_safe(s: str) -> Optional[datetime]:
     Retourne None si illisible / incohérent → l'appelant doit fallback à la date
     d'ingestion + marquer event_date_source="fallback".
     """
-    dt = _parse_date(s)
+    # C9 : clamp_future=False ici → on veut DÉTECTER les futures pour rejeter,
+    # pas les masquer (le rôle de cette fonction est précisément la validation).
+    dt = _parse_date(s, clamp_future=False)
     if dt is None:
         return None
     now_utc = datetime.now(timezone.utc)
@@ -628,24 +630,54 @@ _TABLE_ROW_RE = re.compile(r"^\s*\|(.+)\|\s*$")
 _SEPARATOR_RE = re.compile(r"^\s*\|?[\s\-:|]+\|?\s*$")
 
 
-def _parse_date(s: str) -> Optional[datetime]:
+# GATE C9 — Tolérance "futur" pour le parsing des timestamps d'event (events-log).
+# Au-delà de NOW_UTC + C9_FUTURE_TOLERANCE_MIN, le timestamp est ramené à NOW_UTC
+# (horloge source décalée — RSS d'un serveur mal réglé). Tolérance 10 min cohérente
+# avec news_collector._normalize_to_utc.
+C9_FUTURE_TOLERANCE_MIN: int = 10
+
+
+def _parse_date(s: str, *, clamp_future: bool = True) -> Optional[datetime]:
+    """Parse une date. GATE C9 : UTC tz-aware OBLIGATOIRE en sortie.
+
+    - Si la source n'a pas de TZ → UTC explicite.
+    - Si la source a une TZ → conversion en UTC (astimezone).
+    - Si clamp_future=True (défaut, comportement ingestion) ET timestamp futur
+      > NOW_UTC + C9_FUTURE_TOLERANCE_MIN → ramené à NOW_UTC + log WARNING.
+    - Si clamp_future=False → la date est retournée telle quelle (utile pour
+      les couches de validation type `_parse_event_date_safe` qui veulent
+      vérifier la cohérence brute sans masquage).
+    """
     s = s.strip()
     if not s:
         return None
-    for fmt in (None,):  # fromisoformat first
-        try:
-            dt = datetime.fromisoformat(s)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
-        except ValueError:
-            pass
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%d-%m-%Y"):
-        try:
-            return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-    return None
+    dt: Optional[datetime] = None
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%d-%m-%Y"):
+            try:
+                dt = datetime.strptime(s, fmt)
+                break
+            except ValueError:
+                continue
+    if dt is None:
+        return None
+    # GATE C9 : tz-aware obligatoire (UTC par défaut), puis astimezone UTC.
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    # GATE C9 : timestamp futur > tolérance → corrigé à now (horloge décalée).
+    if clamp_future:
+        now_utc = datetime.now(timezone.utc)
+        if dt > now_utc + timedelta(minutes=C9_FUTURE_TOLERANCE_MIN):
+            logger.warning(
+                "C9 _parse_date timestamp futur ramené à NOW_UTC source=%r dt=%s now=%s",
+                s, dt.isoformat(), now_utc.isoformat(),
+            )
+            dt = now_utc
+    return dt
 
 
 def parse_events_log(path: Path = EVENTS_LOG) -> List[dict]:

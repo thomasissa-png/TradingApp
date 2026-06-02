@@ -55,6 +55,48 @@ COVERAGE_OK: float = 0.65
 COVERAGE_MIN: float = 0.40
 CONCLUSION_INSUFFISANT: str = "INSUFFISANT"
 
+# ---------------------------------------------------------------------------
+# GATE Réconciliation Σ contributions = score (garde-fou P0 déterministe)
+# ---------------------------------------------------------------------------
+# But : garantir que le score d'un horizon est EXACTEMENT égal à la somme des
+# contributions individuelles. Si l'égalité est rompue (bug arithmétique, code
+# qui ajoute/retire silencieusement un terme, double-comptage), on logge une
+# ERREUR claire SANS crasher la prod — l'écart doit être visible (alerte) mais
+# le bulletin doit continuer à sortir (zéro régression utilisateur).
+# Tolérance : 1e-9 (en-deçà du round(6) du score final). Au-dessus → ERROR.
+RECONCILIATION_TOL: float = 1e-9
+
+
+def reconcile_score(
+    score_final: float,
+    contributions: Dict[str, float],
+    *,
+    actif: str,
+    horizon: str,
+    cap_extra: float = 0.0,
+    tol: float = RECONCILIATION_TOL,
+) -> bool:
+    """Vérifie |Σ(contributions) + cap_extra − score_final| < tol.
+
+    `cap_extra` permet d'absorber l'effet du cap news/quant : le score final
+    est `quant_total + news_total_capped`, alors que la somme brute des
+    contributions individuelles vaut `quant_total + news_total` (avant cap).
+    On passe donc cap_extra = news_total_capped - news_total pour réconcilier.
+
+    Retourne True si OK, False si écart détecté (et logge ERREUR détaillée).
+    Ne lève PAS d'exception (la prod doit continuer — l'alerte est dans les logs).
+    """
+    sigma = sum(contributions.values()) + cap_extra
+    diff = abs(sigma - score_final)
+    if diff < tol:
+        return True
+    logger.error(
+        "RECONCILE ERROR actif=%s horizon=%s Σ=%.12f score=%.12f diff=%.3e "
+        "(cap_extra=%.6f, n_contrib=%d) — bug de comptage probable",
+        actif, horizon, sigma, score_final, diff, cap_extra, len(contributions),
+    )
+    return False
+
 ROOT = Path(__file__).resolve().parents[1]
 FICHES_DIR = ROOT / "config" / "fiches"
 CRITERES_FILE = ROOT / "data" / "criteres-courants.md"
@@ -649,6 +691,17 @@ def score_actif(
         }
         # --- Baseline ±1 (primaire, sortie de référence) ------------------
         scores[h] = round(quant_total + news_total_capped, 6)
+        # GATE Réconciliation Σ=score : on additionne TOUTES les contributions
+        # individuelles (gates/n.a. ont contributions[h]=0 donc neutres) + le
+        # delta dû au cap (news_total_capped - news_total). Doit valoir scores[h]
+        # à la tolérance round(.,6) près. Logge ERROR si écart (sans crasher).
+        all_contribs = {str(idx): c.contributions[h] for idx, c in enumerate(criteres_res)}
+        reconcile_score(
+            scores[h], all_contribs,
+            actif=fiche_key, horizon=h,
+            cap_extra=(news_total_capped - news_total),
+            tol=1e-6,  # round(.,6) borne déjà le score : tol cohérente
+        )
         conc = _conclusion_from_score(scores[h])
         if conc is None:
             conc, note = tie_break(criteres_res, h, veille_conclusions.get(h))
@@ -656,6 +709,13 @@ def score_actif(
         conclusions[h] = conc
         # --- Pondéré (secondaire, loggé) ----------------------------------
         scores_pond[h] = round(quant_total_p + news_total_capped_p, 6)
+        all_contribs_p = {str(idx): c.contributions_pond[h] for idx, c in enumerate(criteres_res)}
+        reconcile_score(
+            scores_pond[h], all_contribs_p,
+            actif=f"{fiche_key}[pond]", horizon=h,
+            cap_extra=(news_total_capped_p - news_total_p),
+            tol=1e-6,
+        )
         conc_p = _conclusion_from_score(scores_pond[h])
         if conc_p is None:
             conc_p, note_p = tie_break(criteres_res, h, veille_conclusions.get(h), use_pond=True)

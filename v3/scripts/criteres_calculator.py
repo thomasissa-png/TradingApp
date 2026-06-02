@@ -52,6 +52,101 @@ import market_data as md  # noqa: E402 — module validé (symboles testés 2026
 SKIP_COUNTER: Counter = Counter()
 DEFAULT_TIMEOUT = 15  # seconds
 
+# ---------------------------------------------------------------------------
+# GATE C2 — Intégrité des critères quant (garde-fous P0, déterministes)
+# ---------------------------------------------------------------------------
+# Bornage des z-scores : tout |z| > Z_CLIP_MAX est clippé à ±Z_CLIP_MAX (3σ).
+# Au-delà de Z_WARN_THRESHOLD on logge un WARNING AVANT clip (signal de donnée
+# extrême — peut révéler une corruption en amont).
+# Sortie n/a (None) sur : std=0, prix≤0, NaN/Inf, spike implausible.
+# Ces critères passent en n/a → consommés par le gate de couverture S5 dans
+# scoring_analyste (compute_coverage), qui rétrograde l'actif vers
+# "⚠️ conf. faible" voire "🚫 insuffisant" si trop de critères tombent.
+Z_CLIP_MAX: float = 3.0          # |z| max après bornage (3 sigmas)
+Z_WARN_THRESHOLD: float = 2.5    # |z| déclenchant WARNING avant clip
+
+# Anti-spike : variation journalière implausible (close_t / close_{t-1} - 1).
+# Seuils par classe d'actif (constantes documentées) :
+#   indices boursiers : un mouvement > 20% en une journée est invraisemblable
+#     (vrais cas historiques : Black Monday 1987 = -22.6% ; sinon < 15%)
+#   commodités (futures pétrole/métaux/agri) : > 50% = spike (rolls, données
+#     corrompues) ; les vrais shocks (avril 2020 WTI négatif) sortent du modèle
+#     z-score de toute façon.
+#   FX majeurs : > 15% = spike (le SNB-CHF de 2015 a fait ~30% mais c'est un
+#     cygne noir ; on coupe à 15% par défaut).
+#   défaut : 30% pour les actifs non classés.
+SPIKE_THRESHOLD_INDEX: float = 0.20
+SPIKE_THRESHOLD_COMMODITY: float = 0.50
+SPIKE_THRESHOLD_FX: float = 0.15
+SPIKE_THRESHOLD_DEFAULT: float = 0.30
+
+
+def _is_finite_number(x: Any) -> bool:
+    """True si x est un nombre fini (pas None, NaN ni Inf)."""
+    if x is None:
+        return False
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(v)
+
+
+def _is_valid_price(x: Any) -> bool:
+    """Prix valide = nombre fini strictement positif."""
+    return _is_finite_number(x) and float(x) > 0.0
+
+
+def _spike_threshold_for_symbol(symbol: str) -> float:
+    """Seuil de variation journalière au-delà duquel on considère le point comme
+    spike. Heuristique par classe d'actif (formats Yahoo)."""
+    if not symbol:
+        return SPIKE_THRESHOLD_DEFAULT
+    s = symbol.upper()
+    # Indices : préfixe ^ Yahoo
+    if s.startswith("^"):
+        return SPIKE_THRESHOLD_INDEX
+    # Forex : suffixe =X
+    if s.endswith("=X"):
+        return SPIKE_THRESHOLD_FX
+    # Commodities : suffixe =F (futures)
+    if s.endswith("=F"):
+        return SPIKE_THRESHOLD_COMMODITY
+    return SPIKE_THRESHOLD_DEFAULT
+
+
+def _filter_spikes(series: List[Tuple[datetime, float]], threshold: float,
+                   *, label: str = "") -> List[Tuple[datetime, float]]:
+    """Filtre les points dont la variation absolue vs la précédente dépasse `threshold`.
+
+    Conserve le premier point. Logge un WARNING par spike détecté. Retourne la
+    série filtrée (peut être plus courte). N'altère pas la liste d'origine.
+    """
+    if not series or len(series) < 2:
+        return list(series) if series else []
+    out: List[Tuple[datetime, float]] = [series[0]]
+    prev = series[0][1]
+    for dt, c in series[1:]:
+        if not _is_valid_price(prev) or not _is_valid_price(c):
+            # Donnée invalide → on saute le point + log (alimente Z_warn pas spike)
+            SKIP_COUNTER[f"c2_invalid_price:{label or 'unknown'}"] += 1
+            logger.warning("C2 prix invalide ignoré symbol=%s prev=%r curr=%r",
+                           label, prev, c)
+            continue
+        if prev == 0:
+            continue
+        var = abs(c / prev - 1.0)
+        if var > threshold:
+            SKIP_COUNTER[f"c2_spike:{label or 'unknown'}"] += 1
+            logger.warning("C2 donnée suspecte (spike %.1f%%) symbol=%s "
+                           "prev=%.4f curr=%.4f seuil=%.1f%% — point ignoré",
+                           var * 100.0, label, prev, c, threshold * 100.0)
+            # On ignore le point spike (ne devient pas la nouvelle référence non plus)
+            continue
+        out.append((dt, c))
+        prev = c
+    return out
+
 
 # ---------------------------------------------------------------------------
 # HTTP helper (mockable en tests)
@@ -150,11 +245,24 @@ def fetch_twelve_series(symbol: str, *, interval: str = "1day", outputsize: int 
             close = float(close_val)
         except (AttributeError, ValueError, TypeError):
             continue
+        # GATE C2 — rejette prix ≤0 / NaN / Inf au point de capture (filet ultime
+        # avant l'usage). Les prix de marché valides sont > 0.
+        if not _is_valid_price(close):
+            SKIP_COUNTER[f"c2_invalid_price:{symbol}"] += 1
+            logger.warning("C2 prix invalide ignoré symbol=%s ts=%s value=%r",
+                           symbol, dt_py, close_val)
+            continue
         out.append((dt_py, close))
     if not out:
         SKIP_COUNTER[f"twelve_parse:{symbol}"] += 1
         return None
     out.sort(key=lambda t: t[0])
+    # GATE C2 — filtre les spikes (variations journalières implausibles) selon la
+    # classe d'actif. Ne casse pas la chaîne : le critère dérivé sera n/a si
+    # trop de points sautent (compute_zscore_normalisee → std=0 ou len<2 → None).
+    out = _filter_spikes(out, _spike_threshold_for_symbol(symbol), label=symbol)
+    if not out:
+        return None
     return out
 
 
@@ -625,28 +733,66 @@ def fetch_open_meteo_anomaly(lat: float, lon: float, *, days: int = 90) -> Optio
 # Z-score utility
 # ---------------------------------------------------------------------------
 
-def compute_zscore_normalisee(value: float, history: List[float], *, zscore_div: float, cap: float) -> Optional[float]:
-    """Calcule (z / zscore_div) capé. history = série de référence (incluant ou non value)."""
+def compute_zscore_normalisee(value: float, history: List[float], *, zscore_div: float,
+                              cap: float, label: str = "") -> Optional[float]:
+    """Calcule (z / zscore_div) capé. history = série de référence (incluant ou non value).
+
+    GATE C2 (garde-fous) :
+    - NaN/Inf/None dans value ou history → None (n/a).
+    - std == 0 (série constante) → None (n/a, pas de division par zéro).
+    - |z| > Z_WARN_THRESHOLD → WARNING avant clip.
+    - z clippé à ±Z_CLIP_MAX (bornage hard 3σ) AVANT la division par zscore_div.
+    """
     if not history or len(history) < 2:
         return None
-    mean = statistics.fmean(history)
-    std = statistics.pstdev(history)
-    if std == 0:
+    if not _is_finite_number(value):
+        SKIP_COUNTER[f"c2_value_not_finite:{label or 'unknown'}"] += 1
+        logger.warning("C2 value non-finie ignorée label=%s value=%r", label, value)
         return None
-    z = (value - mean) / std
-    norm = z / zscore_div
+    # Filtre history : tous doivent être finis. Sinon n/a (rejette série corrompue).
+    try:
+        clean_hist = [float(x) for x in history if _is_finite_number(x)]
+    except (TypeError, ValueError):
+        return None
+    if len(clean_hist) < 2:
+        return None
+    mean = statistics.fmean(clean_hist)
+    std = statistics.pstdev(clean_hist)
+    if std == 0:
+        SKIP_COUNTER[f"c2_std_zero:{label or 'unknown'}"] += 1
+        logger.warning("C2 série constante (std=0) label=%s n=%d → n/a", label, len(clean_hist))
+        return None
+    z = (float(value) - mean) / std
+    if not math.isfinite(z):
+        # Sécurité ceinture-bretelle (std très petit + grande valeur → overflow rare)
+        SKIP_COUNTER[f"c2_z_not_finite:{label or 'unknown'}"] += 1
+        return None
+    if abs(z) > Z_WARN_THRESHOLD:
+        logger.warning("C2 z-score extrême label=%s z=%.3f (clip à ±%.1f)",
+                       label, z, Z_CLIP_MAX)
+    # Clip dur 3σ AVANT division par zscore_div (séparation des préoccupations :
+    # le clip C2 borne le z brut, le cap fiche borne la normalisée finale).
+    z_clipped = max(-Z_CLIP_MAX, min(Z_CLIP_MAX, z))
+    norm = z_clipped / zscore_div
     return max(-cap, min(cap, norm))
 
 
-def zscore_from_series(series: List[float], *, zscore_div: float, cap: float) -> Optional[Tuple[float, float]]:
-    """Helper : retourne (valeur=dernier point, valeur_normalisee) à partir d'une série brute."""
+def zscore_from_series(series: List[float], *, zscore_div: float, cap: float,
+                       label: str = "") -> Optional[Tuple[float, float]]:
+    """Helper : retourne (valeur=dernier point, valeur_normalisee) à partir d'une série brute.
+
+    GATE C2 : si le dernier point n'est pas un nombre fini → None (n/a).
+    """
     if not series or len(series) < 2:
         return None
     value = series[-1]
-    norm = compute_zscore_normalisee(value, series, zscore_div=zscore_div, cap=cap)
+    if not _is_finite_number(value):
+        SKIP_COUNTER[f"c2_last_not_finite:{label or 'unknown'}"] += 1
+        return None
+    norm = compute_zscore_normalisee(value, series, zscore_div=zscore_div, cap=cap, label=label)
     if norm is None:
         return None
-    return value, norm
+    return float(value), norm
 
 
 # ---------------------------------------------------------------------------

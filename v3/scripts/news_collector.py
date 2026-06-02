@@ -13,7 +13,7 @@ import os
 import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import feedparser
@@ -33,6 +33,45 @@ from config import (
 from source_monitor import SourceMonitor
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# GATE C9 — Normalisation UTC des timestamps à l'ingestion (garde-fou P0)
+# ---------------------------------------------------------------------------
+# Tout timestamp d'event (`published_at`) DOIT être :
+#   - tz-aware (jamais naïf) → UTC explicite si la source n'a pas de TZ
+#   - rejeté/corrigé s'il est dans le futur > NOW_UTC + FUTURE_TOLERANCE_MIN
+#     (horloge source décalée — ex : RSS d'un serveur mal réglé)
+# La fraîcheur (canonical_event_date) et le filtre de premier-vu sont faussés
+# si on mélange des TZ ou si on accepte un timestamp futur. NE casse PAS la
+# logique existante (check_freshness en aval) : on garantit juste l'invariant.
+FUTURE_TOLERANCE_MIN: int = 10  # tolérance d'horloge source (minutes)
+
+
+def _normalize_to_utc(dt, *, source: str = "") -> datetime:
+    """Garantit qu'un datetime est UTC tz-aware et pas dans le futur.
+
+    - dt None / illisible → now(UTC).
+    - dt naïf             → UTC (replace tzinfo=UTC).
+    - dt aware            → converti en UTC (astimezone).
+    - dt > now + FUTURE_TOLERANCE_MIN → ramené à now (log WARNING, horloge source KO).
+    """
+    if dt is None:
+        return datetime.now(timezone.utc)
+    if not isinstance(dt, datetime):
+        return datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    now_utc = datetime.now(timezone.utc)
+    if dt > now_utc + timedelta(minutes=FUTURE_TOLERANCE_MIN):
+        logger.warning(
+            "C9 timestamp futur rejeté source=%s dt=%s now=%s → ramené à now (horloge décalée)",
+            source, dt.isoformat(), now_utc.isoformat(),
+        )
+        return now_utc
+    return dt
 
 
 # ============================================================
@@ -406,6 +445,8 @@ def _fetch_rss(name: str, url: str, monitor: "SourceMonitor | None" = None) -> l
             published = entry.get("published_parsed") or entry.get("updated_parsed")
             pub_dt = (datetime(*published[:6], tzinfo=timezone.utc) if published
                       else datetime.now(timezone.utc))
+            # GATE C9 — normalisation UTC + rejet futur (horloge source décalée)
+            pub_dt = _normalize_to_utc(pub_dt, source=f"rss:{name}")
             items.append(NewsItem(
                 title=entry.get("title", "").strip(),
                 url=entry.get("link", ""),
@@ -514,6 +555,8 @@ def _fetch_gnews(query: str, api_key: str, base_url: str,
                 pub_dt = datetime.fromisoformat(pub_raw.replace("Z", "+00:00"))
             except ValueError:
                 pub_dt = datetime.now(timezone.utc)
+            # GATE C9 — normalisation UTC + rejet futur
+            pub_dt = _normalize_to_utc(pub_dt, source="gnews")
             items.append(NewsItem(
                 title=(art.get("title") or "").strip(),
                 url=art.get("url", ""),
@@ -581,6 +624,8 @@ def _fetch_newsapi(query: str, api_key: str, base_url: str,
                 pub_dt = datetime.fromisoformat(pub_raw.replace("Z", "+00:00"))
             except ValueError:
                 pub_dt = datetime.now(timezone.utc)
+            # GATE C9 — normalisation UTC + rejet futur
+            pub_dt = _normalize_to_utc(pub_dt, source="newsapi")
             items.append(NewsItem(
                 title=(art.get("title") or "").strip(),
                 url=art.get("url", ""),

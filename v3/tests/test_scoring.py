@@ -122,15 +122,31 @@ def test_normalise_gate_drapeau_pas_de_valeur():
 # ---------------------------------------------------------------------------
 
 def test_seuil_long_short(petrole):
-    # Critère unique forçant LONG (contribution positive)
-    valeurs = {"brent_term_structure_m1m2": {"valeur": 5.0}}  # >> centre, signe +1
+    # Note : depuis l'ajout du gate de SUFFISANCE DE DONNÉES (sécurité Thomas),
+    # un actif noté avec un seul critère sur ~10 → coverage < 40% → conclusion
+    # = "INSUFFISANT" (override de la règle jamais-neutre). Pour valider la
+    # logique LONG/SHORT pure, on fournit assez de critères pour atteindre
+    # COVERAGE_OK (>= 65%) ; seul brent_term_structure_m1m2 porte le signe
+    # voulu, les autres sont à 0 (neutres) pour ne pas perturber le score.
+    base_valeurs = {
+        # neutres (zscore pré-calculé à 0 → contribution nulle, mais critère couvert)
+        "eia_crude_surprise": {"valeur_normalisee": 0.0},
+        "api_weekly_surprise": {"valeur_normalisee": 0.0},
+        "tension_geopol_moyen_orient": {"valeur": 0},
+        "cftc_cot_crude_nets": {"valeur_normalisee": 0.0},
+        "opec_production_policy": {"valeur": 0},
+    }
+    # Critère portant le signe LONG
+    valeurs = {**base_valeurs, "brent_term_structure_m1m2": {"valeur": 5.0}}
     r = sa.score_actif("petrole", petrole, valeurs)
+    assert r.confidence["7j"] in ("normale", "faible")  # pas INSUFFISANT
     assert r.scores["7j"] > 0
     assert r.conclusions["7j"] == "LONG"
 
-    # Critère unique forçant SHORT
-    valeurs_s = {"brent_term_structure_m1m2": {"valeur": -10.0}}
+    # Critère portant le signe SHORT
+    valeurs_s = {**base_valeurs, "brent_term_structure_m1m2": {"valeur": -10.0}}
     r2 = sa.score_actif("petrole", petrole, valeurs_s)
+    assert r2.confidence["7j"] in ("normale", "faible")
     assert r2.scores["7j"] < 0
     assert r2.conclusions["7j"] == "SHORT"
 
@@ -290,10 +306,18 @@ def test_run_full_petrole(tmp_path, petrole, fiches_dir):
     """Bout-en-bout : criteres-courants fixture -> bulletin écrit."""
     cc = tmp_path / "criteres-courants.md"
     now = _now_utc()
+    # Suffisamment de critères pour passer le gate suffisance (sécurité Thomas) :
+    # eia (10) + api (8) + tension (7) + cftc (7) + opec (6) + brent (5) +
+    # spread (4) + caixin (4) = 51/60 = 85% → confidence "normale".
     cc.write_text(
         "```yaml\n"
         f"last_update: {now.isoformat()}\n"
         "petrole:\n"
+        "  eia_crude_surprise: { valeur_normalisee: 0.0 }\n"
+        "  api_weekly_surprise: { valeur_normalisee: 0.0 }\n"
+        "  tension_geopol_moyen_orient: { valeur: 0 }\n"
+        "  cftc_cot_crude_nets: { valeur_normalisee: 0.0 }\n"
+        "  opec_production_policy: { valeur: 0 }\n"
         "  brent_term_structure_m1m2: { valeur: 0.5 }\n"
         "  spread_brent_wti: { valeur: 5.0 }\n"
         "  caixin_pmi_manuf: { valeur: 51.5 }\n"

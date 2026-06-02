@@ -37,6 +37,24 @@ HORIZONS: Tuple[str, ...] = ("24h", "7j", "1m")
 SEUIL_LONG = 0.0  # Score > 0 => LONG (cf. SCHEMA §1)
 FRESHNESS_MAX = timedelta(hours=1)
 
+# ---------------------------------------------------------------------------
+# Gate de SUFFISANCE DE DONNÉES (demande Thomas — sécurité anti-fausse confiance)
+# ---------------------------------------------------------------------------
+# Coverage = Σ poids(critères non-gate AVEC valeur_norm non-None)
+#            / Σ poids(critères non-gate de la fiche)
+# Pondérée par les POIDS (pas en nombre brut) : rater un critère poids 9 ≠ poids 2.
+# Les gates (drapeaux) sont exclus du numérateur ET du dénominateur.
+#
+# Paliers de confiance (tunables, alignés avec la spec validée) :
+#   coverage ≥ COVERAGE_OK et données fraîches → "normale"
+#   COVERAGE_MIN ≤ coverage < COVERAGE_OK OU données périmées → "faible"
+#       (on garde LONG/SHORT mais marqué dans le bulletin)
+#   coverage < COVERAGE_MIN → "insuffisant"
+#       conclusion = "INSUFFISANT" (override de la règle jamais-neutre)
+COVERAGE_OK: float = 0.65
+COVERAGE_MIN: float = 0.40
+CONCLUSION_INSUFFISANT: str = "INSUFFISANT"
+
 ROOT = Path(__file__).resolve().parents[1]
 FICHES_DIR = ROOT / "config" / "fiches"
 CRITERES_FILE = ROOT / "data" / "criteres-courants.md"
@@ -299,6 +317,70 @@ class ActifResult:
     diverge: Dict[str, bool] = field(default_factory=dict)
     # --- Diagnostic cap news/quant (Point 3 plan horizon) -----------------
     news_cap_info: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # --- Gate suffisance de données (sécurité anti-fausse confiance) ------
+    # coverage : 1 valeur au niveau actif (la disponibilité brute des critères
+    #            ne varie pas par horizon, c'est la pertinence qui varie).
+    # confidence : 1 valeur PAR horizon (la fraîcheur peut être dégradée
+    #              globalement, et un même actif peut être "faible" sur tous
+    #              les horizons en cas de stale).
+    coverage: float = 1.0
+    confidence: Dict[str, str] = field(default_factory=dict)
+
+
+def compute_coverage(criteres: List[CritereResult]) -> float:
+    """Calcule la couverture pondérée par les poids des critères non-gate.
+
+    Formule : Σ |poids| sur critères non-gate AVEC valeur_norm non-None
+              / Σ |poids| sur tous les critères non-gate de la fiche.
+
+    Pondérée par |poids| (et pas en nombre brut) : rater un critère poids 9
+    pénalise davantage que rater un critère poids 2. Les gates (drapeaux)
+    sont exclus du numérateur ET du dénominateur (ils n'entrent pas dans le
+    score). Retourne ∈ [0, 1].
+
+    Cas limites :
+    - Aucun critère non-gate (fiche dégénérée) → coverage = 1.0 (par
+      convention : "100% de rien est couvert", on ne pénalise pas une fiche
+      vide ; le rôle du gate est de détecter les TROUS).
+    - Tous les poids à 0 → coverage = 1.0 (idem).
+    """
+    non_gate = [c for c in criteres if not c.is_gate]
+    if not non_gate:
+        return 1.0
+    total_poids = sum(abs(c.poids) for c in non_gate)
+    if total_poids <= 0:
+        return 1.0
+    covered_poids = sum(abs(c.poids) for c in non_gate if c.valeur_norm is not None)
+    return covered_poids / total_poids
+
+
+def derive_confidence(coverage: float, is_stale: bool = False) -> str:
+    """Dérive le palier de confiance pour un actif/horizon.
+
+    Règles (cf. CONSTANTES) :
+      coverage < COVERAGE_MIN              → "insuffisant"
+      coverage < COVERAGE_OK OU is_stale   → "faible"
+      sinon                                → "normale"
+
+    `is_stale` plafonne la confiance à "faible" même si coverage élevé :
+    une donnée présente mais vieille n'est pas fiable. Néanmoins, si la
+    coverage est sous le minimum, l'état "insuffisant" reste prioritaire
+    (l'absence de donnée est PIRE qu'une donnée vieille).
+    """
+    if coverage < COVERAGE_MIN:
+        return "insuffisant"
+    if coverage < COVERAGE_OK or is_stale:
+        return "faible"
+    return "normale"
+
+
+def coverage_pct(coverage: float) -> int:
+    """Arrondi entier en pourcentage pour affichage ('🚫 données insuff. (32%)').
+
+    Plancher à 0, plafond à 100. Utilisé par render_bulletin uniquement.
+    """
+    pct = int(round(max(0.0, min(1.0, coverage)) * 100))
+    return pct
 
 
 def _conclusion_from_score(score: float) -> Optional[str]:
@@ -343,7 +425,18 @@ def score_actif(
     fiche: dict,
     valeurs_actif: dict,
     veille_conclusions: Optional[Dict[str, str]] = None,
+    is_stale: bool = False,
 ) -> ActifResult:
+    """Calcule le score d'un actif sur les 3 horizons.
+
+    `is_stale` (sécurité Thomas — voir CONSTANTES COVERAGE_*) :
+      - si True → confidence plafonnée à "faible" même si coverage élevé
+        (donnée présente mais vieille n'est pas fiable).
+      - n'override JAMAIS l'état "insuffisant" (absence > vieillesse).
+      - En pratique, `run()` lève déjà si la donnée globale est stale
+        (FRESHNESS_MAX) ; ce flag sert au cas où on voudrait dégrader sans
+        bloquer le bulletin, et aux tests.
+    """
     veille_conclusions = veille_conclusions or {}
     criteres_res: List[CritereResult] = []
     for crit in fiche.get("criteres", []):
@@ -570,6 +663,28 @@ def score_actif(
         conclusions_pond[h] = conc_p
         diverge[h] = (conclusions[h] != conclusions_pond[h])
 
+    # --- Gate suffisance de données (sécurité anti-fausse confiance) ---------
+    # coverage est calculée UNE FOIS au niveau actif (la disponibilité brute
+    # des critères ne dépend pas de l'horizon). confidence est dérivée PAR
+    # horizon (même coverage, mais override stale potentiellement global).
+    # Quand confidence == "insuffisant" → conclusion devient "INSUFFISANT"
+    # sur cet horizon (override la règle jamais-neutre, voir tie_break).
+    coverage = compute_coverage(criteres_res)
+    confidence: Dict[str, str] = {}
+    for h in HORIZONS:
+        confidence[h] = derive_confidence(coverage, is_stale=is_stale)
+        if confidence[h] == "insuffisant":
+            # Override jamais-neutre : on REMPLACE LONG/SHORT par INSUFFISANT.
+            # On conserve les scores numériques (utiles pour audit/decision-log)
+            # mais la conclusion textuelle devient explicite.
+            conclusions[h] = CONCLUSION_INSUFFISANT
+            conclusions_pond[h] = CONCLUSION_INSUFFISANT
+            # On retire le tie-break note s'il existait (plus pertinent).
+            tie_notes.pop(h, None)
+            tie_notes_pond.pop(h, None)
+            # diverge n'a plus de sens si les deux sont INSUFFISANT.
+            diverge[h] = False
+
     return ActifResult(
         nom=fiche.get("actif", fiche_key),
         fiche_key=fiche_key,
@@ -582,6 +697,8 @@ def score_actif(
         tie_break_notes_pond=tie_notes_pond,
         diverge=diverge,
         news_cap_info=news_cap_info,
+        coverage=coverage,
+        confidence=confidence,
     )
 
 
@@ -658,9 +775,19 @@ def render_bulletin(
     lines.append("|---|---|---|---|")
     for r in results:
         cells = []
+        cov_pct = coverage_pct(r.coverage)
         for h in HORIZONS:
             conc = r.conclusions[h]
             score = r.scores[h]
+            confidence = r.confidence.get(h, "normale")
+            # ─── Cellule INSUFFISANT ────────────────────────────────────────
+            # Override l'affichage LONG/SHORT : pas de prédiction → 🚫.
+            # On ne montre PAS de score ni d'annotation pondérée — la cellule
+            # est explicitement non-actionnable. Parsée comme non-prédiction
+            # par journaliste (exclue VRAI/FAUX + biais).
+            if conc == CONCLUSION_INSUFFISANT:
+                cells.append(f"🚫 données insuff. ({cov_pct}%)")
+                continue
             gate_flag = " ⚑" if any(c.is_gate and c.gate_active for c in r.criteres) else ""
             tie = " (tb)" if h in r.tie_break_notes else ""
             # Annotation pondérée (secondaire) + ⚠ si divergence
@@ -677,10 +804,25 @@ def render_bulletin(
             news_flag = " 📰" if ratio_news_cell > 0.5 else ""
             # Marqueur coin-flip : |score_pm1| < 0.05 → signal non-actionnable
             coin_flip_flag = " ⚪" if abs(score) < 0.05 else ""
-            cells.append(f"{conc} ({score:+.2f}){tie}{gate_flag}{pond_str}{news_flag}{coin_flip_flag}")
+            # Suffixe confiance faible : on garde la direction mais on marque
+            # explicitement la fiabilité dégradée (coverage entre MIN et OK,
+            # ou données périmées). Ajout APRÈS pond/news/coin_flip pour
+            # rester en dernier (le plus visible).
+            conf_flag = f" ⚠️ conf. faible ({cov_pct}%)" if confidence == "faible" else ""
+            cells.append(
+                f"{conc} ({score:+.2f}){tie}{gate_flag}{pond_str}{news_flag}{coin_flip_flag}{conf_flag}"
+            )
         lines.append(f"| {r.nom} | {cells[0]} | {cells[1]} | {cells[2]} |")
     lines.append("")
-    lines.append("**Légende** : ⚑ gate actif · 📰 news>50% du quant (abs/abs) · ⚪ quasi coin-flip (|score|<0.05) — signal non-actionnable, la règle jamais-neutre tranche par défaut · ⚠ divergence pm1/pondéré")
+    lines.append(
+        "**Légende** : ⚑ gate actif · 📰 news>50% du quant (abs/abs) · "
+        "⚪ quasi coin-flip (|score|<0.05) — signal non-actionnable, la règle jamais-neutre tranche par défaut · "
+        "⚠ divergence pm1/pondéré · "
+        "🚫 données insuffisantes (coverage < "
+        f"{int(COVERAGE_MIN * 100)}%) — pas de prédiction (override jamais-neutre) · "
+        "⚠️ conf. faible (coverage < "
+        f"{int(COVERAGE_OK * 100)}% ou données périmées) — direction conservée, fiabilité dégradée"
+    )
     lines.append("")
     lines.append("## Détail par actif")
     for r in results:
@@ -945,6 +1087,13 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
                 "conclusion_pond": r.conclusions_pond.get(h, ""),
                 "diverge": bool(r.diverge.get(h, False)),
                 "coin_flip": bool(abs(score_pm1_val) < 0.05),
+                # Gate suffisance de données (sécurité Thomas) :
+                # coverage = même valeur pour toutes les cellules d'un actif
+                # (la disponibilité brute des critères ne dépend pas de l'horizon).
+                # confidence = peut varier par horizon (futurs : différents seuils
+                # de coverage par horizon, ou is_stale par horizon).
+                "coverage": round(r.coverage, 4),
+                "confidence": r.confidence.get(h, "normale"),
                 "criteres": contribs,
                 "news_total": news_total,
                 "quant_total": quant_total,

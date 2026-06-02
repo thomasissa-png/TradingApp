@@ -142,13 +142,18 @@ def fiche_for_actif_name(fiches: Dict[str, dict], actif_name: str) -> Optional[T
 # ---------------------------------------------------------------------------
 
 # Matrice "| Actif | LONG (+0.42) ... | SHORT (-1.20) (tb) | LONG (+0.00) ⚑ |"
-MATRIX_LINE_RE = re.compile(
-    r"^\|\s*(?P<actif>[^|]+?)\s*\|"
-    r"\s*(?P<c24>LONG|SHORT)\s*\((?P<s24>[+-]?\d+(?:\.\d+)?)\)[^|]*\|"
-    r"\s*(?P<c7>LONG|SHORT)\s*\((?P<s7>[+-]?\d+(?:\.\d+)?)\)[^|]*\|"
-    r"\s*(?P<c1>LONG|SHORT)\s*\((?P<s1>[+-]?\d+(?:\.\d+)?)\)[^|]*\|",
+# Cellule INSUFFISANT depuis ajout gate suffisance (sécurité Thomas) :
+#   "🚫 données insuff. (32%)" — pas de score, pas de direction.
+# Pour ne pas perdre l'actif si UNE seule cellule est INSUFFISANT, on parse
+# cellule par cellule au lieu d'exiger 3 LONG/SHORT alignés.
+MATRIX_ROW_RE = re.compile(
+    r"^\|\s*(?P<actif>[^|]+?)\s*\|(?P<rest>[^\n]*\|)\s*$",
     re.MULTILINE,
 )
+CELL_LONG_SHORT_RE = re.compile(
+    r"\s*(?P<conc>LONG|SHORT)\s*\((?P<score>[+-]?\d+(?:\.\d+)?)\)"
+)
+CELL_INSUFFISANT_RE = re.compile(r"données insuff\.")
 # Annotation pondérée optionnelle : "[pond:LONG +0.42]"
 POND_ANNOT_RE = re.compile(r"\[pond:(LONG|SHORT)\s+([+-]?\d+(?:\.\d+)?)\]")
 BULLETIN_FILE_RE = re.compile(r"^bulletin-(\d{4}-\d{2}-\d{2})\.md$")
@@ -167,7 +172,13 @@ class BulletinCell:
 
 
 def parse_bulletin(path: Path) -> List[BulletinCell]:
-    """Extrait toutes les cellules (actif × horizon) d'un bulletin."""
+    """Extrait toutes les cellules (actif × horizon) d'un bulletin.
+
+    Parse cellule par cellule (pas la ligne entière) pour ne pas perdre un
+    actif dont UNE seule cellule serait INSUFFISANT (gate suffisance Thomas).
+    Les cellules INSUFFISANT sont retournées avec conclusion="INSUFFISANT",
+    score=0.0 — elles seront filtrées dans measure_cell (outcome=non-notee).
+    """
     m = BULLETIN_FILE_RE.match(path.name)
     if not m:
         return []
@@ -180,39 +191,66 @@ def parse_bulletin(path: Path) -> List[BulletinCell]:
     except OSError:
         return []
     cells: List[BulletinCell] = []
-    for mm in MATRIX_LINE_RE.finditer(text):
-        actif = mm.group("actif").strip()
-        # Découpe la ligne complète en cellules markdown pour extraire l'annotation pondérée
-        # par cellule (re-split sur '|', on garde les 3 dernières cellules après l'actif).
-        line = mm.group(0)
-        raw_cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        # Format attendu : [actif, cell24, cell7, cell1] → 4 entrées
-        cell_texts = raw_cells[1:4] if len(raw_cells) >= 4 else ["", "", ""]
-        for h, conc_key, score_key, idx in (
-            ("24h", "c24", "s24", 0),
-            ("7j", "c7", "s7", 1),
-            ("1m", "c1", "s1", 2),
-        ):
+    horizons = ("24h", "7j", "1m")
+    for mm in MATRIX_ROW_RE.finditer(text):
+        actif_raw = mm.group("actif").strip()
+        # Filtres : header markdown ("Actif"), séparateur ("---"), titres autres.
+        if not actif_raw or actif_raw.lower() == "actif":
+            continue
+        if set(actif_raw) <= {"-", ":", " "}:
+            continue
+        rest = mm.group("rest")
+        # Découpe en cellules — strip le | final
+        raw_cells = [c.strip() for c in rest.rstrip("|").split("|")]
+        if len(raw_cells) < 3:
+            continue
+        cell_texts = raw_cells[:3]
+        # Au moins une cellule doit contenir LONG/SHORT/INSUFFISANT pour
+        # considérer la ligne comme matrice (évite de matcher d'autres tableaux).
+        has_signal = any(
+            CELL_LONG_SHORT_RE.search(ct) or CELL_INSUFFISANT_RE.search(ct)
+            for ct in cell_texts
+        )
+        if not has_signal:
+            continue
+        for h, cell_text in zip(horizons, cell_texts):
+            # Cellule INSUFFISANT : pas de prédiction, on la trace tout de
+            # même pour reporter le volume de non-notées (visibilité Thomas).
+            if CELL_INSUFFISANT_RE.search(cell_text):
+                cells.append(
+                    BulletinCell(
+                        bulletin_date=bdate,
+                        actif_name=actif_raw,
+                        horizon=h,
+                        conclusion=CONCLUSION_INSUFFISANT,
+                        score=0.0,
+                        conclusion_pond=None,
+                        score_pond=None,
+                    )
+                )
+                continue
+            mc = CELL_LONG_SHORT_RE.search(cell_text)
+            if not mc:
+                continue
             try:
-                score = float(mm.group(score_key))
+                score = float(mc.group("score"))
             except (TypeError, ValueError):
                 continue
             conc_pond: Optional[str] = None
             score_pond: Optional[float] = None
-            if idx < len(cell_texts):
-                mp = POND_ANNOT_RE.search(cell_texts[idx])
-                if mp:
-                    conc_pond = mp.group(1)
-                    try:
-                        score_pond = float(mp.group(2))
-                    except (TypeError, ValueError):
-                        score_pond = None
+            mp = POND_ANNOT_RE.search(cell_text)
+            if mp:
+                conc_pond = mp.group(1)
+                try:
+                    score_pond = float(mp.group(2))
+                except (TypeError, ValueError):
+                    score_pond = None
             cells.append(
                 BulletinCell(
                     bulletin_date=bdate,
-                    actif_name=actif,
+                    actif_name=actif_raw,
                     horizon=h,
-                    conclusion=mm.group(conc_key),
+                    conclusion=mc.group("conc"),
                     score=score,
                     conclusion_pond=conc_pond,
                     score_pond=score_pond,
@@ -317,6 +355,13 @@ OUTCOME_VRAI = "VRAI"
 OUTCOME_FAUSSE = "FAUSSE"
 OUTCOME_NC = "non-conclusive"
 OUTCOME_INTERROMPU = "suivi-interrompu"
+# État distinct demandé par Thomas (sécurité scoring) : une cellule marquée
+# INSUFFISANT par l'Analyste (coverage < COVERAGE_MIN) n'est PAS une prédiction.
+# Elle est exclue du calcul VRAI/FAUX (taux de réussite) ET du calcul de biais
+# LONG/SHORT (distribution). Tracée à part pour pouvoir reporter le volume
+# de cellules non-notées (visibilité opérationnelle).
+OUTCOME_NON_NOTE = "non-notee"
+CONCLUSION_INSUFFISANT = "INSUFFISANT"
 
 
 @dataclass
@@ -369,6 +414,15 @@ def measure_cell(
         delta_pct=None,
         outcome=OUTCOME_INTERROMPU,
     )
+
+    # Cellule INSUFFISANT (gate suffisance Thomas) : pas une prédiction.
+    # Exclue VRAI/FAUX (taux), exclue distribution LONG/SHORT (biais),
+    # exclue Brier — tracée comme non-notée. SHORT-CIRCUIT avant tout
+    # calcul de delta (inutile et trompeur).
+    if cell.conclusion == CONCLUSION_INSUFFISANT:
+        base.outcome = OUTCOME_NON_NOTE
+        base.note = "cellule INSUFFISANT — pas de prédiction (gate suffisance)"
+        return base
 
     if prix_emission is None or prix_emission == 0:
         base.note = "prix d'émission indisponible"
@@ -525,7 +579,14 @@ def compute_kpi(measures_for_cell: List[Measure]) -> CellKPI:
     interrompus = [m for m in measures_for_cell if m.outcome == OUTCOME_INTERROMPU]
     kpi.interrompus_recents = len(interrompus)
 
-    terminees = [m for m in measures_for_cell if m.outcome != OUTCOME_INTERROMPU]
+    # Exclure NON_NOTE des KPI : ce ne sont pas des prédictions (gate
+    # suffisance Thomas). Elles ne comptent ni dans le taux, ni dans le
+    # biais LONG/SHORT, ni dans Brier. Le volume non-noté est observable
+    # ailleurs (decision-log + parsing direct du bulletin).
+    terminees = [
+        m for m in measures_for_cell
+        if m.outcome != OUTCOME_INTERROMPU and m.outcome != OUTCOME_NON_NOTE
+    ]
     window = terminees[-WINDOW:]
     kpi.n_total = len(window)
     if not window:
@@ -1118,7 +1179,11 @@ def compute_kpi_ab(measures_for_cell: List[Measure]) -> CellKPIAB:
         actif_name=measures_for_cell[0].cell.actif_name,
         horizon=measures_for_cell[0].horizon,
     )
-    terminees = [m for m in measures_for_cell if m.outcome != OUTCOME_INTERROMPU]
+    # Exclure NON_NOTE : pas une prédiction (gate suffisance Thomas).
+    terminees = [
+        m for m in measures_for_cell
+        if m.outcome != OUTCOME_INTERROMPU and m.outcome != OUTCOME_NON_NOTE
+    ]
     window = terminees[-WINDOW:]
     brier_sum_pm1 = 0.0
     brier_n_pm1 = 0

@@ -181,6 +181,100 @@ COEF_NATURE: Dict[str, Dict[str, float]] = {
 NATURES_FILTERED_OUT: Set[str] = {"deja_cote"}
 
 # ---------------------------------------------------------------------------
+# Lot 5 — Gates sanity sémantique des news (FLAG-ONLY, mode shadow)
+# ---------------------------------------------------------------------------
+# C8a — Détection « already-priced » RELATIVE à l'horizon.
+# Distinct de la fraîcheur absolue T2/STALE (>30j) : ici un event peut être
+# RÉCENT en absolu mais TROP VIEUX POUR SON HORIZON → le marché l'a probablement
+# déjà digéré, le move associé est passé. Tunables (constantes documentées).
+#
+# Sémantique : `(now_utc - canonical_event_date) > ALREADY_PRICED_WINDOW[h]`
+# → already_priced=True pour cet horizon. FLAG ONLY : la conclusion / le score /
+# le coef_nature ne sont PAS modifiés. On mesure d'abord la fréquence du flag.
+ALREADY_PRICED_WINDOW: Dict[str, timedelta] = {
+    "24h": timedelta(days=1),
+    "7j":  timedelta(days=3),
+    "1m":  timedelta(days=10),
+}
+
+# C8b — Détection démenti / correction (word-boundary, FR + EN).
+# Si match net dans le texte de l'event → is_denial=True : le signal initial
+# est peut-être annulé. FLAG ONLY. Anti-faux-positifs : `_phrase_matches`
+# (mêmes règles que les keywords directionnels — word-bounded, normalisation
+# accents/case, AND tokens si multi-mot).
+#
+# Liste fermée mais extensible. Aucun mot-clé n'est un substring d'un mot
+# courant : « dément » ≠ « démentir » (NFD strip → "dement" vs "dementir",
+# le word-boundary empêche le match partiel). « no longer » est multi-token
+# AND donc ne matche que si les 2 tokens sont présents.
+DENIAL_KEYWORDS: Tuple[str, ...] = (
+    # FR
+    "dementi",        # « démenti » (accents strippés par _norm)
+    "dement",         # « dément » conjugué 3e pers. sing. présent indicatif
+    "infirme",
+    "corrige",
+    "rectification",
+    "se retracte",
+    # EN
+    "retract",
+    "retracts",
+    "retracted",
+    "denies",
+    "denied",
+    "correction",
+    "walked back",
+    "no longer",
+    "walks back",
+)
+
+
+def compute_already_priced_for_horizon(
+    canonical_dt: Optional[datetime],
+    horizon: str,
+    now: Optional[datetime] = None,
+) -> Tuple[bool, Optional[float]]:
+    """C8a — Retourne (already_priced, age_days) pour un event sur un horizon.
+
+    - canonical_dt None → (False, None) : zéro invention, pas de flag sans date.
+    - horizon non géré (clé inconnue) → (False, age_days) : pas de fenêtre définie.
+    - sinon : compare (now - canonical_dt) à ALREADY_PRICED_WINDOW[horizon].
+
+    Pure fonction, pas d'effet de bord — utilisée par le scoring quand il sait
+    sur quel horizon il évalue la contribution.
+    """
+    if not isinstance(canonical_dt, datetime):
+        return False, None
+    now = now or datetime.now(timezone.utc)
+    age = now - canonical_dt
+    age_days = age.total_seconds() / 86400.0
+    window = ALREADY_PRICED_WINDOW.get(horizon)
+    if window is None:
+        return False, age_days
+    return age > window, age_days
+
+
+def detect_denial(text: str) -> Tuple[bool, str]:
+    """C8b — Détecte un démenti/correction dans le texte d'un event.
+
+    Retourne (is_denial, matched_keyword). Utilise `_phrase_matches` (mêmes
+    règles word-bounded que les keywords directionnels — pas de faux match
+    sur « démentir une rumeur fondée » → « dement » matche en stem 3e pers
+    indicatif, ce qui est le signal voulu).
+
+    Anti-faux-positif :
+    - Word-boundary strict via _phrase_matches (lookaround non-mot).
+    - Texte vide → False.
+    - Match au premier keyword trouvé (ordre = priorité documentation).
+    """
+    if not text:
+        return False, ""
+    text_norm = _norm(text)
+    for kw in DENIAL_KEYWORDS:
+        if _phrase_matches(text_norm, kw):
+            return True, kw
+    return False, ""
+
+# ---------------------------------------------------------------------------
 # A1 — Contribution fantôme (shadow) des events exclus → T1 mesurable
 # ---------------------------------------------------------------------------
 # Quand un event est écarté dans _candidates_for (nature=deja_cote / stale /
@@ -772,6 +866,14 @@ def parse_events_log(path: Path = EVENTS_LOG) -> List[dict]:
         if raw_nature not in COEF_NATURE:
             raw_nature = "ponctuel"
         ev["nature"] = raw_nature
+        # C8b — Détection démenti / correction (FLAG-ONLY, calculée une fois).
+        # On scanne le texte complet de l'event (_event_text concatène trigger+l2+...).
+        # is_denial=True NE NEUTRALISE PAS le signal — c'est purement informatif,
+        # tracé dans le decision-log et le bulletin pour mesure de fréquence.
+        is_denial, denial_kw = detect_denial(_event_text(ev))
+        if is_denial:
+            ev["is_denial"] = True
+            ev["denial_keyword"] = denial_kw
         events.append(ev)
     events.sort(key=lambda e: e["_dt"], reverse=True)
 
@@ -1307,7 +1409,7 @@ def _resolve_triplet_impl(
             # event matchant en mémoire) → fallback "ponctuel" (conservateur,
             # cohérent avec l'extracteur). Zéro invention : c'est un défaut
             # documenté, pas une fabrication de données.
-            synth_meta: Dict[str, str] = {
+            synth_meta: Dict[str, Any] = {
                 "materiality": conviction,  # propage le bucket pour valeur_pondérée
                 "reliability": best_rel,
                 "source_track": "ia_synthese",
@@ -1324,6 +1426,10 @@ def _resolve_triplet_impl(
                     "event_date_source": best_ev.get("event_date_source", ""),
                     "freshness_days": f"{freshness_days:.2f}",
                 })
+                # Lot 5 C8b — propage le flag démenti si présent sur l'event source.
+                if best_ev.get("is_denial"):
+                    synth_meta["is_denial"] = True
+                    synth_meta["denial_keyword"] = best_ev.get("denial_keyword", "")
             return val_signed, synth_meta
         # Conviction faible OU direction NEUTRAL → niveau 2 : critère news = 0.
         # Le prix tranchera via les critères numériques de la cellule.
@@ -1398,11 +1504,11 @@ def _resolve_triplet_impl(
                 ia_short = (dt, weight, mat, rel, ev)
     if ia_seen_any:
         # Au moins un event IA tradable cible cet actif → on tranche en IA-only.
-        def _meta_from(t: Tuple[datetime, int, str, str, dict], track: str = "ia") -> Dict[str, str]:
+        def _meta_from(t: Tuple[datetime, int, str, str, dict], track: str = "ia") -> Dict[str, Any]:
             ev_ref = t[4]
             cdt = ev_ref.get("_canonical_dt") or ev_ref.get("_dt") or t[0]
             freshness_days = (now - cdt).total_seconds() / 86400.0 if isinstance(cdt, datetime) else 0.0
-            return {
+            m: Dict[str, Any] = {
                 "materiality": t[2],
                 "reliability": t[3],
                 "source_track": track,
@@ -1413,6 +1519,11 @@ def _resolve_triplet_impl(
                 "event_date_source": ev_ref.get("event_date_source", ""),
                 "freshness_days": f"{freshness_days:.2f}",
             }
+            # Lot 5 C8b — flag démenti (zéro bruit : ajout SEULEMENT si True).
+            if ev_ref.get("is_denial"):
+                m["is_denial"] = True
+                m["denial_keyword"] = ev_ref.get("denial_keyword", "")
+            return m
         if ia_long and not ia_short:
             return 1, _meta_from(ia_long)
         if ia_short and not ia_long:
@@ -1481,11 +1592,11 @@ def _resolve_triplet_impl(
             if last_short is None or dt > last_short[0]:
                 last_short = (dt, mat, rel, ev)
 
-    def _kw_meta(t: Tuple[datetime, str, str, dict]) -> Dict[str, str]:
+    def _kw_meta(t: Tuple[datetime, str, str, dict]) -> Dict[str, Any]:
         ev_ref = t[3]
         cdt = ev_ref.get("_canonical_dt") or ev_ref.get("_dt") or t[0]
         freshness_days = (now - cdt).total_seconds() / 86400.0 if isinstance(cdt, datetime) else 0.0
-        return {
+        m: Dict[str, Any] = {
             "materiality": t[1],
             "reliability": t[2],
             "source_track": "keyword",
@@ -1495,6 +1606,11 @@ def _resolve_triplet_impl(
             "event_date_source": ev_ref.get("event_date_source", ""),
             "freshness_days": f"{freshness_days:.2f}",
         }
+        # Lot 5 C8b — flag démenti (zéro bruit : ajout SEULEMENT si True).
+        if ev_ref.get("is_denial"):
+            m["is_denial"] = True
+            m["denial_keyword"] = ev_ref.get("denial_keyword", "")
+        return m
 
     if last_long is None and last_short is None:
         return 0, {}
@@ -1714,6 +1830,12 @@ def classify_all_with_meta(
                           "event_date_source", "freshness_days"):
                     if k in meta:
                         entry[k] = meta[k]
+                # --- Lot 5 C8b — flag démenti (propagation au scoring) -------
+                # Zéro bruit : on n'ajoute que si True (cohérent avec
+                # sign_conflict / shadow_contrib_exclu).
+                if meta.get("is_denial"):
+                    entry["is_denial"] = True
+                    entry["denial_keyword"] = meta.get("denial_keyword", "")
                 # A1 — shadow_contrib_exclu agrégé pour cette cellule
                 # (alimenté par _candidates_for sur les events deja_cote/stale/repost).
                 # Lecture sur la PAIRE (actif_key, cle YAML), car le stash est

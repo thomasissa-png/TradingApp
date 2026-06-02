@@ -469,6 +469,10 @@ class CritereResult:
     # bucket de conviction de la synthèse directionnelle. Vide si critère non-news
     # ou si l'extractor n'a pas produit de synthèse (rétro-compat zéro invention).
     synthese_rationale: str = ""
+    # Lot 5 C8b — démenti / correction détecté sur l'event source de la cellule.
+    # FLAG ONLY : NE change PAS la conclusion ni le score (mode shadow — on mesure).
+    is_denial: bool = False
+    denial_keyword: str = ""
 
 
 @dataclass
@@ -699,6 +703,9 @@ def score_actif(
         # Gate C1 — defaults (présents même si raw non-dict)
         _sign_conflict: bool = False
         _sign_conflict_details: List[Dict[str, Any]] = []
+        # Lot 5 C8b — defaults
+        _is_denial: bool = False
+        _denial_keyword: str = ""
         if isinstance(raw, dict):
             mat = str(raw.get("materiality", "") or "")
             rel = str(raw.get("reliability", "") or "")
@@ -727,6 +734,9 @@ def score_actif(
             _sign_conflict_details = raw.get("sign_conflict_details") or []
             if not isinstance(_sign_conflict_details, list):
                 _sign_conflict_details = []
+            # Lot 5 C8b — démenti / correction (FLAG-ONLY).
+            _is_denial = bool(raw.get("is_denial"))
+            _denial_keyword = str(raw.get("denial_keyword", "") or "")
         criteres_res.append(
             CritereResult(
                 id=crit.get("id"),
@@ -758,6 +768,8 @@ def score_actif(
                 p2_shadow_contrib_exclu=dict(p2_shadow_excl),
                 sign_conflict=_sign_conflict,
                 sign_conflict_details=list(_sign_conflict_details),
+                is_denial=_is_denial,
+                denial_keyword=_denial_keyword,
             )
         )
 
@@ -965,6 +977,8 @@ def render_bulletin(
     fiches_h: str,
     freshness_msg: str,
 ) -> str:
+    # Lot 5 C8a — import paresseux (cohérent avec build_decision_log_records).
+    import triggers_classifier as _tc_classifier  # noqa: F401
     lines: List[str] = []
     lines.append(f"# Bulletin Analyste — {now:%Y-%m-%d} · {now:%Hh%M} (Paris)")
     lines.append("")
@@ -1039,9 +1053,36 @@ def render_bulletin(
             div_qn_flag = " ↯" if r.divergence_quant_news.get(h, False) else ""
             cmom_flag = " ⇄" if r.contre_momentum.get(h, False) else ""
             incoh_flag = " ⇆" if r.incoherence_inter_horizons else ""
+            # --- Lot 5 — marqueurs sanity sémantique (FLAG-ONLY) -------------
+            # ⌛ already-priced : au moins UN critère news de la cellule a son
+            #    event_date plus vieux que la fenêtre déjà-cotée de cet horizon.
+            # ⊘ démenti        : au moins UN critère news de la cellule porte
+            #    un signal de démenti / correction sur son event source.
+            # N'ALTÈRENT PAS la conclusion (mode shadow — on mesure).
+            ap_flag = ""
+            denial_flag = ""
+            for c in r.criteres:
+                if c.is_gate or c.is_na:
+                    continue
+                if c.is_denial:
+                    denial_flag = " ⊘"
+                if c.event_date and not ap_flag:
+                    try:
+                        _cdt = datetime.fromisoformat(c.event_date)
+                    except ValueError:
+                        _cdt = None
+                    if _cdt is not None:
+                        _ap, _ = _tc_classifier.compute_already_priced_for_horizon(
+                            _cdt, h, now=now,
+                        )
+                        if _ap:
+                            ap_flag = " ⌛"
+                if ap_flag and denial_flag:
+                    break
             cells.append(
                 f"{conc} ({score:+.2f}){tie}{gate_flag}{pond_str}{news_flag}"
                 f"{coin_flip_flag}{conf_flag}{div_qn_flag}{cmom_flag}{incoh_flag}"
+                f"{ap_flag}{denial_flag}"
             )
         lines.append(f"| {r.nom} | {cells[0]} | {cells[1]} | {cells[2]} |")
     lines.append("")
@@ -1055,8 +1096,10 @@ def render_bulletin(
         f"{int(COVERAGE_OK * 100)}% ou données périmées) — direction conservée, fiabilité dégradée · "
         "↯ divergence quant↔news (signes opposés, amplitudes significatives) · "
         "⇄ contre-momentum (conclusion vs RSI 14j opposés) · "
-        "⇆ incohérence inter-horizons (zig-zag ≥2 changements de sens) — "
-        "Lot 4a : flags visuels, n'altèrent PAS la conclusion"
+        "⇆ incohérence inter-horizons (zig-zag ≥2 changements de sens) · "
+        "⌛ déjà coté (event > fenêtre already-priced de l'horizon : 24h>1j · 7j>3j · 1m>10j) · "
+        "⊘ démenti / correction détecté sur l'event source — "
+        "Lots 4a/5 : flags visuels, n'altèrent PAS la conclusion (mode shadow)"
     )
     lines.append("")
     lines.append("## Détail par actif")
@@ -1116,6 +1159,9 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
     - score_pm1, score_pond, conclusion_pm1, conclusion_pond, diverge
     """
     import math as _math
+    # Lot 5 C8a — import paresseux de triggers_classifier (évite couplage dur,
+    # cohérent avec le pattern d'import lazy déjà en place ailleurs).
+    import triggers_classifier as tc  # noqa: F401  (utilisé plus bas)
     records: List[Dict[str, Any]] = []
     bulletin_date = now.strftime("%Y-%m-%d")
     generated_at = now.isoformat()
@@ -1185,6 +1231,24 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
                 if c.sign_conflict:
                     contrib_entry["sign_conflict"] = True
                     contrib_entry["sign_conflict_details"] = c.sign_conflict_details
+                # Lot 5 C8a — already_priced RELATIF À L'HORIZON.
+                # On calcule par cellule (event_date connu, horizon connu). FLAG-ONLY.
+                # Émis SEULEMENT si True (zéro bruit dans le log).
+                if c.event_date:
+                    try:
+                        cdt = datetime.fromisoformat(c.event_date)
+                    except ValueError:
+                        cdt = None
+                    if cdt is not None:
+                        ap, age_d = tc.compute_already_priced_for_horizon(cdt, h, now=now)
+                        if ap:
+                            contrib_entry["already_priced"] = True
+                            contrib_entry["already_priced_age_days"] = round(age_d or 0.0, 3)
+                            contrib_entry["already_priced_horizon"] = h
+                # Lot 5 C8b — démenti / correction (FLAG-ONLY).
+                if c.is_denial:
+                    contrib_entry["is_denial"] = True
+                    contrib_entry["denial_keyword"] = c.denial_keyword
                 contribs.append(contrib_entry)
             # --- Observabilité ratio_news (Point 4 plan horizon) ----------
             cap_info = r.news_cap_info.get(h, {}) if r.news_cap_info else {}

@@ -107,7 +107,34 @@ CALIBRATION_FILE = ROOT / "data" / "calibration.md"
 # niveau cellule. On préfère news_dominant (autoritatif) ; à défaut on bascule
 # sur ratio_news > 50 % (équivalent du `ratio_news > 0.5` du brief, en %).
 NEWS_RATIO_THRESHOLD_PCT = 50.0
-NEWS_RATIONALE_MAXLEN = 140  # tronque le synthese_rationale dans le bloc bulletin
+NEWS_RATIONALE_MAXLEN = 240  # tronque le synthese_rationale dans le bloc bulletin (sur frontière de phrase/mot)
+
+
+def _truncate_clean(text: str, maxlen: int = NEWS_RATIONALE_MAXLEN) -> str:
+    """Tronque `text` proprement, sans couper en plein mot.
+
+    Si `text` tient sous `maxlen`, retourné tel quel. Sinon, on coupe d'abord à
+    la dernière frontière de phrase ('. ', '! ', '? ') avant la limite ; à
+    défaut au dernier espace ; en dernier recours à la limite brute. On ajoute
+    '…' uniquement quand on a réellement tronqué.
+    """
+    text = (text or "").strip()
+    if len(text) <= maxlen:
+        return text
+    # Fenêtre utile : on réserve 1 char pour l'ellipse.
+    window = text[: maxlen - 1]
+    # 1) frontière de phrase la plus tardive dans la fenêtre
+    sentence_end = max(
+        window.rfind(". "), window.rfind("! "), window.rfind("? ")
+    )
+    if sentence_end > maxlen // 2:
+        return window[: sentence_end + 1].rstrip() + " …"
+    # 2) frontière de mot (dernier espace)
+    last_space = window.rfind(" ")
+    if last_space > 0:
+        return window[:last_space].rstrip() + " …"
+    # 3) fallback : coupe brute
+    return window.rstrip() + "…"
 
 
 # ---------------------------------------------------------------------------
@@ -1049,10 +1076,7 @@ def _extract_news_rationale(record: dict) -> Optional[str]:
         nature = c.get("nature")
         rat = c.get("synthese_rationale")
         if nature and rat and isinstance(rat, str) and rat.strip():
-            rat = rat.strip()
-            if len(rat) > NEWS_RATIONALE_MAXLEN:
-                rat = rat[: NEWS_RATIONALE_MAXLEN - 1].rstrip() + "…"
-            return rat
+            return _truncate_clean(rat.strip(), NEWS_RATIONALE_MAXLEN)
     return None
 
 

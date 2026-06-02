@@ -265,6 +265,37 @@ def _sort_by_materiality_then_date(events: List[Dict[str, str]]) -> List[Dict[st
     return sorted(events, key=key)
 
 
+def _news_dedup_key(ev: Dict[str, str]) -> str:
+    """Clé de déduplication d'une news : titre normalisé + source.
+
+    Normalise le `trigger` (titre) en minuscule avec espaces réduits, combiné à
+    la `source` normalisée. Deux events partageant la même news (même titre,
+    même source) collent sur la même clé. Robuste aux différences de casse et
+    d'espacement multiple.
+    """
+    trigger = re.sub(r"\s+", " ", (ev.get("trigger", "") or "").strip().lower())
+    source = (ev.get("source", "") or "").strip().lower()
+    return trigger + " || " + source
+
+
+def _dedup_news_in_actif(events: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Supprime les news identiques au sein d'un même actif.
+
+    Le `seen` set de build_briefing dédoublonne les ACTIFS, pas les news AU SEIN
+    d'un actif : une même news (même titre + source) peut apparaître deux fois.
+    On garde la 1re occurrence et l'ordre d'entrée (l'appelant a déjà trié).
+    """
+    seen: set = set()
+    out: List[Dict[str, str]] = []
+    for ev in events:
+        key = _news_dedup_key(ev)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(ev)
+    return out
+
+
 def _direction_arrow_for(ev: Dict[str, str], actif_label: str) -> str:
     """Retourne ↑ / ↓ / → / '' selon la direction IA sur cet actif.
 
@@ -356,8 +387,9 @@ def build_briefing(
         evs = groups.get(actif)
         if not evs:
             continue
-        # Tri intra-actif : materiality desc puis date desc
-        evs_sorted = _sort_by_materiality_then_date(evs)
+        # Tri intra-actif : materiality desc puis date desc, puis dédup des
+        # news identiques (même titre + source) AU SEIN de l'actif.
+        evs_sorted = _dedup_news_in_actif(_sort_by_materiality_then_date(evs))
         lines.append(f"### {actif}")
         for ev in evs_sorted[:max_par_actif]:
             lines.append(_puce(ev, actif_label=actif))

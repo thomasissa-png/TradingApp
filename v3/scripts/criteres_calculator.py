@@ -1172,19 +1172,47 @@ def _twelve_rsi_lineaire(symbol: str) -> Optional[float]:
 # Mapping non-monotone (VIX/V2X/VXN regime : +1 zone centre, -1 extrêmes)
 # ---------------------------------------------------------------------------
 
-def _mapping_non_monotone_vix(value: float, *, low: float = 14.0, high: float = 25.0,
-                              cap: float = 1.0) -> float:
-    """Pour un index de volatilité : +1 si entre low et high (régime sain),
-    -1 si très bas (complacence) ou très haut (stress). Interpolation linéaire."""
-    if low <= value <= high:
-        return cap
-    if value < low:
-        # Plus on est bas, plus c'est -1 (complacence). Atteint -cap à low/2.
-        ratio = (low - value) / max(low / 2.0, 1e-6)
-        return max(-cap, min(cap, cap - 2 * cap * ratio))
-    # value > high : stress, -cap atteint à high*1.5
-    ratio = (value - high) / max(high * 0.5, 1e-6)
-    return max(-cap, min(cap, cap - 2 * cap * ratio))
+def _mapping_non_monotone_vix(value: float, *, centre: float = 15.0,
+                              low_zero: float = 11.0, high_zero: float = 28.0,
+                              cap: float = 1.0,
+                              low: Optional[float] = None,
+                              high: Optional[float] = None) -> float:
+    """Mapping triangulaire asymétrique pour un index de volatilité (VIX/VXN/V2X).
+
+    +cap exactement au centre_optimal (régime sain), décroissance linéaire vers
+    -cap aux deux bornes extrêmes (complacence basse `low_zero`, stress haut
+    `high_zero`), puis capé à -cap au-delà.
+
+    Calibrage (cf. fiches *.yml, champs centre_optimal + effet_short) :
+      - sp500  : centre=15, low_zero=11, high_zero=28
+      - nasdaq : centre=20, low_zero=14, high_zero=35
+      - cac40  : centre=16, low_zero=11, high_zero=30
+
+    Exemples (sp500) :
+      VIX=15   → +1.0   (centre, régime sain)
+      VIX=23.9 → ≈-0.37 (proche du stress)
+      VIX=28   → -1.0   (borne stress)
+      VIX=11   → -1.0   (borne complacence)
+      VIX=40   → -1.0   (capé)
+
+    NB : l'ancienne implémentation était un *plateau* [14,25]→+1, qui classait à
+    tort VIX≈24 comme "sain". Remplacé par ce triangle conforme aux fiches.
+
+    Rétrocompat : `low`/`high` (ancienne API plateau) sont acceptés comme alias
+    dépréciés et réinterprétés en bornes -cap (low→low_zero, high→high_zero),
+    afin de ne pas casser les appelants existants (ex: backtest_quant).
+    """
+    if low is not None:
+        low_zero = low
+    if high is not None:
+        high_zero = high
+    if value >= centre:
+        span = max(high_zero - centre, 1e-6)
+        score = cap - 2.0 * cap * (value - centre) / span
+    else:
+        span = max(centre - low_zero, 1e-6)
+        score = cap - 2.0 * cap * (centre - value) / span
+    return max(-cap, min(cap, score))
 
 
 # ---------------------------------------------------------------------------
@@ -1448,10 +1476,14 @@ def _handle_mapping_non_monotone(cle: str, crit: dict, ts: str) -> Optional[dict
     if price is None:
         return None
     cap = float(crit.get("cap", 1.0))
-    # Seuils configurables via fiche ; defaults orientés VIX
-    low = float(crit.get("low", 14.0))
-    high = float(crit.get("high", 25.0))
-    norm = _mapping_non_monotone_vix(price, low=low, high=high, cap=cap)
+    # Calibrage configurable via fiche ; defaults orientés VIX (sp500).
+    # `centre` = centre_optimal de la fiche (+cap). `low_zero`/`high_zero` =
+    # bornes extrêmes (-cap), dérivables de effet_short (ex: "VIX>28 OU <11").
+    centre = float(crit.get("centre_optimal", crit.get("centre", 15.0)))
+    low_zero = float(crit.get("low_zero", crit.get("low", 11.0)))
+    high_zero = float(crit.get("high_zero", crit.get("high", 28.0)))
+    norm = _mapping_non_monotone_vix(price, centre=centre, low_zero=low_zero,
+                                     high_zero=high_zero, cap=cap)
     return {"valeur": price, "valeur_normalisee": norm,
             "valeur_ponderee": norm, "ts": ts}
 

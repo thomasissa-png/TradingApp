@@ -687,14 +687,38 @@ def test_open_meteo_zone_routing(monkeypatch, now_fixed):
 
 
 def test_mapping_non_monotone_vix_centre():
-    """VIX entre 14 et 25 → +cap. VIX < 14 → tend vers -cap (complacence)."""
-    assert cc._mapping_non_monotone_vix(18.0, low=14, high=25, cap=1.0) == 1.0
-    # VIX = 7 (très bas) → -cap
-    val = cc._mapping_non_monotone_vix(7.0, low=14, high=25, cap=1.0)
-    assert val == -1.0
-    # VIX = 40 (très haut) → -cap
-    val2 = cc._mapping_non_monotone_vix(40.0, low=14, high=25, cap=1.0)
-    assert val2 == -1.0
+    """Triangle asymétrique sp500 : centre=15 → +1, bornes 11/28 → -1, extrêmes capés.
+
+    Régression : l'ancien modèle plateau [14,25] classait VIX≈24 comme "sain"
+    (+1.0), ce qui était faux. Le triangle conforme à la fiche donne ≈-0.37.
+    """
+    m = cc._mapping_non_monotone_vix
+    # Centre optimal (régime sain) → +cap
+    assert m(15.0, centre=15, low_zero=11, high_zero=28, cap=1.0) == 1.0
+    # VIX = 23.865 (cas réel sp500) → proche du stress, score ≈ -0.37 (NÉGATIF)
+    v_real = m(23.865, centre=15, low_zero=11, high_zero=28, cap=1.0)
+    assert v_real < 0.0
+    assert abs(v_real - (-0.367)) < 0.01
+    # Borne haute stress → -cap
+    assert abs(m(28.0, centre=15, low_zero=11, high_zero=28, cap=1.0) - (-1.0)) < 1e-9
+    # Borne basse complacence → -cap
+    assert abs(m(11.0, centre=15, low_zero=11, high_zero=28, cap=1.0) - (-1.0)) < 1e-9
+    # VIX = 40 (très haut) → capé à -cap
+    assert m(40.0, centre=15, low_zero=11, high_zero=28, cap=1.0) == -1.0
+    # VIX = 7 (très bas) → capé à -cap
+    assert m(7.0, centre=15, low_zero=11, high_zero=28, cap=1.0) == -1.0
+
+
+def test_mapping_non_monotone_vix_calibrages_indices():
+    """Calibrages nasdaq (centre=20) et cac40 (centre=16) : +1 au centre, -1 aux bornes."""
+    m = cc._mapping_non_monotone_vix
+    # Nasdaq : centre=20, bornes 14/35
+    assert m(20.0, centre=20, low_zero=14, high_zero=35, cap=1.0) == 1.0
+    assert abs(m(35.0, centre=20, low_zero=14, high_zero=35, cap=1.0) - (-1.0)) < 1e-9
+    assert abs(m(14.0, centre=20, low_zero=14, high_zero=35, cap=1.0) - (-1.0)) < 1e-9
+    # Cac40 : centre=16, bornes 11/30
+    assert m(16.0, centre=16, low_zero=11, high_zero=30, cap=1.0) == 1.0
+    assert abs(m(30.0, centre=16, low_zero=11, high_zero=30, cap=1.0) - (-1.0)) < 1e-9
 
 
 def test_eia_series_routing(monkeypatch, now_fixed):

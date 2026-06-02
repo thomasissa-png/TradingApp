@@ -66,6 +66,127 @@ CONCLUSION_INSUFFISANT: str = "INSUFFISANT"
 # Tolérance : 1e-9 (en-deçà du round(6) du score final). Au-dessus → ERROR.
 RECONCILIATION_TOL: float = 1e-9
 
+# ---------------------------------------------------------------------------
+# Lot 4a — Détecteurs directionnels (FLAG-ONLY, zéro changement de comportement)
+# ---------------------------------------------------------------------------
+# C3 — Divergence quant↔news : signes opposés ET amplitudes non négligeables.
+#      Epsilon aligné avec le seuil coin_flip (|score|<0.05 = non-actionnable) :
+#      si l'un des deux totaux est inférieur en absolu à EPSILON_DIVERG, on ne
+#      flag pas (signal trop faible pour parler de "divergence").
+EPSILON_DIVERG: float = 0.05
+#
+# Score-vs-momentum : la conclusion (LONG/SHORT) est-elle alignée avec le
+#      momentum prix récent de l'actif ? Le momentum est lu directement depuis
+#      la `valeur_norm` du critère mappé (RSI 14j pour les indices) — AVANT
+#      application du signe du critère (qui peut être contrarien). Si la valeur
+#      normalisée |.| < EPSILON_MOMENTUM, momentum jugé neutre → pas de flag.
+#      Mapping STRICT (zéro invention) : seuls les actifs avec un critère de
+#      momentum prix pur sur leur propre ticker sont éligibles. Les autres
+#      (commodities, FX) restent sans flag faute de signal direct disponible.
+EPSILON_MOMENTUM: float = 0.15
+MOMENTUM_CLE_PAR_ACTIF: Dict[str, str] = {
+    # actif.lower() → cle_courante du critère "momentum prix récent"
+    "s&p 500": "rsi_14j_gspc",
+    "nasdaq": "rsi_14j_ixic",
+    "cac 40": "rsi_14j_fchi",
+}
+#
+# C6 — Cohérence inter-horizons : zig-zag (≥2 changements de sens) sur la
+#      séquence 24h→7j→1m. Une transition simple (1 changement) reste normale
+#      (continuation puis retournement). Conclusions INSUFFISANT exclues de la
+#      détection (pas de direction → pas de comparaison possible).
+
+
+def compute_directional_flags(
+    criteres_res: List["CritereResult"],
+    conclusions: Dict[str, str],
+    news_cap_info: Dict[str, Dict[str, Any]],
+) -> Tuple[Dict[str, bool], Dict[str, bool], Dict[str, float], str, bool]:
+    """Lot 4a — Calcule les 3 détecteurs directionnels en mode FLAG-ONLY.
+
+    Cette fonction ne modifie JAMAIS les conclusions LONG/SHORT/INSUFFISANT.
+    Elle se contente de DRAPEAUTER (signaler) 3 angles morts :
+
+      1. C3 — divergence quant ↔ news (par horizon) :
+         signes opposés ET |quant_total| > EPSILON_DIVERG ET |news_total| > EPSILON_DIVERG.
+         Source : `news_cap_info[h]` (déjà calculé par score_actif), valeurs PRÉ-cap
+         (pour mesurer la divergence *brute* avant arbitrage α).
+
+      2. Score-vs-momentum (par horizon) :
+         signe de la conclusion finale opposé au signe du momentum prix récent.
+         Source momentum : `valeur_norm` du critère mappé via MOMENTUM_CLE_PAR_ACTIF
+         (RSI 14j sur le ticker propre, AVANT signe contrarien — c'est la lecture
+         "direction du marché"). |momentum| < EPSILON_MOMENTUM → neutre → pas de flag.
+         Conclusions INSUFFISANT → pas de flag (pas de direction comparable).
+         Si l'actif n'a PAS de critère de momentum mappé → pas de flag (zéro invention).
+
+      3. C6 — incohérence inter-horizons (par actif) :
+         zig-zag ≥ 2 changements de sens sur la séquence 24h→7j→1m.
+         Les conclusions INSUFFISANT sont exclues de la séquence (pas de direction).
+         Une simple transition (1 changement, ex. LONG→LONG→SHORT) reste normale.
+
+    Retourne :
+      (divergence_par_h, contre_momentum_par_h, momentum_valeur_par_h,
+       momentum_source_cle, incoherence_inter_horizons)
+    """
+    # --- C3 — divergence quant ↔ news ---------------------------------------
+    divergence: Dict[str, bool] = {}
+    for h in HORIZONS:
+        info = news_cap_info.get(h, {}) or {}
+        q = float(info.get("quant_total_pm1", 0.0))
+        n = float(info.get("news_total_pm1", 0.0))
+        # Signes strictement opposés + amplitudes significatives.
+        opposite = (q > 0 and n < 0) or (q < 0 and n > 0)
+        significant = abs(q) > EPSILON_DIVERG and abs(n) > EPSILON_DIVERG
+        divergence[h] = bool(opposite and significant)
+
+    # --- Score-vs-momentum --------------------------------------------------
+    contre_momentum: Dict[str, bool] = {}
+    momentum_valeur: Dict[str, float] = {}
+    momentum_source_cle = ""
+
+    # Identifie le critère de momentum pour cet actif (via cle_courante mappée).
+    # Premier critère qui matche, non n.a., non gate, valeur_norm définie.
+    momentum_crit: Optional["CritereResult"] = None
+    eligible_cles = set(MOMENTUM_CLE_PAR_ACTIF.values())
+    for c in criteres_res:
+        if (c.cle_courante in eligible_cles
+                and not c.is_na
+                and not c.is_gate
+                and c.valeur_norm is not None):
+            momentum_crit = c
+            momentum_source_cle = c.cle_courante
+            break
+
+    for h in HORIZONS:
+        # Default : pas de flag (zéro invention : pas de momentum → pas de comparaison).
+        contre_momentum[h] = False
+        if momentum_crit is None:
+            continue
+        conc = conclusions.get(h, "")
+        if conc not in ("LONG", "SHORT"):
+            # INSUFFISANT ou autre → pas de direction → pas de flag.
+            continue
+        mom = float(momentum_crit.valeur_norm or 0.0)
+        momentum_valeur[h] = mom
+        if abs(mom) < EPSILON_MOMENTUM:
+            # Momentum jugé neutre → pas de divergence directionnelle mesurable.
+            continue
+        # Conclusion LONG + momentum < 0 → contre-momentum (et inverse).
+        if (conc == "LONG" and mom < 0) or (conc == "SHORT" and mom > 0):
+            contre_momentum[h] = True
+
+    # --- C6 — incohérence inter-horizons (zig-zag) --------------------------
+    seq = [conclusions.get(h, "") for h in HORIZONS]
+    seq_dir = [s for s in seq if s in ("LONG", "SHORT")]
+    changes = 0
+    for i in range(1, len(seq_dir)):
+        if seq_dir[i] != seq_dir[i - 1]:
+            changes += 1
+    incoherence = bool(changes >= 2)
+
+    return divergence, contre_momentum, momentum_valeur, momentum_source_cle, incoherence
+
 
 def reconcile_score(
     score_final: float,
@@ -373,6 +494,18 @@ class ActifResult:
     #              les horizons en cas de stale).
     coverage: float = 1.0
     confidence: Dict[str, str] = field(default_factory=dict)
+    # --- Lot 4a — Détecteurs directionnels (flag-only, n'altèrent PAS conclusions)
+    # C3 : divergence quant↔news par horizon (signes opposés + amplitudes > eps).
+    # quant_total_par_horizon / news_total_par_horizon : valeurs réelles pour le
+    # decision-log (utilisées uniquement pour rendre la divergence mesurable).
+    divergence_quant_news: Dict[str, bool] = field(default_factory=dict)
+    # Score-vs-momentum : LONG sur quant↑ avec momentum prix baissier (ou inverse).
+    # contre_momentum[h] = True si flag posé ; Dict[h, float] pour valeur momentum.
+    contre_momentum: Dict[str, bool] = field(default_factory=dict)
+    momentum_valeur: Dict[str, float] = field(default_factory=dict)  # momentum normalisé utilisé
+    momentum_source_cle: str = ""                                    # cle_courante effective ou ""
+    # C6 : incohérence inter-horizons (zig-zag ≥2 changements de sens). 1 bool/actif.
+    incoherence_inter_horizons: bool = False
 
 
 def compute_coverage(criteres: List[CritereResult]) -> float:
@@ -761,6 +894,14 @@ def score_actif(
             # diverge n'a plus de sens si les deux sont INSUFFISANT.
             diverge[h] = False
 
+    # --- Lot 4a — Détecteurs directionnels (FLAG-ONLY, post-conclusions) ---
+    # Appelé APRÈS application de l'override INSUFFISANT pour que la séquence
+    # inter-horizons et la comparaison score-vs-momentum tiennent compte des
+    # cellules réellement non-actionnables. NE MODIFIE PAS conclusions/scores.
+    divergence_qn, contre_mom, mom_val, mom_cle, incoh = compute_directional_flags(
+        criteres_res, conclusions, news_cap_info
+    )
+
     return ActifResult(
         nom=fiche.get("actif", fiche_key),
         fiche_key=fiche_key,
@@ -775,6 +916,11 @@ def score_actif(
         news_cap_info=news_cap_info,
         coverage=coverage,
         confidence=confidence,
+        divergence_quant_news=divergence_qn,
+        contre_momentum=contre_mom,
+        momentum_valeur=mom_val,
+        momentum_source_cle=mom_cle,
+        incoherence_inter_horizons=incoh,
     )
 
 
@@ -885,8 +1031,17 @@ def render_bulletin(
             # ou données périmées). Ajout APRÈS pond/news/coin_flip pour
             # rester en dernier (le plus visible).
             conf_flag = f" ⚠️ conf. faible ({cov_pct}%)" if confidence == "faible" else ""
+            # --- Lot 4a — marqueurs détecteurs directionnels (flag-only) ---
+            # Trois angles morts rendus VISIBLES sans modifier la conclusion :
+            #   ↯ diverg.    : quant et news en désaccord directionnel (>eps)
+            #   ⇄ contre-mom.: conclusion vs momentum prix (RSI) opposés
+            #   ⇆ horizons   : zig-zag inter-horizons sur l'actif (1 marqueur/cellule)
+            div_qn_flag = " ↯" if r.divergence_quant_news.get(h, False) else ""
+            cmom_flag = " ⇄" if r.contre_momentum.get(h, False) else ""
+            incoh_flag = " ⇆" if r.incoherence_inter_horizons else ""
             cells.append(
-                f"{conc} ({score:+.2f}){tie}{gate_flag}{pond_str}{news_flag}{coin_flip_flag}{conf_flag}"
+                f"{conc} ({score:+.2f}){tie}{gate_flag}{pond_str}{news_flag}"
+                f"{coin_flip_flag}{conf_flag}{div_qn_flag}{cmom_flag}{incoh_flag}"
             )
         lines.append(f"| {r.nom} | {cells[0]} | {cells[1]} | {cells[2]} |")
     lines.append("")
@@ -897,7 +1052,11 @@ def render_bulletin(
         "🚫 données insuffisantes (coverage < "
         f"{int(COVERAGE_MIN * 100)}%) — pas de prédiction (override jamais-neutre) · "
         "⚠️ conf. faible (coverage < "
-        f"{int(COVERAGE_OK * 100)}% ou données périmées) — direction conservée, fiabilité dégradée"
+        f"{int(COVERAGE_OK * 100)}% ou données périmées) — direction conservée, fiabilité dégradée · "
+        "↯ divergence quant↔news (signes opposés, amplitudes significatives) · "
+        "⇄ contre-momentum (conclusion vs RSI 14j opposés) · "
+        "⇆ incohérence inter-horizons (zig-zag ≥2 changements de sens) — "
+        "Lot 4a : flags visuels, n'altèrent PAS la conclusion"
     )
     lines.append("")
     lines.append("## Détail par actif")
@@ -1144,6 +1303,31 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
                             or (c.contributions[h] < 0 and quant_total > 0)):
                         t2_vrais_flips_qualifies += 1
 
+            # --- Lot 4a — flags directionnels (émis UNIQUEMENT si True) ---
+            # Zéro bruit : on n'ajoute les champs au record que lorsque le
+            # détecteur a effectivement levé un drapeau. Permet de filtrer
+            # facilement le decision-log (`grep divergence_quant_news` etc.).
+            directional_flags: Dict[str, Any] = {}
+            if r.divergence_quant_news.get(h, False):
+                cap_info_dir = r.news_cap_info.get(h, {}) or {}
+                directional_flags["divergence_quant_news"] = True
+                directional_flags["quant_total_for_divergence"] = round(
+                    float(cap_info_dir.get("quant_total_pm1", 0.0)), 6
+                )
+                directional_flags["news_total_for_divergence"] = round(
+                    float(cap_info_dir.get("news_total_pm1", 0.0)), 6
+                )
+            if r.contre_momentum.get(h, False):
+                directional_flags["contre_momentum"] = True
+                directional_flags["momentum_valeur"] = round(
+                    float(r.momentum_valeur.get(h, 0.0)), 6
+                )
+                directional_flags["momentum_source_cle"] = r.momentum_source_cle
+            # C6 — incoherence_inter_horizons : 1 valeur par actif, mais on la
+            # tracé sur CHAQUE horizon pour faciliter le filtrage du log.
+            if r.incoherence_inter_horizons:
+                directional_flags["incoherence_inter_horizons"] = True
+
             records.append({
                 "bulletin_date": bulletin_date,
                 "generated_at": generated_at,
@@ -1183,6 +1367,7 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
                 "news_dominant": news_dominant,
                 "news_cap_applied": bool(cap_info.get("cap_applied", False)),
                 "news_cap_override": bool(cap_info.get("override_high_confirmed", False)),
+                **directional_flags,
             })
     return records
 

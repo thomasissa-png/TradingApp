@@ -79,19 +79,21 @@ Taux de réussite > **70 %** + Brier < 0,25 par cellule (30 dernières conclusio
 
 ## Mémo de reprise — dernière session
 
-- **Date/heure de clôture** : 2026-06-02
-- **Numéro de session** : **Session 1** (1er mémo formel ; projet actif depuis 2026-05-01, ~6 journées de travail antérieures non numérotées — ce numéro devient la source de vérité pour le nommage des branches).
-- **Résumé** : Session « fiabilisation & garde-fous ». Livré : gate de **suffisance de données** (S5), **6 lots de gates anti-erreur de jugement** (478→619 tests), **source_monitor** (santé des flux + 4 flux muets réparés), **requêtes news optimisées 10/10** (concertation 3 experts ×3 rounds), **backtest quant v1** (verdict honnête NO-GO partiel : 50.8% OOS price-only), bilan des news, heure dans le titre du bulletin. Décisions clés : « **mesurer avant d'agir** » (Lot 4b différé pour calibrer les seuils sur données réelles) ; gates **flag-only en shadow** (détecter+mesurer sans changer les conclusions, prouvé par tests verrous) ; arbitrage gates par **concertation contradictoire** des 3 experts.
+- **Date/heure de clôture** : 2026-06-02 (soir)
+- **Numéro de session** : **Session 2** (suit la Session 1 du même jour ; développée sur `main`, conforme à l'ops live du pipeline cron).
+- **Résumé** : Session « gate intelligent & audits reproductibles ». La P1 « calibration coverage » (12 actifs muets en INSUFFISANT) traitée non par un seuil arbitraire mais par un **gate à priorités** : quant ≥40% → **⏸ hystérésis de maintien** (carry-forward horizon-aware, `COVERAGE_FLOOR=0.25`) → **📰 régime news-driven** (cuivre/cacao/café, biais news net) → 🚫. Smoke réel : 9 cellules récupérées. Aussi : **3 briefings/jour distincts** (fin du biais de survie), **monitoring sources 3 états** (partiel N/M), **note+confiance%**, **🐛 bug VIX** (plateau→triangle, faux haussier systémique S&P/Nasdaq/CAC), **audit S&P reproductible** (formule qui reconstitue au centième). 684 tests, 0 régression. Décision clé : cellules ⏸/📰 portent une **vraie direction → mesurées** (tags `is_carry`/`is_news_regime` pour calibrer plus tard sur du hit-rate réel).
 - **Travaux en cours / différés** :
-  - **Lot 4b gates** (actions : plafond mono-news + materiality×reliability + hystérésis anti-flip) — spec figée dans `gates-FINAL.md`, attend quelques cycles de données des détecteurs 4a pour calibrer les seuils.
-  - **Garde look-ahead (Lot 3)** armé mais latent — le pipeline ne propage pas encore la date du tick prix jusqu'à `measure_cell`. Petit câblage à faire.
-  - **Backtest quant v2** : câbler COT + FRED + horizons 7j/1m (le v1 price-only est NO-GO partiel ; v2 = seul moyen de conclure sur l'edge).
+  - **[C] Calibrer `COVERAGE_MIN` (0.40)** sur hit-rate réel — **rouvrir ~2026-06-23** : comparer le taux de réussite *maintenu (⏸) vs frais* et *news (📰) vs quant* via les tags, puis trancher le seuil sur données (pas à l'éditorial). @data-analyst.
+  - **Lot 4b gates** (plafond mono-news + materiality×reliability + hystérésis anti-flip) — spec `gates-FINAL.md`, attend cycles de détecteurs 4a.
+  - **Garde look-ahead (Lot 3)** armé mais latent — propager la date du tick prix jusqu'à `measure_cell`. Petit câblage.
+  - **Backtest quant v2** : câbler COT + FRED + horizons 7j/1m (v1 price-only NO-GO partiel).
   - **P2** : distribution dégénérée des scores + correction multiple-testing (avant émission réelle).
 - **Prochaines actions (priorisées)** :
-  1. **[P1] Vérifier la calibration coverage sur le run frais de 7h** (orchestration + @data-analyst) — sur données vieilles, les 12 actifs sont en `INSUFFISANT` (couverture 0-35%). Si le run frais confirme une couverture basse, le gate S5 rendrait le système muet → recalibrer `COVERAGE_MIN` ou vérifier que le pipeline remplit assez de critères. **Bloquant pour l'utilité du système.** Lancer `python3 v3/scripts/analyse_complete.py`.
-  2. **[P1] Lot 4b gates** (@fullstack) — une fois 3-5 cycles de détecteurs 4a accumulés, calibrer plafond mono-news + hystérésis sur la fréquence réelle des divergences/flips.
-  3. **[P2] Backtest quant v2** (@fullstack) — COT+FRED+7j/1m, pour trancher sur l'edge directionnel (~7 j).
-- **Blockers** : aucune question utilisateur en attente. La calibration coverage (#1) est une **vérification**, pas un blocage ; le Lot 4b s'auto-débloque avec l'accumulation des cycles.
-- **Branche prochaine session** : `claude/tradingapp-s2-coverage-calib-[suffix]`
+  1. **[P1] Observer le nouveau gate sur runs frais** (orchestration) — vérifier sur 3-5 cycles que ⏸/📰 récupèrent bien des cellules sans propager d'erreurs, et que les tags s'accumulent dans les decision-logs. `python3 v3/scripts/analyse_complete.py`.
+  2. **[P1→data] Ticket C** (@data-analyst, ~2026-06-23) — étude hit-rate carry/news vs frais → calibration `COVERAGE_MIN`.
+  3. **[P1] Lot 4b gates** (@fullstack) — une fois 3-5 cycles de détecteurs 4a accumulés.
+  4. **[P2] Backtest quant v2** (@fullstack) — COT+FRED+7j/1m.
+- **Blockers** : aucune question utilisateur en attente. Le ticket C et le Lot 4b s'auto-débloquent avec l'accumulation des cycles (données de mesure).
+- **Branche prochaine session** : `claude/tradingapp-s3-[suffix]`
 - **Commande de reprise** :
-  > « Reprise TradingApp session 2. Lis project-context.md (Mémo de reprise) + docs/lessons-learned.md. Priorité 1 : lance `python3 v3/scripts/analyse_complete.py` sur le run frais et vérifie la distribution de couverture (gate S5) — si la majorité des actifs sont en INSUFFISANT sur données FRAÎCHES, diagnostique (seuil COVERAGE_MIN trop agressif vs pipeline qui ne remplit pas assez de critères) et propose une correction. Puis enchaîne sur le Lot 4b des gates (gates-FINAL.md) une fois assez de cycles de détecteurs 4a accumulés. »
+  > « Reprise TradingApp session 3. Lis project-context.md (Mémo de reprise) + docs/lessons-learned.md. Priorité : observer le nouveau gate à priorités (⏸ carry / 📰 news) sur les runs frais accumulés — confirmer que les cellules récupérées sont saines et que les tags `is_carry`/`is_news_regime` peuplent les decision-logs. Si ≥ ~2-3 semaines de mesures dispo, lance le ticket C (étude hit-rate carry/news vs frais → calibration COVERAGE_MIN) via @data-analyst. »

@@ -627,7 +627,7 @@ def render_bulletin(
     freshness_msg: str,
 ) -> str:
     lines: List[str] = []
-    lines.append(f"# Bulletin Analyste — {now:%Y-%m-%d}")
+    lines.append(f"# Bulletin Analyste — {now:%Y-%m-%d} · {now:%Hh%M} (Paris)")
     lines.append("")
     lines.append(f"- Généré : {now.isoformat()}")
     lines.append(f"- Analyste version : {ANALYSTE_VERSION}")

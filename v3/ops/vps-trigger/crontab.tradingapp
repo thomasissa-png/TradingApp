@@ -1,0 +1,20 @@
+# ---------------------------------------------------------------------------
+# TradingApp — déclenchement fiable du cycle 3×/jour (7h / 12h / 18h Paris).
+# Déployé en prod le 2026-06-02 comme fichier /etc/cron.d/tradingapp (run as root).
+#
+# Le cron LOCAL du VPS remplace le scheduler GitHub (qui droppe des créneaux).
+# Le cycle tourne sur GitHub Actions ; ces lignes ne sont qu'une horloge.
+#
+# Pourquoi /etc/cron.d/ et pas la crontab de `thomas` :
+#   la crontab de `thomas` est réécrite par le déploiement auto d'Anya
+#   (deploy/sync-crons.sh) → un fichier /etc/cron.d/ dédié SURVIT aux redéploiements.
+#
+# ⚠️ workflow_dispatch CONTOURNE le garde-fou anti-doublon du workflow
+#    (cycle.yml) → UN SEUL tir par créneau. Ne PAS dédoubler les lignes.
+#
+# CRON_TZ rend l'heure robuste au changement d'heure (CEST été / CET hiver).
+# Format /etc/cron.d : un champ utilisateur (root) AVANT la commande.
+# ---------------------------------------------------------------------------
+
+CRON_TZ=Europe/Paris
+0 7,12,18 * * * root /opt/tradingapp/trigger-cycle.sh

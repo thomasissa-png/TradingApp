@@ -1406,3 +1406,92 @@ def test_breadth_cac_reste_na(monkeypatch, now_fixed):
     assert val is None
     assert any(k.startswith("no_breadth_data:breadth_cac_ma50")
                for k in cc.SKIP_COUNTER)
+
+
+# ---------------------------------------------------------------------------
+# BUG#2 — unification de la source VIX (vix_regime == niveau_vix_absolu)
+# ---------------------------------------------------------------------------
+
+def test_vix_regime_lit_meme_source_que_niveau_vix(monkeypatch, now_fixed):
+    """vix_regime (mapping_non_monotone) et niveau_vix_absolu (lineaire) DOIVENT
+    lire la MÊME valeur VIX fraîche (CBOE CSV).
+
+    Bug d'origine : vix_regime passait par Twelve (^VIX) = 23.6 périmé, tandis que
+    niveau_vix_absolu passait par CBOE CSV = 14.95 frais → deux valeurs VIX le même
+    jour. Correctif : _handle_mapping_non_monotone lit CBOE en priorité pour VIX.
+    """
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
+    # CBOE renvoie la valeur fraîche faisant autorité.
+    monkeypatch.setattr(cc, "fetch_cboe_history",
+                        lambda idx: [("2026-06-01", 14.5), ("2026-06-02", 14.95)])
+    # Twelve renverrait une valeur périmée DIFFÉRENTE : ne doit PAS être utilisée
+    # pour vix_regime (sinon le test prouve la régression).
+    monkeypatch.setattr(cc, "fetch_twelve_price", lambda spec: 23.6)
+
+    crit_regime = {"cle_courante": "vix_regime", "normalisation": "mapping_non_monotone",
+                   "source": "CBOE", "centre_optimal": 15.0,
+                   "low_zero": 11.0, "high_zero": 28.0, "cap": 1.0}
+    crit_niveau = {"cle_courante": "niveau_vix_absolu", "normalisation": "lineaire",
+                   "source": "CBOE", "centre": 15.0, "echelle": 10.0, "cap": 1.0}
+
+    val_regime = cc.build_critere_value("sp500", crit_regime, {}, {}, [], now_fixed)
+    val_niveau = cc.build_critere_value("sp500", crit_niveau, {}, {}, [], now_fixed)
+
+    assert val_regime is not None and val_niveau is not None
+    # Même valeur VIX brute (14.95), PAS la valeur Twelve périmée (23.6).
+    assert val_regime["valeur"] == pytest.approx(14.95)
+    assert val_niveau["valeur"] == pytest.approx(14.95)
+    assert val_regime["valeur"] == val_niveau["valeur"]
+    # Triangle corrigé : VIX≈15 (≈centre) → régime sain ≈ +1.0.
+    assert val_regime["valeur_normalisee"] > 0.9
+
+
+def test_vix_regime_fallback_twelve_si_cboe_indispo(monkeypatch, now_fixed):
+    """Si CBOE est KO, vix_regime retombe sur Twelve (^VIX) — pas de crash."""
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
+    monkeypatch.setattr(cc, "fetch_cboe_history", lambda idx: None)
+    monkeypatch.setattr(cc, "fetch_twelve_price", lambda spec: 16.0)
+    crit = {"cle_courante": "vix_regime", "normalisation": "mapping_non_monotone",
+            "source": "CBOE", "centre_optimal": 15.0,
+            "low_zero": 11.0, "high_zero": 28.0, "cap": 1.0}
+    val = cc.build_critere_value("sp500", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    assert val["valeur"] == pytest.approx(16.0)
+
+
+def test_vxn_regime_garde_source_twelve(monkeypatch, now_fixed):
+    """vxn_regime (Nasdaq) n'a PAS de CSV CBOE public → reste sur Twelve/yfinance.
+    Le mapping CBOE ne doit pas le détourner."""
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
+    monkeypatch.setattr(cc, "fetch_cboe_history",
+                        lambda idx: (_ for _ in ()).throw(AssertionError("CBOE ne doit pas être appelé pour VXN")))
+    monkeypatch.setattr(cc, "fetch_twelve_price", lambda spec: 22.0)
+    crit = {"cle_courante": "vxn_regime", "normalisation": "mapping_non_monotone",
+            "source": "Twelve Data", "centre_optimal": 20.0,
+            "low_zero": 14.0, "high_zero": 35.0, "cap": 1.0}
+    val = cc.build_critere_value("nasdaq", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    assert val["valeur"] == pytest.approx(22.0)
+
+
+def test_composite_meteo_bresil_emet_valeur_normalisee(monkeypatch, now_fixed):
+    """BUG#1 (d) : le composite café (meteo_bresil_minas_gerais, poids 11) émet bien
+    `valeur_normalisee` côté criteres_calculator.
+
+    Combiné au fix de normalise(), ce critère — auparavant jeté en silence — est
+    désormais récupéré dans le score (couverture en hausse pour le café)."""
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
+    # Anomalie pluie brute (z) renvoyée par Open-Meteo.
+    monkeypatch.setattr(cc, "fetch_open_meteo_anomaly", lambda lat, lon, days=60: -0.282)
+    crit = {"cle_courante": "meteo_bresil_minas_gerais", "normalisation": "composite",
+            "source": "Open-Meteo (composite pluie + Tmin)", "zscore_div": 2.0, "cap": 1.0}
+    val = cc.build_critere_value("cafe", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    assert "valeur_normalisee" in val
+    assert val["valeur"] == pytest.approx(-0.282)
+    assert val["valeur_normalisee"] == pytest.approx(-0.141)  # z / div = -0.282/2
+    # Et normalise() le consomme désormais (au lieu de le jeter).
+    import scoring_analyste as sa
+    v, note = sa.normalise(crit, val)
+    assert v == pytest.approx(-0.141)
+    assert "pré-calculé" in note

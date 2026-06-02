@@ -96,6 +96,52 @@ def test_normalise_zscore_no_history_no_precalc_na():
     assert "n/a" in note
 
 
+def test_normalise_composite_precalc():
+    """BUG#1 (a) : composite avec valeur_normalisee pré-calculée → valeur retournée.
+
+    Avant correctif : tombait en « type de normalisation inconnu » → jeté en silence
+    (ex: café météo Brésil composite poids 11, le critère le plus lourd, perdu).
+    """
+    crit = {"normalisation": "composite", "cap": 1.0}
+    v, note = sa.normalise(crit, {"valeur": -0.282, "valeur_normalisee": -0.141})
+    assert v == pytest.approx(-0.141)
+    assert "composite" in note and "pré-calculé" in note
+
+
+def test_normalise_composite_precalc_clip():
+    """composite : la valeur pré-calculée est bien capée à [-cap, +cap]."""
+    crit = {"normalisation": "composite", "cap": 1.0}
+    v, _ = sa.normalise(crit, {"valeur": 99.0, "valeur_normalisee": 2.5})
+    assert v == 1.0
+
+
+def test_normalise_mapping_non_monotone_precalc():
+    """BUG#1 (b) : mapping_non_monotone avec valeur_normalisee pré-calculée.
+
+    Ex: vix_regime / vxn_regime / v2x_regime (poids 7-8). Avant correctif : jeté.
+    """
+    crit = {"normalisation": "mapping_non_monotone", "cap": 1.0}
+    v, note = sa.normalise(crit, {"valeur": 14.95, "valeur_normalisee": 0.99})
+    assert v == pytest.approx(0.99)
+    assert "mapping_non_monotone" in note and "pré-calculé" in note
+
+
+def test_normalise_composite_sans_normalisee_na():
+    """BUG#1 (c) : composite SANS valeur_normalisee → n/a propre (pas de crash, pas d'invention)."""
+    crit = {"normalisation": "composite", "cap": 1.0}
+    v, note = sa.normalise(crit, {"valeur": -0.282})
+    assert v is None
+    assert "n/a" in note and "composite" in note
+
+
+def test_normalise_mapping_non_monotone_sans_normalisee_na():
+    """mapping_non_monotone SANS valeur_normalisee → n/a propre."""
+    crit = {"normalisation": "mapping_non_monotone", "cap": 1.0}
+    v, note = sa.normalise(crit, {"valeur": 23.6})
+    assert v is None
+    assert "n/a" in note and "mapping_non_monotone" in note
+
+
 def test_normalise_valeur_absente_na():
     crit = {"normalisation": "lineaire", "centre": 0.0, "echelle": 1.0, "cap": 1.0}
     v, note = sa.normalise(crit, None)

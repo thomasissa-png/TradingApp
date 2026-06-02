@@ -506,6 +506,21 @@ def normalise(critere: dict, raw: Any) -> Tuple[Optional[float], str]:
             return _clip(z / div, cap), f"zscore window={len(vals)} z={z:.3f}"
         return None, "n/a (zscore : historique indisponible)"
 
+    # Composite / mapping_non_monotone : la normalisation est faite EN AMONT par
+    # criteres_calculator (_handle_composite / _handle_mapping_non_monotone, qui
+    # émettent `valeur_normalisee`). On consomme la valeur pré-calculée, comme le
+    # fait zscore ci-dessus. Sans cette branche, ces critères (souvent à fort
+    # poids : météo Brésil composite poids 11, VIX regime poids 8, etc.) tombaient
+    # en « type inconnu » et étaient jetés en silence (poids effectif perdu).
+    if type_norm in ("composite", "mapping_non_monotone"):
+        if valeur_norm_precalc is not None:
+            try:
+                vn = float(valeur_norm_precalc)
+            except (TypeError, ValueError):
+                return None, f"n/a ({type_norm} : valeur_normalisee non numérique)"
+            return _clip(vn, cap), f"{type_norm} (pré-calculé)"
+        return None, f"n/a ({type_norm} : valeur_normalisee absente)"
+
     return None, f"n/a (type de normalisation inconnu : {type_norm!r})"
 
 

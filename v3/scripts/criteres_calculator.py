@@ -1467,12 +1467,38 @@ def _handle_twelve_lineaire_dispatch(cle: str, crit: dict, ts: str) -> Optional[
     return {"valeur": price, "ts": ts}
 
 
+# Régimes de volatilité indexés sur un indice exposé en CSV CBOE (source fraîche
+# et faisant autorité, identique à niveau_vix_absolu). Pour ces clés on lit CBOE
+# en PRIORITÉ afin que vix_regime utilise EXACTEMENT la même valeur VIX que
+# niveau_vix_absolu / vix_risk_off_proxy (qui passent déjà par _handle_cboe).
+# Sans ça, vix_regime lisait ^VIX via Twelve (valeur périmée/désynchronisée :
+# 23.6 alors que CBOE donnait 14.95 le même jour → faux régime "stress").
+# VXN (^VXN) et V2X (^STOXX50EVOL) ne sont PAS exposés en CSV CBOE public →
+# fallback Twelve/yfinance conservé pour eux.
+MAPPING_REGIME_CBOE_INDEX = {
+    "vix_regime": "VIX",
+}
+
+
 def _handle_mapping_non_monotone(cle: str, crit: dict, ts: str) -> Optional[dict]:
-    """Récupère le niveau de l'indice + applique mapping_non_monotone_vix."""
-    spec = TWELVE_SYMBOLS.get(cle)
-    if not spec or isinstance(spec, tuple):
-        return None
-    price = fetch_twelve_price(spec)
+    """Récupère le niveau de l'indice + applique mapping_non_monotone_vix.
+
+    Source : CBOE CSV en priorité pour les régimes VIX (cohérence avec
+    niveau_vix_absolu), fallback Twelve/yfinance pour VXN/V2X.
+    """
+    price: Optional[float] = None
+    # 1) Source CBOE (fraîche, faisant autorité) pour les régimes basés VIX.
+    cboe_idx = MAPPING_REGIME_CBOE_INDEX.get(cle)
+    if cboe_idx:
+        series = fetch_cboe_history(cboe_idx)
+        if series:
+            price = series[-1][1]
+    # 2) Fallback Twelve/yfinance (VXN/V2X, ou CBOE indisponible).
+    if price is None:
+        spec = TWELVE_SYMBOLS.get(cle)
+        if not spec or isinstance(spec, tuple):
+            return None
+        price = fetch_twelve_price(spec)
     if price is None:
         return None
     cap = float(crit.get("cap", 1.0))

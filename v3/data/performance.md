@@ -1,6 +1,6 @@
 # Performance du bulletin — Journaliste
 
-- Généré : 2026-06-02T11:42:57.308677+02:00
+- Généré : 2026-06-02T12:31:00.184533+02:00
 - Journaliste version : v3.1.0
 - Fenêtre KPI : 30 dernières conclusions terminées par cellule
 - PROBA_SCALE : 15.0 (proba = 0.5 + clip(|score|/SCALE, 0, 0.5))
@@ -51,23 +51,23 @@ Critère d'éligibilité renforcé : Wilson low > 50 % (borne basse IC 95 % sur 
 
 | Émission | Échéance | Actif | Horizon | Concl. | Prix émis. | Prix actuel | Delta % | Seuil % | Outcome | Note |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 2026-06-01 | 2026-06-02 | Argent | 24h | LONG | 74.4657 | 76.2893 | +2.449% | 0.8% | VRAI | delta=+2.449% vs seuil=0.8% |
-| 2026-06-01 | 2026-06-02 | Blé | 24h | SHORT | 610.7924 | 603.8541 | -1.136% | 0.8% | VRAI | delta=-1.136% vs seuil=0.8% |
-| 2026-06-01 | 2026-06-02 | CAC 40 | 24h | LONG | 8183.3398 | 8206.2998 | +0.281% | 0.5% | non-conclusive | |delta|=0.281% ≤ seuil=0.5% |
-| 2026-06-01 | 2026-06-02 | Cacao | 24h | LONG | 3924.6486 | 3948.6276 | +0.611% | 1.0% | non-conclusive | |delta|=0.611% ≤ seuil=1.0% |
-| 2026-06-01 | 2026-06-02 | Café (Arabica) | 24h | LONG | 265.5419 | 259.8543 | -2.142% | 1.0% | FAUSSE | delta=-2.142% vs seuil=1.0% |
-| 2026-06-01 | 2026-06-02 | Cuivre | 24h | LONG | 6.3575 | 6.5934 | +3.710% | 0.8% | VRAI | delta=+3.710% vs seuil=0.8% |
-| 2026-06-01 | 2026-06-02 | EUR/USD | 24h | SHORT | 1.1652 | 1.1644 | -0.070% | 0.25% | non-conclusive | |delta|=0.070% ≤ seuil=0.25% |
+| 2026-06-01 | 2026-06-02 | Argent | 24h | LONG | 74.4657 | 76.1963 | +2.324% | 0.8% | VRAI | delta=+2.324% vs seuil=0.8% |
+| 2026-06-01 | 2026-06-02 | Blé | 24h | SHORT | 610.7924 | 604.2167 | -1.077% | 0.8% | VRAI | delta=-1.077% vs seuil=0.8% |
+| 2026-06-01 | 2026-06-02 | CAC 40 | 24h | LONG | 8183.3398 | 8198.6904 | +0.188% | 0.5% | non-conclusive | |delta|=0.188% ≤ seuil=0.5% |
+| 2026-06-01 | 2026-06-02 | Cacao | 24h | LONG | 3924.6486 | 3957.7783 | +0.844% | 1.0% | non-conclusive | |delta|=0.844% ≤ seuil=1.0% |
+| 2026-06-01 | 2026-06-02 | Café (Arabica) | 24h | LONG | 265.5419 | 259.8963 | -2.126% | 1.0% | FAUSSE | delta=-2.126% vs seuil=1.0% |
+| 2026-06-01 | 2026-06-02 | Cuivre | 24h | LONG | 6.3575 | 6.5894 | +3.649% | 0.8% | VRAI | delta=+3.649% vs seuil=0.8% |
+| 2026-06-01 | 2026-06-02 | EUR/USD | 24h | SHORT | 1.1652 | 1.1643 | -0.084% | 0.25% | non-conclusive | |delta|=0.084% ≤ seuil=0.25% |
 | 2026-06-01 | 2026-06-02 | Nasdaq | 24h | LONG | 738.2250 | 742.6900 | +0.605% | 0.7% | non-conclusive | |delta|=0.605% ≤ seuil=0.7% |
-| 2026-06-01 | 2026-06-02 | Or | 24h | SHORT | 4521.6133 | 4524.4774 | +0.063% | 0.5% | non-conclusive | |delta|=0.063% ≤ seuil=0.5% |
-| 2026-06-01 | 2026-06-02 | Pétrole (Brent) | 24h | LONG | 93.0815 | 93.4096 | +0.352% | 1.0% | non-conclusive | |delta|=0.352% ≤ seuil=1.0% |
+| 2026-06-01 | 2026-06-02 | Or | 24h | SHORT | 4521.6133 | 4527.9601 | +0.140% | 0.5% | non-conclusive | |delta|=0.140% ≤ seuil=0.5% |
+| 2026-06-01 | 2026-06-02 | Pétrole (Brent) | 24h | LONG | 93.0815 | 93.9594 | +0.943% | 1.0% | non-conclusive | |delta|=0.943% ≤ seuil=1.0% |
 | 2026-06-01 | 2026-06-02 | S&P 500 | 24h | LONG | 756.4000 | 758.4400 | +0.270% | 0.4% | non-conclusive | |delta|=0.270% ≤ seuil=0.4% |
 | 2026-06-01 | 2026-06-02 | VIX | 24h | LONG | 23.2300 | 23.8650 | +2.734% | 3.0% | non-conclusive | |delta|=2.734% ≤ seuil=3.0% |
-| 2026-05-31 | 2026-06-01 | Argent | 24h | SHORT | 75.3693 | 76.2893 | +1.221% | 0.8% | FAUSSE | delta=+1.221% vs seuil=0.8% |
-| 2026-05-31 | 2026-06-01 | Blé | 24h | SHORT | 610.7924 | 603.8541 | -1.136% | 0.8% | VRAI | delta=-1.136% vs seuil=0.8% |
-| 2026-05-31 | 2026-06-01 | CAC 40 | 24h | LONG | 8183.3398 | 8206.2998 | +0.281% | 0.5% | non-conclusive | |delta|=0.281% ≤ seuil=0.5% |
-| 2026-05-31 | 2026-06-01 | Cacao | 24h | LONG | 3924.6486 | 3948.6276 | +0.611% | 1.0% | non-conclusive | |delta|=0.611% ≤ seuil=1.0% |
-| 2026-05-31 | 2026-06-01 | Café (Arabica) | 24h | LONG | 265.5419 | 259.8543 | -2.142% | 1.0% | FAUSSE | delta=-2.142% vs seuil=1.0% |
-| 2026-05-31 | 2026-06-01 | Cuivre | 24h | SHORT | 6.3621 | 6.5934 | +3.635% | 0.8% | FAUSSE | delta=+3.635% vs seuil=0.8% |
-| 2026-05-31 | 2026-06-01 | EUR/USD | 24h | SHORT | 1.1658 | 1.1644 | -0.118% | 0.25% | non-conclusive | |delta|=0.118% ≤ seuil=0.25% |
+| 2026-05-31 | 2026-06-01 | Argent | 24h | SHORT | 75.3693 | 76.1963 | +1.097% | 0.8% | FAUSSE | delta=+1.097% vs seuil=0.8% |
+| 2026-05-31 | 2026-06-01 | Blé | 24h | SHORT | 610.7924 | 604.2167 | -1.077% | 0.8% | VRAI | delta=-1.077% vs seuil=0.8% |
+| 2026-05-31 | 2026-06-01 | CAC 40 | 24h | LONG | 8183.3398 | 8198.6904 | +0.188% | 0.5% | non-conclusive | |delta|=0.188% ≤ seuil=0.5% |
+| 2026-05-31 | 2026-06-01 | Cacao | 24h | LONG | 3924.6486 | 3957.7783 | +0.844% | 1.0% | non-conclusive | |delta|=0.844% ≤ seuil=1.0% |
+| 2026-05-31 | 2026-06-01 | Café (Arabica) | 24h | LONG | 265.5419 | 259.8963 | -2.126% | 1.0% | FAUSSE | delta=-2.126% vs seuil=1.0% |
+| 2026-05-31 | 2026-06-01 | Cuivre | 24h | SHORT | 6.3621 | 6.5894 | +3.574% | 0.8% | FAUSSE | delta=+3.574% vs seuil=0.8% |
+| 2026-05-31 | 2026-06-01 | EUR/USD | 24h | SHORT | 1.1658 | 1.1643 | -0.133% | 0.25% | non-conclusive | |delta|=0.133% ≤ seuil=0.25% |
 | 2026-05-31 | 2026-06-01 | Nasdaq | 24h | LONG | 738.2250 | 742.6900 | +0.605% | 0.7% | non-conclusive | |delta|=0.605% ≤ seuil=0.7% |

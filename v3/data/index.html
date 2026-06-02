@@ -253,7 +253,7 @@
     <button class="hamburger" id="hamburger" aria-label="Ouvrir la liste des bulletins" aria-expanded="false">☰</button>
     <h1>TradingApp v3 — Bulletins</h1>
   </div>
-  <div class="meta">Généré : 2026-06-02 09:43 UTC</div>
+  <div class="meta">Généré : 2026-06-02 10:31 UTC</div>
   <div class="legend">
     Légende symboles :
     <code>⚑</code> flip ·
@@ -316,7 +316,7 @@
 </div>
 <script>
 const BULLETINS = [
-{...{"id": "2026-06-02", "label": "2026-06-02", "filename": "bulletin-2026-06-02.md"}, markdown: `# Bulletin Analyste — 2026-06-02 · 11h41 (Paris)
+{...{"id": "2026-06-02", "label": "2026-06-02", "filename": "bulletin-2026-06-02.md"}, markdown: `# Bulletin Analyste — 2026-06-02 · 12h29 (Paris)
 
 ## Briefing du jour
 
@@ -371,25 +371,28 @@ _1318 events analysés, 134 à impact (fenêtre 48h jusqu'au 2026-06-02)._
 
 **News-driven : 2 VRAI / 0 FAUX sur 2 mesurés**
 
-- ✅ **Blé 24h SHORT** — porté par news (Trois news SHORT récentes, dont deux à matérialité medium et confiance haute, dominent le signal. La baisse de prix de -3.36% sur 20j confi…) → VRAI (-1.14%) [émis 2026-06-01]
-- ✅ **Cuivre 24h LONG** — porté par news (Les PMI chinois et sud-coréens solides, les profits industriels chinois élevés et l'audit Cobre Panama soutiennent la demande, tandis que l…) → VRAI (+3.71%) [émis 2026-06-01]
+- ✅ **Blé 24h SHORT** — porté par news (Trois news SHORT récentes, dont deux à matérialité medium et confiance haute, dominent le signal. La baisse de prix de -3.36% sur 20j confi…) → VRAI (-1.08%) [émis 2026-06-01]
+- ✅ **Cuivre 24h LONG** — porté par news (Les PMI chinois et sud-coréens solides, les profits industriels chinois élevés et l'audit Cobre Panama soutiennent la demande, tandis que l…) → VRAI (+3.65%) [émis 2026-06-01]
 
 ## Santé des sources
 
-34 flux configurés, 34 appelés, 31 OK, 3 en échec, 2 muets (0 gardé), 0 skip (pas de clé API). Items : 1420 reçus → 1075 gardés.
+34 flux configurés, 34 appelés, 31 OK, 3 en échec, 5 muets (0 gardé), 0 skip (pas de clé API). Items : 1404 reçus → 1019 gardés.
 
 **Flux à problème :**
 - ❌ \`gnews\` (429, reçus=20, gardés=20) — HTTP 429
 - ❌ \`mining_com\` (403, reçus=0, gardés=0) — HTTP 403
 - ❌ \`newsapi\` (429, reçus=0, gardés=0) — HTTP 429
-- ⚪ \`bbc_world\` (200, reçus=31, gardés=0) — 31 reçus / 0 gardés (dédup + blacklist + filtre finance)
-- ⚪ \`cnbc_finance\` (200, reçus=30, gardés=0) — 30 reçus / 0 gardés (dédup + blacklist + filtre finance)
+- ⚪ \`cnbc_economy\` (200, reçus=30, gardés=0) — 30 reçus / 0 gardés (dédup + blacklist + filtre finance)
+- ⚪ \`eia_press_releases\` (200, reçus=7, gardés=0) — 7 reçus / 0 gardés (dédup + blacklist + filtre finance)
+- ⚪ \`eia_today_in_energy\` (200, reçus=30, gardés=0) — 30 reçus / 0 gardés (dédup + blacklist + filtre finance)
+- ⚪ \`investing_stocks\` (200, reçus=10, gardés=0) — 10 reçus / 0 gardés (dédup + blacklist + filtre finance)
+- ⚪ \`oilprice\` (200, reçus=15, gardés=0) — 15 reçus / 0 gardés (dédup + blacklist + filtre finance)
 
 
-- Généré : 2026-06-02T11:41:23.261845+02:00
+- Généré : 2026-06-02T12:29:23.282036+02:00
 - Analyste version : v3.0.0
 - Fiches hash : 142ff40d7847
-- Fraîcheur : fraîcheur OK (âge=-1 day, 23:59:59.999831)
+- Fraîcheur : fraîcheur OK (âge=-1 day, 23:59:59.999826)
 
 ## ⚠️ Cellules à surveiller
 
@@ -408,12 +411,9 @@ _1318 events analysés, 134 à impact (fenêtre 48h jusqu'au 2026-06-02)._
 - EUR/USD 24h — INSUFFISANT — [🚫]
 - EUR/USD 7j — INSUFFISANT — [🚫]
 - EUR/USD 1m — INSUFFISANT — [🚫]
-- Nasdaq 24h — LONG — [⚠️]
-- Nasdaq 7j — LONG — [⚠️]
-- Nasdaq 1m — LONG — [⚠️]
-- Or 24h — SHORT — [↯]
-- Or 7j — SHORT — [↯]
-- Or 1m — SHORT — [↯]
+- Nasdaq 24h — SHORT — [↯ ⇄]
+- Nasdaq 7j — SHORT — [↯ ⇄]
+- Nasdaq 1m — SHORT — [↯ ⇄]
 - S&P 500 24h — INSUFFISANT — [🚫]
 - S&P 500 7j — INSUFFISANT — [🚫]
 - S&P 500 1m — INSUFFISANT — [🚫]
@@ -421,24 +421,23 @@ _1318 events analysés, 134 à impact (fenêtre 48h jusqu'au 2026-06-02)._
 - VIX 7j — SHORT — [↯]
 - VIX 1m — SHORT — [↯]
 
-- Biais agrégé : LONG 11 · SHORT 10 · INSUFFISANT 15 (sur 36 cellules)
+- Biais agrégé : LONG 8 · SHORT 13 · INSUFFISANT 15 (sur 36 cellules)
 
 ## Flips vs veille
-- CAC 40 [24h] : LONG → SHORT (score -0.11)
+- CAC 40 [24h] : LONG → SHORT (score -0.10)
 - Cacao [24h] : LONG → INSUFFISANT (score +0.18)
 - Cacao [7j] : LONG → INSUFFISANT (score +1.19)
 - Cacao [1m] : LONG → INSUFFISANT (score +3.34)
 - Café (Arabica) [24h] : LONG → INSUFFISANT (score +0.04)
 - Café (Arabica) [7j] : LONG → INSUFFISANT (score +0.33)
 - Café (Arabica) [1m] : SHORT → INSUFFISANT (score -1.42)
-- Cuivre [24h] : LONG → INSUFFISANT (score +3.58)
-- Cuivre [7j] : SHORT → INSUFFISANT (score -0.30)
+- Cuivre [24h] : LONG → INSUFFISANT (score +3.56)
+- Cuivre [7j] : SHORT → INSUFFISANT (score -0.31)
 - Cuivre [1m] : SHORT → INSUFFISANT (score -0.66)
-- EUR/USD [24h] : SHORT → INSUFFISANT (score -0.95)
-- EUR/USD [7j] : SHORT → INSUFFISANT (score -0.24)
-- EUR/USD [1m] : LONG → INSUFFISANT (score +1.04)
-- Nasdaq [7j] : SHORT → LONG (score +5.83)
-- Nasdaq [1m] : SHORT → LONG (score +1.70)
+- EUR/USD [24h] : SHORT → INSUFFISANT (score -0.96)
+- EUR/USD [7j] : SHORT → INSUFFISANT (score -0.25)
+- EUR/USD [1m] : LONG → INSUFFISANT (score +1.03)
+- Nasdaq [24h] : LONG → SHORT (score -0.02)
 - S&P 500 [24h] : LONG → INSUFFISANT (score +0.71)
 - S&P 500 [7j] : LONG → INSUFFISANT (score +4.06)
 - S&P 500 [1m] : LONG → INSUFFISANT (score +3.73)
@@ -449,16 +448,16 @@ _1318 events analysés, 134 à impact (fenêtre 48h jusqu'au 2026-06-02)._
 
 | Actif | 24h | 7j | 1m |
 |---|---|---|---|
-| Argent | LONG (+0.70) [pond:LONG +0.70] | LONG (+1.86) [pond:LONG +1.86] | LONG (+4.21) [pond:LONG +4.21] |
+| Argent | LONG (+0.74) [pond:LONG +0.74] | LONG (+1.87) [pond:LONG +1.87] | LONG (+4.22) [pond:LONG +4.22] |
 | Blé | SHORT (-0.09) [pond:SHORT -0.09] | SHORT (-0.34) [pond:SHORT -0.34] | SHORT (-0.83) [pond:SHORT -0.83] |
-| CAC 40 | SHORT (-0.11) ⚑ [pond:SHORT -0.11] ⚠️ conf. faible (40%) ⇄ | LONG (+0.82) ⚑ [pond:LONG +0.82] ⚠️ conf. faible (40%) | LONG (+0.59) ⚑ [pond:LONG +0.59] ⚠️ conf. faible (40%) |
+| CAC 40 | SHORT (-0.10) ⚑ [pond:SHORT -0.10] ⚠️ conf. faible (40%) ⇄ | LONG (+0.82) ⚑ [pond:LONG +0.82] ⚠️ conf. faible (40%) | LONG (+0.60) ⚑ [pond:LONG +0.60] ⚠️ conf. faible (40%) |
 | Cacao | 🚫 données insuff. (37%) | 🚫 données insuff. (37%) | 🚫 données insuff. (37%) |
 | Café (Arabica) | 🚫 données insuff. (29%) | 🚫 données insuff. (29%) | 🚫 données insuff. (29%) |
 | Cuivre | 🚫 données insuff. (35%) | 🚫 données insuff. (35%) | 🚫 données insuff. (35%) |
 | EUR/USD | 🚫 données insuff. (18%) | 🚫 données insuff. (18%) | 🚫 données insuff. (18%) |
-| Nasdaq | LONG (+6.83) ⚑ [pond:LONG +5.23] 📰 ⚠️ conf. faible (44%) | LONG (+5.83) ⚑ [pond:LONG +4.93] 📰 ⚠️ conf. faible (44%) | LONG (+1.70) ⚑ [pond:LONG +1.55] ⚠️ conf. faible (44%) |
-| Or | SHORT (-2.19) ⚑ [pond:SHORT -2.99] ↯ | SHORT (-3.50) ⚑ [pond:SHORT -4.30] ↯ | SHORT (-2.61) ⚑ [pond:SHORT -3.21] ↯ |
-| Pétrole (Brent) | LONG (+5.56) ⚑ [pond:LONG +3.64] 📰 | LONG (+11.64) ⚑ [pond:LONG +7.80] 📰 | LONG (+9.47) ⚑ [pond:LONG +6.51] 📰 |
+| Nasdaq | SHORT (-0.02) ⚑ [pond:SHORT -0.02] 📰 ⚪ ↯ ⇄ | SHORT (-0.46) ⚑ [pond:SHORT -0.96] 📰 ↯ ⇄ | SHORT (-4.18) ⚑ [pond:SHORT -4.33] ↯ ⇄ |
+| Or | SHORT (-4.19) ⚑ [pond:SHORT -4.19] | SHORT (-5.50) ⚑ [pond:SHORT -5.50] | SHORT (-4.11) ⚑ [pond:SHORT -4.11] |
+| Pétrole (Brent) | LONG (+5.61) ⚑ [pond:LONG +3.69] 📰 | LONG (+11.77) ⚑ [pond:LONG +7.93] 📰 | LONG (+9.59) ⚑ [pond:LONG +6.63] 📰 |
 | S&P 500 | 🚫 données insuff. (27%) | 🚫 données insuff. (27%) | 🚫 données insuff. (27%) |
 | VIX | SHORT (-0.11) ⚑ [pond:SHORT -0.11] 📰 ↯ | SHORT (-0.13) ⚑ [pond:SHORT -0.13] 📰 ↯ | SHORT (-0.55) ⚑ [pond:SHORT -0.71] ↯ |
 
@@ -470,9 +469,9 @@ _1318 events analysés, 134 à impact (fenêtre 48h jusqu'au 2026-06-02)._
 | Critère | Type | Valeur brute | Norm. | Poids | Signe | 24h | 7j | 1m | Note |
 |---|---|---|---|---|---|---|---|---|---|
 | Taux 10Y US réels (TIPS) | zscore | 2.07 | +0.535 | 8 | -1 | -2.139 | -4.279 | -4.279 | zscore (pré-calculé) |
-| Mouvement de l'or 5j | zscore | 0.006145043832559205 | +0.115 | 7 | +1 | +0.643 | +0.724 | +0.563 | zscore (pré-calculé) |
-| Ratio Gold/Silver | lineaire | 59.33583698684447 | -1.000 | 7 | -1 | +2.100 | +4.900 | +7.000 | lineaire centre=75.0 echelle=12.0 |
-| Alpha Argent-vs-Or 5j | zscore | 0.0016376528306003557 | -0.058 | 5 | +1 | -0.116 | -0.232 | -0.174 | zscore (pré-calculé) |
+| Mouvement de l'or 5j | zscore | 0.00685414252441352 | +0.130 | 7 | +1 | +0.730 | +0.821 | +0.639 | zscore (pré-calculé) |
+| Ratio Gold/Silver | lineaire | 59.42678324116085 | -1.000 | 7 | -1 | +2.100 | +4.900 | +7.000 | lineaire centre=75.0 echelle=12.0 |
+| Alpha Argent-vs-Or 5j | zscore | -0.00013600267455626813 | -0.081 | 5 | +1 | -0.161 | -0.322 | -0.242 | zscore (pré-calculé) |
 | Caixin PMI Chine manuf | lineaire | — | — | 5 | +1 | — | — | — | n/a (valeur absente) |
 | CFTC COT Silver | zscore | 23187.0 | -0.227 | 5 | -1 | +0.227 | +0.793 | +1.133 | zscore (pré-calculé) |
 | Inventaires COMEX Silver | zscore | — | — | 4 | -1 | — | — | — | n/a (valeur absente) |
@@ -480,7 +479,7 @@ _1318 events analysés, 134 à impact (fenêtre 48h jusqu'au 2026-06-02)._
 | Demande photovoltaïque + mining strikes | composite | — | — | 3 | +1 | — | — | — | n/a (valeur absente) |
 | GATE régime extrême | gate | False | — | — | — | — | — | — | GATE inactif (drapeau, hors score) |
 
-- Scores : 24h=+0.697 · 7j=+1.863 · 1m=+4.213
+- Scores : 24h=+0.739 · 7j=+1.870 · 1m=+4.221
 
 ### Blé
 
@@ -509,10 +508,10 @@ _1318 events analysés, 134 à impact (fenêtre 48h jusqu'au 2026-06-02)._
 | Breadth CAC (%>MA50) | lineaire | — | — | 6 | +1 | — | — | — | n/a (valeur absente) |
 | Flux ETF MSCI France 5j net | zscore | 0.014390081912774022 | +0.276 | 5 | +1 | +0.414 | +1.381 | +0.967 | zscore (pré-calculé) |
 | Tension politique FR | triplet | 0 | +0.000 | 3 | +1 | +0.000 | +0.000 | +0.000 | triplet |
-| RSI 14j ^FCHI | lineaire | 56.09732644308353 | +0.244 | 2 | -1 | -0.390 | -0.195 | -0.098 | lineaire centre=50.0 echelle=25.0 |
+| RSI 14j ^FCHI | lineaire | 55.88329258119969 | +0.235 | 2 | -1 | -0.377 | -0.188 | -0.094 | lineaire centre=50.0 echelle=25.0 |
 | GATE régime extrême | gate | True | — | — | — | — | — | — | ⚑ GATE ACTIF — GATE ACTIF (drapeau, hors score) |
 
-- Scores : 24h=-0.114 · 7j=+0.818 · 1m=+0.593
+- Scores : 24h=-0.100 · 7j=+0.825 · 1m=+0.596
 
 ### Cacao
 
@@ -558,10 +557,10 @@ _1318 events analysés, 134 à impact (fenêtre 48h jusqu'au 2026-06-02)._
 | CFTC COT Copper nets | zscore | 73313.0 | +1.000 | 5 | -1 | -1.000 | -3.500 | -5.000 | zscore (pré-calculé) |
 | Term structure M1-M3 | lineaire | — | — | 5 | +1 | — | — | — | n/a (valeur absente) |
 | News construction/infra US-Chine | triplet | 1 | +1.000 | 4 | +1 | +0.640 | +2.000 | +3.600 | triplet |
-| Ratio Cuivre/Or | zscore | 0.0014572184834336368 | +0.948 | 3 | +1 | +1.138 | +1.991 | +1.707 | zscore (pré-calculé) |
+| Ratio Cuivre/Or | zscore | 0.0014551244791669484 | +0.935 | 3 | +1 | +1.122 | +1.964 | +1.683 | zscore (pré-calculé) |
 | GATE régime extrême | gate | True | — | — | — | — | — | — | ⚑ GATE ACTIF — GATE ACTIF (drapeau, hors score) |
 
-- Scores : 24h=+3.578 · 7j=-0.302 · 1m=-0.659
+- Scores : 24h=+3.562 · 7j=-0.307 · 1m=-0.663
 
 ### EUR/USD
 
@@ -570,20 +569,20 @@ _1318 events analysés, 134 à impact (fenêtre 48h jusqu'au 2026-06-02)._
 | Différentiel taux 2Y US-DE | zscore | — | — | 12 | -1 | — | — | — | n/a (valeur absente) |
 | Différentiel taux 10Y US-Bund | zscore | — | — | 6 | -1 | — | — | — | n/a (valeur absente) |
 | DXY trend 20j | zscore | — | — | 9 | -1 | — | — | — | n/a (valeur absente) |
-| USD/JPY (proxy risk) | zscore | 159.72073 | +0.500 | 4 | -1 | -1.401 | -1.601 | -1.001 | zscore (pré-calculé) |
+| USD/JPY (proxy risk) | zscore | 159.72854 | +0.504 | 4 | -1 | -1.411 | -1.613 | -1.008 | zscore (pré-calculé) |
 | FedWatch proba | lineaire | — | — | 6 | +1 | — | — | — | n/a (valeur absente) |
 | CFTC COT EUR nets | zscore | -3756.0 | -0.453 | 5 | -1 | +0.453 | +1.360 | +2.039 | zscore (pré-calculé) |
 | Spread OAT-Bund (stress EZ) | zscore | — | — | 4 | -1 | — | — | — | n/a (valeur absente) |
 | Balance commerciale EZ | zscore | — | — | 3 | +1 | — | — | — | n/a (valeur absente) |
 | GATE régime extrême | gate | True | — | — | — | — | — | — | ⚑ GATE ACTIF — GATE ACTIF (drapeau, hors score) |
 
-- Scores : 24h=-0.948 · 7j=-0.241 · 1m=+1.039
+- Scores : 24h=-0.958 · 7j=-0.253 · 1m=+1.031
 
 ### Nasdaq
 
 | Critère | Type | Valeur brute | Norm. | Poids | Signe | 24h | 7j | 1m | Note |
 |---|---|---|---|---|---|---|---|---|---|
-| Taux 10Y US réels (TIPS) | zscore | — | — | 11 | -1 | — | — | — | n/a (valeur absente) |
+| Taux 10Y US réels (TIPS) | zscore | 2.07 | +0.535 | 11 | -1 | -2.942 | -5.883 | -5.883 | zscore (pré-calculé) |
 | VXN régime | mapping_non_monotone | — | — | 7 | +1 | — | — | — | n/a (valeur absente) |
 | SOX trend 5j | zscore | 571.92999 | +0.888 | 7 | +1 | +5.593 | +5.593 | +3.107 | zscore (pré-calculé) |
 | Breadth Nasdaq 100 (%>MA50) | lineaire | — | — | 6 | +1 | — | — | — | n/a (valeur absente) |
@@ -594,7 +593,7 @@ _1318 events analysés, 134 à impact (fenêtre 48h jusqu'au 2026-06-02)._
 | RSI 14j ^IXIC | lineaire | 78.6749097386528 | +1.000 | 2 | -1 | -1.600 | -0.800 | -0.400 | lineaire centre=50.0 echelle=25.0 |
 | GATE régime extrême | gate | True | — | — | — | — | — | — | ⚑ GATE ACTIF — GATE ACTIF (drapeau, hors score) |
 
-- Scores : 24h=+6.829 · 7j=+5.826 · 1m=+1.703
+- Scores : 24h=-0.023 · 7j=-0.461 · 1m=-4.180
 
 ### Or
 
@@ -605,12 +604,12 @@ _1318 events analysés, 134 à impact (fenêtre 48h jusqu'au 2026-06-02)._
 | DXY trend 20j | zscore | — | — | 8 | -1 | — | — | — | n/a (valeur absente) |
 | CFTC COT nets | zscore | 149660.0 | -0.432 | 6 | -1 | +0.519 | +1.816 | +2.594 | zscore (pré-calculé) |
 | Flux ETF or agrégés 5j net | zscore | -0.0061862644099786035 | +0.049 | 5 | +1 | +0.097 | +0.243 | +0.170 | zscore (pré-calculé) |
-| Tension géopolitique | triplet | 1 | +1.000 | 5 | +1 | +2.000 | +2.000 | +1.500 | triplet |
+| Tension géopolitique | triplet | 0 | +0.000 | 5 | +1 | +0.000 | +0.000 | +0.000 | triplet |
 | Demande indienne saisonnière | triplet | 0 | +0.000 | 3 | +1 | +0.000 | +0.000 | +0.000 | triplet |
 | VIX (risk-off proxy) | lineaire | 14.95 | -0.763 | 3 | +1 | -1.601 | -1.144 | -0.458 | lineaire centre=18.0 echelle=4.0 |
 | GATE régime extrême | gate | True | — | — | — | — | — | — | ⚑ GATE ACTIF — GATE ACTIF (drapeau, hors score) |
 
-- Scores : 24h=-2.194 · 7j=-3.503 · 1m=-2.611
+- Scores : 24h=-4.194 · 7j=-5.503 · 1m=-4.111
 
 ### Pétrole (Brent)
 
@@ -624,11 +623,11 @@ _1318 events analysés, 134 à impact (fenêtre 48h jusqu'au 2026-06-02)._
 | Term structure Brent (M1-M2) | lineaire | — | — | 5 | +1 | — | — | — | n/a (valeur absente) |
 | DXY trend 20j | zscore | — | — | 5 | -1 | — | — | — | n/a (valeur absente) |
 | Stocks Cushing (hub Brent-WTI) | zscore | 23024.0 | -0.233 | 4 | -1 | +0.560 | +0.933 | +0.466 | zscore (pré-calculé) |
-| Spread Brent-WTI | lineaire | 2.634829999999994 | -0.183 | 4 | +1 | -0.219 | -0.584 | -0.511 | lineaire centre=3.0 echelle=2.0 |
+| Spread Brent-WTI | lineaire | 2.718829999999997 | -0.141 | 4 | +1 | -0.169 | -0.450 | -0.394 | lineaire centre=3.0 echelle=2.0 |
 | Caixin PMI Chine manuf. | lineaire | — | — | 4 | +1 | — | — | — | n/a (valeur absente) |
 | GATE — événement extrême | gate | True | — | — | — | — | — | — | ⚑ GATE ACTIF — GATE ACTIF (drapeau, hors score) |
 
-- Scores : 24h=+5.563 · 7j=+11.639 · 1m=+9.468
+- Scores : 24h=+5.614 · 7j=+11.773 · 1m=+9.586
 
 ### S&P 500
 
@@ -706,7 +705,6 @@ _1318 events analysés, 134 à impact (fenêtre 48h jusqu'au 2026-06-02)._
 - n/a : Balance commerciale EZ — n/a (valeur absente)
 - ⚑ GATE actif : GATE régime extrême — GATE ACTIF (drapeau, hors score)
 ### Nasdaq
-- n/a : Taux 10Y US réels (TIPS) — n/a (valeur absente)
 - n/a : VXN régime — n/a (valeur absente)
 - n/a : Breadth Nasdaq 100 (%>MA50) — n/a (valeur absente)
 - n/a : Concentration top 7 — n/a (valeur absente)

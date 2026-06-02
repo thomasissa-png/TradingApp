@@ -156,19 +156,48 @@ def _filter_spikes(series: List[Tuple[datetime, float]], threshold: float,
 # HTTP helper (mockable en tests)
 # ---------------------------------------------------------------------------
 
+def _bucket_for_url(url: str) -> str:
+    """Déduit le bucket de throttle/retry à partir de l'host de l'URL.
+
+    Bucket distinct par source pour que CFTC, EIA et Open-Meteo aient des cadences
+    indépendantes (une source rate-limitée n'en pénalise pas une autre). Dérivé de
+    l'URL plutôt qu'en argument explicite → le contrat positionnel de
+    `http_get_json` reste strictement inchangé (les mocks existants restent valides).
+    """
+    if "cftc.gov" in url:
+        return "cftc"
+    if "eia.gov" in url:
+        return "eia"
+    if "open-meteo.com" in url:
+        return "openmeteo"
+    return "http"
+
+
 def http_get_json(url: str, params: Optional[dict] = None, timeout: int = DEFAULT_TIMEOUT) -> Optional[Any]:
-    """GET JSON avec timeout. Retourne None si erreur (et log WARNING)."""
-    try:
-        import requests  # lazy import (testable)
-    except ImportError:
-        logger.warning("requests non installé — HTTP désactivé")
+    """GET JSON résilient avec timeout. Retourne le JSON parsé, ou None si erreur.
+
+    Wrapper mince autour de `http_retry.http_get_retry` (helper partagé) : route le
+    GET via la logique retry/backoff (429/5xx + Retry-After + throttle par bucket)
+    puis parse `.json()`. Le contrat historique est PRÉSERVÉ (même signature
+    positionnelle, même type de retour JSON-ou-None) : les tests qui mockent
+    `http_get_json` en entier restent valides, et CFTC/EIA/Open-Meteo encaissent
+    désormais un 429/5xx avec retry au lieu de tomber n/a au 1er coup.
+
+    Le bucket de throttle est déduit de l'URL (cftc/eia/openmeteo) pour que les
+    sources ne se pénalisent pas mutuellement.
+    """
+    bucket = _bucket_for_url(url)
+    resp = _http_retry.http_get_retry(
+        url, params=params, timeout=timeout, bucket=bucket, label=bucket,
+    )
+    if resp is None:
+        # Échec réseau / statut non-retriable / retries épuisés : déjà loggé par
+        # le helper. Le caller (CFTC/EIA/Meteo) incrémente son SKIP_COUNTER sur None.
         return None
     try:
-        r = requests.get(url, params=params, timeout=timeout)
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:  # noqa: BLE001
-        logger.warning("HTTP GET %s : %s", url, e)
+        return resp.json()
+    except ValueError as e:
+        logger.warning("HTTP GET %s : JSON invalide (HTTP 200) : %s", url, e)
         return None
 
 
@@ -680,11 +709,39 @@ def fetch_fred_spread(series_us: str, series_de: str, *, n: int = 252) -> Option
         return out
     map_a = _parse(a)
     map_b = _parse(b)
-    common = sorted(set(map_a) & set(map_b))
-    if len(common) < 10:
+
+    # Alignement par forward-fill : la série DE (ex IRLTLT01DEM156N) est MENSUELLE
+    # (un point en début de mois), la série US (DGS10) est QUOTIDIENNE. Une simple
+    # intersection de dates ne garde qu'une poignée de points (les jours où les
+    # deux séries coïncident) → spread "thin" → critère perdu. On reporte donc la
+    # dernière valeur DE connue sur chaque date US (last-observation-carried-forward),
+    # ce qui est la convention standard pour mélanger une série basse fréquence et
+    # une série haute fréquence.
+    if not map_a or not map_b:
         SKIP_COUNTER[f"fred_spread_thin:{series_us}-{series_de}"] += 1
         return None
-    return [map_a[d] - map_b[d] for d in common]
+
+    de_dates = sorted(map_b)  # dates DE croissantes (oldest→newest)
+    us_dates = sorted(map_a)  # dates US croissantes
+    spread: List[float] = []
+    j = 0  # curseur sur de_dates : dernière valeur DE connue ≤ date US courante
+    last_de: Optional[float] = None
+    for d in us_dates:
+        while j < len(de_dates) and de_dates[j] <= d:
+            last_de = map_b[de_dates[j]]
+            j += 1
+        if last_de is None:
+            # Date US antérieure au 1er point DE disponible → pas de valeur à
+            # reporter, on ignore ce point (pas de bruit).
+            continue
+        spread.append(map_a[d] - last_de)
+
+    # Garde-fou : si même après forward-fill on n'a pas assez de points (séries
+    # quasi vides ou totalement désynchronisées), n/a propre.
+    if len(spread) < 10:
+        SKIP_COUNTER[f"fred_spread_thin:{series_us}-{series_de}"] += 1
+        return None
+    return spread
 
 
 # ---------------------------------------------------------------------------

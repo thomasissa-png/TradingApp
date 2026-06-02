@@ -1129,3 +1129,115 @@ def test_meteo_bresil_minas_composite_coords(monkeypatch, now_fixed):
     assert len(captured) >= 1
     assert captured[0]["latitude"] == -19.9
     assert captured[0]["longitude"] == -43.9
+
+
+# ---------------------------------------------------------------------------
+# Résilience http_get_json (CFTC / EIA / Open-Meteo) — chemin via http_get_retry
+# ---------------------------------------------------------------------------
+# http_get_json est désormais un wrapper autour du helper partagé
+# http_retry.http_get_retry : ces tests vérifient que CFTC/EIA/Open-Meteo
+# encaissent un 429/5xx avec retry/backoff au lieu de tomber n/a au 1er coup.
+# On restaure le vrai http_get_json (la fixture autouse le stub) et on mocke
+# requests.get + neutralise les sleeps du module http_retry.
+
+_REAL_HTTP_GET_JSON = cc.http_get_json
+
+
+def _patch_http_retry_timing(monkeypatch):
+    """Restaure le vrai http_get_json et neutralise throttle/backoff (tests rapides)."""
+    import http_retry as _hr
+    import time as _t
+    monkeypatch.setattr(cc, "http_get_json", _REAL_HTTP_GET_JSON)
+    # Le throttle et le backoff du helper partagé dorment via http_retry.time.sleep
+    monkeypatch.setattr(_hr.time, "sleep", lambda *_a, **_k: None)
+    monkeypatch.setattr(_t, "sleep", lambda *_a, **_k: None)
+
+
+def test_http_get_json_retry_on_429_then_success(monkeypatch):
+    """CFTC : 429 puis 200 → la série revient (pas de cftc_dead)."""
+    import requests as _rq
+    _patch_http_retry_timing(monkeypatch)
+    cc.SKIP_COUNTER.clear()
+    payload = [
+        {"report_date_as_yyyy_mm_dd": "2026-05-20",
+         "noncomm_positions_long_all": "100", "noncomm_positions_short_all": "40"},
+        {"report_date_as_yyyy_mm_dd": "2026-05-13",
+         "noncomm_positions_long_all": "90", "noncomm_positions_short_all": "50"},
+    ]
+    seq = [_FakeResp(429, headers={"Retry-After": "1"}), _FakeResp(200, payload)]
+    calls = {"n": 0}
+    def fake_get(url, params=None, headers=None, timeout=None):
+        r = seq[calls["n"]]
+        calls["n"] += 1
+        return r
+    monkeypatch.setattr(_rq, "get", fake_get)
+    nets = cc.fetch_cftc_managed_money_nets("CRUDE OIL")
+    assert nets == [40.0, 60.0]  # oldest→newest : (90-50), (100-40)
+    assert calls["n"] == 2  # 1 retry consommé
+    assert not any(k.startswith("cftc_dead") for k in cc.SKIP_COUNTER)
+
+
+def test_http_get_json_retry_exhausted_returns_none(monkeypatch):
+    """CFTC : 429 sur toutes les tentatives → None + cftc_dead marqué."""
+    import requests as _rq
+    import http_retry as _hr
+    _patch_http_retry_timing(monkeypatch)
+    cc.SKIP_COUNTER.clear()
+    calls = {"n": 0}
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls["n"] += 1
+        return _FakeResp(503)
+    monkeypatch.setattr(_rq, "get", fake_get)
+    nets = cc.fetch_cftc_managed_money_nets("DEAD MARKET")
+    assert nets is None
+    assert calls["n"] == _hr.DEFAULT_MAX_RETRIES  # toutes les tentatives consommées
+    assert cc.SKIP_COUNTER["cftc_dead:DEAD MARKET"] == 1
+
+
+def test_http_get_json_no_retry_on_404(monkeypatch):
+    """EIA : 404 (non-retriable) → échec immédiat, une seule requête."""
+    import requests as _rq
+    _patch_http_retry_timing(monkeypatch)
+    cc.SKIP_COUNTER.clear()
+    monkeypatch.setenv("EIA_API_KEY", "fake")
+    calls = {"n": 0}
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls["n"] += 1
+        return _FakeResp(404)
+    monkeypatch.setattr(_rq, "get", fake_get)
+    out = cc.fetch_eia_series("petroleum/stoc/wstk/data/", series_id="WCESTUS1")
+    assert out is None
+    assert calls["n"] == 1  # aucun retry sur 404
+    assert any(k.startswith("eia_dead") for k in cc.SKIP_COUNTER)
+
+
+# ---------------------------------------------------------------------------
+# fetch_fred_spread : forward-fill série DE mensuelle sur grille US quotidienne
+# ---------------------------------------------------------------------------
+
+def test_fred_spread_forward_fill_monthly_de(monkeypatch):
+    """Série DE MENSUELLE + US QUOTIDIENNE → forward-fill → spread calculé (pas thin)."""
+    monkeypatch.setenv("FRED_API_KEY", "fake")
+    cc.SKIP_COUNTER.clear()
+    # US : 12 jours ouvrés quotidiens, valeur constante 4.50
+    us_obs = [{"date": f"2026-05-{d:02d}", "value": "4.50"}
+              for d in range(11, 23)]  # 12 jours
+    # DE : 2 points MENSUELS seulement (début mai et début avril)
+    de_obs = [
+        {"date": "2026-05-01", "value": "2.50"},
+        {"date": "2026-04-01", "value": "2.40"},
+    ]
+    def fake_get(sid, params, timeout=15):
+        if sid == "DGS10":
+            return {"observations": us_obs}
+        if sid == "IRLTLT01DEM156N":
+            return {"observations": de_obs}
+        return None
+    monkeypatch.setattr(cc, "_fred_get_json", fake_get)
+    spread = cc.fetch_fred_spread("DGS10", "IRLTLT01DEM156N", n=260)
+    # Sans forward-fill : 0 date commune → thin. Avec : les 12 jours US reportent
+    # la dernière valeur DE connue (2.50 du 2026-05-01) → 12 points = 4.50-2.50.
+    assert spread is not None
+    assert len(spread) == 12
+    assert all(abs(s - 2.00) < 1e-9 for s in spread)
+    assert not any(k.startswith("fred_spread_thin") for k in cc.SKIP_COUNTER)

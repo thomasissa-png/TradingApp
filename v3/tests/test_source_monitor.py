@@ -88,15 +88,22 @@ def test_record_call_aggregation_multi_requests():
     assert h.ok is True
 
 
-def test_record_call_aggregation_one_failure_marks_ko():
-    """Si une requête échoue, le flux est marqué ko (pessimiste)."""
+def test_record_call_aggregation_one_failure_marks_partial():
+    """Ticket A : si une requête échoue mais d'autres réussissent, le flux est
+    PARTIEL (pas une panne) — les items des requêtes OK arrivent quand même.
+    """
     m = SourceMonitor()
     m.record_call("gnews", ok=True, http_status="200", items_fetched=10)
     m.record_call("gnews", ok=False, http_status="429",
-                  items_fetched=0, reason="rate limit")
+                  items_fetched=0, reason="rate limit", query="gold price")
     h = m.by_name["gnews"]
-    assert h.ok is False
-    assert "rate limit" in h.reason
+    # ok global = au moins une requête a abouti → non-panne.
+    assert h.ok is True
+    assert h.is_partial() is True
+    assert h.status_icon() == "⚠️"
+    assert h.status_label() == "partiel (1/2)"
+    # La trace de la requête fautive est conservée pour diagnostic.
+    assert "gold price" in h.failed_requests
 
 
 def test_record_skip_distinct_from_failure():
@@ -150,11 +157,144 @@ def test_summary_counts():
     assert s["total"] == 4
     assert s["called"] == 3
     assert s["ok"] == 2
+    assert s["partiel"] == 0  # aucune source multi-requêtes ici
     assert s["ko"] == 1
     assert s["muet"] == 1
     assert s["skip"] == 1
     assert s["items_fetched"] == 15  # 5+10+0
     assert s["items_kept"] == 5
+
+
+# ============================================================
+# Unit — Statut 3 états (Ticket A : OK / partiel R/N / ❌)
+# ============================================================
+
+def test_three_states_all_ok():
+    """Toutes les requêtes réussissent → OK, pas partiel."""
+    m = SourceMonitor()
+    for _ in range(14):
+        m.record_call("gnews", ok=True, http_status="200", items_fetched=20)
+    h = m.by_name["gnews"]
+    assert h.req_total == 14
+    assert h.req_ok == 14
+    assert h.req_ko == 0
+    assert h.is_partial() is False
+    assert h.ok is True
+    m.set_items_kept({"gnews": 250})
+    assert h.status_icon() == "✅"
+    assert h.status_label() == "OK"
+
+
+def test_three_states_partial_13_of_14():
+    """Exemple du ticket : GNews 1 requête sur 14 échoue → partiel (13/14),
+    PAS une panne (les 13 autres ont livré des items).
+    """
+    m = SourceMonitor()
+    for i in range(13):
+        m.record_call("gnews", ok=True, http_status="200",
+                      items_fetched=20, query=f"q{i}")
+    m.record_call("gnews", ok=False, http_status="400",
+                  items_fetched=0, reason="HTTP 400", query="silver_industrial")
+    h = m.by_name["gnews"]
+    assert h.req_total == 14
+    assert h.req_ok == 13
+    assert h.req_ko == 1
+    assert h.is_partial() is True
+    assert h.ok is True  # non-panne : des données utiles arrivent
+    assert h.status_icon() == "⚠️"
+    assert h.status_label() == "partiel (13/14)"
+    assert h.items_fetched == 13 * 20
+    # Diagnostic : ratio + requête fautive dans la raison.
+    assert "1/14 requêtes en échec" in h.reason
+    assert "silver_industrial" in h.reason
+    # set_items_kept ne doit pas écraser la raison de diagnostic du partiel.
+    m.set_items_kept({"gnews": 240})
+    assert h.items_kept == 240
+    assert "silver_industrial" in h.reason
+    s = m.summary()
+    assert s["partiel"] == 1
+    assert s["ok"] == 0
+    assert s["ko"] == 0
+
+
+def test_three_states_total_failure_is_ko():
+    """Toutes les requêtes échouent (0 item) → ❌ panne réelle, pas partiel."""
+    m = SourceMonitor()
+    for i in range(14):
+        m.record_call("gnews", ok=False, http_status="401",
+                      items_fetched=0, reason="auth invalide", query=f"q{i}")
+    h = m.by_name["gnews"]
+    assert h.req_total == 14
+    assert h.req_ok == 0
+    assert h.req_ko == 14
+    assert h.is_partial() is False  # 0 succès → pas un mix → panne
+    assert h.ok is False
+    assert h.status_icon() == "❌"
+    assert h.status_label() == "échec"
+    s = m.summary()
+    assert s["ko"] == 1
+    assert s["partiel"] == 0
+
+
+def test_partial_capped_failed_requests_in_reason():
+    """Plus de 3 requêtes fautives → raison plafonnée à 3 + '…'."""
+    m = SourceMonitor()
+    for i in range(10):
+        m.record_call("gnews", ok=True, http_status="200",
+                      items_fetched=5, query=f"ok{i}")
+    for i in range(5):
+        m.record_call("gnews", ok=False, http_status="429",
+                      items_fetched=0, reason="rate limit", query=f"ko{i}")
+    h = m.by_name["gnews"]
+    assert h.is_partial() is True
+    assert h.status_label() == "partiel (10/15)"
+    assert "5/15 requêtes en échec" in h.reason
+    assert "…" in h.reason  # plus de 3 → tronqué
+
+
+def test_partial_not_in_briefing_problems(tmp_path):
+    """Le partiel n'apparaît PAS dans 'Flux à problème' (pas une panne) mais
+    dans une section dédiée 'Flux partiels'.
+    """
+    m = SourceMonitor()
+    for i in range(13):
+        m.record_call("gnews", ok=True, http_status="200",
+                      items_fetched=10, query=f"q{i}")
+    m.record_call("gnews", ok=False, http_status="400",
+                  items_fetched=0, reason="HTTP 400", query="badq")
+    m.record_call("dead_feed", ok=False, http_status="500",
+                  items_fetched=0, reason="HTTP 500")
+    m.set_items_kept({"gnews": 120, "dead_feed": 0})
+
+    out = tmp_path / "source-health.md"
+    write_source_health(m, out)
+    block = render_briefing_block(out)
+
+    problem_block = block.split("**Flux à problème :**")[1].split("**Flux partiels**")[0]
+    assert "dead_feed" in problem_block
+    assert "gnews" not in problem_block  # partiel ≠ panne
+    assert "**Flux partiels**" in block
+    partial_block = block.split("**Flux partiels**")[1]
+    assert "gnews" in partial_block
+
+
+def test_write_source_health_has_status_column_and_legend(tmp_path):
+    """Le tableau a une colonne Statut + une légende mentionnant le partiel."""
+    m = SourceMonitor()
+    for i in range(14):
+        ok = i != 0
+        m.record_call("gnews", ok=ok, http_status="200" if ok else "400",
+                      items_fetched=10 if ok else 0,
+                      reason="" if ok else "HTTP 400",
+                      query=f"q{i}")
+    m.set_items_kept({"gnews": 130})
+    out = tmp_path / "source-health.md"
+    write_source_health(m, out)
+    txt = out.read_text(encoding="utf-8")
+    assert "| Statut |" in txt
+    assert "partiel" in txt.lower()
+    assert "⚠️" in txt
+    assert "1 partiels" in txt  # la synthèse compte le flux partiel
 
 
 # ============================================================

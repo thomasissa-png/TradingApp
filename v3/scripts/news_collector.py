@@ -541,7 +541,8 @@ def _fetch_gnews(query: str, api_key: str, base_url: str,
         logger.warning("GNews fetch failed for query '%s' (status=%s, après retries)", query, status)
         if monitor is not None:
             monitor.record_call("gnews", ok=False, http_status=status,
-                                items_fetched=0, reason=f"HTTP {status}")
+                                items_fetched=0, reason=f"HTTP {status}",
+                                query=query)
         return []
     http_status = str(r.status_code)
     try:
@@ -550,7 +551,8 @@ def _fetch_gnews(query: str, api_key: str, base_url: str,
         logger.warning("GNews JSON invalide (HTTP %s) pour '%s': %s", http_status, query, e)
         if monitor is not None:
             monitor.record_call("gnews", ok=False, http_status=http_status,
-                                items_fetched=0, reason="JSON invalide")
+                                items_fetched=0, reason="JSON invalide",
+                                query=query)
         return []
 
     items = []
@@ -604,7 +606,8 @@ def _fetch_newsapi(query: str, api_key: str, base_url: str,
         logger.warning("NewsAPI fetch failed for query '%s' (status=%s, après retries)", query, status)
         if monitor is not None:
             monitor.record_call("newsapi", ok=False, http_status=status,
-                                items_fetched=0, reason=f"HTTP {status}")
+                                items_fetched=0, reason=f"HTTP {status}",
+                                query=query)
         return []
     http_status = str(r.status_code)
     try:
@@ -613,7 +616,8 @@ def _fetch_newsapi(query: str, api_key: str, base_url: str,
         logger.warning("NewsAPI JSON invalide (HTTP %s) pour '%s': %s", http_status, query, e)
         if monitor is not None:
             monitor.record_call("newsapi", ok=False, http_status=http_status,
-                                items_fetched=0, reason="JSON invalide")
+                                items_fetched=0, reason="JSON invalide",
+                                query=query)
         return []
 
     if data.get("status") and data.get("status") != "ok":
@@ -622,7 +626,8 @@ def _fetch_newsapi(query: str, api_key: str, base_url: str,
         if monitor is not None:
             monitor.record_call("newsapi", ok=False, http_status=http_status,
                                 items_fetched=0,
-                                reason=f"API status={data.get('status')}")
+                                reason=f"API status={data.get('status')}",
+                                query=query)
         return []
 
     items = []

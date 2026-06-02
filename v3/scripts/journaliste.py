@@ -107,6 +107,78 @@ NEWS_RATIONALE_MAXLEN = 140  # tronque le synthese_rationale dans le bloc bullet
 
 
 # ---------------------------------------------------------------------------
+# C5 helpers — échéance figée + entry-lock prix d'émission
+# ---------------------------------------------------------------------------
+
+# Tolérance d'égalité (en proportion) sous laquelle deux valeurs de prix
+# d'émission sont considérées « identiques » (jitter d'arrondi). Au-delà,
+# une tentative d'écrasement est explicitement loggée comme violation
+# potentielle de l'entry-lock.
+ENTRY_LOCK_PRICE_EPS = 1e-9
+
+
+def compute_echeance(bulletin_date: date, horizon: str) -> date:
+    """Échéance figée déterministe (C5 invariant #2).
+
+    echeance = bulletin_date + HORIZON_DAYS[horizon]. Réutilise les constantes
+    existantes — JAMAIS de redéfinition locale ailleurs dans le module.
+
+    Invariant assertif : echeance > bulletin_date (HORIZON_DAYS[h] >= 1 pour
+    tout horizon connu : 24h→1, 7j→7, 1m→30).
+
+    Lève KeyError si l'horizon est inconnu (refuse de fabriquer une échéance
+    arbitraire — zéro invention).
+    """
+    days = HORIZON_DAYS[horizon]
+    echeance = bulletin_date + timedelta(days=days)
+    # Assertion d'intégrité : une échéance ≤ émission marquerait un bug
+    # critique (horizon nul/négatif, dates inversées, etc.) — refuser net.
+    assert echeance > bulletin_date, (
+        f"compute_echeance invariant violé : echeance={echeance} <= "
+        f"bulletin_date={bulletin_date} (horizon={horizon}, days={days})"
+    )
+    return echeance
+
+
+def _enforce_entry_lock(
+    existing: Dict[str, float],
+    ticker: str,
+    proposed_price: float,
+    bulletin_date: date,
+) -> float:
+    """Garde-fou immutabilité du prix d'émission (C5 invariant #1).
+
+    Si `ticker` est déjà stampé pour `bulletin_date` dans `existing` :
+      - on retourne la valeur EXISTANTE (jamais écrasée), même si
+        `proposed_price` est différent.
+      - on log un WARNING si la différence dépasse ENTRY_LOCK_PRICE_EPS
+        (tentative d'écrasement détectée — signal anti « moving goalposts »).
+
+    Sinon, on retourne `proposed_price` (premier stamp).
+
+    Cette fonction est PURE (lecture seule sur `existing`) : c'est au caller
+    d'appliquer la valeur retournée dans son dict d'écriture.
+    """
+    locked = existing.get(ticker)
+    if locked is None:
+        return proposed_price
+    # Tentative d'écrasement : on garde l'ancien.
+    try:
+        diff = abs(float(proposed_price) - float(locked))
+        rel = diff / abs(locked) if locked != 0 else diff
+    except (TypeError, ValueError):
+        diff = float("nan")
+        rel = float("nan")
+    if rel > ENTRY_LOCK_PRICE_EPS:
+        logger.warning(
+            "entry-lock violé (ignoré) : %s @ %s ancien=%s proposé=%s "
+            "(diff rel=%.3e) — prix d'émission immuable, ancien préservé",
+            ticker, bulletin_date.isoformat(), locked, proposed_price, rel,
+        )
+    return locked
+
+
+# ---------------------------------------------------------------------------
 # Helpers fichiers / fiches
 # ---------------------------------------------------------------------------
 
@@ -317,14 +389,18 @@ def stamp_prix_emission(
     base_dir.mkdir(parents=True, exist_ok=True)
     out_path = prix_emission_path(bulletin_date, base_dir)
     existing = load_prix_emission(bulletin_date, base_dir)
+    # C5 invariant #1 — Entry-lock : on PART de l'existant, qu'on ne modifiera
+    # plus pour les tickers déjà stampés. Les nouvelles entrées s'ajoutent
+    # uniquement pour les tickers absents.
     stamped: Dict[str, float] = dict(existing)
 
     for fiche_key, fiche in fiches.items():
         ticker = fiche.get("ticker_principal")
         if not ticker:
             continue
-        if ticker in stamped:
-            # déjà stampé pour cette date (idempotence)
+        if ticker in existing:
+            # Déjà stampé pour cette date (idempotence + entry-lock) :
+            # on NE refetch même pas, le prix d'émission est immuable.
             continue
         try:
             price = fetch_price(ticker)
@@ -335,9 +411,14 @@ def stamp_prix_emission(
             logger.warning("stamp prix %s : indisponible (suivi-interrompu)", ticker)
             continue
         try:
-            stamped[ticker] = float(price)
+            new_price = float(price)
         except (TypeError, ValueError):
             continue
+        # Double sécurité : passe par l'enforcement explicite. Pour un ticker
+        # non présent dans `existing`, l'enforcer retourne `new_price` tel quel.
+        stamped[ticker] = _enforce_entry_lock(
+            existing, ticker, new_price, bulletin_date,
+        )
 
     out_path.write_text(
         json.dumps(stamped, indent=2, sort_keys=True) + "\n",
@@ -355,6 +436,28 @@ OUTCOME_VRAI = "VRAI"
 OUTCOME_FAUSSE = "FAUSSE"
 OUTCOME_NC = "non-conclusive"
 OUTCOME_INTERROMPU = "suivi-interrompu"
+
+# ---------------------------------------------------------------------------
+# C5 — Intégrité de la mesure (3 garde-fous incorruptibles)
+#
+# Ces invariants protègent le scoring contre le « moving goalposts » :
+#   1. Entry-lock prix d'émission : une fois stampé pour (ticker, date), le prix
+#      est IMMUABLE — un tick ultérieur (même plus favorable) ne l'écrase pas.
+#   2. Échéance figée déterministe : echeance = date_emission + HORIZON_DAYS[h]
+#      calculée par compute_echeance() — JAMAIS d'ajustement a posteriori.
+#      Assertion : echeance > date_emission toujours vraie (HORIZON_DAYS ≥ 1).
+#   3. Zéro look-ahead : refuser de mesurer si prix_courant_date < bulletin_date
+#      (bug TZ/DST) ou si on est encore avant l'échéance (mesure prématurée).
+#      Refus → OUTCOME_INTERROMPU (retry au prochain run), JAMAIS VRAI/FAUSSE.
+#
+# Notes contextuelles pour distinguer les refus de mesure :
+NOTE_LOOKAHEAD_REFUSED = (
+    "look-ahead refusé : prix courant antérieur à la date d'émission"
+)
+NOTE_PREMATURE_REFUSED = (
+    "mesure prématurée refusée : aujourd'hui antérieur à l'échéance"
+)
+# ---------------------------------------------------------------------------
 # État distinct demandé par Thomas (sécurité scoring) : une cellule marquée
 # INSUFFISANT par l'Analyste (coverage < COVERAGE_MIN) n'est PAS une prédiction.
 # Elle est exclue du calcul VRAI/FAUX (taux de réussite) ET du calcul de biais
@@ -392,7 +495,21 @@ def measure_cell(
     fiche: dict,
     prix_emission: Optional[float],
     prix_courant: Optional[float],
+    prix_courant_date: Optional[date] = None,
+    today: Optional[date] = None,
 ) -> Measure:
+    """Mesure une cellule. Voir docstring module + C5 invariants.
+
+    Paramètres optionnels (C5 invariant #3 — zéro look-ahead) :
+    - prix_courant_date : si fourni et < cell.bulletin_date → REFUS de mesure
+      (le prix « courant » est antérieur à l'émission ⇒ look-ahead). Outcome
+      = OUTCOME_INTERROMPU, note = NOTE_LOOKAHEAD_REFUSED.
+    - today : si fourni et today < echeance → REFUS (mesure prématurée).
+      Outcome = OUTCOME_INTERROMPU, note = NOTE_PREMATURE_REFUSED.
+
+    Backward-compat : si ces deux kwargs sont None, le comportement est
+    inchangé (les tests existants ne passent pas ces paramètres).
+    """
     ticker = fiche.get("ticker_principal", "")
     seuils = fiche.get("seuils_reussite_pct") or {}
     seuil_raw = seuils.get(cell.horizon)
@@ -400,7 +517,8 @@ def measure_cell(
         seuil = float(seuil_raw) if seuil_raw is not None else None
     except (TypeError, ValueError):
         seuil = None
-    echeance = cell.bulletin_date + timedelta(days=HORIZON_DAYS[cell.horizon])
+    # C5 invariant #2 — échéance figée déterministe (helper unique)
+    echeance = compute_echeance(cell.bulletin_date, cell.horizon)
 
     base = Measure(
         cell=cell,
@@ -414,6 +532,36 @@ def measure_cell(
         delta_pct=None,
         outcome=OUTCOME_INTERROMPU,
     )
+
+    # C5 invariant #3 — Zéro look-ahead :
+    # (a) si le « prix courant » provient d'un horodatage ANTÉRIEUR à la date
+    #     d'émission (bug TZ/DST/cache), c'est un prix connu d'avance — on
+    #     REFUSE la mesure. Surtout pas de VRAI/FAUSSE sur un prix look-ahead.
+    if prix_courant_date is not None and prix_courant_date < cell.bulletin_date:
+        base.outcome = OUTCOME_INTERROMPU
+        base.note = (
+            f"{NOTE_LOOKAHEAD_REFUSED} "
+            f"(prix_courant_date={prix_courant_date.isoformat()} < "
+            f"bulletin_date={cell.bulletin_date.isoformat()})"
+        )
+        logger.error(
+            "C5 look-ahead REFUSÉ : %s %s prix_courant_date=%s < bulletin_date=%s",
+            ticker, cell.horizon, prix_courant_date, cell.bulletin_date,
+        )
+        return base
+    # (b) Mesure prématurée : on est avant l'échéance ⇒ pas le droit de
+    #     prononcer VRAI/FAUSSE (l'horizon n'est pas écoulé).
+    if today is not None and today < echeance:
+        base.outcome = OUTCOME_INTERROMPU
+        base.note = (
+            f"{NOTE_PREMATURE_REFUSED} "
+            f"(today={today.isoformat()} < echeance={echeance.isoformat()})"
+        )
+        logger.error(
+            "C5 mesure prématurée REFUSÉE : %s %s today=%s < echeance=%s",
+            ticker, cell.horizon, today, echeance,
+        )
+        return base
 
     # Cellule INSUFFISANT (gate suffisance Thomas) : pas une prédiction.
     # Exclue VRAI/FAUX (taux), exclue distribution LONG/SHORT (biais),
@@ -858,7 +1006,14 @@ def measure(
             ticker = fiche.get("ticker_principal", "")
             p_emis = prix_emis.get(ticker)
             p_courant = _get_current(ticker) if ticker else None
-            m = measure_cell(cell, fiche_key, fiche, p_emis, p_courant)
+            # C5 invariant #3 — propagate `today` pour activer le garde-fou
+            # « mesure prématurée » au sein de measure_cell (défense en
+            # profondeur : la boucle filtre déjà via echeance>today, mais on
+            # transmet pour rendre l'invariant explicite et auditable).
+            m = measure_cell(
+                cell, fiche_key, fiche, p_emis, p_courant,
+                today=today,
+            )
             # Tag news-driven (None si decision-log d'émission introuvable
             # pour cette cellule — zéro invention).
             nd = news_map.get((cell.actif_name, cell.horizon))

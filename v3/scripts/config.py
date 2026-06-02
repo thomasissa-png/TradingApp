@@ -31,7 +31,15 @@ DEDUP_CACHE_SIZE = 500
 # HTTP
 # ============================================================
 
-USER_AGENT = "TradingApp-v3-news-collector/1.0 (+github.com/thomasissa-png/TradingApp)"
+# User-Agent réaliste de navigateur. Un UA "bot" (ancien
+# "TradingApp-v3-news-collector/1.0") était bloqué en 403 par certains flux RSS
+# (ex : mining.com filtre les UA non-navigateur). Un UA Chrome desktop standard
+# passe ces filtres anti-scraping basiques sans rien forcer d'autre. Si un flux
+# reste 403 malgré ça, source_monitor le signale muet (pas d'acharnement).
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
 HTTP_TIMEOUT = 15
 
 # ============================================================

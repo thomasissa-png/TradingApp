@@ -51,6 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import triggers_classifier as tc  # noqa: E402
 import weighting as wg  # noqa: E402
 import market_data as md  # noqa: E402 — module validé (symboles testés 2026-03)
+import http_retry as _http_retry  # noqa: E402 — helper HTTP partagé (retry/backoff)
 
 SKIP_COUNTER: Counter = Counter()
 DEFAULT_TIMEOUT = 15  # seconds
@@ -503,9 +504,11 @@ def _fred_key() -> Optional[str]:
 # ~0.6 s/req est une marge sûre tout en restant rapide sur la dizaine de séries
 # d'un run.
 #
-# NOTE handoff : le même pattern 429 touche aussi GNews/NewsAPI. Volontairement
-# NON traité ici pour rester ciblé — à factoriser dans un helper HTTP générique
-# `http_get_json_retry` lors d'une passe dédiée (réutiliser _http_get_with_retry).
+# NOTE refacto (2026-06-02) : la logique backoff + Retry-After est désormais
+# factorisée dans `http_retry.py` (helper partagé), réutilisée par les fetchers
+# news (RSS/GNews/NewsAPI) qui subissent le même 429. _fred_get_json conserve son
+# throttle global dédié (cadence FRED spécifique) mais délègue backoff/Retry-After
+# au helper partagé via _fred_backoff_delay / _parse_retry_after.
 
 FRED_MIN_INTERVAL = float(os.environ.get("FRED_MIN_INTERVAL", "0.6"))  # secondes entre requêtes
 FRED_MAX_RETRIES = int(os.environ.get("FRED_MAX_RETRIES", "3"))
@@ -593,21 +596,17 @@ def _fred_get_json(series_id: str, params: dict, *, timeout: int = DEFAULT_TIMEO
 
 
 def _fred_backoff_delay(attempt: int, retry_after: Optional[float]) -> float:
-    """Délai avant retry : Retry-After (si fourni) sinon backoff exponentiel + jitter."""
-    if retry_after is not None and retry_after >= 0:
-        return retry_after + random.uniform(0, 0.5)
-    base = FRED_BACKOFF_BASE * (2 ** (attempt - 1))  # 2, 4, 8...
-    return base + random.uniform(0, 0.5)
+    """Délai avant retry FRED : délègue au helper partagé (backoff_base FRED).
+
+    Conserve la signature historique (utilisée par les tests FRED) ; la logique
+    est désormais factorisée dans http_retry.backoff_delay.
+    """
+    return _http_retry.backoff_delay(attempt, retry_after, backoff_base=FRED_BACKOFF_BASE)
 
 
 def _parse_retry_after(value: Optional[str]) -> Optional[float]:
-    """Parse l'en-tête Retry-After (secondes uniquement ; date HTTP ignorée)."""
-    if not value:
-        return None
-    try:
-        return float(value.strip())
-    except (TypeError, ValueError):
-        return None  # format date HTTP non géré → on retombe sur le backoff
+    """Parse l'en-tête Retry-After (secondes uniquement). Délègue au helper partagé."""
+    return _http_retry.parse_retry_after(value)
 
 
 def fetch_fred_series(series_id: str, *, n: int = 252) -> Optional[List[float]]:

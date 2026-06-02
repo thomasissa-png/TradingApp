@@ -34,12 +34,25 @@ except ImportError:
     sys.modules["feedparser"] = fp_stub
 
 import config  # noqa: E402
+import http_retry as _http_retry  # noqa: E402
 import news_collector as nc  # noqa: E402
 
 
 # ============================================================
 # Fixtures
 # ============================================================
+
+@pytest.fixture(autouse=True)
+def _fast_http_retry(monkeypatch):
+    """Neutralise throttle/backoff du helper HTTP : tests rapides et déterministes.
+
+    news_collector appelle http_get_retry avec les défauts (max_retries=3) ; on
+    supprime tous les sleeps (backoff + throttle) pour que les retries soient
+    instantanés sans changer la logique testée.
+    """
+    monkeypatch.setattr(_http_retry.time, "sleep", lambda *_a, **_k: None)
+    yield
+
 
 @pytest.fixture(autouse=True)
 def _isolated_db(tmp_path, monkeypatch):
@@ -135,6 +148,7 @@ def test_gnews_parses_articles():
         ]
     }
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = MagicMock()
     mock_resp.json = MagicMock(return_value=payload)
     with patch.object(nc.requests, "get", return_value=mock_resp):
@@ -154,6 +168,7 @@ def test_gnews_http_error_returns_empty():
 
 def test_gnews_bad_json_returns_empty():
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = MagicMock()
     mock_resp.json = MagicMock(side_effect=ValueError("bad json"))
     with patch.object(nc.requests, "get", return_value=mock_resp):
@@ -179,6 +194,7 @@ def test_newsapi_parses_articles():
         ],
     }
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = MagicMock()
     mock_resp.json = MagicMock(return_value=payload)
     with patch.object(nc.requests, "get", return_value=mock_resp):
@@ -191,6 +207,7 @@ def test_newsapi_parses_articles():
 def test_newsapi_status_error_returns_empty():
     payload = {"status": "error", "message": "rate limited"}
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = MagicMock()
     mock_resp.json = MagicMock(return_value=payload)
     with patch.object(nc.requests, "get", return_value=mock_resp):
@@ -220,6 +237,7 @@ def test_structured_collect_uses_gnews_when_key_present(monkeypatch):
         "publishedAt": "2026-05-29T00:00:00Z", "source": {"name": "x"},
     }]}
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = MagicMock()
     mock_resp.json = MagicMock(return_value=payload)
     with patch.object(nc.requests, "get", return_value=mock_resp) as mock_get:
@@ -247,11 +265,13 @@ def _make_mock_rss(items_by_url):
                 if entries == "FAIL":
                     raise _rq.Timeout(f"timeout on {url}")
                 resp = MagicMock()
+                resp.status_code = 200
                 resp.raise_for_status = MagicMock()
                 resp.content = b"<rss/>"
                 return resp
         # Default : feed vide
         resp = MagicMock()
+        resp.status_code = 200
         resp.raise_for_status = MagicMock()
         resp.content = b"<rss/>"
         return resp

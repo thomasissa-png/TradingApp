@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import feedparser
-import requests
+import requests  # noqa: F401 — exposé pour les tests (patch nc.requests.get) ; http_retry partage le même module
 
 from config import (
     DEDUP_CACHE_SIZE,
@@ -30,6 +30,7 @@ from config import (
     TITLES_CACHE_DB,
     USER_AGENT,
 )
+from http_retry import http_get_retry
 from source_monitor import SourceMonitor
 
 logger = logging.getLogger(__name__)
@@ -418,26 +419,28 @@ def _fetch_rss(name: str, url: str, monitor: "SourceMonitor | None" = None) -> l
     persistés dans le monitor (HTTP status, type d'erreur, items_fetched bruts).
     """
     headers = {"User-Agent": USER_AGENT}
-    http_status: str = "-"
-    try:
-        response = requests.get(url, headers=headers, timeout=HTTP_TIMEOUT)
-        http_status = str(response.status_code)
-        response.raise_for_status()
-    except requests.Timeout:
-        logger.warning("RSS fetch timeout for %s", name)
-        if monitor is not None:
-            monitor.record_call(name, ok=False, http_status="timeout",
-                                items_fetched=0, reason="timeout HTTP")
-        return []
-    except requests.RequestException as e:
-        # Si on a un status (4xx/5xx), on l'a déjà capturé. Sinon erreur réseau.
-        status = http_status if http_status != "-" else "net_error"
-        logger.warning("RSS fetch failed for %s (status=%s): %s", name, status, e)
+    # Fetch résilient : retry backoff sur 429/5xx + Retry-After (helper partagé).
+    # Le 403 (ex mining.com filtrant les UA non-navigateur) n'est PAS retriable —
+    # le helper échoue immédiatement (cf. http_retry.RETRY_STATUS). On envoie un
+    # User-Agent navigateur réaliste (config.USER_AGENT) pour limiter ces 403 ;
+    # si un flux reste 403, source_monitor le signale muet (visibilité en place).
+    status_out: dict = {}
+    response = http_get_retry(
+        url, headers=headers, timeout=HTTP_TIMEOUT, bucket="rss",
+        label=f"rss:{name}", status_out=status_out,
+    )
+    if response is None:
+        # Échec APRÈS épuisement des retries (429/5xx) ou statut non-retriable
+        # (403/404) ou erreur réseau persistante → on compte l'échec une seule fois.
+        # On conserve le dernier statut HTTP observé pour la visibilité monitoring.
+        status = status_out.get("status", "error")
+        logger.warning("RSS fetch failed for %s (status=%s, après retries)", name, status)
         if monitor is not None:
             monitor.record_call(name, ok=False, http_status=status,
                                 items_fetched=0, reason=f"HTTP {status}")
         return []
 
+    http_status: str = str(response.status_code)
     parsed = feedparser.parse(response.content)
     items = []
     for entry in parsed.entries:
@@ -527,24 +530,27 @@ def _fetch_gnews(query: str, api_key: str, base_url: str,
         "apikey": api_key,
     }
     headers = {"User-Agent": USER_AGENT}
-    http_status = "-"
-    try:
-        r = requests.get(base_url, params=params, headers=headers, timeout=HTTP_TIMEOUT)
-        http_status = str(r.status_code)
-        r.raise_for_status()
-        data = r.json()
-    except requests.Timeout:
-        logger.warning("GNews timeout for query '%s'", query)
-        if monitor is not None:
-            monitor.record_call("gnews", ok=False, http_status="timeout",
-                                items_fetched=0, reason="timeout HTTP")
-        return []
-    except (requests.RequestException, ValueError) as e:
-        status = http_status if http_status != "-" else "net_error"
-        logger.warning("GNews fetch failed for query '%s' (status=%s): %s", query, status, e)
+    # Fetch résilient : retry backoff sur 429/5xx + Retry-After (helper partagé).
+    status_out: dict = {}
+    r = http_get_retry(
+        base_url, params=params, headers=headers, timeout=HTTP_TIMEOUT,
+        bucket="gnews", label="gnews", status_out=status_out,
+    )
+    if r is None:
+        status = status_out.get("status", "error")
+        logger.warning("GNews fetch failed for query '%s' (status=%s, après retries)", query, status)
         if monitor is not None:
             monitor.record_call("gnews", ok=False, http_status=status,
                                 items_fetched=0, reason=f"HTTP {status}")
+        return []
+    http_status = str(r.status_code)
+    try:
+        data = r.json()
+    except ValueError as e:
+        logger.warning("GNews JSON invalide (HTTP %s) pour '%s': %s", http_status, query, e)
+        if monitor is not None:
+            monitor.record_call("gnews", ok=False, http_status=http_status,
+                                items_fetched=0, reason="JSON invalide")
         return []
 
     items = []
@@ -587,24 +593,27 @@ def _fetch_newsapi(query: str, api_key: str, base_url: str,
         "apiKey": api_key,
     }
     headers = {"User-Agent": USER_AGENT}
-    http_status = "-"
-    try:
-        r = requests.get(base_url, params=params, headers=headers, timeout=HTTP_TIMEOUT)
-        http_status = str(r.status_code)
-        r.raise_for_status()
-        data = r.json()
-    except requests.Timeout:
-        logger.warning("NewsAPI timeout for query '%s'", query)
-        if monitor is not None:
-            monitor.record_call("newsapi", ok=False, http_status="timeout",
-                                items_fetched=0, reason="timeout HTTP")
-        return []
-    except (requests.RequestException, ValueError) as e:
-        status = http_status if http_status != "-" else "net_error"
-        logger.warning("NewsAPI fetch failed for query '%s' (status=%s): %s", query, status, e)
+    # Fetch résilient : retry backoff sur 429/5xx + Retry-After (helper partagé).
+    status_out: dict = {}
+    r = http_get_retry(
+        base_url, params=params, headers=headers, timeout=HTTP_TIMEOUT,
+        bucket="newsapi", label="newsapi", status_out=status_out,
+    )
+    if r is None:
+        status = status_out.get("status", "error")
+        logger.warning("NewsAPI fetch failed for query '%s' (status=%s, après retries)", query, status)
         if monitor is not None:
             monitor.record_call("newsapi", ok=False, http_status=status,
                                 items_fetched=0, reason=f"HTTP {status}")
+        return []
+    http_status = str(r.status_code)
+    try:
+        data = r.json()
+    except ValueError as e:
+        logger.warning("NewsAPI JSON invalide (HTTP %s) pour '%s': %s", http_status, query, e)
+        if monitor is not None:
+            monitor.record_call("newsapi", ok=False, http_status=http_status,
+                                items_fetched=0, reason="JSON invalide")
         return []
 
     if data.get("status") and data.get("status") != "ok":

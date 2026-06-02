@@ -340,8 +340,10 @@ def test_bulletin_shows_already_priced_marker():
     actif = _make_actif_with_news_critere(event_age_days=2.0)
     now = datetime.now(timezone.utc)
     md = sa.render_bulletin([actif], {}, now, "hash", "ok")
-    # La ligne TestActif doit contenir ⌛ pour 24h
-    matrice_line = [l for l in md.splitlines() if "TestActif" in l and "|" in l]
+    # La ligne TestActif doit contenir ⌛ pour 24h. On lit la MATRICE détaillée
+    # (pas la Synthèse compacte du haut, qui omet les flags ⌛/⊘).
+    matrix_section = md.split("## Matrice")[1].split("## Détail")[0]
+    matrice_line = [l for l in matrix_section.splitlines() if "TestActif" in l and "|" in l]
     assert matrice_line, "Ligne actif introuvable dans la matrice"
     line = matrice_line[0]
     # 24h est la 2e cellule (après nom)
@@ -360,7 +362,8 @@ def test_bulletin_shows_denial_marker():
     """⊘ apparait dans toutes les cellules (le démenti est sur l'event source)."""
     actif = _make_actif_with_news_critere(event_age_days=0.5, is_denial=True)
     md = sa.render_bulletin([actif], {}, datetime.now(timezone.utc), "h", "ok")
-    matrice_line = [l for l in md.splitlines() if "TestActif" in l and "|" in l][0]
+    matrix_section = md.split("## Matrice")[1].split("## Détail")[0]
+    matrice_line = [l for l in matrix_section.splitlines() if "TestActif" in l and "|" in l][0]
     cells = [c.strip() for c in matrice_line.split("|") if c.strip()]
     for h_cell in cells[1:4]:
         assert "⊘" in h_cell, f"marqueur démenti absent : {h_cell!r}"
@@ -372,7 +375,8 @@ def test_bulletin_no_marker_when_no_flag():
     """Cellule sans flag → ni ⌛ ni ⊘."""
     actif = _make_actif_with_news_critere(event_age_days=0.1, is_denial=False)
     md = sa.render_bulletin([actif], {}, datetime.now(timezone.utc), "h", "ok")
-    matrice_line = [l for l in md.splitlines() if "TestActif" in l and "|" in l][0]
+    matrix_section = md.split("## Matrice")[1].split("## Détail")[0]
+    matrice_line = [l for l in matrix_section.splitlines() if "TestActif" in l and "|" in l][0]
     cells = [c.strip() for c in matrice_line.split("|") if c.strip()]
     for h_cell in cells[1:4]:
         assert "⌛" not in h_cell

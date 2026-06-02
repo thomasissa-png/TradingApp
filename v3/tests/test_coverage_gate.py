@@ -234,8 +234,8 @@ def test_bulletin_affiche_emoji_insuffisant(petrole):
     r = sa.score_actif("petrole", petrole, valeurs)
     txt = _render([r])
     assert "🚫 données insuff." in txt
-    # Légende mise à jour
-    assert "🚫" in txt and "coverage" in txt
+    # Légende compacte : 🚫 listé (uniquement les symboles présents)
+    assert "🚫" in txt and "données insuffisantes" in txt
     # Plus de LONG/SHORT sur cette cellule
     matrix_section = txt.split("## Matrice")[1].split("## Détail")[0]
     petrole_line = [

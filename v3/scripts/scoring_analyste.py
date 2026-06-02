@@ -1139,6 +1139,44 @@ def assert_bias_coherence(
 # Bulletin
 # ---------------------------------------------------------------------------
 
+# Définitions courtes de chaque symbole (1 symbole = 1 ligne). Affichées
+# UNIQUEMENT si le symbole est présent dans CE bulletin (légende compacte).
+_LEGENDE_DEFS: List[Tuple[str, str]] = [
+    ("🚫", "données insuffisantes — pas de prédiction"),
+    ("⚑", "gate régime extrême actif"),
+    ("📰", "news >50% du quant — pondéré affiché en tête, brut entre parenthèses"),
+    ("⚪", "quasi coin-flip (|score|<0.05) — non-actionnable"),
+    ("⚠", "divergence primaire / pondéré"),
+    ("⚠️", "confiance faible (coverage bas ou données périmées) — direction conservée"),
+    ("↯", "divergence quant ↔ news (signes opposés)"),
+    ("⇄", "contre-momentum (conclusion vs RSI 14j opposés)"),
+    ("⇆", "incohérence inter-horizons (zig-zag)"),
+    ("⌛", "déjà coté (event hors fenêtre already-priced)"),
+    ("⊘", "démenti / correction détecté sur l'event source"),
+]
+
+
+def _build_legende(flags_present: set) -> str:
+    """Construit une légende COMPACTE : une ligne courte par symbole, et
+    seulement pour les symboles réellement présents dans CE bulletin.
+
+    Les flags 4a/5 (↯ ⇄ ⇆ ⌛ ⊘) et ⚠/⚠️ sont visuels : ils n'altèrent PAS la
+    conclusion (mode shadow).
+    """
+    lines: List[str] = ["**Légende** (symboles présents) :", ""]
+    any_shadow = False
+    for sym, desc in _LEGENDE_DEFS:
+        if sym not in flags_present:
+            continue
+        if sym in ("↯", "⇄", "⇆", "⌛", "⊘", "⚠", "⚠️"):
+            any_shadow = True
+        lines.append(f"- {sym} {desc}")
+    if any_shadow:
+        lines.append("")
+        lines.append("_Les flags visuels (↯ ⇄ ⇆ ⌛ ⊘ ⚠ ⚠️) n'altèrent PAS la conclusion (mode shadow)._")
+    return "\n".join(lines)
+
+
 def render_bulletin(
     results: List[ActifResult],
     veille_conclusions: Dict[str, Dict[str, str]],
@@ -1194,60 +1232,67 @@ def render_bulletin(
         # HTML s'appuie sur les ## h2 — supprimer la section casserait la nav).
         lines.append("_Aucun changement de position vs veille._")
     lines.append("")
-    lines.append("## Matrice (12 actifs × 3 horizons) — primaire ±1, pondéré en annotation")
-    lines.append("")
-    lines.append("| Actif | 24h | 7j | 1m |")
-    lines.append("|---|---|---|---|")
+    # ── Construction des cellules (UNE PASSE) ───────────────────────────────
+    # On calcule pour chaque (actif, horizon) la cellule détaillée + un repère
+    # compact (direction + force) pour la "Synthèse des décisions" du haut.
+    # `flags_present` accumule les symboles réellement utilisés → légende compacte.
+    flags_present: set = set()
+    detail_cells: Dict[str, List[str]] = {}      # nom → [cell24, cell7j, cell1m]
+    synth_cells: Dict[str, List[str]] = {}        # nom → [synth24, synth7j, synth1m]
+    actionnables: List[ActifResult] = []
+    insuffisants: List[ActifResult] = []
     for r in results:
-        cells = []
+        cells: List[str] = []
+        synth: List[str] = []
         cov_pct = coverage_pct(r.coverage)
+        is_insuff_all = all(r.conclusions[h] == CONCLUSION_INSUFFISANT for h in HORIZONS)
+        (insuffisants if is_insuff_all else actionnables).append(r)
         for h in HORIZONS:
             conc = r.conclusions[h]
             score = r.scores[h]
             confidence = r.confidence.get(h, "normale")
-            # ─── Cellule INSUFFISANT ────────────────────────────────────────
-            # Override l'affichage LONG/SHORT : pas de prédiction → 🚫.
-            # On ne montre PAS de score ni d'annotation pondérée — la cellule
-            # est explicitement non-actionnable. Parsée comme non-prédiction
-            # par journaliste (exclue VRAI/FAUX + biais).
             if conc == CONCLUSION_INSUFFISANT:
+                flags_present.add("🚫")
                 cells.append(f"🚫 données insuff. ({cov_pct}%)")
+                synth.append("🚫")
                 continue
             gate_flag = " ⚑" if any(c.is_gate and c.gate_active for c in r.criteres) else ""
+            if gate_flag:
+                flags_present.add("⚑")
             tie = " (tb)" if h in r.tie_break_notes else ""
-            # Annotation pondérée (secondaire) + ⚠ si divergence
+            # Pondéré : annoté UNIQUEMENT s'il DIFFÈRE du primaire (sinon = bruit).
             conc_p = r.conclusions_pond.get(h, "")
             score_p = r.scores_pond.get(h, 0.0)
             div_flag = " ⚠" if r.diverge.get(h) else ""
-            pond_str = f" [pond:{conc_p} {score_p:+.2f}]{div_flag}" if conc_p else ""
-            # Drapeau news_dominant (Point 4) : 📰 si abs(news)/abs(quant) > 0.5
-            # Définition UNIFIÉE avec decision-log (ratio_news abs/abs) — voir l.679-680
+            if div_flag:
+                flags_present.add("⚠")
+            pond_differe = bool(conc_p) and (
+                conc_p != conc or abs(score_p - score) >= 0.005
+            )
+            # Drapeau news_dominant : 📰 si abs(news)/abs(quant) > 0.5
             cap_info = r.news_cap_info.get(h, {}) if r.news_cap_info else {}
             n_tot = abs(float(cap_info.get("news_total_pm1", 0.0)))
             q_tot = abs(float(cap_info.get("quant_total_pm1", 0.0)))
             ratio_news_cell = n_tot / (q_tot + 1e-9)
-            news_flag = " 📰" if ratio_news_cell > 0.5 else ""
-            # Marqueur coin-flip : |score_pm1| < 0.05 → signal non-actionnable
+            is_news = ratio_news_cell > 0.5
+            news_flag = " 📰" if is_news else ""
+            if is_news:
+                flags_present.add("📰")
             coin_flip_flag = " ⚪" if abs(score) < 0.05 else ""
-            # Suffixe confiance faible : on garde la direction mais on marque
-            # explicitement la fiabilité dégradée (coverage entre MIN et OK,
-            # ou données périmées). Ajout APRÈS pond/news/coin_flip pour
-            # rester en dernier (le plus visible).
+            if coin_flip_flag:
+                flags_present.add("⚪")
             conf_flag = f" ⚠️ conf. faible ({cov_pct}%)" if confidence == "faible" else ""
-            # --- Lot 4a — marqueurs détecteurs directionnels (flag-only) ---
-            # Trois angles morts rendus VISIBLES sans modifier la conclusion :
-            #   ↯ diverg.    : quant et news en désaccord directionnel (>eps)
-            #   ⇄ contre-mom.: conclusion vs momentum prix (RSI) opposés
-            #   ⇆ horizons   : zig-zag inter-horizons sur l'actif (1 marqueur/cellule)
+            if conf_flag:
+                flags_present.add("⚠️")
             div_qn_flag = " ↯" if r.divergence_quant_news.get(h, False) else ""
+            if div_qn_flag:
+                flags_present.add("↯")
             cmom_flag = " ⇄" if r.contre_momentum.get(h, False) else ""
+            if cmom_flag:
+                flags_present.add("⇄")
             incoh_flag = " ⇆" if r.incoherence_inter_horizons else ""
-            # --- Lot 5 — marqueurs sanity sémantique (FLAG-ONLY) -------------
-            # ⌛ already-priced : au moins UN critère news de la cellule a son
-            #    event_date plus vieux que la fenêtre déjà-cotée de cet horizon.
-            # ⊘ démenti        : au moins UN critère news de la cellule porte
-            #    un signal de démenti / correction sur son event source.
-            # N'ALTÈRENT PAS la conclusion (mode shadow — on mesure).
+            if incoh_flag:
+                flags_present.add("⇆")
             ap_flag = ""
             denial_flag = ""
             for c in r.criteres:
@@ -1268,28 +1313,83 @@ def render_bulletin(
                             ap_flag = " ⌛"
                 if ap_flag and denial_flag:
                     break
+            if ap_flag:
+                flags_present.add("⌛")
+            if denial_flag:
+                flags_present.add("⊘")
+            # ── Cœur de cellule ────────────────────────────────────────────
+            if is_news and pond_differe:
+                # News dominante : pondéré (tempéré, plus fiable) EN TÊTE, brut
+                # entre parenthèses. La direction de tête = direction pondérée.
+                # Le brut (=score primaire pm1) reste affiché → parsé comme
+                # score mesuré par journaliste (mesure inchangée).
+                core = f"{conc_p} {score_p:+.2f} (brut {conc} {score:+.2f}){tie}{gate_flag}{news_flag}"
+            elif pond_differe:
+                # Hors news : on garde primaire en tête, pondéré en annotation.
+                core = (
+                    f"{conc} ({score:+.2f}){tie}{gate_flag} "
+                    f"[pond:{conc_p} {score_p:+.2f}]{div_flag}{news_flag}"
+                )
+            else:
+                # Pondéré identique au primaire → on n'affiche pas [pond:...].
+                core = f"{conc} ({score:+.2f}){tie}{gate_flag}{news_flag}"
             cells.append(
-                f"{conc} ({score:+.2f}){tie}{gate_flag}{pond_str}{news_flag}"
-                f"{coin_flip_flag}{conf_flag}{div_qn_flag}{cmom_flag}{incoh_flag}"
-                f"{ap_flag}{denial_flag}"
+                f"{core}{coin_flip_flag}{conf_flag}{div_qn_flag}{cmom_flag}"
+                f"{incoh_flag}{ap_flag}{denial_flag}"
             )
-        lines.append(f"| {r.nom} | {cells[0]} | {cells[1]} | {cells[2]} |")
+            # Repère compact pour la synthèse : direction + force ●/○.
+            # ● = |score| ≥ 1.5 (conviction ≥ ~60%), ○ sinon (faible/coin-flip).
+            force = "●" if abs(score) >= 1.5 else "○"
+            news_mark = " 📰" if is_news else ""
+            synth.append(f"{conc} {force}{news_mark}")
+        detail_cells[r.nom] = cells
+        synth_cells[r.nom] = synth
+
+    # ── Synthèse des décisions (EN HAUT) ─────────────────────────────────────
+    # Vue d'oiseau : direction seule + force (● fort / ○ faible) ou 🚫. Le trader
+    # voit les décisions AVANT les diagnostics. Le détail complet reste plus bas.
+    synth_lines: List[str] = []
+    synth_lines.append("## Synthèse des décisions")
+    synth_lines.append("")
+    synth_lines.append("_Direction + force (● conviction ≥1.5 · ○ faible) · 🚫 données insuffisantes. Détail complet plus bas._")
+    synth_lines.append("")
+    synth_lines.append("| Actif | 24h | 7j | 1m |")
+    synth_lines.append("|---|---|---|---|")
+    for r in actionnables:
+        s = synth_cells[r.nom]
+        synth_lines.append(f"| {r.nom} | {s[0]} | {s[1]} | {s[2]} |")
+    for r in insuffisants:
+        synth_lines.append(f"| {r.nom} | 🚫 | 🚫 | 🚫 |")
+    synth_lines.append("")
+    # On insère la synthèse juste après le H1 + métadonnée (avant Surveillance).
+    # `lines` contient déjà : H1, métadonnée, "", surveillance..., biais, flips.
+    # → on la place en tête de `lines` après la dernière ligne de méta (Fraîcheur).
+    _meta_end = 0
+    for i, ln in enumerate(lines):
+        if ln.startswith("- Fraîcheur"):
+            _meta_end = i + 1
+            break
+    lines = lines[:_meta_end] + [""] + synth_lines + lines[_meta_end:]
+
+    lines.append("## Matrice (12 actifs × 3 horizons) — primaire ±1, pondéré en annotation")
     lines.append("")
-    lines.append(
-        "**Légende** : ⚑ gate actif · 📰 news>50% du quant (abs/abs) · "
-        "⚪ quasi coin-flip (|score|<0.05) — signal non-actionnable, la règle jamais-neutre tranche par défaut · "
-        "⚠ divergence pm1/pondéré · "
-        "🚫 données insuffisantes (coverage < "
-        f"{int(COVERAGE_MIN * 100)}%) — pas de prédiction (override jamais-neutre) · "
-        "⚠️ conf. faible (coverage < "
-        f"{int(COVERAGE_OK * 100)}% ou données périmées) — direction conservée, fiabilité dégradée · "
-        "↯ divergence quant↔news (signes opposés, amplitudes significatives) · "
-        "⇄ contre-momentum (conclusion vs RSI 14j opposés) · "
-        "⇆ incohérence inter-horizons (zig-zag ≥2 changements de sens) · "
-        "⌛ déjà coté (event > fenêtre already-priced de l'horizon : 24h>1j · 7j>3j · 1m>10j) · "
-        "⊘ démenti / correction détecté sur l'event source — "
-        "Lots 4a/5 : flags visuels, n'altèrent PAS la conclusion (mode shadow)"
-    )
+    lines.append("| Actif | 24h | 7j | 1m |")
+    lines.append("|---|---|---|---|")
+    for r in actionnables:
+        c = detail_cells[r.nom]
+        lines.append(f"| {r.nom} | {c[0]} | {c[1]} | {c[2]} |")
+    # Actifs 🚫 « données insuffisantes » regroupés en fin de matrice (dé-emphasizés).
+    if insuffisants:
+        lines.append("")
+        lines.append("**Données insuffisantes (non actionnables) :**")
+        lines.append("")
+        lines.append("| Actif | 24h | 7j | 1m |")
+        lines.append("|---|---|---|---|")
+        for r in insuffisants:
+            c = detail_cells[r.nom]
+            lines.append(f"| {r.nom} | {c[0]} | {c[1]} | {c[2]} |")
+    lines.append("")
+    lines.append(_build_legende(flags_present))
     lines.append("")
     lines.append("## Détail par actif")
     for r in results:

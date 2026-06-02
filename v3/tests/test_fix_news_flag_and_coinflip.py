@@ -27,6 +27,13 @@ sys.path.insert(0, str(SCRIPTS))
 import scoring_analyste as sa  # noqa: E402
 
 
+def _detail_matrix_line(bulletin: str, actif_prefix: str = "| TestActif") -> str:
+    """Retourne la ligne de l'actif dans la MATRICE détaillée (pas la Synthèse
+    du haut, qui montre une version compacte sans les flags ⚪/⌛/⊘)."""
+    matrix_section = bulletin.split("## Matrice")[1].split("## Détail")[0]
+    return next(l for l in matrix_section.splitlines() if l.startswith(actif_prefix))
+
+
 # Helpers (alignés sur test_news_cap.py)
 def _fiche(quant_signe: int = 1, news_signe: int = 1, quant_poids: int = 10, news_poids: int = 10) -> dict:
     return {
@@ -108,11 +115,15 @@ def test_matrice_news_flag_opposite_signs_uses_abs():
 
 
 def test_matrice_legend_present():
+    # Légende COMPACTE : ne liste QUE les symboles présents. On vérifie l'entête
+    # de légende, puis qu'un ⚪ présent dans une cellule est bien documenté.
     fiche = _fiche()
     res = sa.score_actif("test", fiche, _vals(1.0, 1.0))
     bulletin = sa.render_bulletin([res], {}, datetime(2026, 6, 1, tzinfo=timezone.utc), "h", "ok")
-    assert "⚪" in bulletin and "coin-flip" in bulletin
-    assert "📰" in bulletin and "news>50%" in bulletin
+    assert "**Légende**" in bulletin
+    res2 = sa.score_actif("nasdaq", _fiche_tiny(), {"quant": {"valeur": 0.1, "source_track": "twelvedata"}})
+    bulletin2 = sa.render_bulletin([res2], {}, datetime(2026, 6, 1, tzinfo=timezone.utc), "h", "ok")
+    assert "⚪" in bulletin2 and "coin-flip" in bulletin2
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +152,7 @@ def test_coin_flip_marker_in_matrix_when_score_below_threshold():
     # |score| doit être <0.05
     assert abs(res.scores["24h"]) < 0.05
     bulletin = sa.render_bulletin([res], {}, datetime(2026, 6, 1, tzinfo=timezone.utc), "h", "ok")
-    matrice_line = next(l for l in bulletin.splitlines() if l.startswith("| TestActif"))
+    matrice_line = _detail_matrix_line(bulletin)
     assert "⚪" in matrice_line, f"Score quasi nul → ⚪ attendu. Ligne : {matrice_line!r}"
 
 
@@ -149,7 +160,7 @@ def test_coin_flip_marker_absent_when_score_above_threshold():
     fiche = _fiche()
     res = sa.score_actif("test", fiche, _vals(1.0, 1.0))  # score = 20
     bulletin = sa.render_bulletin([res], {}, datetime(2026, 6, 1, tzinfo=timezone.utc), "h", "ok")
-    matrice_line = next(l for l in bulletin.splitlines() if l.startswith("| TestActif"))
+    matrice_line = _detail_matrix_line(bulletin)
     assert "⚪" not in matrice_line, f"Score=20 → pas de ⚪. Ligne : {matrice_line!r}"
 
 

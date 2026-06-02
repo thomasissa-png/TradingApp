@@ -225,6 +225,16 @@ MATRIX_ROW_RE = re.compile(
 CELL_LONG_SHORT_RE = re.compile(
     r"\s*(?P<conc>LONG|SHORT)\s*\((?P<score>[+-]?\d+(?:\.\d+)?)\)"
 )
+# Format LISIBILITÉ news (📰) : le pondéré (tempéré, plus fiable) passe en TÊTE,
+# le brut (=score primaire pm1, valeur MESURÉE inchangée) entre parenthèses.
+# Ex : "LONG +3.77 (brut +5.69) 📰".  Le pondéré peut être omis s'il est égal
+# au brut → on retombe alors sur CELL_LONG_SHORT_RE (format standard).
+# IMPORTANT : on extrait le BRUT comme score primaire (mesure identique à avant)
+# et le lead comme conclusion_pond/score_pond → aucune dérive de mesure.
+CELL_NEWS_LEAD_RE = re.compile(
+    r"\s*(?P<conc_lead>LONG|SHORT)\s+(?P<score_lead>[+-]?\d+(?:\.\d+)?)\s*"
+    r"\(brut\s+(?P<score_brut>[+-]?\d+(?:\.\d+)?)\)"
+)
 CELL_INSUFFISANT_RE = re.compile(r"données insuff\.")
 # Annotation pondérée optionnelle : "[pond:LONG +0.42]"
 POND_ANNOT_RE = re.compile(r"\[pond:(LONG|SHORT)\s+([+-]?\d+(?:\.\d+)?)\]")
@@ -280,7 +290,9 @@ def parse_bulletin(path: Path) -> List[BulletinCell]:
         # Au moins une cellule doit contenir LONG/SHORT/INSUFFISANT pour
         # considérer la ligne comme matrice (évite de matcher d'autres tableaux).
         has_signal = any(
-            CELL_LONG_SHORT_RE.search(ct) or CELL_INSUFFISANT_RE.search(ct)
+            CELL_LONG_SHORT_RE.search(ct)
+            or CELL_NEWS_LEAD_RE.search(ct)
+            or CELL_INSUFFISANT_RE.search(ct)
             for ct in cell_texts
         )
         if not has_signal:
@@ -301,6 +313,36 @@ def parse_bulletin(path: Path) -> List[BulletinCell]:
                     )
                 )
                 continue
+            conc_pond: Optional[str] = None
+            score_pond: Optional[float] = None
+            # Format LISIBILITÉ news (pondéré en tête, brut entre parenthèses) :
+            # "LONG +3.77 (brut +5.69) 📰". Le BRUT reste le score primaire mesuré
+            # (mesure inchangée vs format historique "LONG (+5.69) [pond:LONG +3.77]")
+            # et le lead devient la valeur pondérée.
+            mn = CELL_NEWS_LEAD_RE.search(cell_text)
+            if mn:
+                conclusion = mn.group("conc_lead")
+                try:
+                    score = float(mn.group("score_brut"))
+                except (TypeError, ValueError):
+                    continue
+                conc_pond = mn.group("conc_lead")
+                try:
+                    score_pond = float(mn.group("score_lead"))
+                except (TypeError, ValueError):
+                    score_pond = None
+                cells.append(
+                    BulletinCell(
+                        bulletin_date=bdate,
+                        actif_name=actif_raw,
+                        horizon=h,
+                        conclusion=conclusion,
+                        score=score,
+                        conclusion_pond=conc_pond,
+                        score_pond=score_pond,
+                    )
+                )
+                continue
             mc = CELL_LONG_SHORT_RE.search(cell_text)
             if not mc:
                 continue
@@ -308,8 +350,6 @@ def parse_bulletin(path: Path) -> List[BulletinCell]:
                 score = float(mc.group("score"))
             except (TypeError, ValueError):
                 continue
-            conc_pond: Optional[str] = None
-            score_pond: Optional[float] = None
             mp = POND_ANNOT_RE.search(cell_text)
             if mp:
                 conc_pond = mp.group(1)

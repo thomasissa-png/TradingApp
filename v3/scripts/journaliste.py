@@ -487,6 +487,11 @@ class Measure:
     # le decision-log de la date d'émission → news_driven reste None.
     news_driven: Optional[bool] = None
     news_rationale: Optional[str] = None  # synthese_rationale du critère news dominant, court
+    # C7 LOT 6 — Mesure flip vs continuation :
+    # is_flip = True si la conclusion (actif×horizon) a CHANGÉ vs le bulletin
+    # immédiatement précédent (même cellule). False = continuation. None = pas
+    # de bulletin précédent → zéro invention, exclu des deux taux.
+    is_flip: Optional[bool] = None
 
 
 def measure_cell(
@@ -649,6 +654,16 @@ class CellKPI:
     # --- Correction #2 : Wilson IC + critère global ---
     wilson_low: Optional[float] = None         # borne basse IC Wilson 95 % (sur n_effective)
     wilson_high: Optional[float] = None        # borne haute IC Wilson 95 %
+    # --- C7 LOT 6 — Ventilation flip vs continuation ---
+    # Calculée sur les mesures de la fenêtre (terminées hors NON_NOTE/INTERROMPU)
+    # qui ont is_flip not None (= dont on connaît la décision précédente).
+    # Le taux global existant N'EST PAS modifié. Ces champs s'ajoutent.
+    n_flip: int = 0                # nb mesures avec is_flip=True (VRAI+FAUSSE uniquement)
+    n_vrai_flip: int = 0
+    n_continuation: int = 0        # nb mesures avec is_flip=False (VRAI+FAUSSE uniquement)
+    n_vrai_continuation: int = 0
+    taux_flip: Optional[float] = None
+    taux_continuation: Optional[float] = None
 
 
 def wilson_ci(n_success: int, n_total: int, z: float = 1.96) -> Tuple[float, float]:
@@ -837,6 +852,29 @@ def compute_kpi(measures_for_cell: List[Measure]) -> CellKPI:
     if kpi.interrompus_recents > 0:
         kpi.alertes.append(f"{kpi.interrompus_recents} suivi(s) interrompu(s) sur la fenêtre observable")
 
+    # --- C7 LOT 6 — Ventilation flip vs continuation -----------------------
+    # Sur la même fenêtre que le taux global (VRAI+FAUSSE seulement).
+    # Mesures avec is_flip=None : EXCLUES des deux taux (zéro invention).
+    # Le taux global existant (kpi.taux_pct, kpi.taux_eff_pct) reste INCHANGÉ.
+    for m in window:
+        if m.outcome not in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            continue
+        if m.is_flip is True:
+            kpi.n_flip += 1
+            if m.outcome == OUTCOME_VRAI:
+                kpi.n_vrai_flip += 1
+        elif m.is_flip is False:
+            kpi.n_continuation += 1
+            if m.outcome == OUTCOME_VRAI:
+                kpi.n_vrai_continuation += 1
+        # is_flip is None → exclu des deux
+    if kpi.n_flip > 0:
+        kpi.taux_flip = round(kpi.n_vrai_flip / kpi.n_flip * 100.0, 2)
+    if kpi.n_continuation > 0:
+        kpi.taux_continuation = round(
+            kpi.n_vrai_continuation / kpi.n_continuation * 100.0, 2
+        )
+
     return kpi
 
 
@@ -977,9 +1015,60 @@ def measure(
         prix_courants[ticker] = (float(p) if p is not None else None)
         return prix_courants[ticker]
 
+    # ----- C7 LOT 6 — Pré-calcul is_flip --------------------------------------
+    # Pour chaque bulletin (chronologique), on connaît la conclusion de la
+    # cellule (actif×horizon) du bulletin IMMÉDIATEMENT PRÉCÉDENT. On compare
+    # la conclusion courante à la conclusion précédente :
+    #   - sens différent (LONG↔SHORT)  → is_flip=True
+    #   - sens identique               → is_flip=False (continuation)
+    #   - pas de précédent OU INSUFFISANT (de part et d'autre) → is_flip=None
+    # Zéro invention : si la cellule n'existait pas dans le bulletin précédent
+    # (ex: nouvel actif), is_flip=None.
+    # Map (bulletin_path) -> {(actif_lower, horizon): conclusion}
+    parsed_cells_by_bulletin: Dict[Path, List[BulletinCell]] = {}
+    cells_index_by_bulletin: Dict[Path, Dict[Tuple[str, str], str]] = {}
+    for bpath in bulletins:
+        cs = parse_bulletin(bpath)
+        parsed_cells_by_bulletin[bpath] = cs
+        cells_index_by_bulletin[bpath] = {
+            (c.actif_name.strip().lower(), c.horizon): c.conclusion
+            for c in cs
+        }
+    # Map (bulletin_path) -> bulletin précédent (immédiatement antérieur)
+    prev_bulletin_for: Dict[Path, Optional[Path]] = {}
+    prev: Optional[Path] = None
+    for bpath in bulletins:
+        prev_bulletin_for[bpath] = prev
+        prev = bpath
+
+    def _compute_is_flip(cell: BulletinCell, bpath: Path) -> Optional[bool]:
+        """Compare la conclusion à celle du bulletin précédent (même cellule).
+
+        Exclu si :
+          - pas de bulletin précédent → None
+          - conclusion courante INSUFFISANT → None (pas une prédiction)
+          - conclusion précédente INSUFFISANT ou absente → None
+        Sinon : True si sens différent (LONG↔SHORT), False sinon.
+        """
+        pb = prev_bulletin_for.get(bpath)
+        if pb is None:
+            return None
+        if cell.conclusion == CONCLUSION_INSUFFISANT:
+            return None
+        if cell.conclusion not in ("LONG", "SHORT"):
+            return None
+        prev_conc = cells_index_by_bulletin.get(pb, {}).get(
+            (cell.actif_name.strip().lower(), cell.horizon)
+        )
+        if prev_conc is None or prev_conc == CONCLUSION_INSUFFISANT:
+            return None
+        if prev_conc not in ("LONG", "SHORT"):
+            return None
+        return prev_conc != cell.conclusion
+
     measures: List[Measure] = []
     for bpath in bulletins:
-        cells = parse_bulletin(bpath)
+        cells = parsed_cells_by_bulletin.get(bpath) or []
         if not cells:
             continue
         bdate = cells[0].bulletin_date
@@ -1019,6 +1108,8 @@ def measure(
             nd = news_map.get((cell.actif_name, cell.horizon))
             if nd is not None:
                 m.news_driven, m.news_rationale = nd
+            # C7 LOT 6 — Tag is_flip (None si pas de bulletin précédent).
+            m.is_flip = _compute_is_flip(cell, bpath)
             measures.append(m)
 
     # Agrégation par cellule
@@ -1271,6 +1362,63 @@ def render_performance(
     else:
         lines.append(f"- Critère global : warm-up (aucune cellule avec N_eff ≥ {N_EFFECTIVE_MIN})")
 
+    # --- C7 LOT 6 — Ventilation flip vs continuation ---------------------
+    # Section additive : le taux global n'est PAS modifié. On ventile pour
+    # répondre à la question « mes retournements gagnent-ils plus que mes
+    # continuations ? ». Cellules avec is_flip=None (pas de bulletin précédent)
+    # sont EXCLUES des deux taux (zéro invention).
+    lines.append("")
+    lines.append("## Flip vs continuation (additif — taux global inchangé)")
+    lines.append("")
+    cells_with_flip_data = [
+        k for k in kpis.values()
+        if k.n_flip > 0 or k.n_continuation > 0
+    ]
+    if not cells_with_flip_data:
+        lines.append(
+            "_Pas encore de cellule avec décision précédente comparable "
+            "(warm-up : besoin d'au moins 2 bulletins consécutifs)._"
+        )
+    else:
+        lines.append(
+            "| Actif | Horizon | N_flip | Taux_flip | N_continuation | Taux_continuation |"
+        )
+        lines.append("|---|---|---|---|---|---|")
+        sorted_keys_fc = sorted(
+            [k for k in kpis.keys() if kpis[k].n_flip > 0 or kpis[k].n_continuation > 0],
+            key=lambda k: (kpis[k].actif_name.lower(), horizon_order.get(k[1], 99)),
+        )
+        for key in sorted_keys_fc:
+            k = kpis[key]
+            tf = "—" if k.taux_flip is None else f"{k.taux_flip:.1f}%"
+            tc = "—" if k.taux_continuation is None else f"{k.taux_continuation:.1f}%"
+            lines.append(
+                f"| {k.actif_name} | {k.horizon} | {k.n_flip} | {tf} | "
+                f"{k.n_continuation} | {tc} |"
+            )
+        # Agrégats globaux
+        total_flip = sum(k.n_flip for k in kpis.values())
+        total_vrai_flip = sum(k.n_vrai_flip for k in kpis.values())
+        total_cont = sum(k.n_continuation for k in kpis.values())
+        total_vrai_cont = sum(k.n_vrai_continuation for k in kpis.values())
+        lines.append("")
+        if total_flip > 0:
+            taux_f_glob = total_vrai_flip / total_flip * 100.0
+            lines.append(
+                f"- **Taux global flips** : {taux_f_glob:.1f}% "
+                f"(N={total_flip} mesures avec is_flip=True)"
+            )
+        else:
+            lines.append("- Taux global flips : — (aucune mesure avec flip détecté)")
+        if total_cont > 0:
+            taux_c_glob = total_vrai_cont / total_cont * 100.0
+            lines.append(
+                f"- **Taux global continuations** : {taux_c_glob:.1f}% "
+                f"(N={total_cont} mesures avec is_flip=False)"
+            )
+        else:
+            lines.append("- Taux global continuations : — (aucune continuation mesurée)")
+
     # Détail : 10 dernières mesures
     lines.append("")
     lines.append("## Dernières mesures (max 20)")
@@ -1319,6 +1467,19 @@ class CellKPIAB:
     n_fausse_pond: int = 0
     taux_pond: Optional[float] = None
     brier_pond: Optional[float] = None
+    # --- C7 LOT 6 — Ventilation flip vs continuation (côté ±1 et pondéré) ---
+    n_flip_pm1: int = 0
+    n_vrai_flip_pm1: int = 0
+    n_continuation_pm1: int = 0
+    n_vrai_continuation_pm1: int = 0
+    taux_flip_pm1: Optional[float] = None
+    taux_continuation_pm1: Optional[float] = None
+    n_flip_pond: int = 0
+    n_vrai_flip_pond: int = 0
+    n_continuation_pond: int = 0
+    n_vrai_continuation_pond: int = 0
+    taux_flip_pond: Optional[float] = None
+    taux_continuation_pond: Optional[float] = None
 
 
 def compute_kpi_ab(measures_for_cell: List[Measure]) -> CellKPIAB:
@@ -1377,6 +1538,42 @@ def compute_kpi_ab(measures_for_cell: List[Measure]) -> CellKPIAB:
         kpi.taux_pond = round(kpi.n_vrai_pond / kpi.n_pond * 100.0, 2)
     if brier_n_pond > 0:
         kpi.brier_pond = round(brier_sum_pond / brier_n_pond, 4)
+    # --- C7 LOT 6 — Ventilation flip/continuation A/B (additive) -----------
+    for m in window:
+        if m.is_flip is None:
+            continue
+        # Côté ±1
+        if m.outcome in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            if m.is_flip:
+                kpi.n_flip_pm1 += 1
+                if m.outcome == OUTCOME_VRAI:
+                    kpi.n_vrai_flip_pm1 += 1
+            else:
+                kpi.n_continuation_pm1 += 1
+                if m.outcome == OUTCOME_VRAI:
+                    kpi.n_vrai_continuation_pm1 += 1
+        # Côté pondéré
+        if m.outcome_pond in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            if m.is_flip:
+                kpi.n_flip_pond += 1
+                if m.outcome_pond == OUTCOME_VRAI:
+                    kpi.n_vrai_flip_pond += 1
+            else:
+                kpi.n_continuation_pond += 1
+                if m.outcome_pond == OUTCOME_VRAI:
+                    kpi.n_vrai_continuation_pond += 1
+    if kpi.n_flip_pm1 > 0:
+        kpi.taux_flip_pm1 = round(kpi.n_vrai_flip_pm1 / kpi.n_flip_pm1 * 100.0, 2)
+    if kpi.n_continuation_pm1 > 0:
+        kpi.taux_continuation_pm1 = round(
+            kpi.n_vrai_continuation_pm1 / kpi.n_continuation_pm1 * 100.0, 2
+        )
+    if kpi.n_flip_pond > 0:
+        kpi.taux_flip_pond = round(kpi.n_vrai_flip_pond / kpi.n_flip_pond * 100.0, 2)
+    if kpi.n_continuation_pond > 0:
+        kpi.taux_continuation_pond = round(
+            kpi.n_vrai_continuation_pond / kpi.n_continuation_pond * 100.0, 2
+        )
     return kpi
 
 

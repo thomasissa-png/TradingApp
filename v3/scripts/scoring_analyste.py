@@ -967,6 +967,175 @@ def load_veille(bulletins_dir: Path, today: datetime) -> Tuple[Optional[Path], D
 
 
 # ---------------------------------------------------------------------------
+# C7 — Surveillance & cohérence biais (publication & observabilité)
+# ---------------------------------------------------------------------------
+#
+# Lot 6 / C7 : Thomas doit VOIR sans scanner la matrice :
+#   (a) Les cellules portant au moins un drapeau de risque (bloc surveillance)
+#   (b) La cohérence entre la ligne agrégée LONG/SHORT et le compte réel des
+#       conclusions par actif (assertion testable, log ERROR si bug).
+#
+# Additif : ne change AUCUNE conclusion / score / seuil / pondération.
+# ---------------------------------------------------------------------------
+
+# Drapeaux de risque (sémantique alignée avec render_bulletin / build_decision_log_records)
+SURVEILLANCE_FLAGS = {
+    "insuffisant": "🚫",     # conclusion INSUFFISANT (gate suffisance)
+    "conf_low": "⚠️",        # confidence == "faible"
+    "divergence_qn": "↯",   # divergence quant↔news
+    "contre_momentum": "⇄", # conclusion vs RSI opposés
+    "incoherence_ih": "⇆",  # incohérence inter-horizons (1 marqueur/actif)
+    "deja_cote": "⌛",       # already-priced
+    "dementi": "⊘",         # démenti / correction
+}
+
+
+def _compute_cell_risk_flags(
+    r: "ActifResult",
+    h: str,
+    now: datetime,
+) -> List[str]:
+    """Retourne la liste des libellés de drapeaux de risque pour (actif, horizon).
+
+    Mêmes critères que render_bulletin (mode shadow — n'altère PAS la conclusion).
+    Importé paresseusement pour éviter circular imports.
+    """
+    import triggers_classifier as _tc_classifier  # noqa: F401
+
+    flags: List[str] = []
+    conc = r.conclusions.get(h, "")
+    confidence = r.confidence.get(h, "normale")
+
+    # 🚫 insuffisant — prioritaire (override de la direction)
+    if conc == CONCLUSION_INSUFFISANT:
+        flags.append(SURVEILLANCE_FLAGS["insuffisant"])
+    elif confidence == "faible":
+        flags.append(SURVEILLANCE_FLAGS["conf_low"])
+
+    # ↯ divergence quant↔news
+    if r.divergence_quant_news.get(h, False):
+        flags.append(SURVEILLANCE_FLAGS["divergence_qn"])
+    # ⇄ contre-momentum
+    if r.contre_momentum.get(h, False):
+        flags.append(SURVEILLANCE_FLAGS["contre_momentum"])
+    # ⇆ incohérence inter-horizons (1 par actif — répété sur chaque cellule
+    #    de l'actif concerné pour que la cellule apparaisse dans surveillance)
+    if r.incoherence_inter_horizons:
+        flags.append(SURVEILLANCE_FLAGS["incoherence_ih"])
+
+    # ⌛ déjà coté / ⊘ démenti : balayer les critères news de l'actif
+    ap_present = False
+    denial_present = False
+    for c in r.criteres:
+        if c.is_gate or c.is_na:
+            continue
+        if c.is_denial:
+            denial_present = True
+        if c.event_date and not ap_present:
+            try:
+                _cdt = datetime.fromisoformat(c.event_date)
+            except ValueError:
+                _cdt = None
+            if _cdt is not None:
+                _ap, _ = _tc_classifier.compute_already_priced_for_horizon(
+                    _cdt, h, now=now,
+                )
+                if _ap:
+                    ap_present = True
+        if ap_present and denial_present:
+            break
+    if ap_present:
+        flags.append(SURVEILLANCE_FLAGS["deja_cote"])
+    if denial_present:
+        flags.append(SURVEILLANCE_FLAGS["dementi"])
+
+    return flags
+
+
+def build_surveillance_block(
+    results: List["ActifResult"],
+    now: datetime,
+) -> List[str]:
+    """Construit le bloc '## ⚠️ Cellules à surveiller'.
+
+    Liste TOUTES les cellules (actif × horizon) portant ≥ 1 drapeau de risque.
+    Format ligne : `- Actif Horizon — DIRECTION — [drapeaux]`.
+    Si aucune → ligne placeholder.
+    """
+    lines: List[str] = []
+    lines.append("## ⚠️ Cellules à surveiller")
+    lines.append("")
+    rows: List[str] = []
+    for r in results:
+        for h in HORIZONS:
+            flags = _compute_cell_risk_flags(r, h, now)
+            if not flags:
+                continue
+            direction = r.conclusions.get(h, "")
+            flags_str = " ".join(flags)
+            rows.append(f"- {r.nom} {h} — {direction} — [{flags_str}]")
+    if rows:
+        lines.extend(rows)
+    else:
+        lines.append("_Aucune cellule à risque ce cycle._")
+    lines.append("")
+    return lines
+
+
+def compute_bias_aggregate(results: List["ActifResult"]) -> Dict[str, int]:
+    """Compte les conclusions agrégées sur toutes les cellules (actif × horizon).
+
+    Source de vérité : r.conclusions[h] directement. Retourne :
+      { "LONG": n, "SHORT": n, "INSUFFISANT": n, "total": n }
+    """
+    counts = {"LONG": 0, "SHORT": 0, CONCLUSION_INSUFFISANT: 0, "total": 0}
+    for r in results:
+        for h in HORIZONS:
+            conc = r.conclusions.get(h, "")
+            counts["total"] += 1
+            if conc in counts:
+                counts[conc] += 1
+    return counts
+
+
+def assert_bias_coherence(
+    aggregate: Dict[str, int],
+    results: List["ActifResult"],
+) -> Tuple[bool, str]:
+    """Vérifie que l'agrégat global = le compte réel par actif×horizon.
+
+    Re-calcule indépendamment depuis results (cellule par cellule, sans passer
+    par compute_bias_aggregate) et compare. Si incohérence → log ERROR + message
+    de marqueur retourné. Sinon (True, "").
+
+    Détecte un bug d'agrégation (ex : double comptage, oubli d'une cellule).
+    """
+    recount = {"LONG": 0, "SHORT": 0, CONCLUSION_INSUFFISANT: 0, "total": 0}
+    for r in results:
+        for h in HORIZONS:
+            recount["total"] += 1
+            conc = r.conclusions.get(h, "")
+            if conc == "LONG":
+                recount["LONG"] += 1
+            elif conc == "SHORT":
+                recount["SHORT"] += 1
+            elif conc == CONCLUSION_INSUFFISANT:
+                recount[CONCLUSION_INSUFFISANT] += 1
+    if (
+        aggregate.get("LONG", -1) != recount["LONG"]
+        or aggregate.get("SHORT", -1) != recount["SHORT"]
+        or aggregate.get(CONCLUSION_INSUFFISANT, -1) != recount[CONCLUSION_INSUFFISANT]
+        or aggregate.get("total", -1) != recount["total"]
+    ):
+        msg = (
+            f"INCOHÉRENCE BIAIS : agrégat={aggregate} vs recount={recount}"
+        )
+        logger.error(msg)
+        return False, msg
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
 # Bulletin
 # ---------------------------------------------------------------------------
 
@@ -986,6 +1155,26 @@ def render_bulletin(
     lines.append(f"- Analyste version : {ANALYSTE_VERSION}")
     lines.append(f"- Fiches hash : {fiches_h}")
     lines.append(f"- Fraîcheur : {freshness_msg}")
+    lines.append("")
+    # --- C7 — Cellules à surveiller + cohérence biais agrégé ---------------
+    # Bloc placé APRÈS la métadonnée et AVANT "Flips vs veille" pour que
+    # Thomas voie immédiatement les cellules à risque sans scanner la matrice.
+    # Le briefing étant préfixé en tête après le H1 (briefing.prepend_to_bulletin),
+    # l'ordre final est : H1 → Briefing → Métadonnée → ⚠️ Surveillance → Biais
+    # agrégé → Flips → Matrice → Détail → Limites.
+    lines.extend(build_surveillance_block(results, now))
+
+    # Biais agrégé : ligne UNIQUE qui résume le compte de conclusions (LONG /
+    # SHORT / INSUFFISANT). Le marqueur ⚠ INCOHÉRENCE n'apparaît que si le
+    # compte re-calculé indépendamment diverge (bug d'agrégation).
+    bias_counts = compute_bias_aggregate(results)
+    bias_ok, bias_msg = assert_bias_coherence(bias_counts, results)
+    bias_marker = "" if bias_ok else f" ⚠ INCOHÉRENCE : {bias_msg}"
+    lines.append(
+        f"- Biais agrégé : LONG {bias_counts['LONG']} · SHORT {bias_counts['SHORT']} · "
+        f"INSUFFISANT {bias_counts[CONCLUSION_INSUFFISANT]} "
+        f"(sur {bias_counts['total']} cellules){bias_marker}"
+    )
     lines.append("")
     # Pré-calcul des flips AVANT le rendu matrice (l'ordre d'affichage est :
     # Briefing → Flips vs veille → Matrice → Détail → Limites — demande Thomas
@@ -1149,7 +1338,11 @@ def render_bulletin(
 DECISION_LOG_DIR = ROOT / "data" / "decision-log"
 
 
-def build_decision_log_records(results: List[ActifResult], now: datetime) -> List[Dict[str, Any]]:
+def build_decision_log_records(
+    results: List[ActifResult],
+    now: datetime,
+    veille_conclusions: Optional[Dict[str, Dict[str, str]]] = None,
+) -> List[Dict[str, Any]]:
     """Construit la liste de lignes JSONL (une par cellule actif × horizon).
 
     Chaque ligne contient :
@@ -1392,12 +1585,25 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
             if r.incoherence_inter_horizons:
                 directional_flags["incoherence_inter_horizons"] = True
 
+            # --- C7 LOT 6 — is_flip : la conclusion a-t-elle CHANGÉ vs veille ?
+            # None si :
+            #   - pas de veille_conclusions fournie
+            #   - cellule absente de la veille
+            #   - conclusion courante OU précédente == INSUFFISANT
+            # True si sens différent (LONG↔SHORT). False = continuation.
+            current_conc = r.conclusions.get(h, "")
+            is_flip: Optional[bool] = None
+            if veille_conclusions and current_conc in ("LONG", "SHORT"):
+                prev = (veille_conclusions.get(r.nom.lower()) or {}).get(h)
+                if prev in ("LONG", "SHORT"):
+                    is_flip = (prev != current_conc)
             records.append({
                 "bulletin_date": bulletin_date,
                 "generated_at": generated_at,
                 "fiche_key": r.fiche_key,
                 "actif": r.nom,
                 "horizon": h,
+                "is_flip": is_flip,
                 "score_pm1": score_pm1_val,
                 "score_pond": r.scores_pond.get(h, 0.0),
                 # ----- Phase 2 — métriques shadow (racine) ------------------

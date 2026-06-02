@@ -15,6 +15,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 logging.basicConfig(
@@ -56,12 +57,28 @@ def main() -> int:
     logger.info("Bulletin écrit : %s (%d actifs)", out_path, len(results))
 
     # Étape 2ter — Decision-log (observabilité ±1 vs pondéré, append-only).
+    # C7 LOT 6 : on re-lit la veille pour exposer is_flip dans chaque record.
+    # Best-effort : si load_veille échoue, on passe None (is_flip absent).
     try:
-        recs = scoring_analyste.build_decision_log_records(results, now)
+        veille_conclusions_for_log: Optional[dict] = None
+        try:
+            _, veille_conclusions_for_log = scoring_analyste.load_veille(
+                scoring_analyste.BULLETINS_DIR, now,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("load_veille KO (is_flip absent du decision-log) : %s", e)
+        recs = scoring_analyste.build_decision_log_records(
+            results, now, veille_conclusions=veille_conclusions_for_log,
+        )
         dl_path = scoring_analyste.write_decision_log(recs, now)
         n_diverge = sum(1 for r in recs if r.get("diverge"))
-        logger.info("Decision-log écrit : %s (%d lignes, %d divergences)",
-                    dl_path, len(recs), n_diverge)
+        n_flip = sum(1 for r in recs if r.get("is_flip") is True)
+        n_cont = sum(1 for r in recs if r.get("is_flip") is False)
+        logger.info(
+            "Decision-log écrit : %s (%d lignes, %d divergences, "
+            "%d flips, %d continuations)",
+            dl_path, len(recs), n_diverge, n_flip, n_cont,
+        )
     except Exception as e:  # noqa: BLE001
         logger.warning("decision-log KO (non bloquant) : %s", e)
 

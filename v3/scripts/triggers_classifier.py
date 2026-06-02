@@ -927,6 +927,93 @@ def _event_ia_targets_actif(ev: dict, actif_key: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Gate C1 — cohérence de signe DeepSeek (v3/audit/gates-FINAL.md, gate n°1)
+# ---------------------------------------------------------------------------
+# Import paresseux du module sign_consistency (évite tout couplage dur).
+try:
+    import sign_consistency as _sc  # type: ignore
+    _SC_OK = True
+except ImportError:  # pragma: no cover — dégradation gracieuse
+    _sc = None
+    _SC_OK = False
+
+# Stash module-level : conflits détectés sur ce run (pour decision-log).
+# Clé : (actif_key, cle YAML) → liste de dicts traçables.
+# Reset en début de classify_all* (idempotence rejeu).
+_SIGN_CONFLICTS: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+
+
+def _reset_sign_conflicts() -> None:
+    _SIGN_CONFLICTS.clear()
+
+
+def get_sign_conflicts(actif_key: str, cle: str) -> List[Dict[str, Any]]:
+    """Lecture du stash pour une cellule (actif, critère). Retourne une copie."""
+    return list(_SIGN_CONFLICTS.get((actif_key, cle), []))
+
+
+def _check_sign_conflict(ev: dict, asset: str, direction: str) -> Optional[Any]:
+    """Cache + délègue à sign_consistency.detect_sign_conflict.
+
+    Mise en cache sur l'event (clé `(asset, direction)`) pour éviter de re-matcher
+    le texte sur chaque appel (un même event est interrogé plusieurs fois par
+    _ia_direction_for / _group_events_by_asset).
+
+    Retourne un ConflictHit si conflit NET, None sinon.
+    """
+    if not _SC_OK or _sc is None:
+        return None
+    if direction not in ("LONG", "SHORT") or not asset:
+        return None
+    cache = ev.setdefault("_sign_conflict_cache", {})
+    key = (asset, direction)
+    if key in cache:
+        return cache[key]
+    text = _event_text(ev)  # concat trigger + l2 + l1 + source + news_zone
+    hit = _sc.detect_sign_conflict(text, asset, direction)
+    cache[key] = hit
+    return hit
+
+
+def _record_sign_conflict(
+    ev: dict, actif_key: str, cle: str, asset: str, hit: Any,
+) -> None:
+    """Trace un conflit dans le stash + log WARNING (idempotent).
+
+    Une même (event_id, asset, cle) ne s'inscrit qu'UNE fois par cellule
+    pour éviter le bruit (l'event peut être interrogé sur plusieurs horizons).
+    """
+    if hit is None:
+        return
+    ev_id = ev.get("event_id") or ""
+    bucket = _SIGN_CONFLICTS.setdefault((actif_key, cle), [])
+    # Dédup intra-cellule par (event_id, asset)
+    for existing in bucket:
+        if existing.get("event_id") == ev_id and existing.get("asset") == asset:
+            return
+    title = (ev.get("trigger") or ev.get("l2") or "")[:160]
+    entry = {
+        "event_id": ev_id,
+        "asset": asset,
+        "rule_name": hit.rule_name,
+        "expected_direction": hit.expected_direction,
+        "ia_direction": hit.ia_direction,
+        "matched_subject": hit.matched_subject,
+        "matched_surprise": hit.matched_surprise,
+        "surprise_polarity": hit.surprise_polarity,
+        "title": title,
+    }
+    bucket.append(entry)
+    logger.warning(
+        "C1 sign_conflict NEUTRALISE %s/%s asset=%s rule=%s "
+        "ia=%s expected=%s subject=%r surprise=%r title=%r",
+        actif_key, cle, asset, hit.rule_name,
+        hit.ia_direction, hit.expected_direction,
+        hit.matched_subject, hit.matched_surprise, title,
+    )
+
+
 def _candidates_for(events: List[dict], actif_key: str, cle: str) -> List[dict]:
     """Filtre les events candidats pour un critère donné (avant matching directionnel).
 
@@ -1030,7 +1117,9 @@ def _any_keyword_matches(text: str, keywords: List[str]) -> bool:
 _CONF_WEIGHT = {"high": 3, "medium": 2, "low": 1}
 
 
-def _ia_direction_for(ev: dict, actif_key: str) -> Optional[str]:
+def _ia_direction_for(
+    ev: dict, actif_key: str, cle: Optional[str] = None,
+) -> Optional[str]:
     """Retourne 'LONG' / 'SHORT' si l'IA a explicitement marqué une direction
     tradable pour cet actif dans `impacts[]`, sinon None.
 
@@ -1041,6 +1130,12 @@ def _ia_direction_for(ev: dict, actif_key: str) -> Optional[str]:
 
     Si plusieurs impacts LONG/SHORT ciblent le même actif (rare), on garde
     celui de confidence bucket max (high > medium > low).
+
+    Gate C1 — cohérence de signe (sign_consistency) :
+    Si l'impact contredit une règle macro NON AMBIGUË (ex. « OPEP augmente la
+    production » classée LONG BRENT), il est NEUTRALISÉ ici (skip) et tracé
+    via _record_sign_conflict (si `cle` fourni). Conservateur : on ne flip
+    PAS, on retire le signal douteux pour qu'il ne contamine pas le score.
     """
     impacts = ev.get("_impacts") or []
     if not impacts:
@@ -1056,6 +1151,12 @@ def _ia_direction_for(ev: dict, actif_key: str) -> Optional[str]:
         direction = imp.get("direction")
         if direction not in ("LONG", "SHORT"):
             continue  # NEUTRAL / autre → ignoré pour ne pas bloquer le fallback
+        # Gate C1 : impact contredit une règle macro NON AMBIGUË → neutralisé.
+        hit = _check_sign_conflict(ev, asset, direction)
+        if hit is not None:
+            if cle:
+                _record_sign_conflict(ev, actif_key, cle, asset, hit)
+            continue
         conf = imp.get("confidence")
         if isinstance(conf, str):
             weight = _CONF_WEIGHT.get(conf.lower(), 1)
@@ -1186,7 +1287,8 @@ def _resolve_triplet_impl(
                     continue
                 if dt < cutoff_synth or dt > now:
                     continue
-                if _ia_direction_for(ev, actif_key) != direction:
+                # cle propagé → gate C1 enregistre les conflits trouvés ici aussi.
+                if _ia_direction_for(ev, actif_key, cle=cle) != direction:
                     continue
                 mat = (ev.get("materiality") or "").strip().lower()
                 weight = _MAT_WEIGHT.get(mat, 1)
@@ -1277,10 +1379,12 @@ def _resolve_triplet_impl(
             continue
         if dt < cutoff or dt > now:
             continue
-        direction = _ia_direction_for(ev, actif_key)
+        # Gate C1 : `cle` propagé → conflit de signe → impact neutralisé + tracé.
+        direction = _ia_direction_for(ev, actif_key, cle=cle)
         if direction is None:
-            # Pas de signal IA exploitable pour cet actif (NEUTRAL ou non-listé).
-            # On NE marque PAS ia_seen_any → le fallback keyword reste ouvert.
+            # Pas de signal IA exploitable pour cet actif (NEUTRAL, non-listé,
+            # OU impact neutralisé par gate C1). On NE marque PAS ia_seen_any
+            # → le fallback keyword reste ouvert.
             continue
         ia_seen_any = True
         mat = (ev.get("materiality") or "").strip().lower()
@@ -1477,6 +1581,13 @@ def _group_events_by_asset(events: List[dict], now: datetime, lookback_days: int
             direction = str(imp.get("direction", "")).upper()
             if asset not in IA_ASSET_TO_ACTIF or direction not in ("LONG", "SHORT"):
                 continue
+            # Gate C1 : impact contredisant une règle macro NON AMBIGUË →
+            # neutralisé (la synthèse DeepSeek ne doit jamais voir le signal
+            # douteux). Pas de _record_sign_conflict ici (pas de `cle` dispo
+            # — l'enregistrement se fait dans la boucle _resolve_triplet_impl
+            # qui connaît le critère cible).
+            if _check_sign_conflict(ev, asset, direction) is not None:
+                continue
             out.setdefault(asset, []).append(ev)
     # Déduplication (un event multi-impacts n'apparaît qu'une fois par asset)
     # + tri desc par date
@@ -1558,12 +1669,16 @@ def classify_all_with_meta(
         today_dt = datetime(today.year, today.month, today.day, 23, 59, 59, tzinfo=timezone.utc)
         today_date = today
 
-    # Synthèses directionnelles par actif (niveau 1). Vide si extractor None.
-    syntheses = _compute_syntheses(events, today_dt, extractor)
-
     # A1 — reset du stash shadow (idempotence rejeu — _candidates_for va
     # le remplir à mesure des exclusions deja_cote/stale/repost).
+    # Gate C1 — reset du stash sign_conflicts (idempotence rejeu).
+    # Resets AVANT _compute_syntheses pour que _group_events_by_asset (qui
+    # consulte le cache C1) parte d'un état propre.
     _reset_shadow_contrib()
+    _reset_sign_conflicts()
+
+    # Synthèses directionnelles par actif (niveau 1). Vide si extractor None.
+    syntheses = _compute_syntheses(events, today_dt, extractor)
 
     out: Dict[str, Dict[str, Dict[str, Any]]] = {}
     for actif_key, criteres in triggers_cfg.items():
@@ -1606,6 +1721,13 @@ def classify_all_with_meta(
                 shadow = get_shadow_contrib(actif_key, cle)
                 if shadow:
                     entry["p2_shadow_contrib_exclu"] = shadow
+                # Gate C1 — sign_conflicts détectés sur cette cellule (lecture
+                # sur la PAIRE actif_key/cle YAML, comme le shadow). Propagés
+                # tel quel au raw pour traçabilité decision-log + bulletin.
+                conflicts = get_sign_conflicts(actif_key, cle)
+                if conflicts:
+                    entry["sign_conflict"] = True
+                    entry["sign_conflict_details"] = conflicts
                 actif_out[emit_cle] = entry
             elif t == "calendrier":
                 val = _resolve_calendrier(cle, today_date)
@@ -1655,10 +1777,13 @@ def classify_all(
         today_dt = datetime(today.year, today.month, today.day, 23, 59, 59, tzinfo=timezone.utc)
         today_date = today
 
-    syntheses = _compute_syntheses(events, today_dt, extractor)
-
     # A1 — reset du stash shadow (idempotence rejeu).
+    # Gate C1 — reset du stash sign_conflicts (idempotence rejeu).
+    # Resets AVANT _compute_syntheses.
     _reset_shadow_contrib()
+    _reset_sign_conflicts()
+
+    syntheses = _compute_syntheses(events, today_dt, extractor)
 
     out: Dict[str, Dict[str, int]] = {}
     for actif_key, criteres in triggers_cfg.items():

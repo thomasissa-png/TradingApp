@@ -1496,6 +1496,13 @@ def build_critere_value(
                 # Propagé tel quel au raw (consommé par scoring pour T1).
                 if "p2_shadow_contrib_exclu" in entry and entry["p2_shadow_contrib_exclu"]:
                     p2_meta["p2_shadow_contrib_exclu"] = entry["p2_shadow_contrib_exclu"]
+                # Gate C1 — sign_conflict (cohérence de signe DeepSeek) :
+                # propagation au raw pour traçabilité decision-log + affichage.
+                if entry.get("sign_conflict"):
+                    p2_meta["sign_conflict"] = True
+                    p2_meta["sign_conflict_details"] = entry.get(
+                        "sign_conflict_details", []
+                    )
             else:
                 val = int(entry)
                 mat = ""

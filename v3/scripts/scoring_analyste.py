@@ -338,6 +338,12 @@ class CritereResult:
     # A1 — shadow_contrib des events EXCLUS sur la cellule (actif×critère).
     # Dict {horizon: float signé}. Vide si aucune exclusion deja_cote/stale/repost.
     p2_shadow_contrib_exclu: Dict[str, float] = field(default_factory=dict)
+    # Gate C1 — cohérence de signe DeepSeek : True si au moins UN impact news
+    # a été NEUTRALISÉ pour conflit avec une règle macro NON AMBIGUË.
+    sign_conflict: bool = False
+    # Détails du conflit (rule_name, asset, ia_direction, expected_direction, ...).
+    # Vide si sign_conflict=False. Tracé tel quel dans le decision-log.
+    sign_conflict_details: List[Dict[str, Any]] = field(default_factory=list)
     # Persistance "pourquoi" DeepSeek (demande Thomas 2026-06-01) : rationale et
     # bucket de conviction de la synthèse directionnelle. Vide si critère non-news
     # ou si l'extractor n'a pas produit de synthèse (rétro-compat zéro invention).
@@ -557,6 +563,9 @@ def score_actif(
         p2_event_date_source = ""
         p2_freshness_days = 0.0
         p2_shadow_excl: Dict[str, float] = {}
+        # Gate C1 — defaults (présents même si raw non-dict)
+        _sign_conflict: bool = False
+        _sign_conflict_details: List[Dict[str, Any]] = []
         if isinstance(raw, dict):
             mat = str(raw.get("materiality", "") or "")
             rel = str(raw.get("reliability", "") or "")
@@ -580,6 +589,11 @@ def score_actif(
                         p2_shadow_excl[str(h_key)] = float(v_h)
                     except (TypeError, ValueError):
                         continue
+            # Gate C1 — sign_conflict (cohérence de signe DeepSeek).
+            _sign_conflict = bool(raw.get("sign_conflict"))
+            _sign_conflict_details = raw.get("sign_conflict_details") or []
+            if not isinstance(_sign_conflict_details, list):
+                _sign_conflict_details = []
         criteres_res.append(
             CritereResult(
                 id=crit.get("id"),
@@ -609,6 +623,8 @@ def score_actif(
                 freshness_days=p2_freshness_days,
                 coef_nature_applied=dict(coef_nature_h),
                 p2_shadow_contrib_exclu=dict(p2_shadow_excl),
+                sign_conflict=_sign_conflict,
+                sign_conflict_details=list(_sign_conflict_details),
             )
         )
 
@@ -1004,6 +1020,12 @@ def build_decision_log_records(results: List[ActifResult], now: datetime) -> Lis
                                  or c.source_track == "keyword"):
                     contrib_entry["nature"] = c.nature
                     contrib_entry["coef_nature"] = c.coef_nature_applied.get(h, 1.0)
+                # Gate C1 — sign_conflict (cohérence de signe DeepSeek) :
+                # tracé dès qu'au moins un impact a été neutralisé sur la
+                # cellule. Vide sinon (zéro bruit dans le log).
+                if c.sign_conflict:
+                    contrib_entry["sign_conflict"] = True
+                    contrib_entry["sign_conflict_details"] = c.sign_conflict_details
                 contribs.append(contrib_entry)
             # --- Observabilité ratio_news (Point 4 plan horizon) ----------
             cap_info = r.news_cap_info.get(h, {}) if r.news_cap_info else {}

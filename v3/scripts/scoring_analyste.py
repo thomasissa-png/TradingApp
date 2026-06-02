@@ -88,6 +88,61 @@ CARRY_MAX_AGE_H: Dict[str, int] = {"24h": 24, "7j": 48, "1m": 24}
 EPSILON_CARRY: float = 0.05
 
 # ---------------------------------------------------------------------------
+# RÉGIME NEWS (ticket D) — actifs structurellement news-driven
+# ---------------------------------------------------------------------------
+# Problème résolu : certaines matières premières sont pilotées EN PERMANENCE par
+# les news (offre/demande géopolitique, météo, récoltes) et n'ont quasi jamais
+# assez de critères quant disponibles → elles tombent perpétuellement en 🚫
+# INSUFFISANT, alors que le signal LÉGITIME pour ces actifs vient des news.
+#
+# Comportement : quand la couverture quant est insuffisante (coverage < FLOOR ou
+# carry impossible) MAIS que le biais news est NET & DÉCISIF, on affiche le BIAIS
+# NEWS (drapeau 📰, confidence "faible") AU LIEU de 🚫. La cellule porte alors une
+# VRAIE direction → elle est mesurée comme une prédiction par le Journaliste.
+#
+# Allowlist configurable : fiche_keys EXACTS des fiches news-driven
+# (v3/config/fiches/{cuivre,cacao,cafe}.yml). Étendre cette liste = activer le
+# régime news sur un nouvel actif. Aucun autre actif n'est concerné (un actif
+# non listé en couverture insuffisante → 🚫 comme avant, même news net).
+NEWS_DRIVEN_ASSETS: set = {"cuivre", "cacao", "cafe"}
+# Seuil de dominance news : abs(news) / abs(quant) > NEWS_DOMINANT_RATIO = la news
+# pilote la cellule (réutilise le seuil 0.5 déjà appliqué à news_dominant).
+NEWS_DOMINANT_RATIO: float = 0.5
+
+
+def compute_news_bias(
+    criteres: List["CritereResult"], h: str
+) -> Tuple[Optional[str], float, float, float]:
+    """Calcule le biais directionnel news vs quant pour un horizon.
+
+    Source de vérité UNIQUE (factorisée) pour :
+      - le diagnostic news_dominant / ratio_news du decision-log,
+      - la décision de RÉGIME NEWS (ticket D) dans le gate de score_actif.
+
+    Sépare les contributions news (source_track démarrant par "ia") des quant
+    (tout le reste), exclut les critères is_na/is_gate (contributions 0, neutres).
+
+    Retourne (bias, ratio_news, news_total, quant_total) où :
+      - bias = "LONG" si news_total > 0, "SHORT" si < 0, None si quasi nul
+               (|news_total| < EPSILON_CARRY → neutre, pas de direction).
+      - ratio_news = abs(news_total) / (abs(quant_total) + eps).
+    """
+    news_total = sum(
+        c.contributions[h] for c in criteres
+        if c.source_track.startswith("ia") and not c.is_na and not c.is_gate
+    )
+    quant_total = sum(
+        c.contributions[h] for c in criteres
+        if not c.source_track.startswith("ia") and not c.is_na and not c.is_gate
+    )
+    ratio_news = abs(news_total) / (abs(quant_total) + 1e-9)
+    if abs(news_total) < EPSILON_CARRY:
+        bias: Optional[str] = None
+    else:
+        bias = "LONG" if news_total > 0 else "SHORT"
+    return bias, ratio_news, news_total, quant_total
+
+# ---------------------------------------------------------------------------
 # GATE Réconciliation Σ contributions = score (garde-fou P0 déterministe)
 # ---------------------------------------------------------------------------
 # But : garantir que le score d'un horizon est EXACTEMENT égal à la somme des
@@ -537,6 +592,14 @@ class ActifResult:
     # et récente. Rendu visuel : ⏸. La cellule reste une vraie prédiction
     # (mesurée VRAI/FAUX). Vide/False ailleurs.
     is_carry: Dict[str, bool] = field(default_factory=dict)
+    # --- Régime news (ticket D) --------------------------------------------
+    # is_news_regime[h] = True si la conclusion de l'horizon h est une DIRECTION
+    # issue du BIAIS NEWS (actif news-driven + couverture quant insuffisante +
+    # biais news net & décisif), affichée AU LIEU d'un INSUFFISANT. La cellule
+    # porte alors une VRAIE direction (LONG/SHORT, confidence "faible") → mesurée
+    # comme prédiction. Rendu visuel : 📰. Vide/False ailleurs. Mutuellement
+    # exclusif avec is_carry (le carry prime ; voir gate dans score_actif).
+    is_news_regime: Dict[str, bool] = field(default_factory=dict)
     # --- Lot 4a — Détecteurs directionnels (flag-only, n'altèrent PAS conclusions)
     # C3 : divergence quant↔news par horizon (signes opposés + amplitudes > eps).
     # quant_total_par_horizon / news_total_par_horizon : valeurs réelles pour le
@@ -1021,6 +1084,7 @@ def score_actif(
     coverage = compute_coverage(criteres_res)
     confidence: Dict[str, str] = {}
     is_carry: Dict[str, bool] = {h: False for h in HORIZONS}
+    is_news_regime: Dict[str, bool] = {h: False for h in HORIZONS}
     now_carry = now or datetime.now(timezone.utc)
     for h in HORIZONS:
         confidence[h] = derive_confidence(coverage, is_stale=is_stale)
@@ -1066,17 +1130,42 @@ def score_actif(
             tie_notes.pop(h, None)
             tie_notes_pond.pop(h, None)
             diverge[h] = False
-        else:
-            # Override jamais-neutre : on REMPLACE LONG/SHORT par INSUFFISANT.
-            # On conserve les scores numériques (utiles pour audit/decision-log)
-            # mais la conclusion textuelle devient explicite.
-            conclusions[h] = CONCLUSION_INSUFFISANT
-            conclusions_pond[h] = CONCLUSION_INSUFFISANT
-            # On retire le tie-break note s'il existait (plus pertinent).
-            tie_notes.pop(h, None)
-            tie_notes_pond.pop(h, None)
-            # diverge n'a plus de sens si les deux sont INSUFFISANT.
-            diverge[h] = False
+            continue
+
+        # --- RÉGIME NEWS (ticket D) — priorité 3, APRÈS le carry échoué -----
+        # Le carry n'a PAS pu maintenir une direction (maintenu is None). Pour un
+        # actif structurellement news-driven, on regarde si le biais NEWS est net
+        # & décisif : si oui, on affiche cette direction (📰, confidence "faible")
+        # AU LIEU de 🚫. La cellule porte alors une vraie direction → mesurée.
+        # Le carry primant déjà (on est dans la branche maintenu is None), il n'y
+        # a pas de conflit d'ordre : 1) quant, 2) carry, 3) news, 4) 🚫.
+        if fiche_key in NEWS_DRIVEN_ASSETS:
+            bias_news, ratio_news_h, _, _ = compute_news_bias(criteres_res, h)
+            news_decisif = (
+                bias_news in ("LONG", "SHORT")
+                and ratio_news_h > NEWS_DOMINANT_RATIO
+            )
+            if news_decisif:
+                conclusions[h] = bias_news
+                conclusions_pond[h] = bias_news
+                confidence[h] = "faible"
+                is_news_regime[h] = True
+                tie_notes.pop(h, None)
+                tie_notes_pond.pop(h, None)
+                diverge[h] = False
+                continue
+
+        # --- INSUFFISANT (priorité 4, défaut) ------------------------------
+        # Override jamais-neutre : on REMPLACE LONG/SHORT par INSUFFISANT.
+        # On conserve les scores numériques (utiles pour audit/decision-log)
+        # mais la conclusion textuelle devient explicite.
+        conclusions[h] = CONCLUSION_INSUFFISANT
+        conclusions_pond[h] = CONCLUSION_INSUFFISANT
+        # On retire le tie-break note s'il existait (plus pertinent).
+        tie_notes.pop(h, None)
+        tie_notes_pond.pop(h, None)
+        # diverge n'a plus de sens si les deux sont INSUFFISANT.
+        diverge[h] = False
 
     # --- Lot 4a — Détecteurs directionnels (FLAG-ONLY, post-conclusions) ---
     # Appelé APRÈS application de l'override INSUFFISANT pour que la séquence
@@ -1101,6 +1190,7 @@ def score_actif(
         coverage=coverage,
         confidence=confidence,
         is_carry=is_carry,
+        is_news_regime=is_news_regime,
         divergence_quant_news=divergence_qn,
         contre_momentum=contre_mom,
         momentum_valeur=mom_val,
@@ -1164,6 +1254,7 @@ def load_veille(bulletins_dir: Path, today: datetime) -> Tuple[Optional[Path], D
 # Drapeaux de risque (sémantique alignée avec render_bulletin / build_decision_log_records)
 SURVEILLANCE_FLAGS = {
     "insuffisant": "🚫",     # conclusion INSUFFISANT (gate suffisance)
+    "news_regime": "📰",     # régime news (ticket D — direction issue du biais news)
     "carry": "⏸",            # direction maintenue (carry-forward, data partielle)
     "conf_low": "⚠️",        # confidence == "faible"
     "divergence_qn": "↯",   # divergence quant↔news
@@ -1193,6 +1284,10 @@ def _compute_cell_risk_flags(
     # 🚫 insuffisant — prioritaire (override de la direction)
     if conc == CONCLUSION_INSUFFISANT:
         flags.append(SURVEILLANCE_FLAGS["insuffisant"])
+    elif r.is_news_regime.get(h, False):
+        # 📰 régime news (ticket D) — direction issue du biais news faute de quant.
+        # Prioritaire sur carry/conf_low (le carry n'a pas pu maintenir : exclusif).
+        flags.append(SURVEILLANCE_FLAGS["news_regime"])
     elif r.is_carry.get(h, False):
         # ⏸ direction maintenue (carry-forward) — plus précis que ⚠️ générique.
         flags.append(SURVEILLANCE_FLAGS["carry"])
@@ -1332,7 +1427,7 @@ _LEGENDE_DEFS: List[Tuple[str, str]] = [
     ("🚫", "données insuffisantes — pas de prédiction"),
     ("⏸", "direction maintenue (carry-forward) — data partielle, dernière direction valide conservée"),
     ("⚑", "gate régime extrême actif"),
-    ("📰", "news >50% du quant — pondéré affiché en tête, brut entre parenthèses"),
+    ("📰", "news >50% du quant — pondéré en tête, brut entre parenthèses ; ou régime news (direction issue du biais news faute de couverture quant)"),
     ("⚪", "quasi coin-flip (|score|<0.05) — non-actionnable"),
     ("⚠", "divergence primaire / pondéré"),
     ("⚠️", "confiance faible (coverage bas ou données périmées) — direction conservée"),
@@ -1472,10 +1567,18 @@ def render_bulletin(
             # ⏸ carry-forward : direction MAINTENUE sur data partielle. Prend le
             # pas sur le ⚠️ générique (les deux sont en confidence "faible", mais
             # ⏸ porte l'info plus précise "direction conservée d'un cycle antérieur").
+            # 📰 régime news (ticket D) : direction issue du biais news faute de
+            # quant — porte une info plus précise que le ⚠️ générique, et prime
+            # dessus (exclusif avec carry : le carry n'a pas pu maintenir).
             carry_flag = ""
+            regime_flag = ""
             if r.is_carry.get(h, False):
                 carry_flag = f" ⏸ maintenu ({cov_pct}%)"
                 flags_present.add("⏸")
+                conf_flag = ""
+            elif r.is_news_regime.get(h, False):
+                regime_flag = f" 📰 régime news ({cov_pct}%)"
+                flags_present.add("📰")
                 conf_flag = ""
             else:
                 conf_flag = f" ⚠️ conf. faible ({cov_pct}%)" if confidence == "faible" else ""
@@ -1530,8 +1633,11 @@ def render_bulletin(
             else:
                 # Pondéré identique au primaire → on n'affiche pas [pond:...].
                 core = f"{conc} ({score:+.2f}){tie}{gate_flag}{news_flag}"
+            # Si régime news actif, le 📰 explicite "régime news" remplace le 📰
+            # générique news_dominant déjà inclus dans `core` (éviter doublon 📰).
+            core_out = core.replace(news_flag, "") if (regime_flag and news_flag) else core
             cells.append(
-                f"{core}{coin_flip_flag}{carry_flag}{conf_flag}{div_qn_flag}{cmom_flag}"
+                f"{core_out}{coin_flip_flag}{carry_flag}{regime_flag}{conf_flag}{div_qn_flag}{cmom_flag}"
                 f"{incoh_flag}{ap_flag}{denial_flag}"
             )
             # Repère compact pour la synthèse : direction + NOTE (score signé),
@@ -1745,11 +1851,16 @@ def build_decision_log_records(
                     contrib_entry["denial_keyword"] = c.denial_keyword
                 contribs.append(contrib_entry)
             # --- Observabilité ratio_news (Point 4 plan horizon) ----------
+            # FACTORISÉ (ticket D) : on dérive bias/ratio via compute_news_bias —
+            # source de vérité UNIQUE partagée avec le gate régime news de
+            # score_actif (zéro divergence possible). Les news_total/quant_total
+            # retournés par le helper sont identiques aux *_pm1 de news_cap_info
+            # (mêmes contributions non-na/non-gate) ; on les utilise directement.
             cap_info = r.news_cap_info.get(h, {}) if r.news_cap_info else {}
-            news_total = float(cap_info.get("news_total_pm1", 0.0))
-            quant_total = float(cap_info.get("quant_total_pm1", 0.0))
-            ratio_news = abs(news_total) / (abs(quant_total) + 1e-9)
-            news_dominant = ratio_news > 0.5
+            _bias_news_h, ratio_news, news_total, quant_total = compute_news_bias(
+                r.criteres, h
+            )
+            news_dominant = ratio_news > NEWS_DOMINANT_RATIO
             score_pm1_val = r.scores.get(h, 0.0)
 
             # ---------- Phase 2 — métriques shadow (par cellule) -----------
@@ -1934,6 +2045,10 @@ def build_decision_log_records(
                 # Hystérésis de maintien : True si la direction est un carry-forward
                 # (data partielle, dernière direction valide conservée — marqueur ⏸).
                 "is_carry": bool(r.is_carry.get(h, False)),
+                # Régime news (ticket D) : True si la direction est issue du biais
+                # news (actif news-driven, couverture quant insuffisante, news
+                # net & décisif) — marqueur 📰. Mutuellement exclusif avec is_carry.
+                "is_news_regime": bool(r.is_news_regime.get(h, False)),
                 "criteres": contribs,
                 "news_total": news_total,
                 "quant_total": quant_total,

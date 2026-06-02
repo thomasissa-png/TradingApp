@@ -839,6 +839,56 @@ def test_fred_dispatch_taux_tips(monkeypatch, now_fixed):
     assert val["valeur_ponderee"] == val["valeur_normalisee"]
 
 
+def test_fred_dispatch_taux_tips_sp500(monkeypatch, now_fixed):
+    """Le S&P 500 reçoit bien le critère TIPS (cle_courante='taux_10y_us_reels_tips').
+
+    Régression : sp500.yml a longtemps été privé du signal taux réel TIPS (présent
+    sur Nasdaq/Or/Argent), le faisant tomber en couverture insuffisante. Ce test
+    verrouille le câblage : même cle_courante → série FRED DFII10 → z-score capé,
+    avec le signe géré par la fiche (signe=-1 : taux réel monte ⇒ pression baissière).
+    """
+    monkeypatch.setenv("FRED_API_KEY", "fake")
+    captured = {}
+    def fake_get(sid, params, timeout=15):
+        captured["sid"] = sid
+        obs = [{"date": f"2026-01-{i:02d}", "value": f"{1.5 + 0.01*i:.4f}"}
+               for i in range(1, 32)] + [{"date": "2026-02-28", "value": "3.50"}]
+        return {"observations": list(reversed(obs))}
+    monkeypatch.setattr(cc, "_fred_get_json", fake_get)
+    crit = {"cle_courante": "taux_10y_us_reels_tips", "normalisation": "zscore",
+            "source": "FRED (DFII10)", "zscore_window": 60, "zscore_div": 2, "cap": 1.0}
+    val = cc.build_critere_value("sp500", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    # Même série FRED que Nasdaq/Or : DFII10 (taux 10a réel TIPS)
+    assert captured["sid"] == "DFII10"
+    assert val["valeur"] == 3.50
+    # z-score capé à +1.0 (le signe -1 est appliqué en aval par le scoring, pas ici)
+    assert val["valeur_normalisee"] == 1.0
+    assert val["valeur_ponderee"] == val["valeur_normalisee"]
+
+
+def test_sp500_fiche_includes_tips_critere():
+    """La fiche sp500.yml DOIT déclarer le critère TIPS avec le bon signe/normalisation.
+
+    Verrou structurel (pas seulement le dispatch) : garantit que la fiche elle-même
+    porte le critère, aligné sur Nasdaq (signe=-1, zscore). Empêche une régression
+    silencieuse si quelqu'un retire le critère de la fiche.
+    """
+    import yaml as _yaml
+    from pathlib import Path as _Path
+    fiche = _yaml.safe_load(
+        (_Path(cc.__file__).resolve().parents[1] / "config" / "fiches" / "sp500.yml").read_text()
+    )
+    tips = [c for c in fiche["criteres"] if c.get("cle_courante") == "taux_10y_us_reels_tips"]
+    assert len(tips) == 1, "sp500.yml doit déclarer exactement un critère TIPS"
+    c = tips[0]
+    assert c["normalisation"] == "zscore"
+    assert c["signe"] == -1          # taux réel monte ⇒ SHORT (comme Nasdaq)
+    assert c["poids"] > 0
+    # Pertinence horizon présente pour les 3 horizons
+    assert set(c["pertinence"]) == {"24h", "7j", "1m"}
+
+
 def test_fred_dispatch_hy_credit_spread(monkeypatch, now_fixed):
     """cle_courante='hy_credit_spread' (zscore) — série BAMLH0A0HYM2."""
     monkeypatch.setenv("FRED_API_KEY", "fake")

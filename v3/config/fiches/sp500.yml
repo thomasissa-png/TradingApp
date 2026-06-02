@@ -135,8 +135,22 @@ criteres:
     effet_long: "RSI=30"
     effet_short: "RSI>75"
 
-  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 10
+    nom: "Taux 10Y US réels (TIPS)"
+    source: "FRED (DFII10)"
+    cle_courante: "taux_10y_us_reels_tips"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : taux réel monte (z>+1) => pression baissière => SHORT (comme Nasdaq)
+    poids: 10                    # signal taux majeur pour le S&P (≈ Nasdaq 11, sous le delta 5j à 9 et au-dessus du HY OAS à 7)
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 1.0 }   # aligné Nasdaq : faible 24h, fort 7j/1m
+    effet_long: "TIPS baisse (z<-1)"
+    effet_short: "TIPS monte (z>+1)"
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 11
     nom: "GATE régime extrême"
     source: "events-log + calendrier"
     cle_courante: "gate_regime_extreme"

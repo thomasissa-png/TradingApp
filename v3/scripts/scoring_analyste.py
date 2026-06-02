@@ -1337,21 +1337,25 @@ def render_bulletin(
                 f"{core}{coin_flip_flag}{conf_flag}{div_qn_flag}{cmom_flag}"
                 f"{incoh_flag}{ap_flag}{denial_flag}"
             )
-            # Repère compact pour la synthèse : direction + force ●/○.
-            # ● = |score| ≥ 1.5 (conviction ≥ ~60%), ○ sinon (faible/coin-flip).
-            force = "●" if abs(score) >= 1.5 else "○"
+            # Repère compact pour la synthèse : direction + NOTE (score signé),
+            # plus précis que la force ●/○. On affiche la même note que la cellule
+            # de tête de la matrice (pondérée si news dominante, primaire sinon).
+            if is_news and pond_differe:
+                synth_conc, synth_score = conc_p, score_p
+            else:
+                synth_conc, synth_score = conc, score
             news_mark = " 📰" if is_news else ""
-            synth.append(f"{conc} {force}{news_mark}")
+            synth.append(f"{synth_conc} {synth_score:+.2f}{news_mark}")
         detail_cells[r.nom] = cells
         synth_cells[r.nom] = synth
 
     # ── Synthèse des décisions (EN HAUT) ─────────────────────────────────────
-    # Vue d'oiseau : direction seule + force (● fort / ○ faible) ou 🚫. Le trader
+    # Vue d'oiseau : direction + note (score signé) ou 🚫. Le trader
     # voit les décisions AVANT les diagnostics. Le détail complet reste plus bas.
     synth_lines: List[str] = []
     synth_lines.append("## Synthèse des décisions")
     synth_lines.append("")
-    synth_lines.append("_Direction + force (● conviction ≥1.5 · ○ faible) · 🚫 données insuffisantes. Détail complet plus bas._")
+    synth_lines.append("_Direction + note (score signé : |note| élevée = conviction forte) · 📰 = news>50% du quant · 🚫 données insuffisantes. Détail complet plus bas._")
     synth_lines.append("")
     synth_lines.append("| Actif | 24h | 7j | 1m |")
     synth_lines.append("|---|---|---|---|")

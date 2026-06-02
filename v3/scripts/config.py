@@ -128,7 +128,7 @@ STRUCTURED_QUERIES = [
     # Round 3 : Fed et BCE DÉGROUPÉS (directions opposées sur EUR/USD, US vs EU)
     "Fed OR FOMC OR interest rate decision OR federal funds rate OR Powell speech",        # bloc US
     "ECB OR European Central Bank OR Eurozone inflation OR Lagarde speech OR ECB rate",    # bloc EU
-    "S&P 500 earnings OR corporate earnings beat OR EPS surprise OR earnings guidance OR market correction",  # S&P (driver-isé)
+    '"S&P 500" earnings OR corporate earnings beat OR EPS surprise OR earnings guidance OR market correction',  # S&P (driver-isé) — "S&P 500" quoté : le & non quoté cassait GNews (HTTP 400, doc gnews.io)
     "EUR USD OR ECB rate decision OR Fed ECB divergence OR dollar index",                  # EUR/USD resserré
     "coffee prices OR arabica OR robusta OR Brazil harvest OR frost Brazil OR drought Minas Gerais",  # Café + gel/sécheresse
     "cocoa prices OR Ivory Coast OR Ghana cocoa OR cocoa grindings OR EUDR deforestation",

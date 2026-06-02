@@ -87,6 +87,12 @@ CARRY_MAX_AGE_H: Dict[str, int] = {"24h": 24, "7j": 48, "1m": 24}
 # à la direction maintenue → retournement franc → contradiction → 🚫.
 EPSILON_CARRY: float = 0.05
 
+# Seuil de poids pour la section "Limites du jour" (#8 audit design 2026-06-02).
+# Seuls les critères absents (n/a) de poids >= ce seuil sont listés nominativement
+# (ceux qui pèsent vraiment sur la direction) ; les plus légers sont résumés en
+# une ligne de comptage. Évite ~45 lignes de n/a redondants avec les tableaux Détail.
+LIMITES_POIDS_MIN: float = 8.0
+
 # ---------------------------------------------------------------------------
 # RÉGIME NEWS (ticket D) — actifs structurellement news-driven
 # ---------------------------------------------------------------------------
@@ -1890,18 +1896,33 @@ def render_bulletin(
         lines.append("")
         lines.append(f"- Scores : 24h={r.scores['24h']:+.3f} · 7j={r.scores['7j']:+.3f} · 1m={r.scores['1m']:+.3f}")
         lines.append("")
+    # ── Limites du jour (filtrées) ──────────────────────────────────────────
+    # #8 (audit design 2026-06-02) : on ne liste QUE les critères absents qui
+    # comptent vraiment (poids ≥ LIMITES_POIDS_MIN). Les critères mineurs (poids
+    # < seuil) sont absents des tableaux Détail aussi → on les résume en une
+    # ligne « (+N critères mineurs de poids <8 omis) » par actif. Les GATES
+    # actifs restent toujours affichés (info de risque, pas un n/a mineur).
+    # But : passer de ~45 lignes de n/a redondants à ~10-12 lignes utiles.
     lines.append("## Limites du jour")
     has_limit = False
     for r in results:
         nas = [c for c in r.criteres if c.is_na]
+        nas_majeurs = [c for c in nas if abs(c.poids) >= LIMITES_POIDS_MIN]
+        n_mineurs = len(nas) - len(nas_majeurs)
         gates_actifs = [c for c in r.criteres if c.is_gate and c.gate_active]
-        if nas or gates_actifs:
+        if nas_majeurs or gates_actifs or n_mineurs:
             has_limit = True
             lines.append(f"### {r.nom}")
-            for c in nas:
-                lines.append(f"- n/a : {c.nom} — {c.note}")
+            for c in nas_majeurs:
+                lines.append(f"- n/a : {c.nom} (poids {c.poids:g}) — {c.note}")
             for c in gates_actifs:
                 lines.append(f"- ⚑ GATE actif : {c.nom} — {c.note}")
+            if n_mineurs:
+                lines.append(
+                    f"- _(+{n_mineurs} critère{'s' if n_mineurs > 1 else ''} "
+                    f"mineur{'s' if n_mineurs > 1 else ''} de poids "
+                    f"<{LIMITES_POIDS_MIN:g} omis)_"
+                )
     if not has_limit:
         lines.append("- (aucune)")
     lines.append("")

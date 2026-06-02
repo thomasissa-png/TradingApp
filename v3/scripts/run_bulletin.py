@@ -29,10 +29,72 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+import re  # noqa: E402
+
 import briefing  # noqa: E402
 import criteres_calculator  # noqa: E402
 import journaliste  # noqa: E402
 import scoring_analyste  # noqa: E402
+
+
+# Ancrage d'insertion du Briefing (#5 — audit design 2026-06-02).
+# CIBLE de lecture : la grille directionnelle (Top 3 + Synthèse des décisions)
+# doit précéder le contexte news. On n'insère donc PLUS le Briefing après le H1
+# (comportement de briefing.prepend_to_bulletin) mais JUSTE AVANT la section
+# "## Flips vs veille", c.-à-d. après la Synthèse / Surveillance / Biais agrégé.
+# Ordre final : H1 → méta → Top 3 → Synthèse → [Surveillance → Biais] →
+#               Briefing → Bilan news → Santé sources → Flips → Détail → Limites.
+# Le Bilan des news (journaliste) s'ancre sur "## Briefing du jour" (regex de
+# section, pas de position) → il reste correctement inséré après le Briefing.
+# Le parser du Journaliste (MATRIX_ROW_RE) lit la table Synthèse par regex de
+# ligne markdown où qu'elle soit dans le fichier → réordonnancement sans impact.
+_FLIPS_ANCHOR_RE = re.compile(r"^## Flips vs veille\s*$", re.MULTILINE)
+
+
+def insert_briefing_after_synthese(bulletin_path: Path, briefing_md: str) -> bool:
+    """Insère le Briefing juste avant '## Flips vs veille' (après la Synthèse).
+
+    Idempotent : si un bloc Briefing existe déjà (re-run), il est d'abord retiré
+    via le nettoyage de briefing.prepend_to_bulletin n'est PAS utilisé ici — on
+    fait le retrait localement pour ancrer au bon endroit.
+
+    Fallback : si l'ancre '## Flips vs veille' est introuvable (format inattendu),
+    on retombe sur briefing.prepend_to_bulletin (insertion après H1) pour ne
+    jamais perdre le Briefing.
+
+    Retourne True si écrit, False si bulletin absent.
+    """
+    if not bulletin_path.exists():
+        logger.warning("bulletin introuvable : %s", bulletin_path)
+        return False
+
+    content = bulletin_path.read_text(encoding="utf-8")
+
+    # Retrait d'un Briefing (+ Santé des sources accolée) déjà présent (re-run),
+    # quel que soit son emplacement actuel. Mêmes regex que briefing.py.
+    existing_briefing = re.compile(r"## Briefing du jour\n.*?(?=\n## |\Z)", re.DOTALL)
+    if existing_briefing.search(content):
+        content = existing_briefing.sub("", content, count=1)
+        sante = re.compile(r"## Santé des sources\n.*?(?=\n## |\Z)", re.DOTALL)
+        content = sante.sub("", content, count=1)
+        content = re.sub(r"\n{3,}", "\n\n", content)
+
+    block = briefing_md.rstrip() + "\n\n"
+    m = _FLIPS_ANCHOR_RE.search(content)
+    if not m:
+        # Ancre absente → on ne casse pas le pipeline : insertion après H1.
+        logger.warning(
+            "Ancre '## Flips vs veille' introuvable — fallback prepend après H1"
+        )
+        bulletin_path.write_text(content, encoding="utf-8")
+        return briefing.prepend_to_bulletin(bulletin_path, briefing_md)
+
+    insert_at = m.start()
+    new_content = (
+        content[:insert_at].rstrip() + "\n\n" + block + content[insert_at:].lstrip("\n")
+    )
+    bulletin_path.write_text(new_content, encoding="utf-8")
+    return True
 
 
 def main() -> int:
@@ -84,10 +146,13 @@ def main() -> int:
 
     # Étape 2bis — Briefing du jour (synthèse news à impact, déterministe, zéro
     # LLM). Best-effort : si échec, le bulletin reste valide.
+    # #5 (audit design) : on insère le Briefing APRÈS la Synthèse des décisions
+    # (avant "## Flips vs veille"), pas après le H1 — la grille directionnelle
+    # passe devant le contexte news.
     try:
         briefing_md = briefing.build_briefing(today=now.date())
-        briefing.prepend_to_bulletin(out_path, briefing_md)
-        logger.info("Briefing du jour inséré dans le bulletin")
+        insert_briefing_after_synthese(out_path, briefing_md)
+        logger.info("Briefing du jour inséré dans le bulletin (après la Synthèse)")
     except Exception as e:  # noqa: BLE001
         logger.warning("briefing KO (non bloquant) : %s", e)
 

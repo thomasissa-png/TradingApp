@@ -55,11 +55,16 @@ criteres:
 
   - id: 4
     nom: "Breadth CAC (%>MA50)"
-    source: "Twelve Data (calculé)"
+    # n/a ASSUMÉ : pas d'ETF CAC 40 equal-weight gratuit évident → pas de proxy
+    # participation type RSP/SPY (S&P) ou QQQE/QQQ (Nasdaq). Calcul maison (40
+    # titres × MA50) techniquement jouable mais asymétrique avec S&P/Nasdaq en
+    # proxy ratio — non câblé. Le critère reste n/a (handler no_breadth_data),
+    # absorbé par le gate de couverture S5. Voir v3/audit/sourcing-capteurs-manquants.md.
+    source: "n/a (pas d'ETF CAC equal-weight gratuit)"
     cle_courante: "breadth_cac_ma50"
     normalisation: "lineaire"
     centre: 50.0
-    echelle: 35.0                # >65 / <30 autour de 50 → demi-span 35 ; à calibrer
+    echelle: 35.0                # conservé pour mémoire — le handler renvoie n/a
     cap: 1.0
     signe: 1
     poids: 6

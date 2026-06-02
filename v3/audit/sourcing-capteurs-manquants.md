@@ -5,9 +5,15 @@
 > en `n/a` faute de source alimentée. Investigation des sources GRATUITES & FIABLES,
 > sous garde-fou **« zéro invention de données »** (CLAUDE.md commandement 2).
 >
-> **Décision transverse : AUCUN des 3 n'a de source gratuite *propre et nette*
-> par API. Aucun n'a donc été câblé.** Chacun requiert un arbitrage de Thomas
-> (accepter un proxy / payer une API / laisser n/a). Voir reco par capteur.
+> **MAJ 2026-06-02 (décisions Thomas appliquées)** :
+> - **Breadth** → CÂBLÉ via proxy participation **RSP/SPY** (S&P) et **QQQE/QQQ**
+>   (Nasdaq). **CAC reste n/a** (pas d'ETF equal-weight gratuit évident).
+> - **FedWatch** → reste **n/a** : investigation ZQ gratuit refaite, **aucune source
+>   gratuite propre et fiable en production** (cf. §1 mis à jour). Pas de câblage.
+> - Caixin PMI → inchangé (statu quo, hors périmètre de cette session).
+>
+> Contexte d'origine (2026-06-02, avant décisions) : les 3 capteurs étaient en
+> `n/a` faute de source gratuite *propre et nette* par API.
 
 ---
 
@@ -28,7 +34,30 @@ Symptôme actuel : `SKIP_COUNTER["lineaire_unmapped:fedwatch_proba"]` (non mapp�
 - **(B)** Recalculer via `pyfedwatch` SI on obtient les prix ZQ gratuits (à sourcer : ZQ disponible sur certains feeds gratuits ?). Effort non trivial + validation méthodo.
 - **(C)** Laisser `n/a` (statu quo) — le capteur ne pèse que 6 sur EUR/USD ; le gate de couverture S5 absorbe son absence.
 
-**→ DÉCISION REQUISE** : « Payer 25 $/mois l'API CME FedWatch (A), investiguer une source ZQ gratuite pour pyfedwatch (B), ou laisser n/a (C) ? »
+**→ DÉCISION (2026-06-02) : option (B) investiguée, ÉCHEC → reste n/a (C).**
+
+Investigation ZQ gratuit refaite (WebSearch + revue de l'infra) :
+
+| Piste ZQ gratuit | Verdict |
+|---|---|
+| **Twelve Data** (infra actuelle) | Pas de futures ZQ sur le plan Grow (déjà constaté ; futures non listés) |
+| **NY Fed Markets API** (markets.newyorkfed.org) | Expose EFFR / repo / SOMA — **pas les prix futures ZQ** (taux réalisés, pas l'implicite forward) |
+| **FRED** | Aucune série ZQ ni « Fed funds futures implied rate » — seulement FEDFUNDS/EFFR réalisés (inutiles pour la proba forward) |
+| **Databento** (ZQ dispo) | 125 $ de crédits offerts puis **payant** — pas une source gratuite stable |
+| **FirstRate Data** | « 1 mois de mises à jour gratuites » puis payant — pas une API |
+| **Yahoo `ZQ=F`** (via yfinance) | Existe, **mais yfinance est bloqué sur les runners CI** (IP datacenter, constat projet récurrent) → **non fiable en production** |
+| **CME FedWatch API** | Référence du marché mais **25 $/mois (payant)** |
+
+**Constat** : aucune source ZQ **gratuite, propre et fiable en environnement de
+production** (CI GitHub Actions). La seule techniquement « gratuite » (Yahoo
+`ZQ=F`) tombe sous le blocage yfinance des runners → ne pas s'y reposer. Conforme
+au garde-fou « zéro invention » : **`fedwatch_proba` laissé n/a, non câblé.**
+
+**→ RESTE À TRANCHER PAR THOMAS** : (A) payer l'API CME FedWatch 25 $/mois (câblage
+trivial, donnée de référence) ; ou (C) statu quo n/a (poids 6 sur EUR/USD,
+absorbé par le gate de couverture S5 ; le canal news capte les décisions Fed).
+*Recommandation : (C) tant que le projet reste à coût infra 0 € ; basculer en (A)
+si FedWatch devient un critère bloquant pour la qualité directionnelle EUR/USD.*
 
 ---
 
@@ -50,11 +79,26 @@ Conforme au brief, **non câblé** (le brief exige une décision Thomas avant to
 - Pour le **CAC 40** uniquement, un vrai breadth maison est techniquement envisageable
   (40 titres, budget API tenable) — mais asymétrique avec S&P/Nasdaq qui resteraient en proxy.
 
-**→ DÉCISION REQUISE** : « OK pour câbler le proxy **RSP/SPY** sur S&P (et un équivalent
-QQQ-equal-weight type QQQE/SPY pour le Nasdaq) en remplacement du `% > MA50`, en
-acceptant la sémantique proxy + recalibrage des seuils ? Ou laisser n/a ? »
-*(Note : si OUI, le critère devra peut-être migrer de `lineaire` centre-50 vers `zscore`
-du ratio, signe à recaler — la baisse du ratio = breadth qui se dégrade.)*
+**→ DÉCISION (2026-06-02) : OUI au proxy → CÂBLÉ pour S&P et Nasdaq ; CAC reste n/a.**
+
+Implémentation :
+- `breadth_sp_ma50` → ratio **RSP/SPY** (equal-weight / cap-weight S&P 500).
+- `breadth_nasdaq100_ma50` → ratio **QQQE/QQQ** (equal-weight / cap-weight Nasdaq-100).
+- Fiches migrées de `lineaire` centre-50 vers **`zscore`** (le ratio ~0.x rend le
+  centre-50 caduc), `zscore_window: 60`, `zscore_div: 2`, **`signe: +1`** : ratio
+  EW/CW en hausse = participation large (rallye sain) = haussier pour l'indice ;
+  en baisse = rallye porté par les méga-caps (breadth qui se dégrade) = baissier.
+- `source` mise à jour (« proxy RSP/SPY » / « proxy QQQE/QQQ ») + commentaire fiche
+  rappelant que **ce n'est pas le vrai % >MA50**.
+- Câblage : `TWELVE_SYMBOLS` mappe les 2 clés vers des tuples `(EW, CW)` ; le
+  dispatch zscore route `breadth_*` vers `_twelve_ratio_zscore` (réutilise le
+  helper ratio existant, retry/cache/rate-limit hérités). Si une patte du ratio
+  manque → `None` (n/a propre, absorbé par le gate S5). Tests : S&P (z>0 quand RSP
+  surperforme), Nasdaq (z<0 quand QQQ surperforme), patte manquante → n/a, CAC n/a.
+
+- **CAC 40** : **reste n/a**. Pas d'ETF CAC equal-weight gratuit évident pour un
+  proxy ratio symétrique ; calcul maison (40 titres × MA50) jouable côté budget API
+  mais asymétrique avec S&P/Nasdaq en proxy → non câblé (handler `no_breadth_data`).
 
 ---
 
@@ -89,11 +133,15 @@ news DeepSeek (statu quo), (B) saisie manuelle mensuelle versionnée (12 valeurs
 
 ## Synthèse décisionnelle
 
-| Capteur | Source gratuite propre par API ? | Câblé ? | Décision requise |
+| Capteur | Source gratuite propre par API ? | Câblé ? (MAJ 2026-06-02) | Statut |
 |---|---|---|---|
-| `fedwatch_proba` | Non (CME = 25 $/mois ; ZQ gratuit à sourcer pour pyfedwatch) | **Non** | A) payer CME · B) ZQ gratuit + pyfedwatch · C) n/a |
-| `breadth_*_ma50` | Non (vrai breadth = web only ; calcul maison hors budget API) | **Non** | Proxy RSP/SPY (sémantique différente, recalibrage) OUI/NON ? |
-| `caixin_pmi_manuf` | Non (S&P Global = communiqués ; pas d'API gratuite ; absent FRED) | **Non** | A) n/a + canal news · B) saisie manuelle mensuelle · C) API payante |
+| `fedwatch_proba` | Non (ZQ gratuit investigué : Twelve/NYFed/FRED/Databento/Yahoo→tous KO en prod ; CME = 25 $/mois) | **Non** | Reste n/a — décision Thomas : payer CME (A) ou n/a (C) |
+| `breadth_sp_ma50` | Proxy **RSP/SPY** (participation EW/CW) | **OUI** (zscore, signe +1) | Câblé + testé |
+| `breadth_nasdaq100_ma50` | Proxy **QQQE/QQQ** (participation EW/CW) | **OUI** (zscore, signe +1) | Câblé + testé |
+| `breadth_cac_ma50` | Non (pas d'ETF CAC equal-weight gratuit évident) | **Non** | Reste n/a (documenté) |
+| `caixin_pmi_manuf` | Non (S&P Global = communiqués ; pas d'API gratuite ; absent FRED) | **Non** | Hors périmètre session — statu quo n/a + canal news |
 
-**Garde-fou respecté** : aucune valeur en dur, aucun proxy douteux câblé sans validation.
-Mieux vaut 3 `n/a` honnêtes (absorbés par le gate de couverture S5) qu'une fausse donnée.
+**Garde-fou respecté** : breadth câblé **uniquement** via proxy validé par Thomas
+(sémantique explicitement documentée « pas le vrai % >MA50 »). FedWatch + CAC + Caixin
+laissés `n/a` honnêtes (absorbés par le gate de couverture S5) plutôt qu'une fausse
+donnée. Aucune valeur en dur, aucune source douteuse forcée.

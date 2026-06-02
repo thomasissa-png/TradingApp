@@ -54,18 +54,22 @@ criteres:
     effet_short: "Spread élargit (z>+1)"
 
   - id: 4
-    nom: "Breadth S&P (%>MA50)"
-    source: "Twelve Data (calculé)"
+    nom: "Breadth S&P (proxy RSP/SPY)"
+    # PROXY RSP/SPY — pas le vrai % >MA50. Participation interne via ratio
+    # equal-weight (RSP) / cap-weight (SPY) : ratio qui monte = rallye large
+    # (participation saine) = haussier pour l'indice ; ratio qui baisse =
+    # rallye porté par les méga-caps (breadth qui se dégrade) = baissier.
+    source: "Twelve Data (proxy RSP/SPY)"
     cle_courante: "breadth_sp_ma50"
-    normalisation: "lineaire"
-    centre: 50.0
-    echelle: 35.0                # >65 / <30 autour de 50 → demi-span 35 ; à calibrer
+    normalisation: "zscore"        # ratio ~0.x → z-score (l'ancien centre-50 ne s'applique plus)
+    zscore_window: 60
+    zscore_div: 2
     cap: 1.0
-    signe: 1
+    signe: 1                       # ratio EW/CW en hausse = participation large = haussier
     poids: 7
     pertinence: { "24h": 0.9, "7j": 0.8, "1m": 0.5 }
-    effet_long: "Breadth >65%"
-    effet_short: "Breadth <30%"
+    effet_long: "RSP/SPY en hausse (participation large)"
+    effet_short: "RSP/SPY en baisse (rallye méga-caps)"
 
   - id: 5
     nom: "DXY trend 20j"

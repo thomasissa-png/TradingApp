@@ -54,18 +54,22 @@ criteres:
     effet_short: "SOX baisse (z<-1)"
 
   - id: 4
-    nom: "Breadth Nasdaq 100 (%>MA50)"
-    source: "Twelve Data (calculé)"
+    nom: "Breadth Nasdaq 100 (proxy QQQE/QQQ)"
+    # PROXY QQQE/QQQ — pas le vrai % >MA50. Participation interne Nasdaq-100 via
+    # ratio equal-weight (QQQE) / cap-weight (QQQ) : ratio en hausse = rallye
+    # large (participation saine) = haussier ; ratio en baisse = rallye porté
+    # par les méga-caps tech (breadth qui se dégrade) = baissier.
+    source: "Twelve Data (proxy QQQE/QQQ)"
     cle_courante: "breadth_nasdaq100_ma50"
-    normalisation: "lineaire"
-    centre: 50.0
-    echelle: 25.0                # >60 / <25 autour de 50 → demi-span ~25 ; à calibrer
+    normalisation: "zscore"        # ratio ~0.x → z-score (l'ancien centre-50 ne s'applique plus)
+    zscore_window: 60
+    zscore_div: 2
     cap: 1.0
-    signe: 1
+    signe: 1                       # ratio EW/CW en hausse = participation large = haussier
     poids: 6
     pertinence: { "24h": 0.9, "7j": 0.7, "1m": 0.4 }
-    effet_long: "Breadth >60%"
-    effet_short: "Breadth <25%"
+    effet_long: "QQQE/QQQ en hausse (participation large)"
+    effet_short: "QQQE/QQQ en baisse (rallye méga-caps)"
 
   - id: 5
     nom: "Concentration top 7"

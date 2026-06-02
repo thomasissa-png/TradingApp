@@ -1291,3 +1291,94 @@ def test_fred_spread_forward_fill_monthly_de(monkeypatch):
     assert len(spread) == 12
     assert all(abs(s - 2.00) < 1e-9 for s in spread)
     assert not any(k.startswith("fred_spread_thin") for k in cc.SKIP_COUNTER)
+
+
+# ---------------------------------------------------------------------------
+# Breadth proxy : ratio equal-weight / cap-weight (RSP/SPY, QQQE/QQQ)
+# S&P + Nasdaq câblés ; CAC reste n/a (pas d'ETF EW gratuit).
+# ---------------------------------------------------------------------------
+
+def test_breadth_sp_proxy_rsp_spy_zscore(monkeypatch, now_fixed):
+    """breadth_sp_ma50 → ratio RSP/SPY → z-score. Participation qui s'élargit
+    (RSP surperforme SPY) → ratio croissant → z>0 = haussier (signe +1)."""
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
+    # RSP monte plus vite que SPY → ratio RSP/SPY croissant sur la fenêtre.
+    df_rsp = _fake_df([(f"2026-04-{i:02d}", 180.0 + i * 0.5) for i in range(1, 31)])
+    df_spy = _fake_df([(f"2026-04-{i:02d}", 750.0 + i * 0.2) for i in range(1, 31)])
+
+    def fake_hist(ticker, **k):
+        if ticker == "RSP":
+            return df_rsp
+        if ticker in ("SPY", "^GSPC"):
+            return df_spy
+        return None
+
+    monkeypatch.setattr(md, "fetch_history", fake_hist)
+    crit = {"cle_courante": "breadth_sp_ma50", "normalisation": "zscore",
+            "source": "Twelve Data (proxy RSP/SPY)",
+            "zscore_window": 20, "zscore_div": 2, "cap": 1.0, "signe": 1}
+    val = cc.build_critere_value("sp500", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    assert "valeur_normalisee" in val
+    assert val["valeur_normalisee"] > 0  # ratio EW/CW croissant = participation large
+
+
+def test_breadth_nasdaq_proxy_qqqe_qqq_zscore(monkeypatch, now_fixed):
+    """breadth_nasdaq100_ma50 → ratio QQQE/QQQ → z-score. Rallye porté par les
+    méga-caps (QQQ surperforme QQQE) → ratio décroissant → z<0 = baissier."""
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
+    # QQQ monte plus vite que QQQE → ratio QQQE/QQQ décroissant.
+    df_qqqe = _fake_df([(f"2026-04-{i:02d}", 90.0 + i * 0.1) for i in range(1, 31)])
+    df_qqq = _fake_df([(f"2026-04-{i:02d}", 740.0 + i * 2.0) for i in range(1, 31)])
+
+    def fake_hist(ticker, **k):
+        if ticker == "QQQE":
+            return df_qqqe
+        if ticker in ("QQQ", "^NDX", "^IXIC"):
+            return df_qqq
+        return None
+
+    monkeypatch.setattr(md, "fetch_history", fake_hist)
+    crit = {"cle_courante": "breadth_nasdaq100_ma50", "normalisation": "zscore",
+            "source": "Twelve Data (proxy QQQE/QQQ)",
+            "zscore_window": 20, "zscore_div": 2, "cap": 1.0, "signe": 1}
+    val = cc.build_critere_value("nasdaq", crit, {}, {}, [], now_fixed)
+    assert val is not None
+    assert "valeur_normalisee" in val
+    assert val["valeur_normalisee"] < 0  # ratio EW/CW décroissant = rallye méga-caps
+
+
+def test_breadth_sp_proxy_missing_series_is_na(monkeypatch, now_fixed):
+    """Si une des deux pattes du ratio manque (RSP indispo), le critère est n/a
+    propre (None), pas une fausse valeur — garde-fou zéro invention."""
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
+    df_spy = _fake_df([(f"2026-04-{i:02d}", 750.0 + i * 0.2) for i in range(1, 31)])
+
+    def fake_hist(ticker, **k):
+        if ticker in ("SPY", "^GSPC"):
+            return df_spy
+        return None  # RSP manquant
+
+    monkeypatch.setattr(md, "fetch_history", fake_hist)
+    crit = {"cle_courante": "breadth_sp_ma50", "normalisation": "zscore",
+            "source": "Twelve Data (proxy RSP/SPY)",
+            "zscore_window": 20, "zscore_div": 2, "cap": 1.0, "signe": 1}
+    val = cc.build_critere_value("sp500", crit, {}, {}, [], now_fixed)
+    assert val is None  # n/a propre, absorbé par le gate S5
+
+
+def test_breadth_cac_reste_na(monkeypatch, now_fixed):
+    """breadth_cac_ma50 reste n/a (pas d'ETF CAC equal-weight gratuit) :
+    fiche lineaire centre-50 → handler dédié no_breadth_data → None."""
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
+    cc.SKIP_COUNTER.clear()
+    # Même si FCHI est fetchable, le handler breadth_ en lineaire renvoie n/a.
+    monkeypatch.setattr(md, "fetch_history", lambda ticker, **k: None)
+    monkeypatch.setattr(md, "fetch_price", lambda ticker, **k: 8200.0)
+    crit = {"cle_courante": "breadth_cac_ma50", "normalisation": "lineaire",
+            "source": "n/a (pas d'ETF CAC equal-weight gratuit)",
+            "centre": 50.0, "echelle": 35.0, "cap": 1.0, "signe": 1}
+    val = cc.build_critere_value("cac40", crit, {}, {}, [], now_fixed)
+    assert val is None
+    assert any(k.startswith("no_breadth_data:breadth_cac_ma50")
+               for k in cc.SKIP_COUNTER)

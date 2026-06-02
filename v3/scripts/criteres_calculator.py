@@ -1044,10 +1044,14 @@ TWELVE_SYMBOLS = {
     "flux_etf_spy_ivv_5j":   "SPY",
     "flux_etf_slv_pslv_5j":  "SLV",
     "flux_etf_msci_france_5j": "EWQ",
-    # --- Breadth proxies (pas de vrai breadth → handler renvoie n/a) ---
-    "breadth_sp_ma50":       "^GSPC",
-    "breadth_nasdaq100_ma50": "^NDX",
-    "breadth_cac_ma50":      "^FCHI",
+    # --- Breadth (proxy participation interne : ratio equal-weight / cap-weight) ---
+    # PROXY, pas le vrai % >MA50. Ratio EW/CW en hausse = rallye large
+    # (participation saine) = haussier ; en baisse = rallye méga-caps = baissier.
+    # Tuple (num, den) → routé vers _twelve_ratio_zscore dans le dispatch zscore.
+    "breadth_sp_ma50":        ("RSP", "SPY"),    # S&P 500 equal-weight / cap-weight
+    "breadth_nasdaq100_ma50": ("QQQE", "QQQ"),   # Nasdaq-100 equal-weight / cap-weight
+    # CAC : pas d'ETF equal-weight gratuit évident → reste n/a (handler dédié).
+    "breadth_cac_ma50":       "^FCHI",
 }
 
 
@@ -1336,6 +1340,11 @@ def _handle_twelve_zscore_dispatch(cle: str, crit: dict, ts: str) -> Optional[di
         if cle.startswith("spread_"):
             res = _twelve_spread_zscore(sym_a, sym_b, crit)
         elif cle.startswith("ratio_"):
+            res = _twelve_ratio_zscore(sym_a, sym_b, crit)
+        elif cle.startswith("breadth_"):
+            # Proxy participation : ratio equal-weight / cap-weight (RSP/SPY,
+            # QQQE/QQQ) → z-score. Pas le vrai % >MA50. Si une des deux séries
+            # manque → None (n/a propre, absorbé par le gate S5).
             res = _twelve_ratio_zscore(sym_a, sym_b, crit)
         elif cle.startswith("alpha_"):
             res = _twelve_alpha_5j(sym_a, sym_b, crit)

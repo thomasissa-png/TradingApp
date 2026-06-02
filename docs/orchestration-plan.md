@@ -1,7 +1,12 @@
 <!-- Version: 2026-05-01T08:30 — @orchestrator — Plan initial Phases 0→5 TradingApp + note environnement sub-agent -->
 # Plan d'orchestration — TradingApp
 
-> Statut global : **PLAN PRODUIT — exécution à déclencher par le parent (orchestrator top-level ou utilisateur)**
+> ⚠️ **SUPERSEDED (2026-06-02) — CE PLAN DÉCRIT L'ARCHITECTURE LEGACY** (Phases 0-5 : Replit + `src/` Python + bot Telegram « 1 signal turbo/jour »).
+> Le projet a **pivoté vers l'architecture v3** (GitHub Actions + git-as-storage, bulletin directionnel 12 actifs × 3 horizons, **mode shadow**). Le `legacy/` est **archivé**.
+> **État réel et roadmap courante : voir `project-context.md`** (section État + Mémo de reprise). Ce fichier est conservé pour l'historique des Phases 0-2a (réellement livrées sur le legacy) mais n'est plus le plan actif.
+> **Phase v3 en cours : mode shadow** — pipeline complet sur vraies données, 619 tests, gates anti-erreur de jugement (6 lots livrés), backtest quant v1 (NO-GO partiel). Prochaine étape : calibration coverage sur données fraîches + Lot 4b gates + backtest v2. Reste avant émission : ~30 j shadow + KPI > 70%.
+
+> Statut global : **PLAN PRODUIT LEGACY — superseded par v3 (cf. project-context.md)**
 > Mode : **AUTOPILOT** phases 0→5, livraison complète, 100% gates PASS.
 > Mise à jour : 2026-05-01
 

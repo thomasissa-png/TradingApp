@@ -1,6 +1,6 @@
 # Performance A/B — ±1 (baseline) vs pondéré (secondaire)
 
-- Généré : 2026-06-02T12:31:00.184533+02:00
+- Généré : 2026-06-02T12:48:18.551815+02:00
 - Fenêtre KPI : 30 dernières conclusions terminées par cellule
 - Cible : 70% (Bourse.md)
 
@@ -14,7 +14,7 @@ pas dans le dénominateur pondéré (colonne N_pond < N_pm1 normal au démarrage
 | Argent | 24h | 2 | 50.0% | 0.2912 | 2 | 50.0% | 0.2912 |
 | Blé | 24h | 2 | 100.0% | 0.0146 | 2 | 100.0% | 0.0643 |
 | CAC 40 | 24h | 0 | — | — | 0 | — | — |
-| Cacao | 24h | 0 | — | — | 0 | — | — |
+| Cacao | 24h | 2 | 100.0% | 0.2156 | 2 | 100.0% | 0.2156 |
 | Café (Arabica) | 24h | 2 | 0.0% | 0.3128 | 2 | 0.0% | 0.3122 |
 | Cuivre | 24h | 2 | 50.0% | 0.1662 | 2 | 50.0% | 0.2094 |
 | EUR/USD | 24h | 0 | — | — | 0 | — | — |
@@ -25,4 +25,4 @@ pas dans le dénominateur pondéré (colonne N_pond < N_pm1 normal au démarrage
 | VIX | 24h | 0 | — | — | 0 | — | — |
 
 ## Synthèse globale (cellules avec ≥1 mesure pondérée)
-- Delta taux moyen (pondéré − ±1) : **+0.00 pts** sur 5 cellules
+- Delta taux moyen (pondéré − ±1) : **+0.00 pts** sur 6 cellules

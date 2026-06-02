@@ -1,6 +1,6 @@
 # Performance A/B — ±1 (baseline) vs pondéré (secondaire)
 
-- Généré : 2026-06-02T18:06:35.489034+02:00
+- Généré : 2026-06-02T21:57:58.918928+02:00
 - Fenêtre KPI : 30 dernières conclusions terminées par cellule
 - Cible : 70% (Bourse.md)
 
@@ -19,10 +19,10 @@ pas dans le dénominateur pondéré (colonne N_pond < N_pm1 normal au démarrage
 | Cuivre | 24h | 2 | 50.0% | 0.1662 | 2 | 50.0% | 0.2094 |
 | EUR/USD | 24h | 0 | — | — | 0 | — | — |
 | Nasdaq | 24h | 2 | 100.0% | 0.0324 | 2 | 100.0% | 0.0622 |
-| Or | 24h | 1 | 100.0% | 0.0435 | 1 | 100.0% | 0.0484 |
+| Or | 24h | 2 | 100.0% | 0.1031 | 2 | 100.0% | 0.0809 |
 | Pétrole (Brent) | 24h | 2 | 100.0% | 0.0010 | 2 | 100.0% | 0.0390 |
-| S&P 500 | 24h | 2 | 100.0% | 0.1650 | 2 | 100.0% | 0.1650 |
+| S&P 500 | 24h | 0 | — | — | 0 | — | — |
 | VIX | 24h | 0 | — | — | 0 | — | — |
 
 ## Synthèse globale (cellules avec ≥1 mesure pondérée)
-- Delta taux moyen (pondéré − ±1) : **+0.00 pts** sur 9 cellules
+- Delta taux moyen (pondéré − ±1) : **+0.00 pts** sur 8 cellules

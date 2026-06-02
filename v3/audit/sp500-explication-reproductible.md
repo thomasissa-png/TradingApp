@@ -7,14 +7,21 @@
 
 ## 0. Source de vérité utilisée
 
-Les scores affichés dans le tableau du bulletin (`v3/data/bulletins/bulletin-2026-06-02.md`,
-ligne `| S&P 500 | SHORT ● | SHORT ● | SHORT ● |`) correspondent **exactement** au run
+> ⚠️ **Précision (correction post-audit)** : ce document reconstitue le run
+> **14h15** (`2026-06-02-1415.jsonl`). Le bulletin **réellement publié**
+> (`bulletin-2026-06-02.md`, en-tête « Généré 18h04 ») fige en fait le run
+> **18h04**, dont les scores S&P sont voisins mais distincts :
+> **24h = -5.87 · 7j = -5.07 · 1m = -3.97**. La **méthode et les drivers
+> (taux réels TIPS + breadth) sont identiques** pour les deux runs ; seules
+> les valeurs normalisées ont légèrement dérivé entre 14h15 et 18h04. La
+> dérivation ci-dessous reste donc valide et représentative.
+
+Les scores reconstitués ci-dessous correspondent **exactement** au run
 **`v3/data/decision-log/2026-06-02-1415.jsonl`** (`generated_at: 2026-06-02T14:15:08+02:00`).
 
-Vérification : seul ce run produit `sp500 24h=-5.939769 / 7j=-4.820566 / 1m=-3.822578`
-et `coverage=0.5082`. (Les runs plus tardifs 16h25 et 18h04 donnent des scores voisins mais
-différents — le tableau publié fige les chiffres du run 14h15.) Toutes les valeurs ci-dessous
-sont **lues** dans ce fichier, aucune n'est inventée.
+Vérification : ce run produit `sp500 24h=-5.939769 / 7j=-4.820566 / 1m=-3.822578`
+et `coverage=0.5082`. (Les runs 16h25 et 18h04 donnent des scores voisins mais
+différents.) Toutes les valeurs ci-dessous sont **lues** dans ce fichier, aucune n'est inventée.
 
 ## 1. La formule réelle d'agrégation
 

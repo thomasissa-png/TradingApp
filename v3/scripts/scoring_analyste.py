@@ -1454,6 +1454,16 @@ def _build_legende(flags_present: set) -> str:
         if sym in ("↯", "⇄", "⇆", "⌛", "⊘", "⚠", "⚠️"):
             any_shadow = True
         lines.append(f"- {sym} {desc}")
+    # Échelle de la Note (toujours affichée) : la Note est une somme pondérée
+    # signée, sans borne fixe — son amplitude dépend de la couverture de l'actif.
+    # On la lit donc conjointement avec la confiance (%).
+    lines.append("")
+    lines.append(
+        "_**Note** = somme pondérée signée des critères (signe × poids × "
+        "pertinence par horizon). Plus |Note| est élevée, plus le signal est "
+        "marqué ; il n'y a pas de borne fixe (l'amplitude dépend de la "
+        "couverture) — à lire avec la confiance %._"
+    )
     if any_shadow:
         lines.append("")
         lines.append("_Les flags visuels (↯ ⇄ ⇆ ⌛ ⊘ ⚠ ⚠️) n'altèrent PAS la conclusion (mode shadow)._")

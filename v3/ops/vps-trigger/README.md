@@ -28,7 +28,7 @@ Le VPS `82.165.168.92` (IONOS) est déjà la machine 24/7 la plus surveillée de
 |---|---|
 | Token (PAT) | `/root/.config/tradingapp/dispatch-token` (chmod 600) |
 | Script | `/opt/tradingapp/trigger-cycle.sh` |
-| Cron | `/etc/cron.d/tradingapp` (run as `root`, `CRON_TZ=Europe/Paris`) |
+| Cron | `/etc/cron.d/tradingapp` (run as `root`, **horaire `0 * * * *`** + garde Paris dans le script) |
 | Journal | `/var/log/tradingapp-trigger.log` |
 
 `/etc/cron.d/` (et pas la crontab de `thomas`) car le déploiement auto d'Anya réécrit la crontab de `thomas` — un fichier dédié **survit aux redéploiements**.
@@ -65,12 +65,14 @@ tail -n1 /var/log/tradingapp-trigger.log    # attendu : RESULTAT: OK 204
 ### 5. Brancher le cron
 ```bash
 cat > /etc/cron.d/tradingapp <<'EOF'
-CRON_TZ=Europe/Paris
-0 7,12,18 * * * root /opt/tradingapp/trigger-cycle.sh
+0 * * * * root /opt/tradingapp/trigger-cycle.sh
 EOF
 chmod 644 /etc/cron.d/tradingapp
 ```
-Cron lit `/etc/cron.d/` automatiquement (pas de reload nécessaire sur cronie).
+⚠️ **Ne PAS utiliser `CRON_TZ`** : le cron Debian/Ubuntu (Vixie) ne l'honore pas
+(incident 02/06 — le créneau de midi n'est jamais parti). On fire toutes les
+heures et le script self-gate sur l'heure de Paris (7/12/18) → robuste DST,
+indépendant du fuseau système. Cron lit `/etc/cron.d/` automatiquement.
 
 ## Vérification continue
 - Log : `/var/log/tradingapp-trigger.log` (1 ligne OK/ECHEC par tir).

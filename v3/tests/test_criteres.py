@@ -38,7 +38,9 @@ def _no_real_http(monkeypatch):
     """Bloque tout appel HTTP réel : si un test oublie de mocker, il échoue clean.
 
     Couvre :
-      - cc.http_get_json (CFTC, FRED, EIA, Open-Meteo, CBOE)
+      - cc.http_get_json (CFTC, EIA, Open-Meteo, CBOE)
+      - cc._fred_get_json (FRED, avec retry/backoff) — les tests FRED qui veulent
+        un fetch doivent mocker soit cc._fred_get_json soit requests.get
       - md.fetch_history / md.fetch_price (Twelve Data + yfinance)
     """
     def _fail(*a, **kw):
@@ -47,7 +49,11 @@ def _no_real_http(monkeypatch):
     def _fail_md(*a, **kw):
         raise RuntimeError("HTTP réseau interdit dans les tests — mocker market_data.fetch_*")
 
+    def _fail_fred(*a, **kw):
+        raise RuntimeError("HTTP FRED interdit dans les tests — mocker _fred_get_json ou requests.get")
+
     monkeypatch.setattr(cc, "http_get_json", _fail)
+    monkeypatch.setattr(cc, "_fred_get_json", _fail_fred)
     # Désactive aussi market_data : tests qui veulent un fetch doivent monkeypatcher md.fetch_*
     monkeypatch.setattr(md, "fetch_history", _fail_md)
     monkeypatch.setattr(md, "fetch_price", _fail_md)
@@ -764,7 +770,7 @@ def test_fred_series_parsing_filters_missing_values(monkeypatch):
             {"date": "2026-05-22", "value": "1.95"},
         ]
     }
-    monkeypatch.setattr(cc, "http_get_json", lambda url, params=None, timeout=15: fake)
+    monkeypatch.setattr(cc, "_fred_get_json", lambda sid, params, timeout=15: fake)
     series = cc.fetch_fred_series("DFII10", n=10)
     assert series is not None
     # 4 valeurs valides, triées oldest→newest
@@ -799,15 +805,14 @@ def test_fred_spread_aligns_by_date(monkeypatch):
         {"date": "2026-05-16", "value": "2.49"},
     ]}
     calls = {"n": 0}
-    def fake_get(url, params=None, timeout=15):
+    def fake_get(sid, params, timeout=15):
         calls["n"] += 1
-        sid = (params or {}).get("series_id", "")
         if sid == "DGS10":
             return payload_us
         if sid == "IRLTLT01DEM156N":
             return payload_de
         return None
-    monkeypatch.setattr(cc, "http_get_json", fake_get)
+    monkeypatch.setattr(cc, "_fred_get_json", fake_get)
     spread = cc.fetch_fred_spread("DGS10", "IRLTLT01DEM156N", n=20)
     assert spread is not None
     # 10 dates communes, spread constant = 2.00 (oldest→newest)
@@ -822,7 +827,7 @@ def test_fred_dispatch_taux_tips(monkeypatch, now_fixed):
            for i in range(1, 32)] + [
            {"date": "2026-02-28", "value": "3.50"}]  # spike final
     fake = {"observations": list(reversed(obs))}  # FRED renvoie DESC
-    monkeypatch.setattr(cc, "http_get_json", lambda url, params=None, timeout=15: fake)
+    monkeypatch.setattr(cc, "_fred_get_json", lambda sid, params, timeout=15: fake)
     crit = {"cle_courante": "taux_10y_us_reels_tips", "normalisation": "zscore",
             "source": "FRED (DFII10)", "zscore_window": 60, "zscore_div": 2, "cap": 1.0}
     val = cc.build_critere_value("or", crit, {}, {}, [], now_fixed)
@@ -838,11 +843,11 @@ def test_fred_dispatch_hy_credit_spread(monkeypatch, now_fixed):
     """cle_courante='hy_credit_spread' (zscore) — série BAMLH0A0HYM2."""
     monkeypatch.setenv("FRED_API_KEY", "fake")
     captured = {}
-    def fake_get(url, params=None, timeout=15):
-        captured["sid"] = (params or {}).get("series_id")
+    def fake_get(sid, params, timeout=15):
+        captured["sid"] = sid
         obs = [{"date": f"2026-04-{i:02d}", "value": f"{3.0 + 0.02*i:.4f}"} for i in range(1, 31)]
         return {"observations": list(reversed(obs))}
-    monkeypatch.setattr(cc, "http_get_json", fake_get)
+    monkeypatch.setattr(cc, "_fred_get_json", fake_get)
     crit = {"cle_courante": "hy_credit_spread", "normalisation": "zscore",
             "source": "FRED (ICE BofA HY OAS)", "zscore_window": 60, "zscore_div": 2, "cap": 1.0}
     val = cc.build_critere_value("sp500", crit, {}, {}, [], now_fixed)
@@ -853,8 +858,7 @@ def test_fred_dispatch_hy_credit_spread(monkeypatch, now_fixed):
 def test_fred_dispatch_differentiel_10y(monkeypatch, now_fixed):
     """differentiel_taux_10y_us_bund → spread DGS10 - IRLTLT01DEM156N."""
     monkeypatch.setenv("FRED_API_KEY", "fake")
-    def fake_get(url, params=None, timeout=15):
-        sid = (params or {}).get("series_id")
+    def fake_get(sid, params, timeout=15):
         if sid == "DGS10":
             obs = [{"date": f"2026-04-{i:02d}", "value": f"{4.50 + 0.01*i:.4f}"} for i in range(1, 31)]
         elif sid == "IRLTLT01DEM156N":
@@ -862,13 +866,148 @@ def test_fred_dispatch_differentiel_10y(monkeypatch, now_fixed):
         else:
             return None
         return {"observations": list(reversed(obs))}
-    monkeypatch.setattr(cc, "http_get_json", fake_get)
+    monkeypatch.setattr(cc, "_fred_get_json", fake_get)
     crit = {"cle_courante": "differentiel_taux_10y_us_bund", "normalisation": "zscore",
             "source": "FRED", "zscore_window": 60, "zscore_div": 2, "cap": 1.0}
     val = cc.build_critere_value("eurusd", crit, {}, {}, [], now_fixed)
     assert val is not None
     # Spread positif (US > DE)
     assert val["valeur"] > 0
+
+
+# ---------------------------------------------------------------------------
+# FRED — résilience 429 / 5xx (retry backoff + throttle)
+# ---------------------------------------------------------------------------
+
+class _FakeResp:
+    """Réponse HTTP factice pour mocker requests.get dans les tests FRED."""
+    def __init__(self, status_code, json_data=None, headers=None):
+        self.status_code = status_code
+        self._json = json_data if json_data is not None else {}
+        self.headers = headers or {}
+
+    def json(self):
+        return self._json
+
+
+# Référence vers l'implémentation RÉELLE de _fred_get_json : la fixture autouse
+# _no_real_http la remplace par un stub qui lève. Les tests de résilience FRED
+# ci-dessous testent justement cette fonction → ils la restaurent.
+_REAL_FRED_GET_JSON = cc._fred_get_json
+
+
+def _patch_fred_timing(monkeypatch):
+    """Restaure le vrai _fred_get_json et neutralise les sleeps (tests rapides)."""
+    import time as _t
+    monkeypatch.setattr(cc, "_fred_get_json", _REAL_FRED_GET_JSON)
+    monkeypatch.setattr(cc, "_fred_throttle", lambda: None)
+    monkeypatch.setattr(_t, "sleep", lambda *_a, **_k: None)
+
+
+def test_fred_retry_on_429_then_success(monkeypatch):
+    """429 puis 200 : la série doit revenir (pas de fred_dead)."""
+    import requests as _rq
+    _patch_fred_timing(monkeypatch)
+    cc.SKIP_COUNTER.clear()
+    seq = [
+        _FakeResp(429, headers={"Retry-After": "1"}),
+        _FakeResp(200, {"observations": [
+            {"date": "2026-05-29", "value": "2.05"},
+            {"date": "2026-05-28", "value": "2.01"},
+        ]}),
+    ]
+    calls = {"n": 0}
+    def fake_get(url, params=None, timeout=None):
+        i = calls["n"]
+        calls["n"] += 1
+        return seq[i]
+    monkeypatch.setattr(_rq, "get", fake_get)
+    monkeypatch.setenv("FRED_API_KEY", "fake")
+    out = cc.fetch_fred_series("DFII10", n=10)
+    assert out == [2.01, 2.05]
+    assert calls["n"] == 2  # 1 retry consommé
+    assert not any(k.startswith("fred_dead") for k in cc.SKIP_COUNTER)
+
+
+def test_fred_retry_exhausted_returns_none_and_marks_dead(monkeypatch):
+    """429 sur toutes les tentatives → None + fred_dead incrémenté UNE fois."""
+    import requests as _rq
+    _patch_fred_timing(monkeypatch)
+    cc.SKIP_COUNTER.clear()
+    calls = {"n": 0}
+    def fake_get(url, params=None, timeout=None):
+        calls["n"] += 1
+        return _FakeResp(429)
+    monkeypatch.setattr(_rq, "get", fake_get)
+    monkeypatch.setenv("FRED_API_KEY", "fake")
+    out = cc.fetch_fred_series("DFII10", n=10)
+    assert out is None
+    assert calls["n"] == cc.FRED_MAX_RETRIES  # toutes les tentatives consommées
+    assert cc.SKIP_COUNTER["fred_dead:DFII10"] == 1
+
+
+def test_fred_retry_on_5xx(monkeypatch):
+    """503 puis 200 : retry sur 5xx aussi."""
+    import requests as _rq
+    _patch_fred_timing(monkeypatch)
+    cc.SKIP_COUNTER.clear()
+    seq = [_FakeResp(503), _FakeResp(200, {"observations": [
+        {"date": "2026-05-28", "value": "1.50"}]})]
+    calls = {"n": 0}
+    def fake_get(url, params=None, timeout=None):
+        r = seq[calls["n"]]
+        calls["n"] += 1
+        return r
+    monkeypatch.setattr(_rq, "get", fake_get)
+    monkeypatch.setenv("FRED_API_KEY", "fake")
+    out = cc.fetch_fred_series("DFII10", n=10)
+    assert out == [1.50]
+    assert calls["n"] == 2
+
+
+def test_fred_no_retry_on_404(monkeypatch):
+    """404 (non-retriable) : échec immédiat, une seule requête."""
+    import requests as _rq
+    _patch_fred_timing(monkeypatch)
+    cc.SKIP_COUNTER.clear()
+    calls = {"n": 0}
+    def fake_get(url, params=None, timeout=None):
+        calls["n"] += 1
+        return _FakeResp(404)
+    monkeypatch.setattr(_rq, "get", fake_get)
+    monkeypatch.setenv("FRED_API_KEY", "fake")
+    out = cc.fetch_fred_series("BADID", n=10)
+    assert out is None
+    assert calls["n"] == 1  # aucun retry sur 404
+    assert cc.SKIP_COUNTER["fred_dead:BADID"] == 1
+
+
+def test_fred_retry_after_header_respected(monkeypatch):
+    """L'en-tête Retry-After (secondes) pilote le délai du backoff."""
+    delays = []
+    import time as _t
+    monkeypatch.setattr(cc, "_fred_get_json", _REAL_FRED_GET_JSON)
+    monkeypatch.setattr(cc, "_fred_throttle", lambda: None)
+    monkeypatch.setattr(_t, "sleep", lambda d=0, *a, **k: delays.append(d))
+    import requests as _rq
+    seq = [_FakeResp(429, headers={"Retry-After": "5"}),
+           _FakeResp(200, {"observations": [{"date": "2026-05-28", "value": "1.0"}]})]
+    calls = {"n": 0}
+    def fake_get(url, params=None, timeout=None):
+        r = seq[calls["n"]]
+        calls["n"] += 1
+        return r
+    monkeypatch.setattr(_rq, "get", fake_get)
+    monkeypatch.setenv("FRED_API_KEY", "fake")
+    cc.fetch_fred_series("DFII10", n=10)
+    # Le délai du backoff doit être >= 5s (Retry-After) malgré le jitter
+    assert delays and delays[0] >= 5.0
+
+
+def test_parse_retry_after():
+    assert cc._parse_retry_after("3") == 3.0
+    assert cc._parse_retry_after(None) is None
+    assert cc._parse_retry_after("Wed, 21 Oct 2026 07:28:00 GMT") is None
 
 
 # ---------------------------------------------------------------------------

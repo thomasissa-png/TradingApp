@@ -25,8 +25,11 @@ import json
 import logging
 import math
 import os
+import random
 import statistics
 import sys
+import time
+import threading
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -487,6 +490,126 @@ def _fred_key() -> Optional[str]:
     return k or None
 
 
+# ── Résilience FRED : retry backoff + throttle inter-requêtes ──────────────
+#
+# Contexte (run 2026-06-02) : les séries FRED sont appelées en rafale dans un
+# même run de cycle-decision. Sans espacement, l'API FRED renvoie 429 Too Many
+# Requests → DFII10 + le spread DGS10-IRLTLT01DEM156N tombaient en n/a, faisant
+# basculer 42 % du bulletin en INSUFFISANT (gate de couverture S5).
+#
+# Philosophie alignée sur le rate-limiter Twelve Data (cf. market_data.py
+# `_acquire_rate_limit` : « attend au lieu de rejeter ») : on étale les requêtes
+# au lieu de les perdre. FRED gratuit tolère ~120 req/min ; un espacement de
+# ~0.6 s/req est une marge sûre tout en restant rapide sur la dizaine de séries
+# d'un run.
+#
+# NOTE handoff : le même pattern 429 touche aussi GNews/NewsAPI. Volontairement
+# NON traité ici pour rester ciblé — à factoriser dans un helper HTTP générique
+# `http_get_json_retry` lors d'une passe dédiée (réutiliser _http_get_with_retry).
+
+FRED_MIN_INTERVAL = float(os.environ.get("FRED_MIN_INTERVAL", "0.6"))  # secondes entre requêtes
+FRED_MAX_RETRIES = int(os.environ.get("FRED_MAX_RETRIES", "3"))
+FRED_BACKOFF_BASE = float(os.environ.get("FRED_BACKOFF_BASE", "2.0"))  # 2s → 4s → 8s
+FRED_RETRY_STATUS = {429, 500, 502, 503, 504}
+
+_fred_throttle_lock = threading.Lock()
+_fred_last_request_ts = 0.0
+
+
+def _fred_throttle() -> None:
+    """Espacement minimal entre deux requêtes FRED dans un même run.
+
+    Bloque (sleep) le temps nécessaire pour respecter FRED_MIN_INTERVAL depuis
+    la dernière requête. Thread-safe ; le sleep est fait sous lock (les requêtes
+    FRED sont séquentielles dans le run, pas de contention significative).
+    """
+    global _fred_last_request_ts
+    with _fred_throttle_lock:
+        now = time.monotonic()
+        wait = FRED_MIN_INTERVAL - (now - _fred_last_request_ts)
+        if wait > 0:
+            time.sleep(wait)
+        _fred_last_request_ts = time.monotonic()
+
+
+def _fred_get_json(series_id: str, params: dict, *, timeout: int = DEFAULT_TIMEOUT) -> Optional[Any]:
+    """GET JSON FRED résilient : throttle + retry backoff sur 429/5xx.
+
+    - Espacement minimal entre requêtes (anti-rafale) via _fred_throttle().
+    - Retry exponentiel (2s/4s/8s + jitter) sur HTTP 429 et 5xx, en respectant
+      l'en-tête Retry-After si présent.
+    - Retourne le JSON parsé (200) ou None après épuisement des retries / erreur.
+      Le caller incrémente fred_dead UNIQUEMENT sur None (donc après les retries).
+    - Zéro régression sur 200 : succès au 1er essai → comportement identique.
+    """
+    try:
+        import requests  # lazy import (testable)
+    except ImportError:
+        logger.warning("requests non installé — HTTP FRED désactivé")
+        return None
+
+    last_err: Optional[str] = None
+    for attempt in range(1, FRED_MAX_RETRIES + 1):
+        _fred_throttle()
+        try:
+            r = requests.get(FRED_BASE, params=params, timeout=timeout)
+        except Exception as e:  # noqa: BLE001 — erreur réseau/timeout
+            last_err = str(e)
+            logger.warning(
+                "FRED %s : erreur réseau (tentative %d/%d) : %s",
+                series_id, attempt, FRED_MAX_RETRIES, e,
+            )
+            if attempt < FRED_MAX_RETRIES:
+                time.sleep(_fred_backoff_delay(attempt, None))
+            continue
+
+        if r.status_code == 200:
+            try:
+                return r.json()
+            except ValueError as e:
+                logger.warning("FRED %s : JSON invalide (HTTP 200) : %s", series_id, e)
+                return None
+
+        if r.status_code in FRED_RETRY_STATUS and attempt < FRED_MAX_RETRIES:
+            retry_after = _parse_retry_after(r.headers.get("Retry-After"))
+            delay = _fred_backoff_delay(attempt, retry_after)
+            logger.warning(
+                "FRED %s : HTTP %d (tentative %d/%d) → retry dans %.1fs",
+                series_id, r.status_code, attempt, FRED_MAX_RETRIES, delay,
+            )
+            time.sleep(delay)
+            last_err = f"HTTP {r.status_code}"
+            continue
+
+        # Statut non-retriable (4xx ≠ 429) OU dernier essai épuisé
+        last_err = f"HTTP {r.status_code}"
+        break
+
+    logger.error(
+        "FRED %s : échec après %d tentative(s) — %s",
+        series_id, FRED_MAX_RETRIES, last_err or "raison inconnue",
+    )
+    return None
+
+
+def _fred_backoff_delay(attempt: int, retry_after: Optional[float]) -> float:
+    """Délai avant retry : Retry-After (si fourni) sinon backoff exponentiel + jitter."""
+    if retry_after is not None and retry_after >= 0:
+        return retry_after + random.uniform(0, 0.5)
+    base = FRED_BACKOFF_BASE * (2 ** (attempt - 1))  # 2, 4, 8...
+    return base + random.uniform(0, 0.5)
+
+
+def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """Parse l'en-tête Retry-After (secondes uniquement ; date HTTP ignorée)."""
+    if not value:
+        return None
+    try:
+        return float(value.strip())
+    except (TypeError, ValueError):
+        return None  # format date HTTP non géré → on retombe sur le backoff
+
+
 def fetch_fred_series(series_id: str, *, n: int = 252) -> Optional[List[float]]:
     """Retourne les N dernières observations valides d'une série FRED, oldest→newest.
 
@@ -504,7 +627,7 @@ def fetch_fred_series(series_id: str, *, n: int = 252) -> Optional[List[float]]:
         "limit": n,
         "api_key": key,
     }
-    data = http_get_json(FRED_BASE, params=params)
+    data = _fred_get_json(series_id, params)
     if not isinstance(data, dict):
         SKIP_COUNTER[f"fred_dead:{series_id}"] += 1
         return None
@@ -539,8 +662,8 @@ def fetch_fred_spread(series_us: str, series_de: str, *, n: int = 252) -> Option
         SKIP_COUNTER["fred_no_key"] += 1
         return None
     params_base = {"file_type": "json", "sort_order": "desc", "limit": n, "api_key": key}
-    a = http_get_json(FRED_BASE, params=dict(params_base, series_id=series_us))
-    b = http_get_json(FRED_BASE, params=dict(params_base, series_id=series_de))
+    a = _fred_get_json(series_us, dict(params_base, series_id=series_us))
+    b = _fred_get_json(series_de, dict(params_base, series_id=series_de))
     if not isinstance(a, dict) or not isinstance(b, dict):
         SKIP_COUNTER[f"fred_spread_dead:{series_us}-{series_de}"] += 1
         return None

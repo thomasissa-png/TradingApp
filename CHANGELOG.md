@@ -23,6 +23,15 @@
 - **684 tests**, 0 régression (8 échecs pré-existants env-only).
 - **Différé → C** : calibrer `COVERAGE_MIN` (0.40) sur hit-rate réel — rouvrir ~2026-06-23 quand les tags `is_carry`/`is_news_regime` auront accumulé assez de mesures.
 
+### Polissage post-audit du bulletin (trio → consensus en 3 rounds)
+Audit forme+fond du bulletin par le trio : Fond **6/10** (méthode 8, mais données qui la nourrissent 4), Forme **6/10** (transparence forte, mais dense/bruitée). Plan de 6 actions re-priorisé par « impact/effort », exécuté en autopilote :
+- **🔴 #1 Bug normalisation** : `normalise()` jetait en silence les critères `composite`/`mapping_non_monotone` (« type inconnu ») → critères à fort poids récupérés : café météo (+11), S&P VIX régime (+8), CAC V2X (+8), Nasdaq VXN (+7), cacao HF (+7). Bug côté consommateur seul (émission déjà correcte). (`7bbe128`)
+- **🔴 #2 Incohérence VIX** : `vix_regime` lisait 23.6 (Twelve) vs 14.95 (CBOE) pour le même VIX → unifié sur la source CBOE fraîche (14.95 → +0.975 régime sain). (`7bbe128`)
+- **🟡 #6 News** : dédup des news identiques au sein d'un actif (doublon SoftBank CAC) + troncature propre sur frontière de phrase (140→240). (`4e737e0`)
+- **🟢 #4/#5 Forme** : bloc **🎯 Top 3 convictions** en tête ; **fusion des 2 tables** de synthèse en une ; **⚑ régime extrême** annoncé 1× au lieu de 12× ; « à surveiller » resserrée (27→6-7 lignes, alertes directionnelles seules). (`1ec3158`)
+- **⏸ Différé → #3** : combler les vraies données absentes (Caixin PMI cuivre p.12, diff. taux EUR/USD p.12, etc.) = chantier sources (nouvelles intégrations), non autopilotable.
+- **716 tests** verts, 0 régression (8 échecs pré-existants env-only).
+
 ## 2026-06-01 (soir) — Observabilité news + optimisation requêtes (10/10)
 
 - **Bilan des news** : bloc dans le bulletin marquant les calls portés par les news qui ont marché/raté (juger le jugement DeepSeek).

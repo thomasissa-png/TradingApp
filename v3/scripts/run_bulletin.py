@@ -91,11 +91,15 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         logger.warning("briefing KO (non bloquant) : %s", e)
 
-    # Étape 3 — stamp des prix d'émission du jour (pour mesure ultérieure
-    # par le Journaliste). Best-effort : si Twelve Data dead, on ne bloque
-    # pas le bulletin (la cellule passera en "suivi-interrompu" à la mesure).
+    # Étape 3 — stamp des prix d'émission de CE bulletin (pour mesure ultérieure
+    # par le Journaliste). Clé par IDENTITÉ de bulletin (créneau) et non par
+    # date : 3 runs/jour → 3 jeux de prix distincts. On dérive l'identité du
+    # fichier réellement écrit par scoring_analyste (out_path).
+    # Best-effort : si Twelve Data dead, on ne bloque pas le bulletin (la cellule
+    # passera en "suivi-interrompu" à la mesure).
     try:
-        journaliste.stamp_prix_emission(now.date())
+        bid = journaliste.bulletin_id_from_path(out_path) or now.strftime("%Y-%m-%d")
+        journaliste.stamp_prix_emission(bid)
     except Exception as e:  # noqa: BLE001
         logger.warning("stamp_prix_emission KO (non bloquant) : %s", e)
 

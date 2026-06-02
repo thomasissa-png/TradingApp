@@ -30,13 +30,17 @@ Red lines :
 - prix d'émission absent            → conclusion `suivi-interrompu`, retry
 - JAMAIS d'invention de prix ou outcome
 
-Stockage du prix d'émission :
+Stockage du prix d'émission (clé par IDENTITÉ de bulletin, pas par date) :
+- 3 bulletins/jour (cron UTC 5/10/16 = matin/midi/soir), nommés
+  `bulletin-YYYY-MM-DD-HHh.md`. Ancien nommage `bulletin-YYYY-MM-DD.md` resté
+  rétro-compatible.
 - À chaque écriture d'un bulletin (`run_bulletin`), appeler
-  `stamp_prix_emission(bulletin_date)` : récupère le prix courant de chaque
-  actif (ticker_principal de la fiche) via Twelve Data et l'écrit dans
-  `v3/data/prix-emission/YYYY-MM-DD.json` ({ticker: prix}). Idempotent : si
-  un ticker est déjà stampé pour cette date et que le nouveau fetch échoue,
-  l'ancien est préservé.
+  `stamp_prix_emission(bulletin_id)` (identité = stem, ex. "2026-06-02-16h") :
+  récupère le prix courant de chaque actif (ticker_principal) via Twelve Data
+  et l'écrit dans `v3/data/prix-emission/{bulletin_id}.json` ({ticker: prix}).
+  Chaque créneau a SES propres prix d'émission (sinon les 3 runs collisionnent).
+  Idempotent : si un ticker est déjà stampé pour ce bulletin et que le nouveau
+  fetch échoue, l'ancien est préservé.
 """
 
 from __future__ import annotations
@@ -144,11 +148,16 @@ def _enforce_entry_lock(
     existing: Dict[str, float],
     ticker: str,
     proposed_price: float,
-    bulletin_date: date,
+    bulletin_ref: Any = None,
+    *,
+    bulletin_date: Any = None,
 ) -> float:
     """Garde-fou immutabilité du prix d'émission (C5 invariant #1).
 
-    Si `ticker` est déjà stampé pour `bulletin_date` dans `existing` :
+    `bulletin_ref` (ou alias rétro-compat `bulletin_date`) : identité du
+    bulletin (str "2026-06-02-16h" ou, rétro-compat, un `date`). Log seulement.
+
+    Si `ticker` est déjà stampé pour ce bulletin dans `existing` :
       - on retourne la valeur EXISTANTE (jamais écrasée), même si
         `proposed_price` est différent.
       - on log un WARNING si la différence dépasse ENTRY_LOCK_PRICE_EPS
@@ -159,6 +168,8 @@ def _enforce_entry_lock(
     Cette fonction est PURE (lecture seule sur `existing`) : c'est au caller
     d'appliquer la valeur retournée dans son dict d'écriture.
     """
+    if bulletin_ref is None:
+        bulletin_ref = bulletin_date
     locked = existing.get(ticker)
     if locked is None:
         return proposed_price
@@ -173,7 +184,7 @@ def _enforce_entry_lock(
         logger.warning(
             "entry-lock violé (ignoré) : %s @ %s ancien=%s proposé=%s "
             "(diff rel=%.3e) — prix d'émission immuable, ancien préservé",
-            ticker, bulletin_date.isoformat(), locked, proposed_price, rel,
+            ticker, _bulletin_id_str(bulletin_ref), locked, proposed_price, rel,
         )
     return locked
 
@@ -238,7 +249,28 @@ CELL_NEWS_LEAD_RE = re.compile(
 CELL_INSUFFISANT_RE = re.compile(r"données insuff\.")
 # Annotation pondérée optionnelle : "[pond:LONG +0.42]"
 POND_ANNOT_RE = re.compile(r"\[pond:(LONG|SHORT)\s+([+-]?\d+(?:\.\d+)?)\]")
-BULLETIN_FILE_RE = re.compile(r"^bulletin-(\d{4}-\d{2}-\d{2})\.md$")
+# Nommage des bulletins :
+#   - ancien (rétro-compat) : bulletin-YYYY-MM-DD.md
+#   - nouveau (3 runs/jour)  : bulletin-YYYY-MM-DD-HHh.md (créneau = heure UTC du run)
+# group(1) = date ISO (toujours présent) ; group(2) = créneau "HHh" (None pour
+# l'ancien nommage). L'IDENTITÉ d'un bulletin est son stem complet (date+créneau) :
+# chaque créneau a SES propres prix d'émission (heures de fetch différentes).
+BULLETIN_FILE_RE = re.compile(
+    r"^bulletin-(\d{4}-\d{2}-\d{2})(?:-(\d{2}h))?\.md$"
+)
+
+
+def bulletin_id_from_path(path: Path) -> Optional[str]:
+    """Identité d'un bulletin = stem sans le préfixe "bulletin-".
+
+    Ex : bulletin-2026-06-02-16h.md → "2026-06-02-16h"
+         bulletin-2026-06-02.md     → "2026-06-02" (ancien nommage)
+    Retourne None si le nom ne matche aucun format reconnu.
+    """
+    m = BULLETIN_FILE_RE.match(path.name)
+    if not m:
+        return None
+    return path.stem[len("bulletin-"):]
 
 
 @dataclass
@@ -248,9 +280,19 @@ class BulletinCell:
     horizon: str             # "24h" / "7j" / "1m"
     conclusion: str          # "LONG" / "SHORT" (baseline ±1)
     score: float
+    # Identité du bulletin (stem sans préfixe : "2026-06-02-16h" ou, ancien
+    # nommage, "2026-06-02"). Sert à clé les prix d'émission PAR CRÉNEAU :
+    # 3 bulletins/jour ont des prix d'émission distincts (fetch à heures
+    # différentes). Défaut "" → résolu en isoformat(bulletin_date) dans
+    # __post_init__ (rétro-compat + tests construisant un BulletinCell direct).
+    bulletin_id: str = ""
     # Pondéré (v3.1) — None si bulletin antérieur ne contient pas l'annotation
     conclusion_pond: Optional[str] = None
     score_pond: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        if not self.bulletin_id:
+            self.bulletin_id = self.bulletin_date.isoformat()
 
 
 def parse_bulletin(path: Path) -> List[BulletinCell]:
@@ -268,6 +310,9 @@ def parse_bulletin(path: Path) -> List[BulletinCell]:
         bdate = date.fromisoformat(m.group(1))
     except ValueError:
         return []
+    # Identité du bulletin = stem complet (date + créneau si présent). Clé des
+    # prix d'émission par créneau (cf. BulletinCell.bulletin_id).
+    bid = path.stem[len("bulletin-"):]
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
@@ -304,6 +349,7 @@ def parse_bulletin(path: Path) -> List[BulletinCell]:
                 cells.append(
                     BulletinCell(
                         bulletin_date=bdate,
+                        bulletin_id=bid,
                         actif_name=actif_raw,
                         horizon=h,
                         conclusion=CONCLUSION_INSUFFISANT,
@@ -334,6 +380,7 @@ def parse_bulletin(path: Path) -> List[BulletinCell]:
                 cells.append(
                     BulletinCell(
                         bulletin_date=bdate,
+                        bulletin_id=bid,
                         actif_name=actif_raw,
                         horizon=h,
                         conclusion=conclusion,
@@ -360,6 +407,7 @@ def parse_bulletin(path: Path) -> List[BulletinCell]:
             cells.append(
                 BulletinCell(
                     bulletin_date=bdate,
+                    bulletin_id=bid,
                     actif_name=actif_raw,
                     horizon=h,
                     conclusion=mc.group("conc"),
@@ -374,19 +422,71 @@ def parse_bulletin(path: Path) -> List[BulletinCell]:
 def list_bulletins(bulletins_dir: Path = BULLETINS_DIR) -> List[Path]:
     if not bulletins_dir.exists():
         return []
-    return sorted(bulletins_dir.glob("bulletin-*.md"))
+    # Tri par stem : pour un même jour, les créneaux ("-05h", "-10h", "-16h")
+    # se trient chronologiquement et l'ancien nommage (sans créneau) se place
+    # après ("-" < ".") — ordre temporel intra-journée préservé.
+    return sorted(bulletins_dir.glob("bulletin-*.md"), key=lambda p: p.stem)
+
+
+def _latest_bulletin_id_for_date(
+    d: date, bulletins_dir: Path = BULLETINS_DIR
+) -> Optional[str]:
+    """Identité (stem sans préfixe) du bulletin le plus récent dont la date == d.
+
+    Sert au stamp des prix d'émission par créneau dans journaliste.run().
+    None si aucun bulletin de cette date n'existe.
+    """
+    candidates: List[str] = []
+    for p in list_bulletins(bulletins_dir):
+        m = BULLETIN_FILE_RE.match(p.name)
+        if not m:
+            continue
+        try:
+            if date.fromisoformat(m.group(1)) == d:
+                candidates.append(p.stem[len("bulletin-"):])
+        except ValueError:
+            continue
+    if not candidates:
+        return None
+    return sorted(candidates)[-1]
 
 
 # ---------------------------------------------------------------------------
 # Prix d'émission (stamp + lecture)
 # ---------------------------------------------------------------------------
 
-def prix_emission_path(d: date, base_dir: Path = PRIX_EMISSION_DIR) -> Path:
-    return base_dir / f"{d.isoformat()}.json"
+def _bulletin_id_str(ref: Any) -> str:
+    """Normalise une référence de bulletin en clé string.
+
+    Accepte :
+      - un str (identité de bulletin déjà résolue : "2026-06-02-16h" ou
+        "2026-06-02") → renvoyé tel quel.
+      - un `date` (rétro-compat ancien appelant clé-par-date) → isoformat.
+    Permet de migrer les prix d'émission vers une clé PAR CRÉNEAU sans casser
+    les appelants/tests qui passaient encore une date.
+    """
+    if isinstance(ref, date) and not isinstance(ref, datetime):
+        return ref.isoformat()
+    return str(ref)
 
 
-def load_prix_emission(d: date, base_dir: Path = PRIX_EMISSION_DIR) -> Dict[str, float]:
-    p = prix_emission_path(d, base_dir)
+def prix_emission_path(
+    bulletin_ref: Any, base_dir: Path = PRIX_EMISSION_DIR
+) -> Path:
+    """Chemin du fichier de prix d'émission, clé par IDENTITÉ de bulletin.
+
+    Avec 3 bulletins/jour, clé par date seule collisionnait (les 3 créneaux
+    écrivaient le même fichier). On clé désormais par le stem complet, ex.
+    prix-emission/2026-06-02-16h.json. Rétro-compat : si on passe un `date`,
+    le fichier reste prix-emission/2026-06-02.json (ancien nommage).
+    """
+    return base_dir / f"{_bulletin_id_str(bulletin_ref)}.json"
+
+
+def load_prix_emission(
+    bulletin_ref: Any, base_dir: Path = PRIX_EMISSION_DIR
+) -> Dict[str, float]:
+    p = prix_emission_path(bulletin_ref, base_dir)
     if not p.exists():
         return {}
     try:
@@ -406,13 +506,16 @@ def load_prix_emission(d: date, base_dir: Path = PRIX_EMISSION_DIR) -> Dict[str,
 
 
 def stamp_prix_emission(
-    bulletin_date: date,
+    bulletin_ref: Any,
     fiches: Optional[Dict[str, dict]] = None,
     fetch_price: Optional[Any] = None,
     base_dir: Path = PRIX_EMISSION_DIR,
 ) -> Path:
-    """Stamp le prix courant de chaque actif pour le bulletin de `bulletin_date`.
+    """Stamp le prix courant de chaque actif pour le bulletin `bulletin_ref`.
 
+    - bulletin_ref : IDENTITÉ du bulletin (str "2026-06-02-16h" — clé par
+      créneau) ou, rétro-compat, un `date` (clé par date seule). Chaque créneau
+      a SES propres prix d'émission : 3 runs/jour à des heures différentes.
     - fiches : si None, chargées depuis FICHES_DIR
     - fetch_price : callable(ticker) -> Optional[float] (injecté en tests).
       Par défaut, importe criteres_calculator.fetch_twelve_price.
@@ -427,8 +530,8 @@ def stamp_prix_emission(
         fetch_price = criteres_calculator.fetch_twelve_price
 
     base_dir.mkdir(parents=True, exist_ok=True)
-    out_path = prix_emission_path(bulletin_date, base_dir)
-    existing = load_prix_emission(bulletin_date, base_dir)
+    out_path = prix_emission_path(bulletin_ref, base_dir)
+    existing = load_prix_emission(bulletin_ref, base_dir)
     # C5 invariant #1 — Entry-lock : on PART de l'existant, qu'on ne modifiera
     # plus pour les tickers déjà stampés. Les nouvelles entrées s'ajoutent
     # uniquement pour les tickers absents.
@@ -457,7 +560,7 @@ def stamp_prix_emission(
         # Double sécurité : passe par l'enforcement explicite. Pour un ticker
         # non présent dans `existing`, l'enforcer retourne `new_price` tel quel.
         stamped[ticker] = _enforce_entry_lock(
-            existing, ticker, new_price, bulletin_date,
+            existing, ticker, new_price, bulletin_ref,
         )
 
     out_path.write_text(
@@ -1112,7 +1215,11 @@ def measure(
         if not cells:
             continue
         bdate = cells[0].bulletin_date
-        prix_emis = load_prix_emission(bdate, prix_emission_dir)
+        # Prix d'émission clés par IDENTITÉ de bulletin (créneau), pas par date :
+        # 3 bulletins/jour → 3 jeux de prix d'émission distincts. Chaque bulletin
+        # est mesuré contre SES propres prix.
+        bid = cells[0].bulletin_id
+        prix_emis = load_prix_emission(bid, prix_emission_dir)
         # Lookup news-driven : best-effort. Si le decision-log de la date
         # d'émission est introuvable → news_map vide, les Measures gardent
         # news_driven=None (pas de supposition).
@@ -1816,8 +1923,15 @@ def run(
 
     if stamp_today:
         try:
+            # Stamp clé par IDENTITÉ du bulletin le plus récent du jour (créneau),
+            # pas par date : 3 runs/jour → chaque bulletin a SES prix d'émission.
+            # Si aucun bulletin du jour n'est trouvé (cas dégénéré), fallback sur
+            # la clé date (rétro-compat).
+            stamp_ref: Any = _latest_bulletin_id_for_date(today, bulletins_dir)
+            if stamp_ref is None:
+                stamp_ref = today
             stamp_prix_emission(
-                today,
+                stamp_ref,
                 fiches=fiches,
                 fetch_price=fetch_price,
                 base_dir=prix_emission_dir,

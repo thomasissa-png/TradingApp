@@ -951,8 +951,18 @@ def load_veille(bulletins_dir: Path, today: datetime) -> Tuple[Optional[Path], D
     Retourne (chemin, conclusions par actif par horizon)."""
     if not bulletins_dir.exists():
         return None, {}
+    # Exclut TOUS les créneaux du jour courant (3 runs/jour : matin/midi/soir
+    # partagent le même préfixe date). On compare la date UTC du run (cohérent
+    # avec le nommage du writer). Match par préfixe : exclut bulletin-{date}.md
+    # (ancien nommage) ET bulletin-{date}-HHh.md (nouveau nommage).
+    today_utc = today.astimezone(timezone.utc) if today.tzinfo else today
+    today_prefix = f"bulletin-{today_utc:%Y-%m-%d}"
     files = sorted(
-        [p for p in bulletins_dir.glob("bulletin-*.md") if p.stem != f"bulletin-{today:%Y-%m-%d}"],
+        [
+            p
+            for p in bulletins_dir.glob("bulletin-*.md")
+            if p.stem != today_prefix and not p.stem.startswith(today_prefix + "-")
+        ],
         reverse=True,
     )
     if not files:
@@ -1801,7 +1811,12 @@ def run(
 
     fhash = fiches_hash(fiches)
     content = render_bulletin(results, veille_conclusions, now, fhash, fresh_msg)
-    out_path = bulletins_dir / f"bulletin-{now:%Y-%m-%d}.md"
+    # Un fichier distinct par créneau (3 runs/jour : cron UTC 5/10/16). Le
+    # créneau est l'HEURE UTC du run, zéro-paddée (ex. bulletin-2026-06-02-16h.md).
+    # Sans le créneau, chaque run écrasait le bulletin du jour → seul le run du
+    # soir survivait (biais de survie + perte de mesure pour matin/midi).
+    now_utc = now.astimezone(timezone.utc)
+    out_path = bulletins_dir / f"bulletin-{now_utc:%Y-%m-%d}-{now_utc:%H}h.md"
     if write:
         out_path.write_text(content, encoding="utf-8")
         logger.info("Bulletin écrit : %s", out_path)

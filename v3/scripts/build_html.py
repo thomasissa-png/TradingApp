@@ -30,12 +30,28 @@ BULLETINS_DIR = ROOT / "data" / "bulletins"
 OUT_PATH = ROOT / "data" / "index.html"
 MAX_BULLETINS = 90
 
-# Regex pour extraire la date (YYYY-MM-DD ou YYYY-MM-DDTHHhMM) du nom de fichier
-RE_BULLETIN = re.compile(r"^bulletin-(.+)\.md$")
+# Regex pour extraire l'identité du bulletin du nom de fichier :
+#   - nouveau : bulletin-YYYY-MM-DD-HHh.md  (3 runs/jour, créneau = heure UTC)
+#   - ancien  : bulletin-YYYY-MM-DD.md      (rétro-compat)
+# group(1) = date ISO ; group(2) = heure UTC du créneau ("HH") ou None.
+RE_BULLETIN = re.compile(r"^bulletin-(\d{4}-\d{2}-\d{2})(?:-(\d{2})h)?\.md$")
+
+# Libellé lisible du créneau (heure UTC du run). Cron UTC 5/10/16.
+SLOT_LABELS = {"05": "matin", "10": "midi", "16": "soir"}
+
+
+def slot_label(hour_utc: str) -> str:
+    """UTC 05→matin, 10→midi, 16→soir, sinon "{HH}h"."""
+    return SLOT_LABELS.get(hour_utc, f"{hour_utc}h")
 
 
 def list_bulletins() -> List[Tuple[str, Path]]:
-    """Retourne [(stem, path)] triés par date décroissante (plus récent d'abord)."""
+    """Retourne [(stem, path)] triés par date PUIS créneau décroissants.
+
+    Plus récent d'abord. Pour un même jour, le soir (16h) précède le midi (10h)
+    qui précède le matin (05h). Les bulletins sans créneau (ancien nommage) sont
+    classés comme "fin de journée" pour ce jour (clé "99").
+    """
     if not BULLETINS_DIR.exists():
         return []
     items: List[Tuple[str, Path]] = []
@@ -43,9 +59,15 @@ def list_bulletins() -> List[Tuple[str, Path]]:
         m = RE_BULLETIN.match(p.name)
         if not m:
             continue
-        items.append((m.group(1), p))
-    # Tri par le label (qui contient la date ISO) décroissant
-    items.sort(key=lambda x: x[0], reverse=True)
+        items.append((p.stem[len("bulletin-"):], p))
+
+    def _sort_key(item: Tuple[str, Path]) -> Tuple[str, str]:
+        m = RE_BULLETIN.match(item[1].name)
+        date_iso = m.group(1) if m else item[0]
+        hour = m.group(2) if (m and m.group(2)) else "99"
+        return (date_iso, hour)
+
+    items.sort(key=_sort_key, reverse=True)
     return items
 
 
@@ -73,9 +95,13 @@ def build_payload() -> List[Dict[str, str]]:
             content = path.read_text(encoding="utf-8")
         except Exception as exc:
             content = f"_Erreur lecture {path.name} : {exc}_"
+        m = RE_BULLETIN.match(path.name)
+        # Créneau lisible (matin/midi/soir/{HH}h) — vide pour l'ancien nommage.
+        slot = slot_label(m.group(2)) if (m and m.group(2)) else ""
         payload.append({
             "id": label,
             "label": label,
+            "slot": slot,
             "filename": path.name,
             "markdown": content,
         })
@@ -90,7 +116,15 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
     # les guillemets, backslashes, et caractères Unicode).
     js_entries: List[str] = []
     for b in payload:
-        meta = json.dumps({"id": b["id"], "label": b["label"], "filename": b["filename"]}, ensure_ascii=False)
+        meta = json.dumps(
+            {
+                "id": b["id"],
+                "label": b["label"],
+                "slot": b.get("slot", ""),
+                "filename": b["filename"],
+            },
+            ensure_ascii=False,
+        )
         md_escaped = escape_for_js_template_literal(b["markdown"])
         js_entries.append(f"{{...{meta}, markdown: `{md_escaped}`}}")
     bulletins_js = "[\n" + ",\n".join(js_entries) + "\n]"
@@ -492,7 +526,10 @@ function renderList(activeId) {{
     const dt = formatBulletinDate(b.id);
     const dateSpan = document.createElement('span');
     dateSpan.className = 'item-date';
-    dateSpan.textContent = dt.time ? `${{dt.short}} — ${{dt.time}}` : dt.short;
+    // Créneau lisible : "matin/midi/soir" (b.slot) prioritaire, sinon l'heure
+    // brute extraite de l'id (rétro-compat), sinon rien.
+    const slotTxt = (b.slot && b.slot.length) ? b.slot : dt.time;
+    dateSpan.textContent = slotTxt ? `${{dt.short}} — ${{slotTxt}}` : dt.short;
     a.appendChild(dateSpan);
     if (b.id === latestId) {{
       a.classList.add('latest');

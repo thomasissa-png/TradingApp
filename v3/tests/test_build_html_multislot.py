@@ -59,3 +59,78 @@ def test_payload_slot_lisible(tmp_path, monkeypatch):
     assert by_id["2026-06-02-16h"]["slot"] == "soir"
     # Ancien nommage : pas de créneau → slot vide (rétro-compat).
     assert by_id["2026-05-30"]["slot"] == ""
+
+
+# --- Améliorations design (dark mode, colorisation, mobile, tooltips, repli) ---
+
+def _render_sample_html() -> str:
+    """Rend un HTML complet à partir d'un petit payload de test."""
+    payload = [{
+        "id": "2026-06-02-16h",
+        "label": "2026-06-02-16h",
+        "slot": "soir",
+        "filename": "bulletin-2026-06-02-16h.md",
+        "markdown": "# Test\n\n## Synthèse des décisions\n\n| Actif | 24h | 7j | 1m |\n|---|---|---|---|\n| Or | SHORT 📰 | LONG | ⚪ |\n",
+    }]
+    return bh.render_html(payload, total_count=1)
+
+
+def test_html_contient_dark_mode():
+    html = _render_sample_html()
+    # (a) bloc dark mode présent + au moins une variable sombre surchargée
+    assert "@media (prefers-color-scheme: dark)" in html
+    assert "--bg: #0f172a" in html
+    # vert/rouge LONG/SHORT éclaircis pour le fond sombre
+    assert "--dir-long-color: #4ade80" in html
+    assert "--dir-short-color: #f87171" in html
+
+
+def test_html_regex_colorisation_corrige():
+    html = _render_sample_html()
+    # (b) lookarounds robustes aux emojis, plus de \bLONG\b / \bSHORT\b
+    assert "(?<![A-Za-z])LONG(?![A-Za-z])" in html
+    assert "(?<![A-Za-z])SHORT(?![A-Za-z])" in html
+    assert "\\\\bLONG\\\\b" not in html
+    assert "\\\\bSHORT\\\\b" not in html
+
+
+def test_html_dense_table_et_media_mobile():
+    html = _render_sample_html()
+    # (c) classe dense-table appliquée en JS + media query mobile sur 3e/10e col
+    assert "markDenseTables" in html
+    assert "dense-table" in html
+    assert ".dense-table td:nth-child(3)" in html
+    assert ".dense-table td:nth-child(10)" in html
+    assert ".dense-table th:nth-child(3)" in html
+    assert ".dense-table th:nth-child(10)" in html
+
+
+def test_html_tooltips_symboles():
+    html = _render_sample_html()
+    # (d) tooltips natifs via attribut title sur les symboles d'info
+    assert "addSymbolTooltips" in html
+    assert "SYMBOL_TOOLTIPS" in html
+    assert "<span title=" in html
+
+
+def test_html_sticky_th_supprime():
+    html = _render_sample_html()
+    # bug #2 : plus de sticky sur les <th> (cassé dans overflow-x:auto).
+    # On vérifie que le th utilise la variable --th-bg et non un sticky.
+    assert "background: var(--th-bg)" in html
+
+
+def test_html_repli_cellules_a_surveiller():
+    html = _render_sample_html()
+    # repli en <details> de la section monitoring dense
+    assert "foldCellsToWatch" in html
+    assert "fold-section" in html
+
+
+def test_html_bien_forme_smoke():
+    html = _render_sample_html()
+    assert html.startswith("<!DOCTYPE html>")
+    assert html.rstrip().endswith("</html>")
+    # équilibre grossier des balises script
+    assert html.count("<script") == html.count("</script>")
+    assert html.count("<style>") == html.count("</style>")

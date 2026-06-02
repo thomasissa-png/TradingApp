@@ -158,6 +158,31 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
     --row-alt: #f8fafc;
     --badge-bg: #16a34a;
     --badge-text: #ffffff;
+    --th-bg: #f1f5f9;
+    --dir-long-color: #15803d;
+    --dir-short-color: #b91c1c;
+  }}
+  /* Dark mode automatique selon le réglage système — zéro toggle.
+     Surcharge des variables CSS uniquement, aucune logique JS impactée.
+     Vert/rouge LONG/SHORT éclaircis pour rester lisibles sur fond sombre. */
+  @media (prefers-color-scheme: dark) {{
+    :root {{
+      --bg: #0f172a;
+      --bg-panel: #1e293b;
+      --border: #334155;
+      --border-strong: #475569;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent: #60a5fa;
+      --accent-bg: #1e3a5f;
+      --code-bg: #1e293b;
+      --row-alt: #172033;
+      --badge-bg: #15803d;
+      --badge-text: #ffffff;
+      --th-bg: #243044;
+      --dir-long-color: #4ade80;
+      --dir-short-color: #f87171;
+    }}
   }}
   * {{ box-sizing: border-box; }}
   html, body {{ margin: 0; padding: 0; height: 100%; }}
@@ -294,9 +319,8 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
     vertical-align: top;
   }}
   main table th {{
-    background: #f1f5f9; font-weight: 600;
+    background: var(--th-bg); font-weight: 600;
     border-bottom: 2px solid var(--border-strong);
-    position: sticky; top: 0;
     white-space: nowrap;
   }}
   main table tbody tr:nth-child(even) {{ background: var(--row-alt); }}
@@ -311,8 +335,8 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
   main ul, main ol {{ padding-left: 24px; }}
   main li {{ margin: 4px 0; }}
   /* Colorisation directionnelle LONG/SHORT et scores signés */
-  .dir-long {{ color: #15803d; font-weight: 600; }}
-  .dir-short {{ color: #b91c1c; font-weight: 600; }}
+  .dir-long {{ color: var(--dir-long-color); font-weight: 600; }}
+  .dir-short {{ color: var(--dir-short-color); font-weight: 600; }}
   /* Encart "Comment lire les scores" (détaillé, replié par défaut) */
   .help-box {{
     background: var(--bg-panel);
@@ -348,6 +372,30 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
   .help-box .help-body code {{
     background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 12px;
   }}
+  /* Section repliée « Cellules à surveiller » (monitoring dense) */
+  .fold-section {{
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin: 20px 0;
+    background: var(--bg-panel);
+  }}
+  .fold-section > summary {{
+    cursor: pointer;
+    padding: 10px 14px;
+    font-weight: 600;
+    color: var(--text);
+    list-style: none;
+    user-select: none;
+  }}
+  .fold-section > summary::-webkit-details-marker {{ display: none; }}
+  .fold-section > summary::before {{
+    content: "▸"; display: inline-block; margin-right: 8px;
+    transition: transform 0.15s ease;
+    color: var(--text-muted);
+  }}
+  .fold-section[open] > summary::before {{ transform: rotate(90deg); }}
+  .fold-section > *:not(summary) {{ padding-left: 14px; padding-right: 14px; }}
+  .fold-section > .table-wrap {{ margin-left: 14px; margin-right: 14px; }}
   /* Overlay mobile pour fermer la sidebar */
   .sidebar-overlay {{
     display: none;
@@ -383,6 +431,14 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
     main h2 {{ font-size: 18px; margin-top: 28px; scroll-margin-top: 130px; }}
     main h3 {{ font-size: 15.5px; scroll-margin-top: 130px; }}
     .help-box {{ font-size: 13px; }}
+    /* Tables denses (Détail par actif, ≥8 colonnes) : on masque sur mobile la
+       3e colonne (« Valeur brute », 15 décimales) et la 10e (« Note », redondante).
+       La classe .dense-table est posée en JS UNIQUEMENT sur les tables à ≥8
+       colonnes — la table Synthèse (4 colonnes) n'est PAS ciblée. */
+    .dense-table td:nth-child(3),
+    .dense-table th:nth-child(3),
+    .dense-table td:nth-child(10),
+    .dense-table th:nth-child(10) {{ display: none; }}
   }}
 </style>
 </head>
@@ -477,9 +533,13 @@ function colorizeDirections(root) {{
       const seg = parts[i];
       if (!seg || seg.startsWith('<')) continue;  // balise → inchangée
       let s = seg;
-      // 1) Mots LONG / SHORT (bordés par non-alphanum)
-      s = s.replace(/\\bLONG\\b/g, '<span class="dir-long">LONG</span>');
-      s = s.replace(/\\bSHORT\\b/g, '<span class="dir-short">SHORT</span>');
+      // 1) Mots LONG / SHORT — lookarounds robustes : on ne casse PAS sur un
+      //    emoji ou caractère spécial collé (ex. "SHORT 📰", "🚫 LONG").
+      //    \\b ne fonctionne que sur [A-Za-z0-9_] et échoue dès qu'un emoji
+      //    Unicode est adjacent ; les lookarounds (?<![A-Za-z])/(?![A-Za-z])
+      //    ne se basent que sur les lettres latines et restent corrects.
+      s = s.replace(/(?<![A-Za-z])LONG(?![A-Za-z])/g, '<span class="dir-long">LONG</span>');
+      s = s.replace(/(?<![A-Za-z])SHORT(?![A-Za-z])/g, '<span class="dir-short">SHORT</span>');
       // 2) Scores signés explicites : +1.23 / -0.45 / +12 / -7.5
       //    Borné à gauche par début, espace, parenthèse, deux-points ou crochet
       //    pour éviter d'attraper "x+1" dans une formule éventuelle.
@@ -562,6 +622,90 @@ function wrapTables(root) {{
   }});
 }}
 
+// Marque d'une classe .dense-table les tables ayant beaucoup de colonnes (≥8),
+// pour le masquage CSS de colonnes sur mobile. marked.js rend TOUTES les tables
+// en <table> sans classe : on cible donc par nombre d'en-têtes pour ne PAS
+// toucher la table « Synthèse » (4 colonnes) ni les autres petites tables.
+const DENSE_TABLE_MIN_COLS = 8;
+function markDenseTables(root) {{
+  if (!root) return;
+  root.querySelectorAll('table').forEach(t => {{
+    const headRow = t.querySelector('thead tr') || t.querySelector('tr');
+    if (!headRow) return;
+    const cols = headRow.querySelectorAll('th, td').length;
+    if (cols >= DENSE_TABLE_MIN_COLS) t.classList.add('dense-table');
+  }});
+}}
+
+// Tooltips natifs (attribut title) sur les symboles d'info de la matrice/synthèse.
+// Reprend les définitions de la légende du bulletin. Zéro CSS, zéro espace.
+const SYMBOL_TOOLTIPS = {{
+  '🚫': 'Données insuffisantes — actif non scoré',
+  '⏸': 'En pause — pas de décision actionnable',
+  '📰': 'News > 50% du score quant — pondéré en tête',
+  '⚑': 'Gate régime extrême actif',
+  '⚪': 'Quasi coin-flip (|score| < 0.05) — non-actionnable',
+  '⚠️': 'Divergence primaire/pondéré ou confiance faible',
+  '⚠': 'Divergence primaire/pondéré ou confiance faible',
+  '↯': 'Divergence quant ↔ news (signes opposés)',
+  '⇄': 'Contre-momentum (conclusion vs RSI opposés)',
+  '⇆': 'Contre-momentum (conclusion vs RSI opposés)',
+  '⌛': 'Données périmées (stale)',
+  '⊘': 'News démentie ou déjà cotée',
+}};
+function addSymbolTooltips(root) {{
+  if (!root) return;
+  // Regex couvrant tous les symboles de la map (échappés). On enveloppe chaque
+  // occurrence dans un <span title="…"> sans toucher au contenu des balises.
+  const keys = Object.keys(SYMBOL_TOOLTIPS);
+  const escaped = keys.map(k => k.replace(/[.*+?^${{}}()|[\\]\\\\]/g, '\\\\$&'));
+  const re = new RegExp('(' + escaped.join('|') + ')', 'g');
+  root.querySelectorAll('td, th').forEach(cell => {{
+    if (cell.dataset.tooltipped === '1') return;
+    const parts = cell.innerHTML.split(/(<[^>]+>)/g);
+    let changed = false;
+    for (let i = 0; i < parts.length; i++) {{
+      const seg = parts[i];
+      if (!seg || seg.startsWith('<')) continue;
+      const next = seg.replace(re, (m) => {{
+        const title = SYMBOL_TOOLTIPS[m] || '';
+        return `<span title="${{title}}">${{m}}</span>`;
+      }});
+      if (next !== seg) {{ parts[i] = next; changed = true; }}
+    }}
+    if (changed) cell.innerHTML = parts.join('');
+    cell.dataset.tooltipped = '1';
+  }});
+}}
+
+// Replie la section « Cellules à surveiller » (monitoring dense) dans un
+// <details> fermé par défaut : reste accessible en un clic sans polluer la
+// lecture rapide. On cible le <h2> dont le texte contient « Cellules à surveiller »
+// et on enveloppe ce h2 + tous les noeuds suivants jusqu'au prochain <h2>.
+function foldCellsToWatch(root) {{
+  if (!root) return;
+  const h2s = Array.from(root.querySelectorAll('h2'));
+  const target = h2s.find(h => /cellules\\s+à\\s+surveiller/i.test(h.textContent || ''));
+  if (!target) return;
+  if (target.dataset.folded === '1') return;
+  const details = document.createElement('details');
+  details.className = 'fold-section';
+  const summary = document.createElement('summary');
+  summary.textContent = (target.textContent || 'Cellules à surveiller').trim();
+  details.appendChild(summary);
+  // Déplace tout jusqu'au prochain h2 dans le <details>.
+  const collected = [];
+  let node = target.nextSibling;
+  while (node && !(node.nodeType === 1 && node.tagName === 'H2')) {{
+    collected.push(node);
+    node = node.nextSibling;
+  }}
+  target.parentNode.insertBefore(details, target);
+  collected.forEach(n => details.appendChild(n));
+  target.dataset.folded = '1';
+  target.remove();
+}}
+
 // Slugify simple pour ancres (cohérent avec le rendu marked par défaut, mais on
 // génère nos propres ids pour ne pas dépendre du slugger interne).
 function slugify(s) {{
@@ -616,7 +760,10 @@ function selectBulletin(id) {{
     marked.setOptions({{gfm: true, breaks: false}});
     content.innerHTML = marked.parse(b.markdown);
     colorizeDirections(content);
+    addSymbolTooltips(content);
+    markDenseTables(content);
     wrapTables(content);
+    foldCellsToWatch(content);
     buildSubnav(content);
   }} else {{
     // Fallback : affichage brut si marked n'a pas chargé (offline)

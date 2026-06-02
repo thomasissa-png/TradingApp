@@ -28,9 +28,10 @@ import scoring_analyste as sa  # noqa: E402
 
 
 def _detail_matrix_line(bulletin: str, actif_prefix: str = "| TestActif") -> str:
-    """Retourne la ligne de l'actif dans la MATRICE détaillée (pas la Synthèse
-    du haut, qui montre une version compacte sans les flags ⚪/⌛/⊘)."""
-    matrix_section = bulletin.split("## Matrice")[1].split("## Détail")[0]
+    """Retourne la ligne de l'actif dans la table de synthèse fusionnée
+    ('## Synthèse des décisions' — format riche : direction + note + flags +
+    conf%, anciennement '## Matrice'). #4.2 : les deux tables ont fusionné."""
+    matrix_section = bulletin.split("## Synthèse des décisions")[1].split("## Détail")[0]
     return next(l for l in matrix_section.splitlines() if l.startswith(actif_prefix))
 
 

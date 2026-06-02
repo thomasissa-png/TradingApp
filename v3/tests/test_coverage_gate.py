@@ -236,8 +236,8 @@ def test_bulletin_affiche_emoji_insuffisant(petrole):
     assert "🚫 données insuff." in txt
     # Légende compacte : 🚫 listé (uniquement les symboles présents)
     assert "🚫" in txt and "données insuffisantes" in txt
-    # Plus de LONG/SHORT sur cette cellule
-    matrix_section = txt.split("## Matrice")[1].split("## Détail")[0]
+    # Plus de LONG/SHORT sur cette cellule (table de synthèse fusionnée)
+    matrix_section = txt.split("## Synthèse des décisions")[1].split("## Détail")[0]
     petrole_line = [
         line for line in matrix_section.splitlines()
         if "Pétrole" in line and "|" in line
@@ -274,7 +274,7 @@ def test_bulletin_aucun_marqueur_si_confiance_normale(petrole):
     assert all(r.confidence[h] == "normale" for h in sa.HORIZONS)
     txt = _render([r])
     # La cellule petrole spécifiquement ne porte pas les marqueurs
-    matrix_section = txt.split("## Matrice")[1].split("## Détail")[0]
+    matrix_section = txt.split("## Synthèse des décisions")[1].split("## Détail")[0]
     petrole_line = [
         line for line in matrix_section.splitlines()
         if "Pétrole" in line and "|" in line

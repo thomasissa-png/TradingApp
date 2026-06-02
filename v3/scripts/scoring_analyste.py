@@ -1349,14 +1349,51 @@ def _compute_cell_risk_flags(
     return flags
 
 
+# Flags de surveillance considérés comme des ALERTES réelles et actionnables :
+# une divergence quant↔news, un contre-momentum, un démenti, un déjà-coté ou
+# une incohérence inter-horizons portent un risque DIRECTIONNEL sur une décision
+# ACTÉE (LONG/SHORT). À l'inverse, ⚠️ conf. faible / ⏸ carry / 📰 régime news
+# sont des QUALIFICATEURS de couverture déjà visibles dans la table de synthèse :
+# isolés (sans alerte directionnelle), ils ne justifient PAS une ligne de
+# surveillance dédiée (anti-bruit #5.2).
+SURVEILLANCE_ALERTES_FORTES = {
+    SURVEILLANCE_FLAGS["divergence_qn"],     # ↯
+    SURVEILLANCE_FLAGS["contre_momentum"],   # ⇄
+    SURVEILLANCE_FLAGS["incoherence_ih"],    # ⇆
+    SURVEILLANCE_FLAGS["deja_cote"],         # ⌛
+    SURVEILLANCE_FLAGS["dementi"],           # ⊘
+}
+
+
+def _cellule_a_surveiller(r: "ActifResult", h: str, flags: List[str]) -> bool:
+    """Décide si une cellule mérite une ligne dans 'Cellules à surveiller'.
+
+    Resserrement #5.2 — ne garde que les cellules réellement actionnables ET
+    problématiques :
+      - EXCLUT les INSUFFISANT (🚫) : déjà listés dans leur propre section.
+      - EXCLUT les cellules dont les seuls flags sont des qualificatifs de
+        couverture (⚠️ / ⏸ / 📰) sans alerte directionnelle forte.
+      - GARDE les directions ACTÉES (LONG/SHORT) portant ≥ 1 alerte forte
+        (divergence ↯, contre-momentum ⇄, incohérence ⇆, déjà-coté ⌛, démenti ⊘).
+    """
+    if not flags:
+        return False
+    conc = r.conclusions.get(h, "")
+    if conc not in ("LONG", "SHORT"):
+        return False  # exclut INSUFFISANT (et tout non-directionnel)
+    return any(f in SURVEILLANCE_ALERTES_FORTES for f in flags)
+
+
 def build_surveillance_block(
     results: List["ActifResult"],
     now: datetime,
 ) -> List[str]:
     """Construit le bloc '## ⚠️ Cellules à surveiller'.
 
-    Liste TOUTES les cellules (actif × horizon) portant ≥ 1 drapeau de risque.
-    Format ligne : `- Actif Horizon — DIRECTION — [drapeaux]`.
+    Liste UNIQUEMENT les cellules ACTÉES (LONG/SHORT) portant une alerte
+    directionnelle forte (cf. `_cellule_a_surveiller`). Les INSUFFISANT et les
+    cellules dont le seul flag est un qualificatif de couverture sont exclus
+    (anti-bruit #5.2). Format ligne : `- Actif Horizon — DIRECTION — [drapeaux]`.
     Si aucune → ligne placeholder.
     """
     lines: List[str] = []
@@ -1366,7 +1403,7 @@ def build_surveillance_block(
     for r in results:
         for h in HORIZONS:
             flags = _compute_cell_risk_flags(r, h, now)
-            if not flags:
+            if not _cellule_a_surveiller(r, h, flags):
                 continue
             direction = r.conclusions.get(h, "")
             flags_str = " ".join(flags)
@@ -1374,7 +1411,7 @@ def build_surveillance_block(
     if rows:
         lines.extend(rows)
     else:
-        lines.append("_Aucune cellule à risque ce cycle._")
+        lines.append("_Aucune cellule à risque directionnel ce cycle._")
     lines.append("")
     return lines
 
@@ -1485,6 +1522,113 @@ def _build_legende(flags_present: set) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Régime extrême — annonce UNE fois (anti-bruit visuel #5.1)
+# ---------------------------------------------------------------------------
+#
+# Le gate "régime extrême" est souvent actif sur (quasi) tous les actifs : un
+# ⚑ répété sur 12 lignes de la matrice = 0 information utile. On l'annonce
+# UNE fois en tête si le gate est actif sur la quasi-totalité des actifs, et on
+# retire le ⚑ répété des cellules de la table fusionnée (il reste dans le
+# "Détail par actif" où il a un sens, ligne par critère).
+#
+# Seuil : ≥ 90% des actifs avec gate actif → annonce globale + masquage du ⚑
+# répété. Sous ce seuil, le ⚑ reste sur les cellules concernées (info utile car
+# discriminante). NE CHANGE PAS la logique du gate — uniquement son affichage.
+# ---------------------------------------------------------------------------
+
+REGIME_EXTREME_RATIO = 0.9  # part d'actifs avec gate actif déclenchant l'annonce globale
+
+
+def _actif_gate_actif(r: "ActifResult") -> bool:
+    """True si au moins un gate régime extrême est actif sur cet actif."""
+    return any(c.is_gate and c.gate_active for c in r.criteres)
+
+
+def regime_extreme_global(results: List["ActifResult"]) -> bool:
+    """True si le gate régime extrême est actif sur (quasi) tous les actifs.
+
+    Dans ce cas, le ⚑ répété par cellule n'apporte rien → on l'annonce 1× en
+    tête et on le masque dans la table de synthèse fusionnée.
+    """
+    if not results:
+        return False
+    n_actifs = len(results)
+    n_gate = sum(1 for r in results if _actif_gate_actif(r))
+    return n_gate >= REGIME_EXTREME_RATIO * n_actifs
+
+
+# ---------------------------------------------------------------------------
+# Top 3 convictions du jour (#4.1) — vue d'oiseau en tête de bulletin
+# ---------------------------------------------------------------------------
+#
+# Sélection : les 3 cellules (actif × horizon) ACTIONNABLES avec la plus forte
+# |note| ET une couverture saine (confidence "normale" : ni faible, ni carry,
+# ni régime news, ni insuffisant, ni quasi coin-flip). Si moins de 3 cellules
+# "normale" existent, on en montre moins (jamais de remplissage avec du faible).
+#
+# Raison courte = nom du critère contributeur DOMINANT (|contribution| max sur
+# l'horizon), pour donner le "pourquoi" en un coup d'œil. Zéro invention : si
+# aucun critère ne contribue, pas de raison affichée.
+# ---------------------------------------------------------------------------
+
+
+def _critere_dominant(r: "ActifResult", h: str) -> str:
+    """Nom du critère à plus forte |contribution| pour (actif, horizon).
+
+    Exclut gates et critères n/a. Retourne "" si aucun contributeur réel.
+    """
+    best_nom = ""
+    best_abs = 0.0
+    for c in r.criteres:
+        if c.is_gate or c.is_na:
+            continue
+        ctr = c.contributions.get(h)
+        if ctr is None:
+            continue
+        if abs(ctr) > best_abs:
+            best_abs = abs(ctr)
+            best_nom = c.nom
+    return best_nom
+
+
+def build_top3_block(results: List["ActifResult"]) -> List[str]:
+    """Construit le bloc '## 🎯 Top 3 convictions du jour'.
+
+    Ne retient que les cellules à confidence "normale" (couverture saine) et
+    non quasi coin-flip, triées par |note| décroissante. Affiche au plus 3.
+    """
+    candidates: List[Tuple[float, str, float, str, str]] = []
+    # (abs_note, actif, note_signed, direction, raison)
+    for r in results:
+        for h in HORIZONS:
+            conc = r.conclusions.get(h, "")
+            if conc not in ("LONG", "SHORT"):
+                continue  # exclut INSUFFISANT
+            confidence = r.confidence.get(h, "normale")
+            if confidence != "normale":
+                continue  # exclut conf faible
+            if r.is_carry.get(h, False) or r.is_news_regime.get(h, False):
+                continue  # exclut carry / régime news
+            score = r.scores.get(h, 0.0)
+            if abs(score) < 0.05:
+                continue  # exclut quasi coin-flip
+            raison = _critere_dominant(r, h)
+            candidates.append((abs(score), f"{r.nom} {h}", score, conc, raison))
+    candidates.sort(key=lambda x: x[0], reverse=True)
+
+    lines: List[str] = ["## 🎯 Top 3 convictions du jour", ""]
+    if not candidates:
+        lines.append("_Aucune conviction à couverture suffisante ce cycle._")
+        lines.append("")
+        return lines
+    for _abs, label, score, direction, raison in candidates[:3]:
+        suffix = f" — {raison}" if raison else ""
+        lines.append(f"- **{label} — {direction} ({score:+.2f})**{suffix}")
+    lines.append("")
+    return lines
+
+
 def render_bulletin(
     results: List[ActifResult],
     veille_conclusions: Dict[str, Dict[str, str]],
@@ -1501,6 +1645,17 @@ def render_bulletin(
     lines.append(f"- Analyste version : {ANALYSTE_VERSION}")
     lines.append(f"- Fiches hash : {fiches_h}")
     lines.append(f"- Fraîcheur : {freshness_msg}")
+    # --- Régime extrême : annonce UNE fois (anti-bruit #5.1) ---------------
+    # Si le gate est actif sur (quasi) tous les actifs, on l'annonce ici une
+    # seule fois plutôt que de répéter ⚑ sur 12 lignes de la table. Le ⚑ par
+    # cellule est alors masqué (cf. `regime_global` plus bas), il reste dans le
+    # "Détail par actif" où il discrimine critère par critère.
+    regime_global = regime_extreme_global(results)
+    if regime_global:
+        lines.append(
+            "- ⚠️ Régime extrême actif sur l'ensemble du tableau "
+            "(contexte géopolitique) — drapeau ⚑ non répété par cellule"
+        )
     lines.append("")
     # --- C7 — Cellules à surveiller + cohérence biais agrégé ---------------
     # Bloc placé APRÈS la métadonnée et AVANT "Flips vs veille" pour que
@@ -1546,12 +1701,10 @@ def render_bulletin(
     # `flags_present` accumule les symboles réellement utilisés → légende compacte.
     flags_present: set = set()
     detail_cells: Dict[str, List[str]] = {}      # nom → [cell24, cell7j, cell1m]
-    synth_cells: Dict[str, List[str]] = {}        # nom → [synth24, synth7j, synth1m]
     actionnables: List[ActifResult] = []
     insuffisants: List[ActifResult] = []
     for r in results:
         cells: List[str] = []
-        synth: List[str] = []
         cov_pct = coverage_pct(r.coverage)
         is_insuff_all = all(r.conclusions[h] == CONCLUSION_INSUFFISANT for h in HORIZONS)
         (insuffisants if is_insuff_all else actionnables).append(r)
@@ -1562,9 +1715,15 @@ def render_bulletin(
             if conc == CONCLUSION_INSUFFISANT:
                 flags_present.add("🚫")
                 cells.append(f"🚫 données insuff. ({cov_pct}%)")
-                synth.append("🚫")
                 continue
-            gate_flag = " ⚑" if any(c.is_gate and c.gate_active for c in r.criteres) else ""
+            # ⚑ par cellule : masqué si le régime est annoncé globalement en tête
+            # (anti-bruit #5.1 — 0 information répétée 12×). Sinon, conservé car
+            # discriminant. La logique du gate n'est PAS modifiée, juste l'affichage.
+            gate_flag = (
+                " ⚑"
+                if (not regime_global and any(c.is_gate and c.gate_active for c in r.criteres))
+                else ""
+            )
             if gate_flag:
                 flags_present.add("⚑")
             tie = " (tb)" if h in r.tie_break_notes else ""
@@ -1665,64 +1824,46 @@ def render_bulletin(
                 f"{core_out}{coin_flip_flag}{carry_flag}{regime_flag}{conf_flag}{div_qn_flag}{cmom_flag}"
                 f"{incoh_flag}{ap_flag}{denial_flag}"
             )
-            # Repère compact pour la synthèse : direction + NOTE (score signé),
-            # plus précis que la force ●/○. On affiche la même note que la cellule
-            # de tête de la matrice (pondérée si news dominante, primaire sinon).
-            if is_news and pond_differe:
-                synth_conc, synth_score = conc_p, score_p
-            else:
-                synth_conc, synth_score = conc, score
-            news_mark = " 📰" if is_news else ""
-            synth.append(f"{synth_conc} {synth_score:+.2f}{news_mark}")
         detail_cells[r.nom] = cells
-        synth_cells[r.nom] = synth
 
-    # ── Synthèse des décisions (EN HAUT) ─────────────────────────────────────
-    # Vue d'oiseau : direction + note (score signé) ou 🚫. Le trader
-    # voit les décisions AVANT les diagnostics. Le détail complet reste plus bas.
+    # ── Synthèse des décisions (table UNIQUE, EN HAUT) ───────────────────────
+    # #4.2 — Fusion : on ne garde QU'UNE table de synthèse au format riche
+    # (direction + note + flags + conf%). L'ancienne table ●/○ redondante a été
+    # supprimée. Le trader voit les décisions AVANT les diagnostics ; le détail
+    # par critère reste plus bas (non redondant). La légende et le bloc "données
+    # insuffisantes" sont rattachés à cette table.
     synth_lines: List[str] = []
     synth_lines.append("## Synthèse des décisions")
     synth_lines.append("")
-    synth_lines.append("_Direction + note (score signé : |note| élevée = conviction forte) · 📰 = news>50% du quant · 🚫 données insuffisantes. Détail complet plus bas._")
+    synth_lines.append("_Direction (note signée) + drapeaux + confiance%. |note| élevée = conviction forte · 📰 = news>50% du quant · 🚫 données insuffisantes. Détail par critère plus bas._")
     synth_lines.append("")
     synth_lines.append("| Actif | 24h | 7j | 1m |")
     synth_lines.append("|---|---|---|---|")
     for r in actionnables:
-        s = synth_cells[r.nom]
-        synth_lines.append(f"| {r.nom} | {s[0]} | {s[1]} | {s[2]} |")
-    for r in insuffisants:
-        synth_lines.append(f"| {r.nom} | 🚫 | 🚫 | 🚫 |")
+        c = detail_cells[r.nom]
+        synth_lines.append(f"| {r.nom} | {c[0]} | {c[1]} | {c[2]} |")
+    # Actifs 🚫 « données insuffisantes » regroupés (sous-table séparée, conservée).
+    if insuffisants:
+        synth_lines.append("")
+        synth_lines.append("**Données insuffisantes (🚫, non actionnables) :**")
+        synth_lines.append("")
+        synth_lines.append("| Actif | 24h | 7j | 1m |")
+        synth_lines.append("|---|---|---|---|")
+        for r in insuffisants:
+            c = detail_cells[r.nom]
+            synth_lines.append(f"| {r.nom} | {c[0]} | {c[1]} | {c[2]} |")
+    synth_lines.append("")
+    synth_lines.append(_build_legende(flags_present))
     synth_lines.append("")
     # On insère la synthèse juste après le H1 + métadonnée (avant Surveillance).
     # `lines` contient déjà : H1, métadonnée, "", surveillance..., biais, flips.
-    # → on la place en tête de `lines` après la dernière ligne de méta (Fraîcheur).
+    # → on la place après la dernière ligne de méta (Fraîcheur / régime extrême).
     _meta_end = 0
     for i, ln in enumerate(lines):
-        if ln.startswith("- Fraîcheur"):
+        if ln.startswith("- Fraîcheur") or ln.startswith("- ⚠️ Régime extrême"):
             _meta_end = i + 1
-            break
-    lines = lines[:_meta_end] + [""] + synth_lines + lines[_meta_end:]
+    lines = lines[:_meta_end] + [""] + build_top3_block(results) + synth_lines + lines[_meta_end:]
 
-    lines.append("## Matrice (12 actifs × 3 horizons) — primaire ±1, pondéré en annotation")
-    lines.append("")
-    lines.append("| Actif | 24h | 7j | 1m |")
-    lines.append("|---|---|---|---|")
-    for r in actionnables:
-        c = detail_cells[r.nom]
-        lines.append(f"| {r.nom} | {c[0]} | {c[1]} | {c[2]} |")
-    # Actifs 🚫 « données insuffisantes » regroupés en fin de matrice (dé-emphasizés).
-    if insuffisants:
-        lines.append("")
-        lines.append("**Données insuffisantes (non actionnables) :**")
-        lines.append("")
-        lines.append("| Actif | 24h | 7j | 1m |")
-        lines.append("|---|---|---|---|")
-        for r in insuffisants:
-            c = detail_cells[r.nom]
-            lines.append(f"| {r.nom} | {c[0]} | {c[1]} | {c[2]} |")
-    lines.append("")
-    lines.append(_build_legende(flags_present))
-    lines.append("")
     lines.append("## Détail par actif")
     for r in results:
         lines.append(f"### {r.nom}")

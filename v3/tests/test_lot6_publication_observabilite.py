@@ -96,7 +96,7 @@ def test_surveillance_block_placeholder_si_aucune_cellule_a_risque():
     res.incoherence_inter_horizons = False
     res.confidence = {h: "normale" for h in sa.HORIZONS}
     bulletin = sa.render_bulletin([res], {}, NOW, "h", "ok")
-    assert "_Aucune cellule à risque ce cycle._" in bulletin
+    assert "_Aucune cellule à risque directionnel ce cycle._" in bulletin
 
 
 def test_surveillance_block_liste_cellule_avec_divergence():
@@ -120,22 +120,23 @@ def test_surveillance_block_liste_cellule_avec_divergence():
     assert "TestActif 1m" not in section
 
 
-def test_surveillance_block_liste_insuffisant():
-    """Cellule INSUFFISANT → listée avec 🚫."""
+def test_surveillance_block_exclut_insuffisant():
+    """#5.2 — Cellule INSUFFISANT → EXCLUE de la surveillance (déjà listée dans
+    sa propre sous-table 🚫). Même avec un flag directionnel co-présent, une
+    cellule non-directionnelle (INSUFFISANT) n'est jamais 'à surveiller'."""
     fiche = _fiche()
     res = sa.score_actif("test", fiche, _vals(1.0, 1.0))
-    # Force conclusion insuffisant
+    # Force conclusion insuffisant + une divergence (qui ne doit PAS la faire remonter)
     res.conclusions = {h: sa.CONCLUSION_INSUFFISANT for h in sa.HORIZONS}
     res.confidence = {h: "insuffisant" for h in sa.HORIZONS}
-    res.divergence_quant_news = {h: False for h in sa.HORIZONS}
+    res.divergence_quant_news = {h: True for h in sa.HORIZONS}
     res.contre_momentum = {h: False for h in sa.HORIZONS}
     res.incoherence_inter_horizons = False
     bulletin = sa.render_bulletin([res], {}, NOW, "h", "ok")
     section = bulletin.split("## ⚠️ Cellules à surveiller", 1)[1].split("##", 1)[0]
-    assert "🚫" in section
-    assert "TestActif 24h" in section
-    assert "TestActif 7j" in section
-    assert "TestActif 1m" in section
+    # Aucune ligne INSUFFISANT dans la surveillance → placeholder
+    assert "_Aucune cellule à risque directionnel ce cycle._" in section
+    assert "TestActif 24h" not in section
 
 
 def test_surveillance_block_liste_contre_momentum():
@@ -153,14 +154,19 @@ def test_surveillance_block_liste_contre_momentum():
 
 
 def test_surveillance_block_apparait_avant_flips():
-    """Ordre : Surveillance APRÈS métadonnée mais AVANT 'Flips vs veille'."""
+    """Ordre : Synthèse (table fusionnée) AVANT Surveillance, elle-même AVANT
+    'Flips vs veille' puis 'Détail par actif'. La table '## Matrice' a été
+    fusionnée dans '## Synthèse des décisions' (#4.2)."""
     fiche = _fiche()
     res = sa.score_actif("test", fiche, _vals(1.0, 1.0))
     bulletin = sa.render_bulletin([res], {}, NOW, "h", "ok")
+    idx_synthese = bulletin.index("## Synthèse des décisions")
     idx_surveillance = bulletin.index("## ⚠️ Cellules à surveiller")
     idx_flips = bulletin.index("## Flips vs veille")
-    idx_matrice = bulletin.index("## Matrice")
-    assert idx_surveillance < idx_flips < idx_matrice
+    idx_detail = bulletin.index("## Détail par actif")
+    assert idx_synthese < idx_surveillance < idx_flips < idx_detail
+    # Plus de table '## Matrice' séparée (fusionnée dans la synthèse)
+    assert "## Matrice" not in bulletin
 
 
 # ===========================================================================

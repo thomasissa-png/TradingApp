@@ -65,19 +65,23 @@ def _vals_with_rationale(rationale: str, conviction: str = "high") -> dict:
 # Change 1 — ordre des sections du bulletin
 # ---------------------------------------------------------------------------
 
-def test_flips_section_appears_before_matrice():
-    """## Flips vs veille DOIT précéder ## Matrice dans le bulletin."""
+def test_flips_section_appears_before_detail():
+    """## Flips vs veille DOIT précéder le gros tableau '## Détail par actif'.
+    (#4.2 : la table riche '## Matrice' a fusionné dans '## Synthèse des
+    décisions', placée tout en haut ; les flips restent au-dessus du détail.)"""
     res = sa.score_actif("test", _fiche(), _vals_with_rationale("x"))
     bulletin = sa.render_bulletin(
         [res], {}, datetime(2026, 6, 1, tzinfo=timezone.utc), "h", "ok",
     )
     idx_flips = bulletin.find("## Flips vs veille")
-    idx_matrice = bulletin.find("## Matrice")
+    idx_detail = bulletin.find("## Détail par actif")
     assert idx_flips != -1, "Section '## Flips vs veille' absente du bulletin"
-    assert idx_matrice != -1, "Section '## Matrice' absente du bulletin"
-    assert idx_flips < idx_matrice, (
-        f"Flips ({idx_flips}) doit précéder Matrice ({idx_matrice})"
+    assert idx_detail != -1, "Section '## Détail par actif' absente du bulletin"
+    assert idx_flips < idx_detail, (
+        f"Flips ({idx_flips}) doit précéder Détail ({idx_detail})"
     )
+    # Plus de table '## Matrice' séparée (fusionnée dans la synthèse)
+    assert "## Matrice" not in bulletin
 
 
 def test_flips_section_placeholder_when_empty():
@@ -103,8 +107,8 @@ def test_flips_section_lists_flips_when_present():
     # Le flip doit apparaître
     assert "[24h]" in bulletin
     assert "SHORT → LONG" in bulletin
-    # La section flips reste avant matrice
-    assert bulletin.find("## Flips vs veille") < bulletin.find("## Matrice")
+    # La section flips reste avant le détail par actif
+    assert bulletin.find("## Flips vs veille") < bulletin.find("## Détail par actif")
 
 
 def test_matrice_table_intact_after_reorder():

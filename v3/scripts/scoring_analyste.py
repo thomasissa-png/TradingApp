@@ -56,6 +56,38 @@ COVERAGE_MIN: float = 0.40
 CONCLUSION_INSUFFISANT: str = "INSUFFISANT"
 
 # ---------------------------------------------------------------------------
+# HYSTÉRÉSIS DE MAINTIEN ("carry-forward") — horizon-aware (choix Thomas)
+# ---------------------------------------------------------------------------
+# Problème résolu : un simple TROU de data (coverage qui tombe sous COVERAGE_MIN
+# le temps d'un cycle, ex. FRED 429) faisait basculer une cellule de LONG/SHORT
+# valide à `INSUFFISANT` (🚫), EFFAÇANT une direction qui était bonne la veille
+# (cas réel : Cuivre LONG confirmé hier → 🚫 aujourd'hui à 35% de couverture).
+#
+# Nouvelle logique de gate (insérée là où INSUFFISANT était décidé) :
+#   coverage ≥ COVERAGE_MIN (0.40)            → comportement inchangé.
+#   COVERAGE_FLOOR ≤ coverage < COVERAGE_MIN  → MAINTIEN possible si :
+#       (1) il existe une dernière direction valide (LONG/SHORT) au(x) cycle(s)
+#           précédent(s) pour ce (fiche_key, horizon),
+#       (2) les critères ENCORE présents ne CONTREDISENT pas cette direction
+#           (pas de retournement franc : |score| < EPSILON_CARRY = neutre OK ;
+#            |score| ≥ EPSILON_CARRY et signe opposé = contradiction → 🚫),
+#       (3) le maintien n'est pas PÉRIMÉ (âge < CARRY_MAX_AGE_H[horizon]).
+#       → conclusion = direction maintenue, confidence = "faible", is_carry=True,
+#         marqueur visuel ⏸. La cellule garde une VRAIE direction → elle EST
+#         mesurée comme une prédiction (voulu : si on agirait dessus, on est scoré).
+#   coverage < COVERAGE_FLOOR (0.25) OU contradiction OU périmé OU aucune
+#       direction antérieure                  → INSUFFISANT (🚫) comme aujourd'hui.
+COVERAGE_FLOOR: float = 0.25
+# Âge max de maintien par horizon (péremption). Au-delà → 🚫 (on ne maintient
+# pas une direction trop vieille sur data partielle). Horizon-aware : un même
+# trou de data peut être maintenable en 7j (fenêtre 48h) mais périmé en 1m (24h).
+CARRY_MAX_AGE_H: Dict[str, int] = {"24h": 24, "7j": 48, "1m": 24}
+# Epsilon de contradiction : réutilise le seuil coin_flip (|score| < 0.05 =
+# non-actionnable / neutre). Si |score courant| ≥ EPSILON_CARRY ET signe opposé
+# à la direction maintenue → retournement franc → contradiction → 🚫.
+EPSILON_CARRY: float = 0.05
+
+# ---------------------------------------------------------------------------
 # GATE Réconciliation Σ contributions = score (garde-fou P0 déterministe)
 # ---------------------------------------------------------------------------
 # But : garantir que le score d'un horizon est EXACTEMENT égal à la somme des
@@ -498,6 +530,13 @@ class ActifResult:
     #              les horizons en cas de stale).
     coverage: float = 1.0
     confidence: Dict[str, str] = field(default_factory=dict)
+    # --- Hystérésis de maintien (carry-forward) ----------------------------
+    # is_carry[h] = True si la conclusion de l'horizon h est une DIRECTION
+    # MAINTENUE (LONG/SHORT carry-forward) au lieu d'un INSUFFISANT, parce que
+    # COVERAGE_FLOOR ≤ coverage < COVERAGE_MIN + direction antérieure cohérente
+    # et récente. Rendu visuel : ⏸. La cellule reste une vraie prédiction
+    # (mesurée VRAI/FAUX). Vide/False ailleurs.
+    is_carry: Dict[str, bool] = field(default_factory=dict)
     # --- Lot 4a — Détecteurs directionnels (flag-only, n'altèrent PAS conclusions)
     # C3 : divergence quant↔news par horizon (signes opposés + amplitudes > eps).
     # quant_total_par_horizon / news_total_par_horizon : valeurs réelles pour le
@@ -568,6 +607,92 @@ def coverage_pct(coverage: float) -> int:
     return pct
 
 
+def derniere_direction_valide(
+    fiche_key: str,
+    horizon: str,
+    now: datetime,
+    max_age_h: float,
+    *,
+    log_dir: Optional[Path] = None,
+    exclude_generated_at: Optional[str] = None,
+) -> Optional[str]:
+    """Cherche la dernière direction valide (LONG/SHORT) d'une cellule.
+
+    Scanne les snapshots `v3/data/decision-log/*.jsonl` du plus RÉCENT au plus
+    ANCIEN (le nom de fichier `YYYY-MM-DD-HHMM.jsonl` donne l'ordre chronologique),
+    en EXCLUANT le run courant, dans la fenêtre d'âge `max_age_h`. Retourne la
+    première `conclusion_pond` ∈ {LONG, SHORT} trouvée pour (fiche_key, horizon).
+
+    Robustesse (zéro exception, jamais de crash de la prod) :
+      - dossier absent / vide                → None
+      - fichier illisible / JSON mal formé   → ligne ignorée, on continue
+      - `generated_at` absent / illisible    → ligne ignorée (impossible de
+                                                dater → ne peut pas valider l'âge)
+      - run courant (exclude_generated_at)   → fichier entier ignoré
+      - conclusion INSUFFISANT/FLAT/vide     → ignorée (on cherche une direction)
+
+    `exclude_generated_at` : le `generated_at` ISO du run courant. Un snapshot
+    portant exactement cette valeur est ignoré (on ne maintient pas sur soi-même
+    si le decision-log courant a déjà été écrit dans la même minute).
+    """
+    import json as _json
+
+    base = log_dir if log_dir is not None else DECISION_LOG_DIR
+    try:
+        if not base.exists():
+            return None
+        files = sorted(base.glob("*.jsonl"), reverse=True)  # plus récent d'abord
+    except OSError:
+        return None
+
+    now_utc = now.astimezone(timezone.utc) if now.tzinfo else now.replace(tzinfo=timezone.utc)
+    cutoff = now_utc - timedelta(hours=float(max_age_h))
+
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = _json.loads(line)
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(rec, dict):
+                continue
+            if rec.get("fiche_key") != fiche_key or rec.get("horizon") != horizon:
+                continue
+            gen = rec.get("generated_at")
+            if exclude_generated_at and gen == exclude_generated_at:
+                continue
+            # Datation : indispensable pour valider la fenêtre de péremption.
+            if not isinstance(gen, str):
+                continue
+            try:
+                gen_dt = datetime.fromisoformat(gen)
+            except ValueError:
+                continue
+            if gen_dt.tzinfo is None:
+                gen_dt = gen_dt.replace(tzinfo=timezone.utc)
+            gen_utc = gen_dt.astimezone(timezone.utc)
+            if gen_utc < cutoff:
+                # Trop ancien pour CE snapshot — mais un fichier plus récent
+                # listé après ? Non : on parcourt du plus récent au plus ancien,
+                # donc une fois sous le cutoff on continue de scanner les autres
+                # lignes du fichier (ordre intra-fichier non garanti), puis on
+                # laisse la boucle externe passer aux fichiers suivants (plus
+                # vieux → tous sous le cutoff → None par épuisement). On ne `break`
+                # pas : robustesse face à un ordre intra-fichier non chronologique.
+                continue
+            conc = rec.get("conclusion_pond")
+            if conc in ("LONG", "SHORT"):
+                return conc
+    return None
+
+
 def _conclusion_from_score(score: float) -> Optional[str]:
     if score > SEUIL_LONG:
         return "LONG"
@@ -611,6 +736,9 @@ def score_actif(
     valeurs_actif: dict,
     veille_conclusions: Optional[Dict[str, str]] = None,
     is_stale: bool = False,
+    now: Optional[datetime] = None,
+    log_dir: Optional[Path] = None,
+    current_generated_at: Optional[str] = None,
 ) -> ActifResult:
     """Calcule le score d'un actif sur les 3 horizons.
 
@@ -892,9 +1020,53 @@ def score_actif(
     # sur cet horizon (override la règle jamais-neutre, voir tie_break).
     coverage = compute_coverage(criteres_res)
     confidence: Dict[str, str] = {}
+    is_carry: Dict[str, bool] = {h: False for h in HORIZONS}
+    now_carry = now or datetime.now(timezone.utc)
     for h in HORIZONS:
         confidence[h] = derive_confidence(coverage, is_stale=is_stale)
-        if confidence[h] == "insuffisant":
+        if confidence[h] != "insuffisant":
+            continue
+        # confidence == "insuffisant" → coverage < COVERAGE_MIN.
+        # HYSTÉRÉSIS DE MAINTIEN : avant d'effacer la direction par 🚫, on tente
+        # un carry-forward si la couverture reste au-dessus du PLANCHER et qu'il
+        # existe une direction antérieure cohérente et récente (cf. CONSTANTES).
+        maintenu: Optional[str] = None
+        if coverage >= COVERAGE_FLOOR:
+            max_age_h = CARRY_MAX_AGE_H.get(h, 0)
+            if max_age_h > 0:
+                derniere = derniere_direction_valide(
+                    fiche_key, h, now_carry, max_age_h,
+                    log_dir=log_dir,
+                    exclude_generated_at=current_generated_at,
+                )
+                if derniere in ("LONG", "SHORT"):
+                    # Contradiction ? Le score courant (sur critères présents)
+                    # a-t-il un signe OPPOSÉ avec une magnitude non négligeable ?
+                    # |score| < EPSILON_CARRY = neutre → PAS de contradiction.
+                    score_courant = scores.get(h, 0.0)
+                    sens_courant = (
+                        "LONG" if score_courant > 0
+                        else ("SHORT" if score_courant < 0 else None)
+                    )
+                    contradit = (
+                        abs(score_courant) >= EPSILON_CARRY
+                        and sens_courant is not None
+                        and sens_courant != derniere
+                    )
+                    if not contradit:
+                        maintenu = derniere
+
+        if maintenu is not None:
+            # MAINTIEN : on conserve une VRAIE direction (mesurée comme prédiction).
+            # confidence reste dégradée à "faible" (data partielle) + drapeau ⏸.
+            conclusions[h] = maintenu
+            conclusions_pond[h] = maintenu
+            confidence[h] = "faible"
+            is_carry[h] = True
+            tie_notes.pop(h, None)
+            tie_notes_pond.pop(h, None)
+            diverge[h] = False
+        else:
             # Override jamais-neutre : on REMPLACE LONG/SHORT par INSUFFISANT.
             # On conserve les scores numériques (utiles pour audit/decision-log)
             # mais la conclusion textuelle devient explicite.
@@ -928,6 +1100,7 @@ def score_actif(
         news_cap_info=news_cap_info,
         coverage=coverage,
         confidence=confidence,
+        is_carry=is_carry,
         divergence_quant_news=divergence_qn,
         contre_momentum=contre_mom,
         momentum_valeur=mom_val,
@@ -991,6 +1164,7 @@ def load_veille(bulletins_dir: Path, today: datetime) -> Tuple[Optional[Path], D
 # Drapeaux de risque (sémantique alignée avec render_bulletin / build_decision_log_records)
 SURVEILLANCE_FLAGS = {
     "insuffisant": "🚫",     # conclusion INSUFFISANT (gate suffisance)
+    "carry": "⏸",            # direction maintenue (carry-forward, data partielle)
     "conf_low": "⚠️",        # confidence == "faible"
     "divergence_qn": "↯",   # divergence quant↔news
     "contre_momentum": "⇄", # conclusion vs RSI opposés
@@ -1019,6 +1193,9 @@ def _compute_cell_risk_flags(
     # 🚫 insuffisant — prioritaire (override de la direction)
     if conc == CONCLUSION_INSUFFISANT:
         flags.append(SURVEILLANCE_FLAGS["insuffisant"])
+    elif r.is_carry.get(h, False):
+        # ⏸ direction maintenue (carry-forward) — plus précis que ⚠️ générique.
+        flags.append(SURVEILLANCE_FLAGS["carry"])
     elif confidence == "faible":
         flags.append(SURVEILLANCE_FLAGS["conf_low"])
 
@@ -1153,6 +1330,7 @@ def assert_bias_coherence(
 # UNIQUEMENT si le symbole est présent dans CE bulletin (légende compacte).
 _LEGENDE_DEFS: List[Tuple[str, str]] = [
     ("🚫", "données insuffisantes — pas de prédiction"),
+    ("⏸", "direction maintenue (carry-forward) — data partielle, dernière direction valide conservée"),
     ("⚑", "gate régime extrême actif"),
     ("📰", "news >50% du quant — pondéré affiché en tête, brut entre parenthèses"),
     ("⚪", "quasi coin-flip (|score|<0.05) — non-actionnable"),
@@ -1291,9 +1469,18 @@ def render_bulletin(
             coin_flip_flag = " ⚪" if abs(score) < 0.05 else ""
             if coin_flip_flag:
                 flags_present.add("⚪")
-            conf_flag = f" ⚠️ conf. faible ({cov_pct}%)" if confidence == "faible" else ""
-            if conf_flag:
-                flags_present.add("⚠️")
+            # ⏸ carry-forward : direction MAINTENUE sur data partielle. Prend le
+            # pas sur le ⚠️ générique (les deux sont en confidence "faible", mais
+            # ⏸ porte l'info plus précise "direction conservée d'un cycle antérieur").
+            carry_flag = ""
+            if r.is_carry.get(h, False):
+                carry_flag = f" ⏸ maintenu ({cov_pct}%)"
+                flags_present.add("⏸")
+                conf_flag = ""
+            else:
+                conf_flag = f" ⚠️ conf. faible ({cov_pct}%)" if confidence == "faible" else ""
+                if conf_flag:
+                    flags_present.add("⚠️")
             div_qn_flag = " ↯" if r.divergence_quant_news.get(h, False) else ""
             if div_qn_flag:
                 flags_present.add("↯")
@@ -1344,7 +1531,7 @@ def render_bulletin(
                 # Pondéré identique au primaire → on n'affiche pas [pond:...].
                 core = f"{conc} ({score:+.2f}){tie}{gate_flag}{news_flag}"
             cells.append(
-                f"{core}{coin_flip_flag}{conf_flag}{div_qn_flag}{cmom_flag}"
+                f"{core}{coin_flip_flag}{carry_flag}{conf_flag}{div_qn_flag}{cmom_flag}"
                 f"{incoh_flag}{ap_flag}{denial_flag}"
             )
             # Repère compact pour la synthèse : direction + NOTE (score signé),
@@ -1744,6 +1931,9 @@ def build_decision_log_records(
                 # de coverage par horizon, ou is_stale par horizon).
                 "coverage": round(r.coverage, 4),
                 "confidence": r.confidence.get(h, "normale"),
+                # Hystérésis de maintien : True si la direction est un carry-forward
+                # (data partielle, dernière direction valide conservée — marqueur ⏸).
+                "is_carry": bool(r.is_carry.get(h, False)),
                 "criteres": contribs,
                 "news_total": news_total,
                 "quant_total": quant_total,
@@ -1802,12 +1992,23 @@ def run(
     bulletins_dir.mkdir(parents=True, exist_ok=True)
     veille_path, veille_conclusions = load_veille(bulletins_dir, now)
 
+    # generated_at du run courant : sert à EXCLURE le snapshot courant lors du
+    # scan carry-forward (cohérent avec build_decision_log_records qui utilise
+    # now.isoformat()). Le decision-log courant n'est pas encore écrit ici (run()
+    # le fait après le bulletin via build_bulletin pipeline), mais on l'exclut par
+    # sécurité au cas où un run serait rejoué dans la même minute.
+    current_generated_at = now.isoformat()
     results: List[ActifResult] = []
     for key, fiche in fiches.items():
         valeurs = data.get(key, {}) or {}
         nom_lower = fiche.get("actif", key).lower()
         veille_for_actif = veille_conclusions.get(nom_lower, {})
-        results.append(score_actif(key, fiche, valeurs, veille_for_actif))
+        results.append(score_actif(
+            key, fiche, valeurs, veille_for_actif,
+            now=now,
+            log_dir=DECISION_LOG_DIR,
+            current_generated_at=current_generated_at,
+        ))
 
     fhash = fiches_hash(fiches)
     content = render_bulletin(results, veille_conclusions, now, fhash, fresh_msg)

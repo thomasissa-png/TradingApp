@@ -271,7 +271,17 @@ CELL_LONG_SHORT_RE = re.compile(
 # et le lead comme conclusion_pond/score_pond → aucune dérive de mesure.
 CELL_NEWS_LEAD_RE = re.compile(
     r"\s*(?P<conc_lead>LONG|SHORT)\s+(?P<score_lead>[+-]?\d+(?:\.\d+)?)\s*"
-    r"\(brut\s+(?P<score_brut>[+-]?\d+(?:\.\d+)?)\)"
+    # Le rendu inclut la direction dans la parenthèse : "(brut LONG +7.98)".
+    # On la tolère en option pour rester compatible avec l'ancien "(brut +7.98)".
+    r"\(brut\s+(?:(?:LONG|SHORT)\s+)?(?P<score_brut>[+-]?\d+(?:\.\d+)?)\)"
+)
+# Format RÉGIME NEWS (audit 03/06, Q2) : la direction vient du biais news ; le
+# score quant (overridé, signe parfois opposé) est étiqueté [quant ±X].
+# Ex : "LONG [quant -0.08] 📰 régime news (19%)". La conclusion = la direction
+# news ; le score mesuré = le quant affiché. Sans ce parser, ces cellules
+# (actionnées) ne seraient PAS mesurées VRAI/FAUX.
+CELL_NEWS_REGIME_RE = re.compile(
+    r"(?P<conc>LONG|SHORT)\s+\[quant\s+(?P<score>[+-]?\d+(?:\.\d+)?)\]"
 )
 CELL_INSUFFISANT_RE = re.compile(r"données insuff\.")
 # Annotation pondérée optionnelle : "[pond:LONG +0.42]"
@@ -364,6 +374,7 @@ def parse_bulletin(path: Path) -> List[BulletinCell]:
         has_signal = any(
             CELL_LONG_SHORT_RE.search(ct)
             or CELL_NEWS_LEAD_RE.search(ct)
+            or CELL_NEWS_REGIME_RE.search(ct)
             or CELL_INSUFFISANT_RE.search(ct)
             for ct in cell_texts
         )
@@ -414,6 +425,27 @@ def parse_bulletin(path: Path) -> List[BulletinCell]:
                         score=score,
                         conclusion_pond=conc_pond,
                         score_pond=score_pond,
+                    )
+                )
+                continue
+            # Régime news : direction = biais news, score = quant étiqueté.
+            mr = CELL_NEWS_REGIME_RE.search(cell_text)
+            if mr:
+                conclusion = mr.group("conc")
+                try:
+                    score = float(mr.group("score"))
+                except (TypeError, ValueError):
+                    continue
+                cells.append(
+                    BulletinCell(
+                        bulletin_date=bdate,
+                        bulletin_id=bid,
+                        actif_name=actif_raw,
+                        horizon=h,
+                        conclusion=conclusion,
+                        score=score,
+                        conclusion_pond=None,
+                        score_pond=None,
                     )
                 )
                 continue

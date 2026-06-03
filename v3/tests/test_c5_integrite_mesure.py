@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -173,7 +173,10 @@ class TestC5EcheanceFigee:
         [("24h", 1), ("7j", 7), ("1m", 30)],
     )
     def test_compute_echeance_pour_chaque_horizon(self, horizon, delta_days):
-        bdate = date(2026, 5, 1)
+        # 2026-05-06 = mercredi → le report 24h jour-ouvré reste +1 calendaire
+        # (jeudi). On valide ici l'égalité avec HORIZON_DAYS en semaine ; les
+        # cas week-end (vendredi→lundi) sont couverts par TestEcheance24hJoursOuvres.
+        bdate = date(2026, 5, 6)
         ech = jr.compute_echeance(bdate, horizon)
         # Doit utiliser EXACTEMENT la constante existante (pas de redéfinition)
         assert (ech - bdate).days == delta_days
@@ -202,14 +205,122 @@ class TestC5EcheanceFigee:
         assert m.echeance == date(2026, 5, 8)
 
     def test_measure_cell_echeance_24h(self, fiche_petrole):
+        # 2026-05-06 = mercredi → échéance 24h jeudi 2026-05-07 (jour ouvré).
+        c = _cell("LONG", "24h", bdate=date(2026, 5, 6))
+        m = jr.measure_cell(c, "petrole", fiche_petrole, 100.0, 102.0)
+        assert m.echeance == date(2026, 5, 7)
+
+    def test_measure_cell_echeance_24h_vendredi_reporte_lundi(self, fiche_petrole):
+        # 2026-05-01 = vendredi → échéance 24h reportée au lundi 2026-05-04
+        # (marchés fermés le week-end : ni samedi ni dimanche).
         c = _cell("LONG", "24h", bdate=date(2026, 5, 1))
         m = jr.measure_cell(c, "petrole", fiche_petrole, 100.0, 102.0)
-        assert m.echeance == date(2026, 5, 2)
+        assert m.echeance == date(2026, 5, 4)
 
     def test_measure_cell_echeance_1m(self, fiche_petrole):
         c = _cell("LONG", "1m", bdate=date(2026, 5, 1))
         m = jr.measure_cell(c, "petrole", fiche_petrole, 100.0, 110.0)
         assert m.echeance == date(2026, 5, 31)
+
+
+class TestEcheance24hJoursOuvres:
+    """Échéance 24h reportée au prochain jour ouvré (marchés fermés le week-end).
+
+    Lun→jeu : +1 jour calendaire. Vendredi → lundi. 7j/1m inchangés (calendaires).
+    Déterministe, sans look-ahead (ne dépend que de bulletin_date et horizon).
+    """
+
+    def test_24h_vendredi_vers_lundi(self):
+        # 2026-05-01 = vendredi → échéance 24h = lundi 2026-05-04 (saute sam/dim).
+        assert jr.compute_echeance(date(2026, 5, 1), "24h") == date(2026, 5, 4)
+
+    def test_24h_mercredi_vers_jeudi(self):
+        # 2026-05-06 = mercredi → échéance 24h = jeudi 2026-05-07 (+1 calendaire).
+        assert jr.compute_echeance(date(2026, 5, 6), "24h") == date(2026, 5, 7)
+
+    @pytest.mark.parametrize(
+        "bdate,attendu",
+        [
+            (date(2026, 5, 4), date(2026, 5, 5)),  # lundi → mardi
+            (date(2026, 5, 5), date(2026, 5, 6)),  # mardi → mercredi
+            (date(2026, 5, 6), date(2026, 5, 7)),  # mercredi → jeudi
+            (date(2026, 5, 7), date(2026, 5, 8)),  # jeudi → vendredi
+            (date(2026, 5, 8), date(2026, 5, 11)),  # vendredi → lundi
+        ],
+    )
+    def test_24h_chaque_jour_semaine(self, bdate, attendu):
+        assert jr.compute_echeance(bdate, "24h") == attendu
+
+    def test_24h_samedi_emission_vers_lundi(self):
+        # Émission un samedi (forçage manuel possible) → 24h = +1 (dimanche) puis
+        # report → lundi. Robustesse : jamais une échéance week-end.
+        assert jr.compute_echeance(date(2026, 5, 2), "24h") == date(2026, 5, 4)
+        assert jr.compute_echeance(date(2026, 5, 2), "24h").weekday() < 5
+
+    def test_7j_inchange_calendaire(self):
+        # Vendredi 2026-05-01 + 7j calendaires = vendredi 2026-05-08 (inchangé).
+        assert jr.compute_echeance(date(2026, 5, 1), "7j") == date(2026, 5, 8)
+        # Et tombe même un week-end sans report (calendaire assumé).
+        # 2026-05-09 = samedi : émission jeudi 2026-05-02... vérif générique :
+        for bdate in (date(2026, 5, 1), date(2026, 5, 6), date(2026, 5, 8)):
+            assert jr.compute_echeance(bdate, "7j") == bdate + timedelta(days=7)
+
+    def test_1m_inchange_calendaire(self):
+        for bdate in (date(2026, 5, 1), date(2026, 5, 6), date(2026, 5, 8)):
+            assert jr.compute_echeance(bdate, "1m") == bdate + timedelta(days=30)
+
+    def test_invariant_c5_echeance_toujours_superieure(self):
+        # Sur tous les jours d'une semaine et tous horizons, echeance > emission
+        # (zéro look-ahead, assertion d'intégrité préservée).
+        for offset in range(0, 14):
+            bdate = date(2026, 5, 1) + timedelta(days=offset)
+            for h in jr.HORIZONS:
+                assert jr.compute_echeance(bdate, h) > bdate
+
+    def test_24h_echeance_jamais_week_end(self):
+        # Quelle que soit la date d'émission, l'échéance 24h tombe un jour ouvré.
+        for offset in range(0, 14):
+            bdate = date(2026, 5, 1) + timedelta(days=offset)
+            assert jr.compute_echeance(bdate, "24h").weekday() < 5
+
+    def test_deterministe_independant_heure(self):
+        # Pure : deux appels identiques → même résultat (pas d'état/horloge).
+        a = jr.compute_echeance(date(2026, 5, 1), "24h")
+        b = jr.compute_echeance(date(2026, 5, 1), "24h")
+        assert a == b == date(2026, 5, 4)
+
+
+class TestMesureDegeneree:
+    """Filet : prix courant strictement == prix d'émission → non-conclusive
+    (mouvement nul = marché probablement fermé / même tick). Ni VRAI ni FAUSSE.
+    """
+
+    def test_prix_identiques_non_conclusive_long(self, fiche_petrole):
+        c = _cell("LONG", "24h", bdate=date(2026, 5, 6))
+        m = jr.measure_cell(
+            c, "petrole", fiche_petrole, 100.0, 100.0,
+            today=date(2026, 5, 8),  # après échéance (jeudi 05-07)
+        )
+        assert m.outcome == jr.OUTCOME_NC
+        assert m.delta_pct == 0.0
+
+    def test_prix_identiques_non_conclusive_short(self, fiche_petrole):
+        c = _cell("SHORT", "24h", bdate=date(2026, 5, 6))
+        m = jr.measure_cell(
+            c, "petrole", fiche_petrole, 123.45, 123.45,
+            today=date(2026, 5, 8),
+        )
+        assert m.outcome == jr.OUTCOME_NC
+        assert m.outcome not in (jr.OUTCOME_VRAI, jr.OUTCOME_FAUSSE)
+
+    def test_prix_differents_reste_concluant(self, fiche_petrole):
+        # Sanity : un vrai mouvement n'est pas avalé par le filet.
+        c = _cell("LONG", "24h", bdate=date(2026, 5, 6))
+        m = jr.measure_cell(
+            c, "petrole", fiche_petrole, 100.0, 105.0,
+            today=date(2026, 5, 8),
+        )
+        assert m.outcome in (jr.OUTCOME_VRAI, jr.OUTCOME_FAUSSE)
 
 
 # ===========================================================================
@@ -364,7 +475,9 @@ def test_measure_propagation_today_active_garde_prematurite(
     On vérifie que les cellules dont l'échéance est dans le futur sont
     EXCLUES (filtre boucle), et qu'aucune Measure n'a `today < echeance`.
     """
-    bdate = date(2026, 5, 1)
+    # Émission un mercredi (2026-05-06) : échéance 24h = jeudi 2026-05-07
+    # (jour ouvré, report sans effet en semaine), 7j/1m bien plus tard.
+    bdate = date(2026, 5, 6)
     bulletins_dir = tmp_path / "bulletins"
     prix_dir = tmp_path / "prix-emission"
     bulletins_dir.mkdir()
@@ -383,7 +496,7 @@ def test_measure_propagation_today_active_garde_prematurite(
     )
 
     measures, _ = jr.measure(
-        today=date(2026, 5, 3),  # 24h échue (2026-05-02), 7j et 1m PAS encore
+        today=date(2026, 5, 8),  # 24h échue (jeudi 2026-05-07), 7j/1m PAS encore
         bulletins_dir=bulletins_dir,
         prix_emission_dir=prix_dir,
         fiches={"petrole": fiche_petrole},
@@ -395,7 +508,7 @@ def test_measure_propagation_today_active_garde_prematurite(
     assert horizons_mesures == {"24h"}
     # Aucune Measure prématurée
     for m in measures:
-        assert m.echeance <= date(2026, 5, 3), (
+        assert m.echeance <= date(2026, 5, 8), (
             f"mesure prématurée passée à travers : echeance={m.echeance}"
         )
         # Le verdict normal doit fonctionner (cas nominal)

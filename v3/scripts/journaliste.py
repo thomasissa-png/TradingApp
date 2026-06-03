@@ -149,22 +149,54 @@ def _truncate_clean(text: str, maxlen: int = NEWS_RATIONALE_MAXLEN) -> str:
 ENTRY_LOCK_PRICE_EPS = 1e-9
 
 
+def _next_business_day(d: date) -> date:
+    """Prochain jour ouvré ≥ d (saute samedi=5 et dimanche=6 en weekday()).
+
+    Déterministe et pur : aucune dépendance à l'heure courante (zéro
+    look-ahead, invariant C5). Si d est déjà un jour ouvré, le renvoie tel
+    quel ; sinon avance jusqu'au lundi suivant.
+
+    # TODO: jours fériés (calendrier marché) — backlog. Aujourd'hui un jour
+    # férié tombant en semaine reste considéré comme ouvré (prix figé possible) ;
+    # la Partie 3 (garde anti-mesure dégénérée) sert de filet pour ces cas.
+    """
+    while d.weekday() >= 5:  # 5=samedi, 6=dimanche
+        d = d + timedelta(days=1)
+    return d
+
+
 def compute_echeance(bulletin_date: date, horizon: str) -> date:
     """Échéance figée déterministe (C5 invariant #2).
 
-    echeance = bulletin_date + HORIZON_DAYS[horizon]. Réutilise les constantes
-    existantes — JAMAIS de redéfinition locale ailleurs dans le module.
+    Horizons 7j / 1m : echeance = bulletin_date + HORIZON_DAYS[horizon]
+    (calendaire — le bruit week-end y est négligeable et le rendre ouvré
+    serait risqué pour des invariants peu sensibles).
 
-    Invariant assertif : echeance > bulletin_date (HORIZON_DAYS[h] >= 1 pour
-    tout horizon connu : 24h→1, 7j→7, 1m→30).
+    Horizon 24h : echeance = PROCHAIN JOUR OUVRÉ après bulletin_date. Les
+    marchés actions sont fermés le week-end (prix figés à la clôture de
+    vendredi) ; mesurer une prédiction du vendredi le samedi comparerait un
+    prix de clôture à lui-même (« +0.0% ») et polluerait les stats. On reporte
+    donc l'échéance 24h au prochain jour de marché :
+      - lundi→jeudi : +1 jour calendaire (inchangé)
+      - vendredi → lundi (saute sam/dim)
+
+    Déterministe et sans look-ahead : ne dépend que de bulletin_date et de
+    l'horizon, jamais de l'heure courante. Réutilise HORIZON_DAYS — JAMAIS de
+    redéfinition locale ailleurs dans le module.
+
+    Invariant assertif : echeance > bulletin_date pour tout horizon connu.
 
     Lève KeyError si l'horizon est inconnu (refuse de fabriquer une échéance
     arbitraire — zéro invention).
     """
     days = HORIZON_DAYS[horizon]
     echeance = bulletin_date + timedelta(days=days)
+    if horizon == "24h":
+        # Reporter l'échéance 24h sur le prochain jour ouvré (saute le week-end).
+        echeance = _next_business_day(echeance)
     # Assertion d'intégrité : une échéance ≤ émission marquerait un bug
     # critique (horizon nul/négatif, dates inversées, etc.) — refuser net.
+    # Reste vraie après report : +1 jour puis saut week-end ne recule jamais.
     assert echeance > bulletin_date, (
         f"compute_echeance invariant violé : echeance={echeance} <= "
         f"bulletin_date={bulletin_date} (horizon={horizon}, days={days})"
@@ -791,6 +823,18 @@ def measure_cell(
         base.note = f"seuil manquant dans la fiche pour {cell.horizon}"
         return base
 
+    # Filet anti-mesure dégénérée : un prix courant STRICTEMENT identique au
+    # prix d'émission (même tick, ou marché fermé → clôture figée comparée à
+    # elle-même) ne porte aucune information directionnelle. On la classe
+    # non-conclusive (ni VRAI ni FAUSSE) plutôt que de fabriquer un outcome
+    # bidon. La Partie 2 (échéance 24h jour-ouvré) règle la cause principale ;
+    # ceci reste un garde-fou (fériés, panne data, tick figé intra-séance).
+    if prix_courant == prix_emission:
+        base.delta_pct = 0.0
+        base.outcome = OUTCOME_NC
+        base.note = "prix courant == prix d'émission (mouvement nul — marché probablement fermé)"
+        return base
+
     delta_pct = (prix_courant - prix_emission) / prix_emission * 100.0
     base.delta_pct = delta_pct
     abs_delta = abs(delta_pct)
@@ -1287,8 +1331,11 @@ def measure(
             decision_log_dir=sys.modules[__name__].DECISION_LOG_DIR,
         )
         for cell in cells:
-            # n'inclure que les horizons échus à `today`
-            echeance = cell.bulletin_date + timedelta(days=HORIZON_DAYS[cell.horizon])
+            # n'inclure que les horizons échus à `today`.
+            # Utiliser compute_echeance (et non un +N calendaire local) pour
+            # rester cohérent avec le report 24h jour-ouvré : une prédiction du
+            # vendredi n'est due qu'au lundi, pas dès le samedi.
+            echeance = compute_echeance(cell.bulletin_date, cell.horizon)
             if echeance > today:
                 continue
             match = fiche_for_actif_name(fiches, cell.actif_name)

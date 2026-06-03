@@ -45,6 +45,19 @@ jobs:
           if [ "${GITHUB_EVENT_NAME}" != "schedule" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"; echo "Déclenchement manuel → run."; exit 0
           fi
+          # Garde JOURS OUVRÉS (schedule uniquement). Les marchés actions sont fermés
+          # le week-end → prix figés à la clôture de vendredi. Un run samedi/dimanche
+          # produirait un bulletin sur prix morts et des mesures 24h dégénérées
+          # (prix de vendredi comparé à lui-même → « +0.0% »), polluant les stats.
+          # On NO-OP donc les runs schedule du samedi/dimanche (heure Europe/Paris).
+          # workflow_dispatch et push RUN-CYCLE.txt restent toujours actifs (gérés
+          # par le early-exit manuel ci-dessus) → tests/forçage week-end possibles.
+          dow=$(TZ='Europe/Paris' date +%u)  # 1=lundi … 6=samedi, 7=dimanche
+          if [ "$dow" -ge 6 ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Week-end (jour=$dow, Europe/Paris) + déclenchement schedule → marchés fermés, NO-OP."
+            exit 0
+          fi
           last=$(git log -1 --format=%ct --grep="decision snapshot" 2>/dev/null || echo 0)
           now=$(date +%s)
           if [ "${last:-0}" -gt 0 ] && [ $((now - last)) -lt 7200 ]; then

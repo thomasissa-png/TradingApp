@@ -6,7 +6,7 @@ câblée dans le dispatch de criteres_calculator :
   - dxy_trend_20j          → FRED DTWEXBGS (USD Index broad)         [BRANCHÉ]
   - taux_10y_us_delta_5j   → FRED DGS10, z-score du delta 5j          [BRANCHÉ]
   - spread_oat_bund_10y    → FRED FR(IRLTLT01FRM156N) − DE(...DEM)    [BRANCHÉ]
-  - differentiel_taux_2y_us_de → n/a propre (pas de German 2Y gratuit) [TIER 2]
+  - differentiel_taux_2y_us_de → DGS2 (FRED) − Bund 2Y (ECB Data Portal) [BRANCHÉ S?]
   - v2x_regime             → n/a propre (VSTOXX indispo Twelve free)   [TIER 2]
 
 Règle : AUCUN appel réseau réel. Tout fetch est mocké. On vérifie pour chaque
@@ -144,21 +144,124 @@ def test_spread_oat_bund_fetch_absent_na(monkeypatch, now_fixed):
 
 
 # ---------------------------------------------------------------------------
-# 4) differentiel_taux_2y_us_de — TIER 2 : reste n/a (pas de German 2Y gratuit)
+# 4) differentiel_taux_2y_us_de — BRANCHÉ : DGS2 (FRED) − Bund 2Y (ECB Data Portal)
 # ---------------------------------------------------------------------------
 
-def test_differentiel_2y_reste_na(monkeypatch, now_fixed):
-    """Pas de série German 2Y FRED/Twelve gratuite → n/a propre, jamais inventé."""
-    monkeypatch.setattr(cc, "fetch_fred_series", lambda sid, n=252: [1.0] * 70)
-    monkeypatch.setattr(cc, "fetch_fred_spread", lambda sus, sde, n=252: [1.0] * 70)
-    assert "differentiel_taux_2y_us_de" not in cc.FRED_SPREADS
-    assert "differentiel_taux_2y_us_de" not in cc.FRED_SERIES_SIMPLE
-    assert "differentiel_taux_2y_us_de" not in cc.FRED_DELTA
-    crit = {"cle_courante": "differentiel_taux_2y_us_de", "normalisation": "zscore",
+def _diff2y_crit() -> dict:
+    return {"cle_courante": "differentiel_taux_2y_us_de", "normalisation": "zscore",
             "source": "FRED / Twelve Data (calculé)", "zscore_window": 60,
             "zscore_div": 2, "cap": 1.0, "signe": -1}
-    val = cc.build_critere_value("eurusd", crit, {}, {}, [], now_fixed)
+
+
+def _dgs2_dated(start: str = "2026-01-01", n: int = 70, base: float = 4.0,
+                step: float = 0.0):
+    """Série DGS2 datée [(date, val)] oldest→newest, dates ISO quotidiennes."""
+    from datetime import date as _date, timedelta as _td
+    d0 = _date.fromisoformat(start)
+    return [((d0 + _td(days=i)).isoformat(), base + i * step) for i in range(n)]
+
+
+def _ecb_dated(start: str = "2026-01-01", n: int = 70, base: float = 2.0,
+               step: float = 0.0):
+    from datetime import date as _date, timedelta as _td
+    d0 = _date.fromisoformat(start)
+    return [((d0 + _td(days=i)).isoformat(), base + i * step) for i in range(n)]
+
+
+def test_differentiel_2y_us_de_branche(monkeypatch, now_fixed):
+    """(a) US + DE dispo → différentiel = DGS2 − Bund2Y, z-score correct (signe vérifié).
+
+    Différentiel qui S'ÉLARGIT (US monte plus vite que DE) → dernier point > moyenne
+    → valeur_normalisee > 0. La fiche applique le signe -1 en aval (pas ici).
+    """
+    monkeypatch.setattr(cc, "fetch_fred_series_dated",
+                        lambda sid, n=252: _dgs2_dated(base=4.0, step=0.02) if sid == "DGS2" else None)
+    monkeypatch.setattr(cc, "fetch_ecb_yield_series",
+                        lambda key, n=300: _ecb_dated(base=2.0, step=0.0))
+    val = cc.build_critere_value("eurusd", _diff2y_crit(), {}, {}, [], now_fixed)
+    assert val is not None, "le 2Y doit être branché (FRED DGS2 + ECB)"
+    assert "valeur_normalisee" in val
+    # différentiel courant ≈ (4.0 + 69*0.02) − 2.0 = 3.38 ; série de différentiels
+    # croissante → dernier > moyenne → z>0.
+    assert val["valeur_normalisee"] > 0
+    assert val["valeur"] == pytest.approx(4.0 + 69 * 0.02 - 2.0, abs=1e-6)
+
+
+def test_differentiel_2y_us_de_resserrement_signe_negatif(monkeypatch, now_fixed):
+    """Différentiel qui SE RESSERRE → dernier point < moyenne → normalisee < 0 (signe inverse)."""
+    monkeypatch.setattr(cc, "fetch_fred_series_dated",
+                        lambda sid, n=252: _dgs2_dated(base=5.0, step=-0.02) if sid == "DGS2" else None)
+    monkeypatch.setattr(cc, "fetch_ecb_yield_series",
+                        lambda key, n=300: _ecb_dated(base=2.0, step=0.0))
+    val = cc.build_critere_value("eurusd", _diff2y_crit(), {}, {}, [], now_fixed)
+    assert val is not None
+    assert val["valeur_normalisee"] < 0
+
+
+def test_differentiel_2y_us_de_ecb_ko_na(monkeypatch, now_fixed):
+    """(b) ECB KO → n/a propre (pas de différentiel partiel inventé)."""
+    monkeypatch.setattr(cc, "fetch_fred_series_dated",
+                        lambda sid, n=252: _dgs2_dated(base=4.0, step=0.01))
+    monkeypatch.setattr(cc, "fetch_ecb_yield_series", lambda key, n=300: None)
+    val = cc.build_critere_value("eurusd", _diff2y_crit(), {}, {}, [], now_fixed)
     assert val is None
+
+
+def test_differentiel_2y_us_de_fred_ko_na(monkeypatch, now_fixed):
+    """(c) FRED KO (DGS2 indispo) → n/a propre."""
+    monkeypatch.setattr(cc, "fetch_fred_series_dated", lambda sid, n=252: None)
+    monkeypatch.setattr(cc, "fetch_ecb_yield_series",
+                        lambda key, n=300: _ecb_dated(base=2.0, step=0.0))
+    val = cc.build_critere_value("eurusd", _diff2y_crit(), {}, {}, [], now_fixed)
+    assert val is None
+
+
+def test_ecb_yield_hors_plage_rejete(monkeypatch):
+    """(d) Rendement hors plage [-2, 10] % → série filtrée → None (n/a)."""
+    # CSV ECB avec une seule observation absurde (999 %) → hors plage → rejet total.
+    csv_text = "KEY,TIME_PERIOD,OBS_VALUE\nYC...,2026-05-29,999.0\n"
+    monkeypatch.setattr(cc, "http_get_text", lambda url, timeout=cc.DEFAULT_TIMEOUT: csv_text)
+    assert cc.fetch_ecb_yield(cc.ECB_BUND_2Y_SERIES_KEY) is None
+    series = cc.fetch_ecb_yield_series(cc.ECB_BUND_2Y_SERIES_KEY, n=5)
+    assert series is None
+
+
+def test_ecb_csv_parsing_echantillon_realiste(monkeypatch):
+    """(e) Parsing CSV ECB d'un échantillon réaliste → valeur extraite, bornée à la plage."""
+    # En-tête SDMX-CSV ECB typique (ordre des colonnes volontairement non trivial :
+    # OBS_VALUE après TIME_PERIOD, plus une colonne KEY en tête).
+    csv_text = (
+        "KEY,FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE,OBS_STATUS\n"
+        "YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_2Y,B,U2,2026-05-27,2.10,A\n"
+        "YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_2Y,B,U2,2026-05-28,2.15,A\n"
+        "YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_2Y,B,U2,2026-05-29,2.23,A\n"
+    )
+    monkeypatch.setattr(cc, "http_get_text", lambda url, timeout=cc.DEFAULT_TIMEOUT: csv_text)
+    series = cc.fetch_ecb_yield_series(cc.ECB_BUND_2Y_SERIES_KEY, n=300)
+    assert series is not None
+    assert [d for d, _ in series] == ["2026-05-27", "2026-05-28", "2026-05-29"]
+    assert cc.fetch_ecb_yield(cc.ECB_BUND_2Y_SERIES_KEY) == pytest.approx(2.23)
+
+
+def test_ecb_json_fallback_parsing(monkeypatch):
+    """Fallback JSON (jsondata) : CSV vide → bascule JSON SDMX → valeur extraite."""
+    import json as _json
+    sdmx = {
+        "dataSets": [{"series": {"0:0:0:0:0:0:0": {"observations": {
+            "0": [2.05], "1": [2.18]}}}}],
+        "structure": {"dimensions": {"observation": [{"values": [
+            {"id": "2026-05-28"}, {"id": "2026-05-29"}]}]}},
+    }
+    json_text = _json.dumps(sdmx)
+
+    def _http(url, timeout=cc.DEFAULT_TIMEOUT):
+        # csvdata → vide (force le fallback) ; jsondata → SDMX-JSON.
+        return "" if "csvdata" in url else json_text
+
+    monkeypatch.setattr(cc, "http_get_text", _http)
+    series = cc.fetch_ecb_yield_series(cc.ECB_BUND_2Y_SERIES_KEY, n=300)
+    assert series is not None
+    assert series[-1] == ("2026-05-29", pytest.approx(2.18))
 
 
 # ---------------------------------------------------------------------------

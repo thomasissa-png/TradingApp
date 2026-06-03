@@ -524,11 +524,39 @@ FRED_SPREADS = {
     # série DE sur la grille FR. Sortie : spread en points (×100 ≈ bp), z-scoré.
     "spread_oat_bund_10y":           ("IRLTLT01FRM156N", "IRLTLT01DEM156N"),
     # 2Y DE n'est PAS dispo en série quotidienne fiable côté FRED gratuit (OECD ne
-    # publie que le court 3M et le long ~10Y, pas un 2Y benchmark) → laissé non mappé.
-    # Câbler DGS2 − (3M ou 10Y DE) reviendrait à étiqueter un 2Y-vs-autre chose comme
-    # un « différentiel 2Y », ce qui viole la red-line « zéro invention ». RESTE n/a
-    # (Tier 2 : nécessite une source German 2Y, ex. Bundesbank/ECB SDW).
+    # publie que le court 3M et le long ~10Y, pas un 2Y benchmark). Le 2Y allemand
+    # (≈ Bund) est en revanche publié par l'ECB Data Portal API (gratuit, sans clé)
+    # via la courbe AAA zone euro → câblé hors FRED_SPREADS (cf. ECB_* + handler
+    # dédié _handle_diff_2y_us_de). On ne mappe donc PAS ici differentiel_taux_2y_us_de.
 }
+
+# ── ECB Data Portal API (gratuit, sans clé) — Bund 2 ans (proxy AAA euro) ──
+#
+# Le différentiel taux 2Y US-DE (EUR/USD, poids 12 — le critère le plus lourd) est
+# resté n/a faute de 2Y allemand côté FRED/OECD gratuit. L'ECB Data Portal publie
+# la courbe des taux « AAA-rated euro area central government bonds » (la meilleure
+# approximation publique du Bund) à toutes les maturités, dont le spot 2 ans, en
+# observations quotidiennes, sans clé API.
+#
+# Dataflow YC (Yield Curve). Clé série (dimensions, dans l'ordre du dataflow) :
+#   FREQ=B (business daily) . REF_AREA=U2 (euro area) . CURRENCY=EUR .
+#   PROVIDER_FM=4F (ECB) . INSTRUMENT_FM=G_N_A (govt bond, nominal, all issuers AAA) .
+#   PROVIDER_FM_ID=SV_C_YM (spot rate, Svensson, yield maturity) . DATA_TYPE_FM=SR_2Y (2 ans).
+#
+# La clé série est isolée dans une CONSTANTE pour correction triviale si l'ECB
+# renomme une dimension. Endpoint REST type :
+#   https://data-api.ecb.europa.eu/service/data/YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_2Y?lastNObservations=300&format=csvdata
+# On demande le format CSV (csvdata) : robuste, simple à parser, et on garde un
+# fallback JSON (format=jsondata, structure SDMX-JSON) au cas où.
+ECB_DATA_BASE = "https://data-api.ecb.europa.eu/service/data"
+ECB_YC_DATAFLOW = "YC"
+# Clé série Bund 2 ans (proxy courbe AAA euro). À corriger ICI si l'ECB change une
+# dimension (vérifiable au 1er run réel via le log INFO « ECB câblé »).
+ECB_BUND_2Y_SERIES_KEY = "B.U2.EUR.4F.G_N_A.SV_C_YM.SR_2Y"
+# Plage de rendement plausible (en %). Tout point hors [-2.0, 10.0] est rejeté
+# comme douteux (zéro invention) → n/a VISIBLE, jamais de valeur figée.
+ECB_YIELD_MIN = -2.0
+ECB_YIELD_MAX = 10.0
 
 # Critères FRED « delta N jours » : z-score de la variation glissante sur N jours
 # d'une série FRED (ex. taux 10Y US delta 5j). Format : cle → (series_id, n_jours).
@@ -709,6 +737,51 @@ def fetch_fred_series(series_id: str, *, n: int = 252) -> Optional[List[float]]:
     return [v for _, v in parsed]
 
 
+def fetch_fred_series_dated(series_id: str, *, n: int = 252) -> Optional[List[Tuple[str, float]]]:
+    """Comme fetch_fred_series mais conserve les dates → [(date, valeur)], oldest→newest.
+
+    Nécessaire pour aligner une série FRED (ex. DGS2) avec une série externe par
+    date (ex. ECB Bund 2Y), cf. _handle_diff_2y_us_de. None si clé absente / erreur.
+    """
+    key = _fred_key()
+    if not key:
+        SKIP_COUNTER["fred_no_key"] += 1
+        return None
+    params = {
+        "series_id": series_id,
+        "file_type": "json",
+        "sort_order": "desc",
+        "limit": n,
+        "api_key": key,
+    }
+    data = _fred_get_json(series_id, params)
+    if not isinstance(data, dict):
+        SKIP_COUNTER[f"fred_dead:{series_id}"] += 1
+        return None
+    obs = data.get("observations")
+    if not isinstance(obs, list) or not obs:
+        SKIP_COUNTER[f"fred_empty:{series_id}"] += 1
+        return None
+    parsed: List[Tuple[str, float]] = []
+    for row in obs:
+        try:
+            d = row.get("date")
+            v = row.get("value")
+        except AttributeError:
+            continue
+        if not d or v in (None, "", "."):
+            continue
+        try:
+            parsed.append((d, float(v)))
+        except (TypeError, ValueError):
+            continue
+    if not parsed:
+        SKIP_COUNTER[f"fred_parse:{series_id}"] += 1
+        return None
+    parsed.sort(key=lambda t: t[0])  # oldest → newest
+    return parsed
+
+
 def fetch_fred_spread(series_us: str, series_de: str, *, n: int = 252) -> Optional[List[float]]:
     """Spread US - DE aligné par date d'observation (intersection). oldest→newest."""
     key = _fred_key()
@@ -802,6 +875,140 @@ def http_get_text(url: str, *, timeout: int = DEFAULT_TIMEOUT) -> Optional[str]:
     except Exception as e:  # noqa: BLE001
         logger.warning("HTTP GET %s : %s", url, e)
         return None
+
+
+# ---------------------------------------------------------------------------
+# ECB Data Portal API (Bund 2 ans — proxy courbe AAA euro) — sans clé
+# ---------------------------------------------------------------------------
+
+def _parse_ecb_csv(text: str) -> List[Tuple[str, float]]:
+    """Parse un CSV ECB Data Portal (format=csvdata) → [(date, valeur)], oldest→newest.
+
+    Robuste : on localise les colonnes par NOM d'en-tête (TIME_PERIOD / OBS_VALUE)
+    plutôt que par position, car l'ordre des colonnes SDMX-CSV n'est pas garanti.
+    Les lignes vides, valeurs manquantes ou non numériques sont ignorées (zéro
+    invention). Le bornage de plage est fait par l'appelant (fetch_ecb_yield_series).
+    """
+    import csv
+    import io
+    out: List[Tuple[str, float]] = []
+    try:
+        reader = csv.reader(io.StringIO(text))
+        rows = list(reader)
+    except Exception:  # noqa: BLE001
+        return out
+    if not rows:
+        return out
+    header = [h.strip().upper() for h in rows[0]]
+    try:
+        i_date = header.index("TIME_PERIOD")
+        i_val = header.index("OBS_VALUE")
+    except ValueError:
+        return out
+    for row in rows[1:]:
+        if len(row) <= max(i_date, i_val):
+            continue
+        d = (row[i_date] or "").strip()
+        v = (row[i_val] or "").strip()
+        if not d or v in ("", "NaN", "."):
+            continue
+        try:
+            out.append((d, float(v)))
+        except (TypeError, ValueError):
+            continue
+    out.sort(key=lambda t: t[0])  # oldest → newest (dates ISO triables lexicographiquement)
+    return out
+
+
+def _parse_ecb_json(text: str) -> List[Tuple[str, float]]:
+    """Fallback : parse un SDMX-JSON ECB (format=jsondata) → [(date, valeur)].
+
+    Structure : dataSets[0].series["0:0:..."].observations = {"<idx>": [value, ...]},
+    avec les dates dans structure.dimensions.observation[0].values[<idx>].id.
+    Défensif : toute structure inattendue → liste vide (n/a propre).
+    """
+    out: List[Tuple[str, float]] = []
+    try:
+        obj = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return out
+    try:
+        datasets = obj.get("dataSets") or []
+        series = datasets[0].get("series") or {}
+        # Une seule série attendue → on prend la première.
+        first = next(iter(series.values()))
+        observations = first.get("observations") or {}
+        obs_dims = (obj.get("structure", {}).get("dimensions", {})
+                    .get("observation", []))
+        time_values = obs_dims[0].get("values", []) if obs_dims else []
+    except (AttributeError, IndexError, KeyError, StopIteration, TypeError):
+        return out
+    for idx_str, arr in observations.items():
+        try:
+            idx = int(idx_str)
+            val = arr[0]
+        except (TypeError, ValueError, IndexError):
+            continue
+        if val is None:
+            continue
+        try:
+            date = time_values[idx].get("id")
+        except (IndexError, AttributeError):
+            continue
+        if not date:
+            continue
+        try:
+            out.append((str(date), float(val)))
+        except (TypeError, ValueError):
+            continue
+    out.sort(key=lambda t: t[0])
+    return out
+
+
+def fetch_ecb_yield_series(series_key: str, *, n: int = 300) -> Optional[List[Tuple[str, float]]]:
+    """Série des N dernières observations d'un rendement ECB → [(date, %)], oldest→newest.
+
+    Tente d'abord le CSV (csvdata, simple/robuste), fallback JSON (jsondata).
+    Garde-fous (zéro invention) : seules les valeurs dans la plage plausible
+    [ECB_YIELD_MIN, ECB_YIELD_MAX] sont conservées. Échec réseau / série vide /
+    parsing douteux / tout hors plage → None (n/a VISIBLE), jamais de valeur figée.
+    """
+    url = f"{ECB_DATA_BASE}/{ECB_YC_DATAFLOW}/{series_key}"
+    sep = "&" if "?" in url else "?"
+    csv_url = f"{url}{sep}lastNObservations={n}&format=csvdata"
+    text = http_get_text(csv_url)
+    parsed: List[Tuple[str, float]] = []
+    if text:
+        parsed = _parse_ecb_csv(text)
+    if not parsed:
+        # Fallback JSON
+        json_url = f"{url}{sep}lastNObservations={n}&format=jsondata"
+        text_json = http_get_text(json_url)
+        if text_json:
+            parsed = _parse_ecb_json(text_json)
+    if not parsed:
+        SKIP_COUNTER[f"ecb_empty:{series_key}"] += 1
+        logger.warning("ECB série vide/illisible series_key=%s", series_key)
+        return None
+    # Bornage de plage : on filtre les points hors plage plausible (donnée douteuse).
+    in_range = [(d, v) for (d, v) in parsed if ECB_YIELD_MIN <= v <= ECB_YIELD_MAX]
+    if not in_range:
+        SKIP_COUNTER[f"ecb_out_of_range:{series_key}"] += 1
+        logger.warning("ECB rendements hors plage [%.1f,%.1f] series_key=%s (n=%d) → n/a",
+                       ECB_YIELD_MIN, ECB_YIELD_MAX, series_key, len(parsed))
+        return None
+    return in_range
+
+
+def fetch_ecb_yield(series_key: str) -> Optional[float]:
+    """Dernier rendement spot d'une série ECB (en %), borné à la plage plausible.
+
+    None (n/a VISIBLE) si indisponible / vide / hors plage. Jamais de valeur inventée.
+    """
+    series = fetch_ecb_yield_series(series_key, n=1)
+    if not series:
+        return None
+    return series[-1][1]
 
 
 # ---------------------------------------------------------------------------
@@ -1787,6 +1994,71 @@ def _handle_fred(cle: str, crit: dict, ts: str) -> Optional[dict]:
     return _emit_zscore(value, norm, ts)
 
 
+def _handle_diff_2y_us_de(cle: str, crit: dict, ts: str) -> Optional[dict]:
+    """Différentiel taux 2 ans US − Allemagne, z-scoré (EUR/USD, poids 12).
+
+    Calque la mécanique de differentiel_taux_10y_us_bund, mais le 2Y allemand n'est
+    pas disponible côté FRED gratuit → côté DE fourni par l'ECB Data Portal (proxy
+    courbe AAA euro, cf. ECB_BUND_2Y_SERIES_KEY).
+
+      différentiel = DGS2(US) − Bund2Y(DE)   (en points de %, ex. 2.30)
+
+    Alignement : DGS2 est quotidien (FRED), la série ECB est quotidienne (business
+    daily) → on aligne par date avec forward-fill (LOCF) de la valeur DE sur chaque
+    date US, exactement comme fetch_fred_spread, pour reconstruire une série de
+    différentiels z-scorable sur la fenêtre.
+
+    Zéro invention : si l'UN des deux côtés (US ou DE) est indisponible / vide / hors
+    plage → None (n/a VISIBLE), jamais de différentiel partiel inventé. Le z-score
+    suit la fiche eurusd.yml (zscore_window / zscore_div / cap ; le signe -1 est
+    appliqué en aval par le scoring, comme pour le 10Y).
+    """
+    window = int(crit.get("zscore_window", 60))
+    n = max(window + 10, 260)
+    # Côté US : DGS2 (avec dates) via l'infra FRED existante (mêmes garde-fous).
+    us_dated = fetch_fred_series_dated("DGS2", n=n)
+    # Côté DE : Bund 2Y via ECB (déjà borné à la plage plausible).
+    de_series = fetch_ecb_yield_series(ECB_BUND_2Y_SERIES_KEY, n=n)
+    if not us_dated or not de_series:
+        # n/a propre : un côté manquant → pas de différentiel.
+        SKIP_COUNTER["diff_2y_us_de_side_missing"] += 1
+        return None
+
+    map_us: Dict[str, float] = {d: v for d, v in us_dated}
+    de_dates = [d for d, _ in de_series]
+    map_de: Dict[str, float] = {d: v for d, v in de_series}
+    us_dates = sorted(map_us)
+
+    # Forward-fill DE sur la grille US (last-observation-carried-forward).
+    spread: List[float] = []
+    j = 0
+    last_de: Optional[float] = None
+    sorted_de = sorted(de_dates)
+    for d in us_dates:
+        while j < len(sorted_de) and sorted_de[j] <= d:
+            last_de = map_de[sorted_de[j]]
+            j += 1
+        if last_de is None:
+            continue
+        spread.append(map_us[d] - last_de)
+
+    if len(spread) < 10:
+        SKIP_COUNTER["diff_2y_us_de_thin"] += 1
+        return None
+
+    value = spread[-1]
+    hist = spread[-window:] if len(spread) >= window else spread
+    norm = compute_zscore_normalisee(value, hist, zscore_div=float(crit.get("zscore_div", 2.0)),
+                                     cap=float(crit.get("cap", 1.0)),
+                                     label="diff_2y_us_de")
+    if norm is None:
+        return None
+    logger.info("ECB câblé : differentiel_taux_2y_us_de = %.4f pts (DGS2 US − Bund2Y DE) "
+                "z=%.2f | sources: FRED DGS2 + ECB %s/%s", value, norm,
+                ECB_YC_DATAFLOW, ECB_BUND_2Y_SERIES_KEY)
+    return _emit_zscore(value, norm, ts)
+
+
 def _handle_fred_delta(cle: str, crit: dict, ts: str) -> Optional[dict]:
     """Z-score de la variation glissante sur N jours d'une série FRED.
 
@@ -2166,6 +2438,14 @@ def build_critere_value(
         # EIA
         if cle in EIA_SERIES or "eia" in source:
             res = _handle_eia(cle, crit, ts)
+            if res is not None:
+                return res
+            return None
+        # Différentiel taux 2Y US-DE : DGS2 (FRED) − Bund 2Y (ECB Data Portal, sans
+        # clé). Intercepté par clé exacte AVANT les blocs FRED génériques car le côté
+        # DE n'est pas une série FRED (cf. _handle_diff_2y_us_de).
+        if cle == "differentiel_taux_2y_us_de":
+            res = _handle_diff_2y_us_de(cle, crit, ts)
             if res is not None:
                 return res
             return None

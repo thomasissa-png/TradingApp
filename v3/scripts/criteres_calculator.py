@@ -26,6 +26,7 @@ import logging
 import math
 import os
 import random
+import re
 import statistics
 import sys
 import time
@@ -1693,6 +1694,183 @@ def _handle_meteo(cle: str, crit: dict, ts: str) -> Optional[dict]:
             "valeur_ponderee": norm, "ts": ts}
 
 
+# ---------------------------------------------------------------------------
+# Caixin PMI manufacturier Chine — extraction depuis les news ingérées
+# ---------------------------------------------------------------------------
+#
+# Contexte : aucune source programmatique gratuite pour le Caixin Manufacturing
+# PMI Chine (Trading Economics est payant pour la Chine). Décision fondateur :
+# extraire la valeur depuis les news que le pipeline collecte déjà (events-log).
+# Best-effort, gratuit, automatique. RED LINE : zéro invention — si aucun nombre
+# fiable n'est trouvé, on retourne None (le critère reste n/a, échec VISIBLE).
+#
+# Garde-fous (anti-bêtise) :
+#   - plage PMI plausible [35, 65] : rejette "2026", "5 GW", "75 milliards", les
+#     pourcentages de variation, etc.
+#   - mots-clés OBLIGATOIRES : "caixin"/"privé/private survey" + "manufactur*" +
+#     "pmi". Le NBS/official manufacturing PMI est accepté en FALLBACK proxy
+#     (priorité moindre), JAMAIS le PMI services ni un autre pays que la Chine.
+#   - fenêtre de récence : la news doit dater de la fenêtre d'activation
+#     (1er-9 du mois ≈ 10 derniers jours) pour ne pas resservir une vieille valeur.
+
+# Plage de valeurs PMI plausibles. Un indice PMI réel oscille typiquement dans
+# [40, 60] ; on élargit légèrement à [35, 65] pour ne pas rater un extrême réel
+# (ex: PMI 33 en plein choc Covid) tout en rejetant années, GW, milliards, %.
+CAIXIN_PMI_MIN: float = 35.0
+CAIXIN_PMI_MAX: float = 65.0
+# Récence : on n'accepte que les news de la fenêtre (≈ jours 1-9 du mois). On
+# borne à 10 jours pour absorber le décalage entre publication réelle (1er-3 du
+# mois) et l'ingestion RSS, sans resservir le PMI du mois précédent.
+CAIXIN_NEWS_MAX_AGE_DAYS: int = 10
+
+# Nombre PMI dans un texte : entier ou décimal, séparateur '.' ou ','.
+# Capture le nombre + son contexte immédiat est géré en amont (présence de "pmi").
+_CAIXIN_NUMBER_RE = re.compile(r"\b(\d{1,2}[.,]\d{1,2}|\d{2})\b")
+# Mots-clés Chine (exclut les autres pays qui publient aussi un manufacturing PMI).
+_CAIXIN_CHINA_KW = ("caixin", "chine", "chinois", "china", "chinese")
+# Marqueurs d'autres pays → disqualifient l'item (évite India/Japan/Korea/US PMI).
+_CAIXIN_OTHER_COUNTRY_KW = (
+    "india", "indian", "inde", "japan", "japon", "japanese", "korea", "korean",
+    "coréen", "coreen", "sud-coréen", "us ", "u.s.", "ism", "chicago", "uk ",
+    "africa", "afrique", "absa", "eurozone", "euro zone", "germany", "allemag",
+    "france", "français",
+)
+# "services" / "composite" → on rejette (on ne veut QUE le manufacturing).
+_CAIXIN_SERVICES_KW = ("services", "service pmi", "composite", "non-manufactur",
+                       "non manufactur")
+_CAIXIN_MANUF_KW = ("manufactur", "factory", "usine", "usines")
+
+
+def _extract_pmi_number(text: str) -> Optional[float]:
+    """Extrait le 1er nombre dans la plage PMI plausible [35, 65] d'un texte.
+
+    Gère le séparateur décimal '.' et ','. Rejette tout nombre hors plage
+    (années, GW, milliards, pourcentages…). None si aucun candidat plausible.
+    """
+    for m in _CAIXIN_NUMBER_RE.finditer(text):
+        raw = m.group(1).replace(",", ".")
+        try:
+            val = float(raw)
+        except ValueError:
+            continue
+        if CAIXIN_PMI_MIN <= val <= CAIXIN_PMI_MAX:
+            return val
+    return None
+
+
+def _caixin_item_text(item: Any) -> str:
+    """Texte exploitable d'un item news (event-log dict OU str brut)."""
+    if isinstance(item, str):
+        return item
+    if isinstance(item, dict):
+        # Réutilise la concat trigger|l2|l1|source|news_zone si dispo, sinon
+        # agrège les champs texte connus (titre/snippet/description).
+        try:
+            base = tc._event_text(item)
+        except Exception:  # noqa: BLE001
+            base = ""
+        extra = " ".join(
+            str(item.get(k, ""))
+            for k in ("title", "titre", "description", "snippet", "summary")
+            if item.get(k)
+        )
+        return f"{base} {extra}".strip()
+    return ""
+
+
+def _caixin_item_dt(item: Any) -> Optional[datetime]:
+    """Date d'un item news : champ `_dt` (event-log) ou `_caixin_dt` (test/str)."""
+    if isinstance(item, dict):
+        dt = item.get("_dt")
+        if isinstance(dt, datetime):
+            return dt
+    return None
+
+
+def extract_caixin_pmi(news_items: List[Any], now: datetime) -> Optional[float]:
+    """Extrait la dernière valeur plausible du Caixin Manufacturing PMI Chine.
+
+    Parcourt les news ingérées (dicts event-log ou strings), garde celles qui
+    parlent du PMI manufacturier chinois (Caixin en priorité, NBS/official en
+    fallback proxy), récentes (≤ CAIXIN_NEWS_MAX_AGE_DAYS), et en extrait un
+    nombre dans la plage PMI plausible [35, 65].
+
+    Retourne la valeur du candidat le plus pertinent (Caixin > official) et le
+    plus récent. None si aucun nombre fiable (le critère reste n/a — on NE
+    FABRIQUE RIEN, échec visible).
+
+    `now` : datetime de référence (timezone-aware de préférence) pour la récence.
+    """
+    if not news_items:
+        return None
+    cutoff = now - timedelta(days=CAIXIN_NEWS_MAX_AGE_DAYS)
+    # candidats : (priorité, dt_tri, valeur, titre). priorité 0 = Caixin/privé,
+    # 1 = NBS/official (fallback proxy moindre).
+    candidates: List[Tuple[int, datetime, float, str]] = []
+    for item in news_items:
+        text = _caixin_item_text(item)
+        if not text:
+            continue
+        low = text.lower()
+        # 1) doit parler de PMI manufacturier
+        if "pmi" not in low:
+            continue
+        if not any(k in low for k in _CAIXIN_MANUF_KW):
+            continue
+        # 2) exclut services / composite / non-manufacturing
+        if any(k in low for k in _CAIXIN_SERVICES_KW):
+            continue
+        # 3) doit cibler la Chine (Caixin ou mention explicite Chine), et PAS un
+        #    autre pays. On exige une mention Chine ET l'absence d'autre pays.
+        is_china = any(k in low for k in _CAIXIN_CHINA_KW)
+        if not is_china:
+            continue
+        if any(k in low for k in _CAIXIN_OTHER_COUNTRY_KW):
+            # Item mêlant Chine + autre pays (ex: "PMI chinois et indien") → on
+            # écarte par prudence (ambiguïté sur la valeur citée).
+            continue
+        # 4) récence : on rejette les news hors fenêtre (vieille valeur).
+        dt = _caixin_item_dt(item)
+        if dt is not None and dt < cutoff:
+            continue
+        # 5) extraction du nombre dans la plage plausible
+        val = _extract_pmi_number(low)
+        if val is None:
+            continue
+        # priorité : "caixin"/"private/privé survey" = source directe (0),
+        # sinon NBS/official/factory = proxy fallback (1).
+        is_caixin = "caixin" in low or "private survey" in low or "privé" in low
+        priority = 0 if is_caixin else 1
+        dt_sort = dt if dt is not None else now
+        title = (item.get("trigger") or item.get("l2") or text[:80]).strip() \
+            if isinstance(item, dict) else text[:80]
+        candidates.append((priority, dt_sort, val, title))
+    if not candidates:
+        return None
+    # Meilleur candidat : priorité Caixin d'abord (0 < 1), puis le plus récent.
+    candidates.sort(key=lambda c: (c[0], -c[1].timestamp()))
+    best = candidates[0]
+    logger.info(
+        "caixin_pmi_manuf : valeur extraite des news = %.1f (source: %s%s)",
+        best[2], best[3], "" if best[0] == 0 else " [proxy official/NBS]",
+    )
+    return best[2]
+
+
+def _handle_caixin_pmi(crit: dict, events: List[dict], now: datetime, ts: str) -> Optional[dict]:
+    """Handler lineaire pour caixin_pmi_manuf : extrait la valeur des news.
+
+    Émet le même dict qu'un critère lineaire standard ({valeur, ts}) : le scoring
+    applique ensuite centre/echelle/cap de la fiche (centre=50). None si aucune
+    valeur fiable → n/a propre.
+    """
+    val = extract_caixin_pmi(events, now)
+    if val is None:
+        SKIP_COUNTER["caixin_pmi_no_value"] += 1
+        return None
+    return {"valeur": val, "ts": ts}
+
+
 def build_critere_value(
     fiche_key: str,
     crit: dict,
@@ -1835,6 +2013,11 @@ def build_critere_value(
         return None
 
     if type_norm == "lineaire":
+        # Caixin PMI manufacturier Chine : aucune source programmatique gratuite
+        # → extraction best-effort depuis les news ingérées (events-log). Zéro
+        # invention : None si aucun nombre fiable → n/a propre.
+        if cle == "caixin_pmi_manuf":
+            return _handle_caixin_pmi(crit, events, now, ts)
         # CBOE en priorité pour les critères vol (term structure, SKEW, VVIX, niveau VIX)
         if cle == "term_structure_vix_vix3m" or cle in CBOE_HISTORY_INDEX or "cboe" in source:
             res = _handle_cboe(cle, crit, ts, "lineaire")

@@ -804,6 +804,114 @@ def http_get_text(url: str, *, timeout: int = DEFAULT_TIMEOUT) -> Optional[str]:
         return None
 
 
+# ---------------------------------------------------------------------------
+# Shiller CAPE (S&P 500) — scraper défensif gratuit multpl.com
+# ---------------------------------------------------------------------------
+# Fiche sp500.yml id=8 : cle_courante "shiller_cape_fwd_pe", normalisation
+# "composite", signe -1 (valorisation HAUTE → baissier ; le scoring applique le
+# signe). Donnée mensuelle, lente. Zéro invention : toute valeur hors plage
+# plausible [5, 70] ou tout échec réseau/parse → None (n/a VISIBLE), JAMAIS de
+# vieille valeur figée. Override manuel possible via v3/data/manual/shiller_cape.json.
+
+SHILLER_PE_URL = "https://www.multpl.com/shiller-pe"
+# Plage CAPE historiquement plausible (min ~5 vers 1920, max ~44 en 2000/2021).
+# On garde une marge → tout parsing hors [5, 70] est rejeté comme douteux.
+SHILLER_CAPE_MIN = 5.0
+SHILLER_CAPE_MAX = 70.0
+# Mapping composite (documenté) : CAPE neutre ~28 (milieu de la zone fiche
+# effet_long CAPE<25 / effet_short CAPE>35), demi-span 7 → CAPE 35 = +1 (cher,
+# le signe -1 fiche le rend baissier), CAPE 21 = -1 (bon marché → haussier).
+SHILLER_CAPE_NEUTRAL = 28.0
+SHILLER_CAPE_SPAN = 7.0
+MANUAL_DIR = ROOT / "data" / "manual"
+SHILLER_CAPE_MANUAL = MANUAL_DIR / "shiller_cape.json"
+
+
+def _parse_shiller_cape_html(html: str) -> Optional[float]:
+    """Extrait la valeur courante du CAPE depuis le HTML de multpl.com.
+
+    La page affiche en tête : 'Current Shiller PE Ratio: 35.12'. On capture le
+    premier nombre décimal qui suit ce libellé (robuste aux espaces/markup
+    intermédiaire). Aucune dépendance lourde : regex simple sur le texte brut.
+    Retourne None si le motif est introuvable (page changée → n/a, pas de crash).
+    """
+    if not html:
+        return None
+    # Tolère du markup entre le libellé et la valeur (balises, espaces, &nbsp;).
+    m = re.search(r"Current\s+Shiller\s+PE\s+Ratio[^0-9]{0,80}?(\d{1,3}(?:\.\d+)?)",
+                  html, flags=re.IGNORECASE)
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+def _read_manual_shiller_cape() -> Optional[float]:
+    """Override manuel : v3/data/manual/shiller_cape.json {"cape": <float>}.
+
+    Priorité sur le scraper (filet si multpl casse). Best-effort : valeur hors
+    plage plausible ou fichier invalide → ignoré (None), on retombe sur le scraper.
+    """
+    try:
+        if not SHILLER_CAPE_MANUAL.exists():
+            return None
+        raw = json.loads(SHILLER_CAPE_MANUAL.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("shiller_cape manuel : lecture/parse KO (%s) → ignoré", e)
+        return None
+    val = raw.get("cape") if isinstance(raw, dict) else None
+    if not _is_finite_number(val):
+        logger.warning("shiller_cape manuel : champ 'cape' absent/non numérique → ignoré")
+        return None
+    val = float(val)
+    if not (SHILLER_CAPE_MIN <= val <= SHILLER_CAPE_MAX):
+        logger.warning("shiller_cape manuel : %.2f hors plage [%.0f, %.0f] → ignoré",
+                       val, SHILLER_CAPE_MIN, SHILLER_CAPE_MAX)
+        return None
+    return val
+
+
+def fetch_shiller_cape() -> Optional[float]:
+    """Récupère le Shiller CAPE courant du S&P 500.
+
+    Ordre de priorité :
+      1. Override manuel (v3/data/manual/shiller_cape.json) — filet anti-casse.
+      2. Scraper défensif multpl.com (timeout via http_get_text).
+    Garde-fou zéro invention : n'accepte qu'une valeur dans [5, 70]. Tout échec
+    (réseau, page changée, valeur hors plage) → None (n/a VISIBLE).
+    """
+    manual = _read_manual_shiller_cape()
+    if manual is not None:
+        logger.info("shiller_cape : %.2f (source=manuel)", manual)
+        return manual
+    html = http_get_text(SHILLER_PE_URL)
+    if not html:
+        logger.warning("shiller_cape : multpl.com injoignable → n/a")
+        return None
+    val = _parse_shiller_cape_html(html)
+    if val is None:
+        logger.warning("shiller_cape : parsing multpl.com KO (page changée ?) → n/a")
+        return None
+    if not (SHILLER_CAPE_MIN <= val <= SHILLER_CAPE_MAX):
+        logger.warning("shiller_cape : valeur %.2f hors plage [%.0f, %.0f] → n/a",
+                       val, SHILLER_CAPE_MIN, SHILLER_CAPE_MAX)
+        return None
+    logger.info("shiller_cape : %.2f (source=scraper multpl.com)", val)
+    return val
+
+
+def _normalise_shiller_cape(cape: float, cap: float) -> float:
+    """Mapping linéaire composite documenté autour du CAPE neutre.
+
+    valorisation HAUTE (CAPE>neutre) → normalisee POSITIVE ; le signe -1 de la
+    fiche la transforme en contribution baissière au scoring (et inversement).
+    """
+    norm = (cape - SHILLER_CAPE_NEUTRAL) / SHILLER_CAPE_SPAN
+    return max(-cap, min(cap, norm))
+
+
 def _parse_cboe_csv(text: str) -> List[Tuple[str, float]]:
     """Parse CSV CBOE. Deux formats existent :
     - VIX/VIX3M : 'DATE,OPEN,HIGH,LOW,CLOSE' → on prend CLOSE.
@@ -1601,6 +1709,19 @@ def _handle_composite(cle: str, crit: dict, ts: str) -> Optional[dict]:
         logger.warning("composite %s : aucune sous-source alimentable "
                        "(PV demand + mining strikes) → n/a (pas de neutre 0)", cle)
         return None
+    # shiller_cape_fwd_pe (S&P 500) : scraper défensif multpl.com (CAPE courant
+    # uniquement — le Forward P/E n'est pas dispo gratuitement). Mapping composite
+    # documenté autour d'un CAPE neutre ~28. Signe -1 géré par la fiche.
+    if cle == "shiller_cape_fwd_pe":
+        cape = fetch_shiller_cape()
+        if cape is None:
+            SKIP_COUNTER[f"composite_cape_dead:{cle}"] += 1
+            logger.warning("composite %s : Shiller CAPE indisponible → n/a", cle)
+            return None
+        cap = float(crit.get("cap", 1.0))
+        norm = _normalise_shiller_cape(cape, cap)
+        return {"valeur": cape, "valeur_normalisee": norm,
+                "valeur_ponderee": norm, "ts": ts}
     SKIP_COUNTER[f"composite_unmapped:{cle}"] += 1
     logger.warning("composite %s : non mappé dans _handle_composite → n/a", cle)
     return None

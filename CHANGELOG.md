@@ -2,6 +2,27 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-03 (Session 3) — Audits trio, refonte page de rendu & comblement des données
+
+**Contexte** : revue fondateur du bulletin frais + audits par le trio + le designer. Beaucoup de polissage, de fiabilisation et de **branchement de données** (le gros levier de qualité). 684 → **859 tests**, 0 régression.
+
+### Bulletin — polissage post-audit trio (affichage/shadow, 0 impact conclusions)
+- **Top 3 convictions = actifs distincts** ; **régime news** affiché sans contradiction de signe (`LONG [quant -0.08] 📰`) ; **bande quasi-neutre `≈`** (shadow, |note|<0.30) ; **mono-critère dominant** loggé (shadow). (`f19face`)
+- **Fix mesure** : les cellules news (`📰 régime news` + `(brut LONG +X)`) n'étaient PAS mesurées → parsers corrigés. (`e2b3e18`)
+
+### Page de rendu (`build_html`) — audit designer 6.5/10 → ~8.5
+- **Favicon** (base64 — les entités HTML ne s'affichaient pas), **dark mode auto**, **onglet « 📊 Historique / Performance »** + persistance `measures-log.jsonl`, tooltips symboles, fusion en 1 table, ⚑ dégonflé. (`120df61`,`6c33b2f`,`9d8726b`,`1ec3158`)
+- Bulletin : **décimales 4 sig figs**, section **« Audit de la veille 24h »** (réel %+VRAI/FAUX), **flux muets** reclassés (≠ pannes), ligne **Fraîcheur lisible**, légende d'échelle. (`0eb4bab`,`120df61`,`4f49f14`,`0c307b3`)
+
+### Fiabilité mesure
+- **Le système ne tourne plus le week-end** (garde jours-ouvrés cron) ; **échéance 24h sur jour ouvré** (vendredi→lundi) **+ jours fériés** NYSE/Euronext ; **verrou look-ahead C5 armé** (date du tick) ; **filet anti-mesure dégénérée** (prix figé = non-conclusive). (`875722c`,`f629fff`)
+- **Dédup news inter-jours** verrouillée (event_id SHA-256 + event_date + Levenshtein 48h, rapidfuzz). (`e64a7b5`)
+
+### Données comblées (gros gain de couverture)
+- Récupérés via fix composite/mapping + source VIX unifiée : café météo (p11), VIX régime S&P (p8), HF cacao… (`7bbe128`)
+- **Caixin PMI** via extraction news (`f0a9790`) ; **DXY**/**taux 10Y delta 5j**/**spread OAT-Bund** via FRED (`45dd253`) ; **Shiller CAPE** via scraper multpl défensif (`38fdded`) ; **différentiel taux 2Y US-DE** (EUR/USD, **poids 12**) via FRED+ECB Data Portal (`2197e1f`).
+- ⚠️ Signe/échelle de ces nouveaux critères = **hypothèses à valider en shadow** (comme le proxy breadth).
+
 ## 2026-06-02 (Session 2) — Gate intelligent (anti-biais de survie) + audits reproductibles
 
 **Contexte** : revue des 6 points fondateur + audits par le trio (Analyst/Spéculateur/NewsTrader). La P1 « calibration coverage » (12 actifs muets en INSUFFISANT) est attaquée non par un seuil arbitraire mais par un **gate à priorités**.

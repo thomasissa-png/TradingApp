@@ -149,18 +149,76 @@ def _truncate_clean(text: str, maxlen: int = NEWS_RATIONALE_MAXLEN) -> str:
 ENTRY_LOCK_PRICE_EPS = 1e-9
 
 
+# ---------------------------------------------------------------------------
+# Jours fériés de marché (NYSE + Euronext) — BEST-EFFORT, À ÉTENDRE CHAQUE ANNÉE
+# ---------------------------------------------------------------------------
+# Liste statique des principaux fériés marché où actions/indices US et Europe
+# sont fermés (prix figés à la clôture précédente). Utilisée par
+# `_next_business_day` pour reporter l'échéance 24h au prochain VRAI jour de
+# marché. C'est volontairement une liste statique versionnée (zéro dépendance
+# réseau, déterministe, auditable, zéro look-ahead).
+#
+# Best-effort : couverture des fériés « fixes » + ceux calculables 2026. Cette
+# constante DOIT être étendue manuellement chaque début d'année (ajouter le set
+# de l'année N+1). Si un férié manque, le filet de la Partie 3 (garde
+# anti-mesure dégénérée : prix courant == prix émission → INTERROMPU) évite de
+# polluer les stats avec un « +0.0% » comparant un prix de clôture à lui-même.
+#
+# Si la lib `holidays` est installée, on l'utilise en COMPLÉMENT (union) de
+# cette liste statique — jamais en remplacement (la statique reste le socle
+# déterministe garanti).
+MARKET_HOLIDAYS: frozenset = frozenset({
+    # ---- 2026 — NYSE (US) ----
+    date(2026, 1, 1),    # New Year's Day
+    date(2026, 1, 19),   # Martin Luther King Jr. Day (3e lundi janvier)
+    date(2026, 2, 16),   # Washington's Birthday / Presidents' Day (3e lundi févr.)
+    date(2026, 4, 3),    # Good Friday / Vendredi saint (US + Europe)
+    date(2026, 5, 25),   # Memorial Day (dernier lundi mai)
+    date(2026, 6, 19),   # Juneteenth National Independence Day
+    date(2026, 7, 3),    # Independence Day observé (4 juillet = samedi → vendredi)
+    date(2026, 9, 7),    # Labor Day (1er lundi septembre)
+    date(2026, 11, 26),  # Thanksgiving (4e jeudi novembre)
+    date(2026, 12, 25),  # Christmas Day (US + Europe)
+    # ---- 2026 — Euronext (Europe) — en plus des communs ci-dessus ----
+    date(2026, 4, 6),    # Lundi de Pâques (Euronext)
+    date(2026, 5, 1),    # Fête du Travail (Euronext)
+    date(2026, 12, 26),  # Boxing Day observé (26 déc. = samedi → marché déjà fermé)
+})
+
+
+def _is_market_holiday(d: date) -> bool:
+    """True si `d` est un férié de marché (statique MARKET_HOLIDAYS ∪ lib holidays).
+
+    Best-effort. Socle déterministe = MARKET_HOLIDAYS (toujours consulté). Si la
+    lib optionnelle `holidays` est disponible, on l'interroge EN PLUS (NYSE)
+    pour combler des trous, mais une indisponibilité/erreur retombe proprement
+    sur la liste statique (jamais de crash, zéro dépendance dure).
+    """
+    if d in MARKET_HOLIDAYS:
+        return True
+    try:
+        import holidays as _holidays_lib  # type: ignore  # noqa: PLC0415
+        # Calendrier NYSE si dispo (financial), sinon fériés fédéraux US.
+        try:
+            cal = _holidays_lib.financial_holidays("NYSE", years=d.year)
+        except Exception:  # noqa: BLE001
+            cal = _holidays_lib.country_holidays("US", years=d.year)
+        return d in cal
+    except Exception:  # noqa: BLE001 — lib absente ou API différente : socle statique
+        return False
+
+
 def _next_business_day(d: date) -> date:
-    """Prochain jour ouvré ≥ d (saute samedi=5 et dimanche=6 en weekday()).
+    """Prochain jour ouvré ≥ d (saute samedi/dimanche ET fériés de marché).
 
     Déterministe et pur : aucune dépendance à l'heure courante (zéro
-    look-ahead, invariant C5). Si d est déjà un jour ouvré, le renvoie tel
-    quel ; sinon avance jusqu'au lundi suivant.
+    look-ahead, invariant C5). Si `d` est déjà un jour ouvré non férié, le
+    renvoie tel quel ; sinon avance jusqu'au prochain jour de marché.
 
-    # TODO: jours fériés (calendrier marché) — backlog. Aujourd'hui un jour
-    # férié tombant en semaine reste considéré comme ouvré (prix figé possible) ;
-    # la Partie 3 (garde anti-mesure dégénérée) sert de filet pour ces cas.
+    Fériés : MARKET_HOLIDAYS (NYSE + Euronext, best-effort, voir constante).
+    Un férié tombant en semaine est désormais sauté (plus de prix figé mesuré).
     """
-    while d.weekday() >= 5:  # 5=samedi, 6=dimanche
+    while d.weekday() >= 5 or _is_market_holiday(d):  # 5=samedi, 6=dimanche
         d = d + timedelta(days=1)
     return d
 
@@ -1221,6 +1279,65 @@ def load_news_driven_map(
     return result
 
 
+def _extract_price_dated(raw: Any) -> Tuple[Optional[float], Optional[date]]:
+    """Normalise un retour `fetch_price` hétérogène en (prix, date_du_tick).
+
+    Best-effort, robuste et pur. Formes acceptées :
+      - None                         → (None, None)
+      - float / int                  → (float, None)  (pas d'horodatage)
+      - (prix, datetime|date|str)    → (float, date)  (horodatage du tick)
+      - objet .price/.close + .date  → idem via attributs
+    Toute date est rabotée au jour (date) : on raisonne en jours de marché.
+    Si l'horodatage n'est pas exploitable → date=None (verrou look-ahead latent
+    mais sûr ; on ne casse rien et on n'invente pas de date).
+    """
+    if raw is None:
+        return (None, None)
+
+    def _coerce_date(v: Any) -> Optional[date]:
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            return v.date()
+        if isinstance(v, date):
+            return v
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace("Z", "+00:00")).date()
+            except ValueError:
+                return None
+        return None
+
+    # Tuple/list (prix, horodatage)
+    if isinstance(raw, (tuple, list)) and len(raw) >= 2:
+        try:
+            prix = float(raw[0]) if raw[0] is not None else None
+        except (TypeError, ValueError):
+            prix = None
+        return (prix, _coerce_date(raw[1]))
+
+    # Objet structuré (.price/.close + .date/.datetime/.timestamp)
+    if not isinstance(raw, (int, float)):
+        prix_attr = getattr(raw, "price", None)
+        if prix_attr is None:
+            prix_attr = getattr(raw, "close", None)
+        if prix_attr is not None:
+            try:
+                prix = float(prix_attr)
+            except (TypeError, ValueError):
+                prix = None
+            d = (getattr(raw, "date", None)
+                 or getattr(raw, "datetime", None)
+                 or getattr(raw, "timestamp", None))
+            return (prix, _coerce_date(d))
+
+    # Scalaire numérique : prix seul, date inconnue.
+    try:
+        return (float(raw), None)
+    except (TypeError, ValueError):
+        return (None, None)
+
+
 def measure(
     today: Optional[date] = None,
     bulletins_dir: Path = BULLETINS_DIR,
@@ -1245,18 +1362,34 @@ def measure(
         fetch_price = criteres_calculator.fetch_twelve_price
 
     bulletins = list_bulletins(bulletins_dir)
-    # cache prix courants : 1 fetch par ticker pour tout le run
-    prix_courants: Dict[str, Optional[float]] = {}
+    # cache prix courants : 1 fetch par ticker pour tout le run.
+    # Valeur = (prix, prix_date) — prix_date est l'horodatage du tick (jour) si
+    # le fournisseur le renvoie, sinon None (verrou look-ahead latent mais sûr).
+    prix_courants: Dict[str, Tuple[Optional[float], Optional[date]]] = {}
 
-    def _get_current(ticker: str) -> Optional[float]:
+    def _get_current(ticker: str) -> Tuple[Optional[float], Optional[date]]:
+        """Renvoie (prix_courant, prix_courant_date).
+
+        C5 invariant #3 — propagation de la DATE DU TICK. On capture
+        l'horodatage du prix « courant » pour armer réellement le verrou
+        look-ahead de measure_cell (refus si la date du tick < bulletin_date).
+
+        Tolère plusieurs formes de retour de `fetch_price` (zéro casse) :
+          - float / int               → prix seul, date inconnue (None)
+          - (prix, datetime|date)     → prix + horodatage du tick
+          - objet avec .price/.date   → idem (best-effort par attributs)
+          - None                      → indisponible
+        Si la date n'est pas fournie proprement, on laisse None : le verrou
+        reste latent (comportement actuel préservé, rien n'est cassé).
+        """
         if ticker in prix_courants:
             return prix_courants[ticker]
         try:
-            p = fetch_price(ticker)
+            raw = fetch_price(ticker)
         except Exception as e:  # noqa: BLE001
             logger.warning("fetch prix courant %s : %s", ticker, e)
-            p = None
-        prix_courants[ticker] = (float(p) if p is not None else None)
+            raw = None
+        prix_courants[ticker] = _extract_price_dated(raw)
         return prix_courants[ticker]
 
     # ----- C7 LOT 6 — Pré-calcul is_flip --------------------------------------
@@ -1345,13 +1478,20 @@ def measure(
             fiche_key, fiche = match
             ticker = fiche.get("ticker_principal", "")
             p_emis = prix_emis.get(ticker)
-            p_courant = _get_current(ticker) if ticker else None
-            # C5 invariant #3 — propagate `today` pour activer le garde-fou
-            # « mesure prématurée » au sein de measure_cell (défense en
-            # profondeur : la boucle filtre déjà via echeance>today, mais on
-            # transmet pour rendre l'invariant explicite et auditable).
+            # C5 invariant #3 — on récupère prix ET date du tick courant pour
+            # armer réellement le verrou look-ahead (date du tick < émission →
+            # mesure refusée dans measure_cell). p_courant_date=None si le
+            # fournisseur n'expose pas d'horodatage (verrou latent mais sûr).
+            p_courant, p_courant_date = (
+                _get_current(ticker) if ticker else (None, None)
+            )
+            # C5 invariant #3 — propagate `today` (mesure prématurée) ET
+            # prix_courant_date (look-ahead) : la boucle filtre déjà via
+            # echeance>today, mais on transmet pour rendre les invariants
+            # explicites, auditables et réellement actifs en prod.
             m = measure_cell(
                 cell, fiche_key, fiche, p_emis, p_courant,
+                prix_courant_date=p_courant_date,
                 today=today,
             )
             # Tag news-driven (None si decision-log d'émission introuvable

@@ -513,3 +513,166 @@ def test_measure_propagation_today_active_garde_prematurite(
         )
         # Le verdict normal doit fonctionner (cas nominal)
         assert m.outcome == jr.OUTCOME_VRAI
+
+
+# ===========================================================================
+# Lot — Jours fériés de marché : _next_business_day saute les fériés
+# ===========================================================================
+
+class TestJoursFeries:
+    """Le report d'échéance 24h saute désormais aussi les fériés de marché."""
+
+    def test_constante_market_holidays_documentee(self):
+        # Socle déterministe présent et non vide (best-effort, à étendre/an).
+        assert isinstance(jr.MARKET_HOLIDAYS, frozenset)
+        assert date(2026, 12, 25) in jr.MARKET_HOLIDAYS  # Noël
+        assert date(2026, 1, 1) in jr.MARKET_HOLIDAYS     # Nouvel An
+        assert date(2026, 5, 1) in jr.MARKET_HOLIDAYS     # 1er mai (Euronext)
+        assert date(2026, 11, 26) in jr.MARKET_HOLIDAYS   # Thanksgiving
+
+    def test_next_business_day_saute_un_ferie_en_semaine(self):
+        # Thanksgiving = jeudi 2026-11-26 (férié) → prochain ouvré = vendredi 27.
+        assert jr._next_business_day(date(2026, 11, 26)) == date(2026, 11, 27)
+
+    def test_echeance_24h_emission_veille_ferie_va_au_prochain_ouvre(self):
+        # Émission mercredi 2026-11-25 → échéance brute 24h = jeudi 2026-11-26
+        # (Thanksgiving, férié) → report au vendredi 2026-11-27 (jour de marché).
+        ech = jr.compute_echeance(date(2026, 11, 25), "24h")
+        assert ech == date(2026, 11, 27)
+        assert ech not in jr.MARKET_HOLIDAYS
+        assert ech.weekday() < 5
+
+    def test_echeance_24h_saute_ferie_accole_au_weekend(self):
+        # Émission jeudi 2026-12-24 → 24h brut = vendredi 2026-12-25 (Noël, férié)
+        # → samedi/dimanche → lundi 2026-12-28 (premier jour de marché).
+        ech = jr.compute_echeance(date(2026, 12, 24), "24h")
+        assert ech == date(2026, 12, 28)
+        assert ech not in jr.MARKET_HOLIDAYS
+        assert ech.weekday() < 5
+
+    def test_echeance_24h_invariant_strict_preserve_avec_feries(self):
+        # echeance > bulletin_date reste vrai même quand on saute un férié.
+        for bdate in (date(2026, 11, 25), date(2026, 12, 24), date(2026, 4, 2)):
+            assert jr.compute_echeance(bdate, "24h") > bdate
+
+    def test_feries_ne_changent_pas_7j_ni_1m(self):
+        # 7j / 1m restent calendaires (invariant : on ne change pas ces horizons).
+        bdate = date(2026, 12, 24)
+        assert jr.compute_echeance(bdate, "7j") == bdate + timedelta(days=7)
+        assert jr.compute_echeance(bdate, "1m") == bdate + timedelta(days=30)
+
+
+# ===========================================================================
+# Lot — Propagation de la DATE DU TICK prix dans measure() (verrou C5 actif)
+# ===========================================================================
+
+class TestPropagationDateTick:
+    """`measure()` capture l'horodatage du tick et arme le verrou look-ahead.
+
+    Le fetch est mocké pour renvoyer (prix, timestamp). Selon la date du tick
+    relativement à l'émission, la mesure est refusée (look-ahead) ou normale.
+    """
+
+    @staticmethod
+    def _setup(tmp_path, bdate):
+        bulletins_dir = tmp_path / "bulletins"
+        prix_dir = tmp_path / "prix-emission"
+        bulletins_dir.mkdir()
+        prix_dir.mkdir()
+        (bulletins_dir / f"bulletin-{bdate.isoformat()}.md").write_text(
+            "# Bulletin\n\n"
+            "| Actif | 24h | 7j | 1m |\n"
+            "|---|---|---|---|\n"
+            "| Pétrole (Brent) | LONG (+0.50) | LONG (+0.50) | LONG (+0.50) |\n",
+            encoding="utf-8",
+        )
+        (prix_dir / f"{bdate.isoformat()}.json").write_text(
+            json.dumps({"BZ=F": 100.0}), encoding="utf-8"
+        )
+        return bulletins_dir, prix_dir
+
+    def test_extract_price_dated_formes_diverses(self):
+        from datetime import datetime as _dt
+        # Scalaire : prix seul, date inconnue.
+        assert jr._extract_price_dated(102.0) == (102.0, None)
+        # Tuple (prix, datetime) : date du tick capturée (rabotée au jour).
+        assert jr._extract_price_dated((102.0, _dt(2026, 5, 12, 16, 0))) == (
+            102.0, date(2026, 5, 12),
+        )
+        # Tuple (prix, date) : capturée telle quelle.
+        assert jr._extract_price_dated((99.0, date(2026, 5, 12))) == (
+            99.0, date(2026, 5, 12),
+        )
+        # Tuple (prix, str ISO) : parsée.
+        assert jr._extract_price_dated((99.0, "2026-05-12")) == (
+            99.0, date(2026, 5, 12),
+        )
+        # None : indisponible.
+        assert jr._extract_price_dated(None) == (None, None)
+
+    def test_measure_tick_anterieur_emission_refuse_lookahead(
+        self, tmp_path, fiche_petrole,
+    ):
+        # Émission mercredi 2026-05-06. Le fetch renvoie un prix daté du
+        # 2026-05-05 (AVANT l'émission) → la date du tick propagée arme le
+        # verrou → mesure REFUSÉE (suivi-interrompu), jamais VRAI/FAUSSE.
+        from datetime import datetime as _dt
+        bdate = date(2026, 5, 6)
+        bulletins_dir, prix_dir = self._setup(tmp_path, bdate)
+
+        def fetch(_t):
+            return (102.0, _dt(2026, 5, 5, 16, 0))  # tick AVANT émission
+
+        measures, _ = jr.measure(
+            today=date(2026, 5, 8),
+            bulletins_dir=bulletins_dir,
+            prix_emission_dir=prix_dir,
+            fiches={"petrole": fiche_petrole},
+            fetch_price=fetch,
+        )
+        assert measures, "au moins l'horizon 24h doit être traité"
+        m24 = next(m for m in measures if m.horizon == "24h")
+        assert m24.outcome == jr.OUTCOME_INTERROMPU
+        assert m24.outcome not in (jr.OUTCOME_VRAI, jr.OUTCOME_FAUSSE), (
+            "régression : un tick look-ahead a produit un verdict"
+        )
+        assert "look-ahead" in (m24.note or "").lower()
+
+    def test_measure_tick_posterieur_emission_mesure_normale(
+        self, tmp_path, fiche_petrole,
+    ):
+        # Même setup mais tick daté du 2026-05-07 (APRÈS émission) → verrou non
+        # déclenché → mesure normale (LONG +2 % > seuil 1 % → VRAI).
+        from datetime import datetime as _dt
+        bdate = date(2026, 5, 6)
+        bulletins_dir, prix_dir = self._setup(tmp_path, bdate)
+
+        def fetch(_t):
+            return (102.0, _dt(2026, 5, 7, 16, 0))  # tick APRÈS émission
+
+        measures, _ = jr.measure(
+            today=date(2026, 5, 8),
+            bulletins_dir=bulletins_dir,
+            prix_emission_dir=prix_dir,
+            fiches={"petrole": fiche_petrole},
+            fetch_price=fetch,
+        )
+        m24 = next(m for m in measures if m.horizon == "24h")
+        assert m24.outcome == jr.OUTCOME_VRAI
+
+    def test_measure_fetch_scalaire_retrocompat_verrou_latent(
+        self, tmp_path, fiche_petrole,
+    ):
+        # Backward-compat : un fetch renvoyant un float seul (pas d'horodatage)
+        # ⇒ prix_courant_date=None ⇒ verrou latent ⇒ comportement inchangé.
+        bdate = date(2026, 5, 6)
+        bulletins_dir, prix_dir = self._setup(tmp_path, bdate)
+        measures, _ = jr.measure(
+            today=date(2026, 5, 8),
+            bulletins_dir=bulletins_dir,
+            prix_emission_dir=prix_dir,
+            fiches={"petrole": fiche_petrole},
+            fetch_price=lambda _t: 102.0,  # float seul, comme avant
+        )
+        m24 = next(m for m in measures if m.horizon == "24h")
+        assert m24.outcome == jr.OUTCOME_VRAI  # mesure normale, rien cassé

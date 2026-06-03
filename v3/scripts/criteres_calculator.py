@@ -507,12 +507,37 @@ FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
 FRED_SERIES_SIMPLE = {
     "taux_10y_us_reels_tips": "DFII10",       # Or, Argent, Nasdaq — z-score
     "hy_credit_spread":       "BAMLH0A0HYM2", # S&P 500 — z-score
+    # DXY trend : ^DX-Y.NYB (Twelve) est en blacklist → fallback yfinance, lui-même
+    # bloqué sur les runners CI. On câble donc DXY sur FRED DTWEXBGS (Trade-Weighted
+    # USD Index — Broad, quotidien, faisant autorité), gratuit et sans yfinance.
+    # Le `signe: -1` de la fiche (DXY baisse => LONG) reste valide : DTWEXBGS monte
+    # quand le dollar se renforce, comme le DXY.
+    "dxy_trend_20j":          "DTWEXBGS",      # S&P, Or, Blé, Cuivre, EUR/USD — z-score
 }
 # Différentiels US - DE (spread = série_US - série_DE alignée)
 FRED_SPREADS = {
     "differentiel_taux_10y_us_bund": ("DGS10", "IRLTLT01DEM156N"),
-    # 2Y DE n'est pas dispo en série quotidienne fiable côté FRED gratuit → skip propre
-    # ("differentiel_taux_2y_us_de" est laissé volontairement non mappé)
+    # Spread OAT(FR 10Y) − Bund(DE 10Y). Twelve n'expose aucun rendement souverain
+    # → on câble sur FRED : France long-terme (IRLTLT01FRM156N) − Allemagne long-terme
+    # (IRLTLT01DEM156N), deux séries OECD « long-term government bond yield » (≈ 10Y
+    # benchmark), mensuelles. fetch_fred_spread fait déjà le forward-fill (LOCF) de la
+    # série DE sur la grille FR. Sortie : spread en points (×100 ≈ bp), z-scoré.
+    "spread_oat_bund_10y":           ("IRLTLT01FRM156N", "IRLTLT01DEM156N"),
+    # 2Y DE n'est PAS dispo en série quotidienne fiable côté FRED gratuit (OECD ne
+    # publie que le court 3M et le long ~10Y, pas un 2Y benchmark) → laissé non mappé.
+    # Câbler DGS2 − (3M ou 10Y DE) reviendrait à étiqueter un 2Y-vs-autre chose comme
+    # un « différentiel 2Y », ce qui viole la red-line « zéro invention ». RESTE n/a
+    # (Tier 2 : nécessite une source German 2Y, ex. Bundesbank/ECB SDW).
+}
+
+# Critères FRED « delta N jours » : z-score de la variation glissante sur N jours
+# d'une série FRED (ex. taux 10Y US delta 5j). Format : cle → (series_id, n_jours).
+FRED_DELTA = {
+    # ^TNX (10Y Treasury yield) est blacklisté Twelve → fallback yfinance bloqué CI.
+    # On utilise la série FRED DGS10 (10Y Constant Maturity, quotidienne) déjà
+    # validée et on z-score la variation sur 5 jours ouvrés. `signe: -1` (taux
+    # baisse => LONG) préservé par la fiche.
+    "taux_10y_us_delta_5j": ("DGS10", 5),
 }
 
 
@@ -996,12 +1021,15 @@ def zscore_from_series(series: List[float], *, zscore_div: float, cap: float,
 # le critère est OMIS proprement (n/a).
 TWELVE_SYMBOLS = {
     # --- Trend / risk-off ---
-    "dxy_trend_20j":         "DX-Y.NYB",     # DXY US Dollar Index (yfinance natif)
+    # dxy_trend_20j : câblé sur FRED DTWEXBGS (cf. FRED_SERIES_SIMPLE) — ^DX-Y.NYB
+    # Twelve est blacklisté → fallback yfinance bloqué CI. Pas d'entrée Twelve ici.
     "vix_risk_off_proxy":    "^VIX",
     "niveau_vix_absolu":     "^VIX",
     "vix_regime":            "^VIX",         # mapping non-monotone
     "vxn_regime":            "^VXN",         # yfinance (Nasdaq vol index)
-    "v2x_regime":            "^STOXX50EVOL", # placeholder — peut nécessiter ETF proxy
+    "v2x_regime":            "^STOXX50EVOL", # VSTOXX — Twelve gratuit ne l'expose pas
+    #   et ^STOXX50EVOL est yfinance-only (bloqué CI) → reste n/a propre en pratique.
+    #   Aucun ETF VSTOXX gratuit fiable côté Twelve → TIER 2 (guidage/news en attendant).
     "vvix":                  "^VVIX",
     "skew_index_cboe":       "^SKEW",
     "sox_trend_5j":          "SOXX",         # ETF iShares Semicond
@@ -1009,12 +1037,14 @@ TWELVE_SYMBOLS = {
     "term_structure_vix_vix3m": ("^VIX3M", "^VIX"),
     # --- Taux ---
     "taux_10y_us_reels_tips":   "TIP",       # ETF proxy (TIPS bonds)
-    "taux_10y_us_delta_5j":     "^TNX",      # 10Y Treasury yield (yfinance)
-    "differentiel_taux_2y_us_de":   ("^IRX", "^IRX"),   # placeholder (DE 2Y indispo)
-    "differentiel_taux_10y_us_bund": ("^TNX", "^TNX"),  # placeholder (DE 10Y indispo)
+    # taux_10y_us_delta_5j : câblé sur FRED DGS10 delta 5j (cf. FRED_DELTA) — ^TNX
+    # Twelve blacklisté → fallback yfinance bloqué CI. Pas d'entrée Twelve ici.
+    # differentiel_taux_2y_us_de : RESTE n/a (pas de German 2Y FRED/Twelve gratuit) → Tier 2.
+    # differentiel_taux_10y_us_bund : câblé sur FRED (cf. FRED_SPREADS). Pas d'entrée Twelve.
     # --- Credit / stress ---
     "hy_credit_spread":      "HYG",          # ETF HY proxy
-    "spread_oat_bund_10y":   ("HYG", "HYG"), # placeholder (souverains non dispo)
+    # spread_oat_bund_10y : câblé sur FRED FR−DE long-term (cf. FRED_SPREADS). Twelve
+    # n'expose aucun rendement souverain. Pas d'entrée Twelve ici.
     "spread_oat_bund_stress_ez": ("HYG", "HYG"),
     # --- FX (spot format Yahoo) ---
     "usd_brl":               "USDBRL=X",
@@ -1631,7 +1661,39 @@ def _handle_fred(cle: str, crit: dict, ts: str) -> Optional[dict]:
                                      cap=float(crit.get("cap", 1.0)))
     if norm is None:
         return None
+    if cle in ("dxy_trend_20j", "spread_oat_bund_10y"):
+        logger.info("FRED câblé : %s → valeur=%.4f z=%.2f", cle, value, norm)
     return _emit_zscore(value, norm, ts)
+
+
+def _handle_fred_delta(cle: str, crit: dict, ts: str) -> Optional[dict]:
+    """Z-score de la variation glissante sur N jours d'une série FRED.
+
+    Utilisé pour taux_10y_us_delta_5j : on récupère DGS10 (10Y US, quotidien),
+    on calcule la série des deltas (close[i] - close[i-N]) puis on z-score cette
+    série de deltas sur la fenêtre. La `valeur` retournée est le dernier delta.
+    None (n/a propre) si la série FRED est indisponible ou trop courte.
+    """
+    spec = FRED_DELTA.get(cle)
+    if spec is None:
+        return None
+    series_id, n_days = spec
+    window = int(crit.get("zscore_window", 60))
+    # On veut window deltas → il faut window + n_days observations + marge.
+    series = fetch_fred_series(series_id, n=max(window + n_days + 10, 260))
+    if not series or len(series) <= n_days + 5:
+        return None
+    deltas = [series[i] - series[i - n_days] for i in range(n_days, len(series))]
+    if len(deltas) < max(10, window // 4):
+        return None
+    hist = deltas[-window:] if len(deltas) >= window else deltas
+    res = zscore_from_series(hist, zscore_div=float(crit.get("zscore_div", 2.0)),
+                             cap=float(crit.get("cap", 1.0)))
+    if res is None:
+        return None
+    logger.info("FRED delta câblé : %s (%s delta %dj) → z=%.2f", cle, series_id,
+                n_days, res[1])
+    return _emit_zscore(res[0], res[1], ts)
 
 
 def _handle_cboe(cle: str, crit: dict, ts: str, type_norm: str) -> Optional[dict]:
@@ -1986,7 +2048,13 @@ def build_critere_value(
             if res is not None:
                 return res
             return None
-        # FRED (taux réels TIPS, HY OAS, différentiels US-DE)
+        # FRED delta N jours (taux 10Y US delta 5j) — z-score de la variation glissante
+        if cle in FRED_DELTA:
+            res = _handle_fred_delta(cle, crit, ts)
+            if res is not None:
+                return res
+            return None
+        # FRED (taux réels TIPS, HY OAS, DXY broad, différentiels/spreads US-DE/FR-DE)
         if cle in FRED_SERIES_SIMPLE or cle in FRED_SPREADS or "fred" in source:
             res = _handle_fred(cle, crit, ts)
             if res is not None:

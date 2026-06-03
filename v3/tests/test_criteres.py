@@ -587,14 +587,20 @@ def test_cftc_markets_table_complete():
 
 
 def test_twelve_zscore_dispatch_simple_symbol(monkeypatch, now_fixed):
-    """dxy_trend_20j → DX-Y.NYB via market_data (yfinance fallback) → zscore."""
+    """sox_trend_5j → SOXX via market_data (Twelve) → zscore (symbole simple).
+
+    NB : dxy_trend_20j a migré sur FRED DTWEXBGS (Session 3 — ^DX-Y.NYB Twelve est
+    blacklisté → yfinance bloqué CI). Le câblage FRED est testé dans
+    test_criteres_fort_poids_branches.py. Ici on garde un symbole Twelve simple
+    réellement servi par market_data pour couvrir le chemin zscore symbole simple.
+    """
     monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
     # 30 closes croissants : la dernière est l'extrême → z>0 capé
     fake_df = _fake_df([(f"2026-04-{i:02d}", 100.0 + i) for i in range(1, 31)])
     monkeypatch.setattr(md, "fetch_history", lambda ticker, **k: fake_df)
-    crit = {"cle_courante": "dxy_trend_20j", "normalisation": "zscore",
+    crit = {"cle_courante": "sox_trend_5j", "normalisation": "zscore",
             "source": "Twelve Data", "zscore_window": 20, "zscore_div": 2, "cap": 1.0}
-    val = cc.build_critere_value("petrole", crit, {}, {}, [], now_fixed)
+    val = cc.build_critere_value("nasdaq", crit, {}, {}, [], now_fixed)
     assert val is not None
     assert "valeur_normalisee" in val
     assert val["valeur_normalisee"] > 0  # tendance haussière

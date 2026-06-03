@@ -87,6 +87,20 @@ CARRY_MAX_AGE_H: Dict[str, int] = {"24h": 24, "7j": 48, "1m": 24}
 # à la direction maintenue → retournement franc → contradiction → 🚫.
 EPSILON_CARRY: float = 0.05
 
+# Bande quasi-neutre (K2 — audit trio bulletin 03/06). SHADOW : ne change PAS la
+# conclusion (LONG/SHORT reste). Une cellule actionnée dont 0.05 ≤ |note| < 0.30
+# porte un drapeau discret « ≈ » (faible conviction, quasi-neutre). Le ⚪ existant
+# (|note| < 0.05 = coin-flip) reste intact et prime. But : rendre lisibles les
+# quasi-zéros « habillés en SHORT ferme » (ex. S&P 7j −0.09, Cuivre 7j −0.28) sans
+# toucher la direction. Mesure inchangée : la cellule reste LONG/SHORT.
+NEUTRAL_BAND: float = 0.30
+
+# Mono-critère dominant (K1 — audit trio bulletin 03/06). SHADOW decision-log only :
+# détecte si UN SEUL critère fournit > 50% du |score| (somme des |contributions|).
+# Sert à MESURER le sur-poids (ex. VIX régime qui flippe le S&P à lui seul). Pas
+# d'affichage matrice (on évite la soupe de symboles).
+MONO_CRITERE_RATIO: float = 0.50
+
 # Seuil de poids pour la section "Limites du jour" (#8 audit design 2026-06-02).
 # Seuls les critères absents (n/a) de poids >= ce seuil sont listés nominativement
 # (ceux qui pèsent vraiment sur la direction) ; les plus légers sont résumés en
@@ -1487,6 +1501,7 @@ _LEGENDE_DEFS: List[Tuple[str, str]] = [
     ("⚑", "gate régime extrême actif"),
     ("📰", "news >50% du quant — pondéré en tête, brut entre parenthèses ; ou régime news (direction issue du biais news faute de couverture quant)"),
     ("⚪", "quasi coin-flip (|score|<0.05) — non-actionnable"),
+    ("≈", "faible conviction (|note|<0.30) — quasi-neutre (direction conservée)"),
     ("⚠", "divergence primaire / pondéré"),
     ("⚠️", "confiance faible (coverage bas ou données périmées) — direction conservée"),
     ("↯", "divergence quant ↔ news (signes opposés)"),
@@ -1598,14 +1613,51 @@ def _critere_dominant(r: "ActifResult", h: str) -> str:
     return best_nom
 
 
+def detect_mono_critere_dominant(
+    r: "ActifResult", h: str
+) -> Tuple[bool, Optional[str]]:
+    """K1 (SHADOW, decision-log only) — détecte si UN SEUL critère fournit plus de
+    `MONO_CRITERE_RATIO` (50%) du |score| de la cellule.
+
+    Base : somme des |contributions| des critères non-gate / non-na sur l'horizon.
+    Si la plus forte |contribution| dépasse MONO_CRITERE_RATIO × Σ|contributions|,
+    la cellule est dominée par un seul critère.
+
+    Retourne (is_mono, nom_critere|None). NE MODIFIE PAS la conclusion (mesure only).
+    Si la somme est nulle (aucun contributeur), retourne (False, None).
+    """
+    best_nom: Optional[str] = None
+    best_abs = 0.0
+    somme_abs = 0.0
+    for c in r.criteres:
+        if c.is_gate or c.is_na:
+            continue
+        ctr = c.contributions.get(h)
+        if ctr is None:
+            continue
+        a = abs(ctr)
+        somme_abs += a
+        if a > best_abs:
+            best_abs = a
+            best_nom = c.nom
+    if somme_abs <= 0.0 or best_nom is None:
+        return False, None
+    if best_abs > MONO_CRITERE_RATIO * somme_abs:
+        return True, best_nom
+    return False, None
+
+
 def build_top3_block(results: List["ActifResult"]) -> List[str]:
     """Construit le bloc '## 🎯 Top 3 convictions du jour'.
 
     Ne retient que les cellules à confidence "normale" (couverture saine) et
-    non quasi coin-flip, triées par |note| décroissante. Affiche au plus 3.
+    non quasi coin-flip. Q1 (audit trio 03/06) — Top 3 = 3 actifs DISTINCTS :
+    on garde au plus UNE cellule par actif (le meilleur horizon par |note|), puis
+    on prend les 3 actifs distincts au plus fort |note|. Évite le « Pétrole,
+    Pétrole, Pétrole » (3 horizons du même actif).
     """
     candidates: List[Tuple[float, str, float, str, str]] = []
-    # (abs_note, actif, note_signed, direction, raison)
+    # (abs_note, label "actif h", note_signed, direction, raison)
     for r in results:
         for h in HORIZONS:
             conc = r.conclusions.get(h, "")
@@ -1621,14 +1673,23 @@ def build_top3_block(results: List["ActifResult"]) -> List[str]:
                 continue  # exclut quasi coin-flip
             raison = _critere_dominant(r, h)
             candidates.append((abs(score), f"{r.nom} {h}", score, conc, raison))
+    # Q1 — dédup par ACTIF : on ne garde que le meilleur horizon (|note| max) de
+    # chaque actif. Le nom de l'actif est le label avant le dernier espace.
     candidates.sort(key=lambda x: x[0], reverse=True)
+    best_par_actif: Dict[str, Tuple[float, str, float, str, str]] = {}
+    for cand in candidates:
+        actif_nom = cand[1].rsplit(" ", 1)[0]
+        if actif_nom not in best_par_actif:
+            # candidates déjà trié desc → le premier vu = meilleur horizon de l'actif.
+            best_par_actif[actif_nom] = cand
+    distincts = sorted(best_par_actif.values(), key=lambda x: x[0], reverse=True)
 
     lines: List[str] = ["## 🎯 Top 3 convictions du jour", ""]
-    if not candidates:
+    if not distincts:
         lines.append("_Aucune conviction à couverture suffisante ce cycle._")
         lines.append("")
         return lines
-    for _abs, label, score, direction, raison in candidates[:3]:
+    for _abs, label, score, direction, raison in distincts[:3]:
         suffix = f" — {raison}" if raison else ""
         lines.append(f"- **{label} — {direction} ({score:+.2f})**{suffix}")
     lines.append("")
@@ -1755,6 +1816,12 @@ def render_bulletin(
             if coin_flip_flag:
                 flags_present.add("⚪")
             # ⏸ carry-forward : direction MAINTENUE sur data partielle. Prend le
+            # K2 — bande quasi-neutre (SHADOW). Drapeau « ≈ » discret quand la note
+            # est faible (0.05 ≤ |note| < NEUTRAL_BAND) sur une cellule actionnée :
+            # rend lisible le quasi-zéro « habillé en SHORT ferme ». La conclusion
+            # RESTE LONG/SHORT. Exclusif avec ⚪ (coin-flip, |note|<0.05, qui prime).
+            # Calculé ici, appliqué seulement sur cellules quant actionnées (pas
+            # carry/news-regime, traités plus bas avec leur propre habillage).
             # pas sur le ⚠️ générique (les deux sont en confidence "faible", mais
             # ⏸ porte l'info plus précise "direction conservée d'un cycle antérieur").
             # 📰 régime news (ticket D) : direction issue du biais news faute de
@@ -1762,6 +1829,7 @@ def render_bulletin(
             # dessus (exclusif avec carry : le carry n'a pas pu maintenir).
             carry_flag = ""
             regime_flag = ""
+            neutral_band_flag = ""  # K2 — « ≈ », posé seulement sur cellules quant normales
             if r.is_carry.get(h, False):
                 carry_flag = f" ⏸ maintenu ({cov_pct}%)"
                 flags_present.add("⏸")
@@ -1774,6 +1842,10 @@ def render_bulletin(
                 conf_flag = f" ⚠️ conf. faible ({cov_pct}%)" if confidence == "faible" else ""
                 if conf_flag:
                     flags_present.add("⚠️")
+                # K2 — bande quasi-neutre (SHADOW) : direction inchangée, drapeau ≈.
+                if EPSILON_CARRY <= abs(score) < NEUTRAL_BAND:
+                    neutral_band_flag = " ≈"
+                    flags_present.add("≈")
             div_qn_flag = " ↯" if r.divergence_quant_news.get(h, False) else ""
             if div_qn_flag:
                 flags_present.add("↯")
@@ -1808,7 +1880,17 @@ def render_bulletin(
             if denial_flag:
                 flags_present.add("⊘")
             # ── Cœur de cellule ────────────────────────────────────────────
-            if is_news and pond_differe:
+            if r.is_news_regime.get(h, False):
+                # Q2 (audit trio 03/06) — RÉGIME NEWS : la direction (LONG/SHORT)
+                # vient du BIAIS NEWS, pas du chiffre quant. Or le score quant peut
+                # CONTREDIRE cette direction (ex. Cuivre 1m « LONG (-0.64) » =
+                # illisible). On met donc la direction en tête SANS chiffre qui la
+                # contredit, et on étiquette le quant explicitement : « LONG 📰
+                # régime news (35%) [quant −0.64] ». La conclusion (LONG) ne change
+                # pas — c'est purement l'affichage. Le `regime_flag` (📰 régime
+                # news + cov%) est ajouté plus bas ; le score étiqueté est posé ici.
+                core = f"{conc}{tie}{gate_flag} [quant {score:+.2f}]"
+            elif is_news and pond_differe:
                 # News dominante : pondéré (tempéré, plus fiable) EN TÊTE, brut
                 # entre parenthèses. La direction de tête = direction pondérée.
                 # Le brut (=score primaire pm1) reste affiché → parsé comme
@@ -1827,8 +1909,8 @@ def render_bulletin(
             # générique news_dominant déjà inclus dans `core` (éviter doublon 📰).
             core_out = core.replace(news_flag, "") if (regime_flag and news_flag) else core
             cells.append(
-                f"{core_out}{coin_flip_flag}{carry_flag}{regime_flag}{conf_flag}{div_qn_flag}{cmom_flag}"
-                f"{incoh_flag}{ap_flag}{denial_flag}"
+                f"{core_out}{coin_flip_flag}{neutral_band_flag}{carry_flag}{regime_flag}{conf_flag}"
+                f"{div_qn_flag}{cmom_flag}{incoh_flag}{ap_flag}{denial_flag}"
             )
         detail_cells[r.nom] = cells
 
@@ -2196,6 +2278,11 @@ def build_decision_log_records(
                 prev = (veille_conclusions.get(r.nom.lower()) or {}).get(h)
                 if prev in ("LONG", "SHORT"):
                     is_flip = (prev != current_conc)
+            # K1 (SHADOW, decision-log only) — mono-critère dominant : un seul
+            # critère fournit > 50% du |score| de la cellule. NE MODIFIE PAS la
+            # conclusion. Sert à MESURER le sur-poids (ex. VIX régime qui flippe
+            # le S&P à lui seul). Non affiché dans la matrice (anti soupe de symboles).
+            mono_dominant, mono_nom = detect_mono_critere_dominant(r, h)
             records.append({
                 "bulletin_date": bulletin_date,
                 "generated_at": generated_at,
@@ -2222,6 +2309,12 @@ def build_decision_log_records(
                 "conclusion_pond": r.conclusions_pond.get(h, ""),
                 "diverge": bool(r.diverge.get(h, False)),
                 "coin_flip": bool(abs(score_pm1_val) < 0.05),
+                # K1 — mono-critère dominant (SHADOW, mesure du sur-poids).
+                "mono_critere_dominant": bool(mono_dominant),
+                "mono_critere_nom": mono_nom,
+                # K2 — bande quasi-neutre (SHADOW) : True si 0.05 ≤ |note| < 0.30.
+                # Direction inchangée ; tracé pour mesurer les quasi-zéros actionnés.
+                "neutral_band": bool(EPSILON_CARRY <= abs(score_pm1_val) < NEUTRAL_BAND),
                 # Gate suffisance de données (sécurité Thomas) :
                 # coverage = même valeur pour toutes les cellules d'un actif
                 # (la disponibilité brute des critères ne dépend pas de l'horizon).

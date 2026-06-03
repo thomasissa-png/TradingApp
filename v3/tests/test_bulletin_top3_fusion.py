@@ -143,17 +143,45 @@ def test_top3_placeholder_si_aucune_normale():
     assert "- **" not in block
 
 
-def test_top3_trie_par_note_decroissante():
-    """Les 3 cellules retenues sont les plus fortes |note| parmi les normales."""
+def test_top3_un_seul_actif_garde_meilleur_horizon():
+    """Q1 — max 1 cellule par actif : un actif seul ne sort QU'UNE fois (son
+    meilleur horizon par |note|), pas 3 fois pour ses 3 horizons."""
     a = sa.score_actif("a", _fiche(quant_poids=10), _vals(1.0))
     a.nom = "A"
     a.scores = {"24h": 1.0, "7j": 8.0, "1m": 3.0}
     a.confidence = {h: "normale" for h in sa.HORIZONS}
     block = [l for l in sa.build_top3_block([a]) if l.startswith("- **")]
-    # 1re ligne = 7j (|8.0| max), 2e = 1m (|3.0|), 3e = 24h (|1.0|)
+    # Un seul actif distinct → une seule ligne, et c'est son meilleur horizon (7j).
+    assert len(block) == 1
     assert "A 7j" in block[0]
-    assert "A 1m" in block[1]
-    assert "A 24h" in block[2]
+    assert "A 1m" not in "\n".join(block)
+    assert "A 24h" not in "\n".join(block)
+
+
+def test_top3_trois_actifs_distincts():
+    """Q1 (audit trio 03/06) — le Top 3 contient 3 actifs DISTINCTS, jamais le
+    même actif sur plusieurs horizons (« Pétrole, Pétrole, Pétrole » corrigé)."""
+    actifs = []
+    # Pétrole : 3 horizons à fort |note| (aurait monopolisé l'ancien Top 3).
+    petrole = sa.score_actif("petrole", _fiche(quant_poids=10), _vals(1.0))
+    petrole.nom = "Petrole"
+    petrole.scores = {"24h": 9.0, "7j": 8.0, "1m": 7.0}
+    petrole.confidence = {h: "normale" for h in sa.HORIZONS}
+    actifs.append(petrole)
+    # Or et Cuivre : un horizon fort chacun.
+    for nom, sc in (("Or", 6.0), ("Cuivre", 5.0)):
+        r = sa.score_actif(nom.lower(), _fiche(quant_poids=10), _vals(1.0))
+        r.nom = nom
+        r.scores = {"24h": sc, "7j": sc / 2, "1m": sc / 3}
+        r.confidence = {h: "normale" for h in sa.HORIZONS}
+        actifs.append(r)
+    block = [l for l in sa.build_top3_block(actifs) if l.startswith("- **")]
+    assert len(block) == 3
+    # 3 actifs DISTINCTS présents, et Pétrole n'apparaît qu'UNE fois.
+    joined = "\n".join(block)
+    assert "Petrole" in joined and "Or" in joined and "Cuivre" in joined
+    assert sum(1 for ln in block if "Petrole" in ln) == 1
+    assert "Petrole 24h" in block[0]  # meilleur horizon du pétrole (|9.0|)
 
 
 # ===========================================================================

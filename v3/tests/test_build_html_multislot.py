@@ -142,17 +142,22 @@ def test_html_contient_favicon_data_uri():
     html = _render_sample_html()
     # un seul <link rel="icon"> dans le <head>
     assert html.count('rel="icon"') == 1
-    assert 'href="data:image/svg+xml,' in html
+    # data-URI encodée en BASE64 (robuste : les navigateurs refusent le SVG
+    # en entités HTML / `<` bruts dans un favicon data:image/svg+xml).
+    assert 'href="data:image/svg+xml;base64,' in html
     # le favicon est dans le <head>, avant le </head>
     head = html.split("</head>", 1)[0]
     assert 'rel="icon"' in head
-    # le SVG est encodé en entités HTML (pas de balises brutes qui casseraient
-    # le parsing du document) → aucun "<svg" brut hors data-URI encodée.
-    assert "<svg" not in html  # uniquement &lt;svg&gt; encodé
-    assert "&lt;svg" in html
-    # couleurs trading (haussier/baissier) présentes dans l'icône
-    assert "limegreen" in html
-    assert "crimson" in html
+    # aucun "<svg" brut dans le document (le SVG est en base64).
+    assert "<svg" not in html
+    # le favicon DÉCODÉ contient bien le SVG chandelier vert/rouge
+    import base64 as _b64
+    import re as _re
+    _m = _re.search(r'href="data:image/svg\+xml;base64,([^"]+)"', html)
+    assert _m, "favicon base64 introuvable"
+    _svg = _b64.b64decode(_m.group(1)).decode("utf-8")
+    assert "<svg" in _svg
+    assert "limegreen" in _svg and "crimson" in _svg
     # page toujours bien formée
     assert html.startswith("<!DOCTYPE html>")
     assert html.rstrip().endswith("</html>")

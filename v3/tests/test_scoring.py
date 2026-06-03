@@ -335,7 +335,8 @@ def test_freshness_stale():
     data = {"last_update": stale.isoformat()}
     ok, msg = sa.check_freshness(data, now=now)
     assert not ok
-    assert "STALE" in msg
+    assert "PÉRIMÉ" in msg
+    assert "âge ≈ 2h" in msg  # affichage lisible (#1)
 
 
 def test_freshness_missing():

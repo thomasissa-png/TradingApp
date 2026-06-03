@@ -408,12 +408,21 @@ def check_freshness(data: dict, now: Optional[datetime] = None) -> Tuple[bool, s
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
     age = now - last_dt
+    # Affichage lisible de l'âge (le timedelta brut donne "-1 day, 23:59:59.99"
+    # quand la donnée est quasi à l'heure → incompréhensible). On le traduit.
+    age_h = age.total_seconds() / 3600.0
+    if age_h < 1:
+        age_label = "données du jour (< 1h)"
+    elif age_h < 24:
+        age_label = f"âge ≈ {age_h:.0f}h"
+    else:
+        age_label = f"âge ≈ {age_h / 24:.1f} j"
     if age > FRESHNESS_MAX:
         return False, (
-            f"criteres-courants STALE : âge={age}, dernier update={last_dt.isoformat()} "
+            f"criteres-courants PÉRIMÉ : {age_label}, dernier update={last_dt.isoformat()} "
             f"(seuil {FRESHNESS_MAX})"
         )
-    return True, f"fraîcheur OK (âge={age})"
+    return True, f"fraîcheur OK — {age_label}"
 
 
 # ---------------------------------------------------------------------------

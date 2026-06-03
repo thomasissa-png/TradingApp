@@ -391,3 +391,161 @@ def test_run_full_petrole(tmp_path, petrole, fiches_dir):
     # Score > 0 (3 critères LONG, signe +1, valeurs positives)
     assert r.scores["7j"] > 0
     assert r.conclusions["7j"] == "LONG"
+
+
+# ---------------------------------------------------------------------------
+# #6 — _fmt_raw : arrondi 4 chiffres significatifs pour les floats
+# ---------------------------------------------------------------------------
+
+def test_fmt_raw_float_long_arrondi_4_sig():
+    """Un float long est arrondi à ~4 chiffres significatifs."""
+    assert sa._fmt_raw(-0.01558281747644441) == "-0.01558"
+    assert sa._fmt_raw(2.0712345) == "2.071"
+    # Pas de notation scientifique moche : repli décimal lisible.
+    out = sa._fmt_raw(1.234e-05)
+    assert "e" not in out.lower()
+    assert out == "0.00001234"
+
+
+def test_fmt_raw_garde_entiers_none_str():
+    """Les entiers, floats entiers, None/dict et chaînes restent propres."""
+    # Entiers (triplets -1/0/+1, COT en milliers)
+    assert sa._fmt_raw(-1) == "-1"
+    assert sa._fmt_raw(0) == "0"
+    assert sa._fmt_raw(1) == "1"
+    # Float entier (ex. 441686.0) → sans décimales
+    assert sa._fmt_raw(441686.0) == "441686"
+    # None / chaînes
+    assert sa._fmt_raw(None) == "—"
+    assert sa._fmt_raw("texte") == "texte"
+    # bool n'est pas confondu avec un float scientifique
+    assert sa._fmt_raw(True) == "1"
+    # dict → résout la valeur puis applique le même arrondi
+    assert sa._fmt_raw({"valeur": -0.0099999}) == "-0.01"
+
+
+# ---------------------------------------------------------------------------
+# #7 — Audit de la veille (24h — convictions fortes)
+# ---------------------------------------------------------------------------
+
+def _ecrire_bulletin_veille(bulletins_dir: Path, bdate, conclusion: str = "LONG"):
+    """Écrit un bulletin minimal de la veille avec une cellule 24h Pétrole."""
+    bulletins_dir.mkdir(parents=True, exist_ok=True)
+    bid = f"{bdate.isoformat()}-16h"
+    p = bulletins_dir / f"bulletin-{bid}.md"
+    p.write_text(
+        f"# Bulletin Analyste — {bdate.isoformat()}\n\n"
+        "## Matrice\n\n"
+        "| Actif | 24h | 7j | 1m |\n"
+        "|---|---|---|---|\n"
+        f"| Pétrole (Brent) | {conclusion} (+1.50) | {conclusion} (+2.00) | {conclusion} (+3.00) |\n",
+        encoding="utf-8",
+    )
+    return bid, p
+
+
+def _ecrire_decision_log(log_dir: Path, bdate, confidence: str = "normale",
+                         is_carry=False, is_news_regime=False, coin_flip=False,
+                         news_dominant=False, ratio_news=0.0, score_pm1=1.5):
+    """Écrit un decision-log pour la cellule Pétrole 24h de la veille."""
+    import json
+    log_dir.mkdir(parents=True, exist_ok=True)
+    rec = {
+        "bulletin_date": bdate.isoformat(),
+        "actif": "Pétrole (Brent)",
+        "horizon": "24h",
+        "confidence": confidence,
+        "is_carry": is_carry,
+        "is_news_regime": is_news_regime,
+        "coin_flip": coin_flip,
+        "news_dominant": news_dominant,
+        "ratio_news": ratio_news,
+        "score_pm1": score_pm1,
+    }
+    (log_dir / f"{bdate.isoformat()}-1600.jsonl").write_text(
+        json.dumps(rec, ensure_ascii=False) + "\n", encoding="utf-8",
+    )
+
+
+def test_audit_veille_warmup_message(tmp_path):
+    """Aucune mesure 24h dispo → message « pas encore »."""
+    import journaliste as j
+    bulletins = tmp_path / "bulletins"
+    bulletins.mkdir()
+    lines = sa.build_audit_veille_24h(
+        now=datetime.now(),
+        bulletins_dir=bulletins,
+        decision_log_dir=tmp_path / "decision-log",
+    )
+    txt = "\n".join(lines)
+    assert "## Audit de la veille (24h — convictions fortes)" in txt
+    assert "Pas encore de cellule 24h à forte conviction" in txt
+
+
+def test_audit_veille_liste_conviction_normale_vrai(tmp_path, monkeypatch):
+    """Une cellule 24h conviction normale, mesurée VRAI, est listée avec son %."""
+    import journaliste as j
+    now = datetime.now()
+    bdate = (now - timedelta(days=1)).date()
+    bulletins = tmp_path / "bulletins"
+    log_dir = tmp_path / "decision-log"
+    prix_dir = tmp_path / "prix-emission"
+
+    bid, _ = _ecrire_bulletin_veille(bulletins, bdate, conclusion="LONG")
+    _ecrire_decision_log(log_dir, bdate, confidence="normale", score_pm1=1.5)
+
+    # Prix d'émission Pétrole (ticker BZ=F) + prix courant en hausse > seuil 24h.
+    prix_dir.mkdir()
+    (prix_dir / f"{bid}.json").write_text('{"BZ=F": 100.0}', encoding="utf-8")
+    monkeypatch.setattr(j, "PRIX_EMISSION_DIR", prix_dir)
+    monkeypatch.setattr(j, "DECISION_LOG_DIR", log_dir)
+    # +5% > seuil 24h → mouvement net dans le sens LONG → VRAI.
+    monkeypatch.setattr(
+        "criteres_calculator.fetch_twelve_price", lambda ticker: 105.0,
+    )
+
+    lines = sa.build_audit_veille_24h(
+        now=now, bulletins_dir=bulletins, decision_log_dir=log_dir,
+        prix_emission_dir=prix_dir,
+    )
+    txt = "\n".join(lines)
+    assert "✅" in txt
+    assert "Pétrole (Brent) 24h LONG" in txt
+    assert "VRAI" in txt
+    assert "+5.00%" in txt
+    assert "Pas encore" not in txt
+
+
+def test_audit_veille_exclut_faible_carry_news(tmp_path, monkeypatch):
+    """Les convictions dégradées (faible/carry/news) sont exclues de l'audit."""
+    import journaliste as j
+    now = datetime.now()
+    bdate = (now - timedelta(days=1)).date()
+    prix_dir = tmp_path / "prix-emission"
+    prix_dir.mkdir()
+    monkeypatch.setattr(j, "PRIX_EMISSION_DIR", prix_dir)
+    monkeypatch.setattr(
+        "criteres_calculator.fetch_twelve_price", lambda ticker: 105.0,
+    )
+
+    for label, kwargs in [
+        ("faible", {"confidence": "faible"}),
+        ("carry", {"confidence": "normale", "is_carry": True}),
+        ("news_regime", {"confidence": "normale", "is_news_regime": True}),
+        ("coin_flip", {"confidence": "normale", "coin_flip": True}),
+        ("news_dominant", {"confidence": "normale", "news_dominant": True}),
+    ]:
+        bulletins = tmp_path / f"bulletins_{label}"
+        log_dir = tmp_path / f"log_{label}"
+        bid, _ = _ecrire_bulletin_veille(bulletins, bdate, conclusion="LONG")
+        _ecrire_decision_log(log_dir, bdate, **kwargs)
+        (prix_dir / f"{bid}.json").write_text('{"BZ=F": 100.0}', encoding="utf-8")
+        monkeypatch.setattr(j, "DECISION_LOG_DIR", log_dir)
+        lines = sa.build_audit_veille_24h(
+            now=now, bulletins_dir=bulletins, decision_log_dir=log_dir,
+            prix_emission_dir=prix_dir,
+        )
+        txt = "\n".join(lines)
+        assert "Pas encore de cellule 24h à forte conviction" in txt, (
+            f"profil {label} aurait dû être exclu → message warm-up attendu"
+        )

@@ -2008,6 +2008,16 @@ def render_bulletin(
     if not has_limit:
         lines.append("- (aucune)")
     lines.append("")
+
+    # ── Audit de la veille (24h — convictions fortes) ───────────────────────
+    # Demande Thomas 2026-06-03 (#7) : EN FIN de bulletin, le résultat réalisé
+    # des prédictions 24h de la veille pour les cellules à FORTE conviction
+    # (confidence "normale" : ni faible, ni carry, ni news_regime, ni coin-flip).
+    # Réutilise le mécanisme de mesure du « Bilan des news » (journaliste.measure),
+    # filtré sur les cellules quant à forte conviction. Zéro invention : si le
+    # réalisé n'est pas mesurable (warm-up / suivi-interrompu), la ligne est omise.
+    lines.extend(build_audit_veille_24h(now))
+
     return "\n".join(lines)
 
 
@@ -2358,12 +2368,196 @@ def write_decision_log(
     return path
 
 
+# ---------------------------------------------------------------------------
+# Audit de la veille (24h — convictions fortes) — section bulletin (#7)
+# ---------------------------------------------------------------------------
+
+def load_conviction_map(
+    bulletin_date: str,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    """Retrouve par cellule (actif, horizon) son profil de conviction.
+
+    Scanne les decision-log/YYYY-MM-DD-HHMM.jsonl dont bulletin_date == date
+    (le dernier run du jour écrase les précédents → reflète le bulletin final).
+    Pour chaque cellule, retourne {confidence, is_carry, is_news_regime,
+    coin_flip, news_dominant, ratio_news, score_pm1}. Zéro invention : si le
+    dossier ou les fichiers n'existent pas → dict vide (la cellule sera ignorée).
+    """
+    import json as _json
+    result: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    if not decision_log_dir.exists():
+        return result
+    files = sorted(decision_log_dir.glob(f"{bulletin_date}-*.jsonl"))
+    if not files:
+        return result
+    for fp in files:
+        try:
+            with fp.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = _json.loads(line)
+                    except _json.JSONDecodeError:
+                        continue
+                    if not isinstance(rec, dict):
+                        continue
+                    if rec.get("bulletin_date") != bulletin_date:
+                        continue
+                    actif = rec.get("actif")
+                    horizon = rec.get("horizon")
+                    if not actif or horizon not in HORIZONS:
+                        continue
+                    result[(str(actif), str(horizon))] = {
+                        "confidence": rec.get("confidence"),
+                        "is_carry": bool(rec.get("is_carry", False)),
+                        "is_news_regime": bool(rec.get("is_news_regime", False)),
+                        "coin_flip": bool(rec.get("coin_flip", False)),
+                        "news_dominant": rec.get("news_dominant"),
+                        "ratio_news": rec.get("ratio_news"),
+                        "score_pm1": rec.get("score_pm1"),
+                    }
+        except OSError as e:
+            logger.warning("decision-log illisible (audit veille) %s : %s", fp, e)
+            continue
+    return result
+
+
+def build_audit_veille_24h(
+    now: datetime,
+    bulletins_dir: Path = BULLETINS_DIR,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+    prix_emission_dir: Optional[Path] = None,
+) -> List[str]:
+    """Section « ## Audit de la veille (24h — convictions fortes) » (FIN bulletin).
+
+    Pour chaque cellule 24h de la VEILLE qui était en confidence "normale"
+    (forte conviction : ni faible, ni carry, ni news_regime, ni coin-flip,
+    ni news-driven) et dont l'échéance 24h est arrivée → résultat réalisé
+    (+x.xx %) + VRAI/FAUX (direction correcte ?).
+
+    Réutilise journaliste.measure (même infra que le Bilan des news) puis
+    filtre sur les cellules quant à forte conviction via le decision-log
+    d'émission. Trie par |note| décroissante. Warm-up → message dédié.
+
+    Zéro invention : si une mesure n'est pas conclusive (suivi-interrompu /
+    delta indisponible) → ligne omise. Aucun chiffre fabriqué.
+    """
+    lines: List[str] = ["## Audit de la veille (24h — convictions fortes)", ""]
+    placeholder = (
+        "_Pas encore de cellule 24h à forte conviction arrivée à échéance._"
+    )
+
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import journaliste  # import paresseux : isole l'audit d'un éventuel KO
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Audit veille 24h indisponible (import journaliste) : %s", e)
+        lines.append(placeholder)
+        lines.append("")
+        return lines
+
+    try:
+        measure_kwargs: Dict[str, Any] = {
+            "today": now.date(),
+            "bulletins_dir": bulletins_dir,
+        }
+        if prix_emission_dir is not None:
+            measure_kwargs["prix_emission_dir"] = prix_emission_dir
+        measures, _ = journaliste.measure(**measure_kwargs)
+    except Exception as e:  # noqa: BLE001
+        # Best-effort : un fetch prix KO ne doit pas casser le bulletin.
+        logger.warning("Audit veille 24h indisponible (measure_all) : %s", e)
+        lines.append(placeholder)
+        lines.append("")
+        return lines
+
+    OUTCOME_VRAI = getattr(journaliste, "OUTCOME_VRAI", "VRAI")
+    OUTCOME_FAUSSE = getattr(journaliste, "OUTCOME_FAUSSE", "FAUSSE")
+
+    # On ne garde que les cellules 24h conclusives (VRAI/FAUSSE) émises la VEILLE
+    # (échéance 24h == aujourd'hui → bulletin_date == hier). On joint le profil
+    # de conviction via le decision-log d'émission et on exclut tout ce qui
+    # n'est PAS une forte conviction quant.
+    conviction_cache: Dict[str, Dict[Tuple[str, str], Dict[str, Any]]] = {}
+    retained: List[Tuple[float, Any]] = []  # (|note|, measure)
+    for m in measures:
+        if m.horizon != "24h":
+            continue
+        if m.outcome not in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            continue
+        if m.delta_pct is None:
+            continue
+        # « Veille » : prédiction émise hier, échue aujourd'hui.
+        bdate_iso = m.cell.bulletin_date.isoformat()
+        if bdate_iso not in conviction_cache:
+            conviction_cache[bdate_iso] = load_conviction_map(
+                bdate_iso, decision_log_dir=decision_log_dir,
+            )
+        prof = conviction_cache[bdate_iso].get((m.cell.actif_name, m.horizon))
+        if prof is None:
+            continue  # decision-log d'émission introuvable → zéro supposition
+        # Forte conviction = confidence "normale" stricte ET aucun marqueur de
+        # conviction dégradée (carry / news_regime / coin-flip / news-driven).
+        if prof.get("confidence") != "normale":
+            continue
+        if prof.get("is_carry") or prof.get("is_news_regime") or prof.get("coin_flip"):
+            continue
+        news_dom = prof.get("news_dominant")
+        ratio_news = prof.get("ratio_news")
+        is_news = False
+        if isinstance(news_dom, bool):
+            is_news = news_dom
+        elif isinstance(ratio_news, (int, float)):
+            is_news = ratio_news > 50
+        if is_news or m.news_driven is True:
+            continue  # exclut les calls news (déjà couverts par « Bilan des news »)
+        score = prof.get("score_pm1")
+        note_abs = abs(float(score)) if isinstance(score, (int, float)) else abs(m.cell.score)
+        retained.append((note_abs, m))
+
+    if not retained:
+        lines.append(placeholder)
+        lines.append("")
+        return lines
+
+    retained.sort(key=lambda t: t[0], reverse=True)
+    for _, m in retained:
+        ok = m.outcome == OUTCOME_VRAI
+        icon = "✅" if ok else "❌"
+        verdict = "VRAI" if ok else "FAUX"
+        lines.append(
+            f"- {icon} **{m.cell.actif_name} 24h {m.cell.conclusion}** → "
+            f"{verdict} (réel {m.delta_pct:+.2f}%) "
+            f"[prédit le {m.cell.bulletin_date.isoformat()}]"
+        )
+    lines.append("")
+    return lines
+
+
 def _fmt_raw(raw: Any) -> str:
     if raw is None:
         return "—"
     if isinstance(raw, dict):
         v = raw.get("valeur", raw.get("valeur_normalisee"))
-        return str(v) if v is not None else "—"
+        return _fmt_raw(v) if v is not None else "—"
+    # bool est un sous-type d'int en Python → traité comme entier ci-dessous.
+    if isinstance(raw, bool):
+        return str(int(raw))
+    if isinstance(raw, int):
+        return str(raw)
+    if isinstance(raw, float):
+        # Entiers exacts (ex. 441686.0, COT en milliers) → sans décimales.
+        if raw == int(raw) and abs(raw) < 1e15:
+            return str(int(raw))
+        # ~4 chiffres significatifs, sans notation scientifique moche.
+        s = f"{raw:.4g}"
+        if "e" in s or "E" in s:
+            # repli : format décimal lisible (ex. 1.234e-05 → 0.00001234).
+            s = f"{raw:.10f}".rstrip("0").rstrip(".")
+        return s
     return str(raw)
 
 

@@ -100,6 +100,7 @@ PRIX_EMISSION_DIR = ROOT / "data" / "prix-emission"
 DECISION_LOG_DIR = ROOT / "data" / "decision-log"
 PERFORMANCE_FILE = ROOT / "data" / "performance.md"
 PERFORMANCE_AB_FILE = ROOT / "data" / "performance-ab.md"
+MEASURES_LOG_FILE = ROOT / "data" / "measures-log.jsonl"
 CALIBRATION_FILE = ROOT / "data" / "calibration.md"
 
 # News-driven : seuil ratio_news (en %) si news_dominant absent du record.
@@ -1959,6 +1960,52 @@ def inject_bilan_news_into_bulletin(
 
 
 # ---------------------------------------------------------------------------
+# Persistance des mesures unitaires (historique par prédiction)
+# ---------------------------------------------------------------------------
+
+def measure_to_record(m: Measure) -> Dict[str, Any]:
+    """Sérialise une Measure en dict JSON-safe (pour measures-log.jsonl).
+
+    Zéro invention : on n'écrit QUE des champs qui existent déjà sur Measure /
+    sa BulletinCell. `realized_pct` = delta_pct (delta réalisé % vs émission).
+    Les dates sont en ISO. is_flip peut être None (pas de bulletin précédent).
+    """
+    cell = m.cell
+    return {
+        "bulletin_date": cell.bulletin_date.isoformat(),
+        "bulletin_id": cell.bulletin_id,
+        "fiche_key": m.fiche_key,
+        "actif": cell.actif_name,
+        "horizon": m.horizon,
+        "conclusion": cell.conclusion,
+        "score": cell.score,
+        "outcome": m.outcome,
+        "realized_pct": m.delta_pct,
+        "is_flip": m.is_flip,
+        "echeance": m.echeance.isoformat(),
+    }
+
+
+def write_measures_log(
+    measures: List[Measure],
+    path: Path = MEASURES_LOG_FILE,
+) -> Path:
+    """Réécrit `measures-log.jsonl` (1 ligne JSON par mesure).
+
+    Réécriture COMPLÈTE à chaque run : `measure()` re-scanne tout l'historique
+    des bulletins, donc la liste est exhaustive et auto-suffisante. On ne change
+    RIEN au calcul — on persiste tel quel ce que `measure()` produit.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        json.dumps(measure_to_record(m), ensure_ascii=False)
+        for m in measures
+    ]
+    path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    return path
+
+
+# ---------------------------------------------------------------------------
 # Entrée principale
 # ---------------------------------------------------------------------------
 
@@ -2005,6 +2052,15 @@ def run(
     content = render_performance(kpis, measures, now)
     out_path = write_performance(content, performance_path)
     logger.info("performance.md écrit : %s (%d mesures, %d cellules)", out_path, len(measures), len(kpis))
+
+    # Persistance des mesures unitaires (historique par prédiction) — best-effort.
+    # Réécriture complète depuis la sortie de measure() (re-scan exhaustif).
+    try:
+        measures_log_path = performance_path.parent / "measures-log.jsonl"
+        write_measures_log(measures, measures_log_path)
+        logger.info("measures-log.jsonl écrit : %s (%d mesures)", measures_log_path, len(measures))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("measures-log KO (non bloquant) : %s", e)
 
     # Calibration (best-effort, non bloquant)
     try:

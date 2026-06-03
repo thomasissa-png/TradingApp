@@ -23,12 +23,21 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 BULLETINS_DIR = ROOT / "data" / "bulletins"
 OUT_PATH = ROOT / "data" / "index.html"
+MEASURES_LOG_FILE = ROOT / "data" / "measures-log.jsonl"
+PERFORMANCE_AB_FILE = ROOT / "data" / "performance-ab.md"
 MAX_BULLETINS = 90
+
+# Ligne de la Matrice A/B de performance-ab.md :
+# | Actif | Horizon | N_pm1 | Taux_pm1 | Brier_pm1 | N_pond | Taux_pond | Brier_pond |
+RE_AB_ROW = re.compile(
+    r"^\|\s*(?P<actif>[^|]+?)\s*\|\s*(?P<horizon>[^|]+?)\s*\|"
+    r"\s*(?P<n>[^|]+?)\s*\|\s*(?P<taux>[^|]+?)\s*\|\s*(?P<brier>[^|]+?)\s*\|"
+)
 
 # Regex pour extraire l'identité du bulletin du nom de fichier :
 #   - nouveau : bulletin-YYYY-MM-DD-HHh.md  (3 runs/jour, créneau = heure UTC)
@@ -108,7 +117,71 @@ def build_payload() -> List[Dict[str, str]]:
     return payload
 
 
-def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
+def load_measures(path: Path = MEASURES_LOG_FILE) -> List[Dict]:
+    """Charge measures-log.jsonl (1 mesure JSON par ligne).
+
+    Retourne une liste de dicts (ordre du fichier). Si le fichier est absent
+    (1er run, mesures pas encore persistées) → liste vide (l'onglet Historique
+    affichera « Historique en cours de constitution »). Lignes illisibles ignorées.
+    """
+    if not path.exists():
+        return []
+    out: List[Dict] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(rec, dict):
+            out.append(rec)
+    return out
+
+
+def parse_perf_ab_summary(path: Path = PERFORMANCE_AB_FILE) -> Dict[str, Dict[str, str]]:
+    """Extrait un résumé (Taux/Brier ±1) par cellule depuis performance-ab.md.
+
+    Clé = "{actif}|{horizon}" ; valeur = {"taux": str, "brier": str}. On ne lit
+    QUE la Matrice A/B existante (colonnes Taux_pm1 / Brier_pm1). Aucune cellule
+    inventée : si le fichier est absent ou la table introuvable → dict vide.
+    """
+    summary: Dict[str, Dict[str, str]] = {}
+    if not path.exists():
+        return summary
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return summary
+    for line in text.splitlines():
+        m = RE_AB_ROW.match(line)
+        if not m:
+            continue
+        actif = m.group("actif").strip()
+        horizon = m.group("horizon").strip()
+        # Saute la ligne d'en-tête et le séparateur markdown.
+        if actif.lower() in ("actif", "") or horizon.lower() in ("horizon", ""):
+            continue
+        if set(actif) <= set("-: "):
+            continue
+        summary[f"{actif}|{horizon}"] = {
+            "taux": m.group("taux").strip(),
+            "brier": m.group("brier").strip(),
+        }
+    return summary
+
+
+def render_html(
+    payload: List[Dict[str, str]],
+    total_count: int,
+    measures: Optional[List[Dict]] = None,
+    perf_ab: Optional[Dict[str, Dict[str, str]]] = None,
+) -> str:
     """Génère le HTML autonome."""
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     # On sérialise séparément id/label/filename en JSON (simple), et le markdown
@@ -128,6 +201,13 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
         md_escaped = escape_for_js_template_literal(b["markdown"])
         js_entries.append(f"{{...{meta}, markdown: `{md_escaped}`}}")
     bulletins_js = "[\n" + ",\n".join(js_entries) + "\n]"
+
+    # Historique : mesures unitaires + résumé Taux/Brier par cellule (page
+    # autonome → tout est sérialisé en JS, aucun fetch au runtime).
+    measures = measures or []
+    perf_ab = perf_ab or {}
+    measures_js = json.dumps(measures, ensure_ascii=False)
+    perf_ab_js = json.dumps(perf_ab, ensure_ascii=False)
 
     embedded = len(payload)
     truncated_note = ""
@@ -397,6 +477,60 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
   .fold-section[open] > summary::before {{ transform: rotate(90deg); }}
   .fold-section > *:not(summary) {{ padding-left: 14px; padding-right: 14px; }}
   .fold-section > .table-wrap {{ margin-left: 14px; margin-right: 14px; }}
+  /* Navigation des vues (Historique) en tête de sidebar */
+  #nav-views {{ list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--border); }}
+  .nav-view-link {{
+    display: block; text-decoration: none;
+    padding: 12px 16px; color: var(--text);
+    border-left: 3px solid transparent; font-weight: 600; font-size: 13.5px;
+  }}
+  .nav-view-link:hover {{ background: var(--accent-bg); }}
+  .nav-view-link.active {{ background: var(--accent-bg); border-left-color: var(--accent); }}
+  .nav-section-label {{
+    padding: 8px 16px 4px 16px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;
+  }}
+  /* Vue Historique */
+  #history-view .history-intro {{ color: var(--text-muted); margin: 4px 0 18px 0; }}
+  .history-filters {{
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end;
+    margin: 16px 0; padding: 12px; background: var(--bg-panel);
+    border: 1px solid var(--border); border-radius: 6px;
+  }}
+  .history-filters label {{
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 12px; color: var(--text-muted); font-weight: 600;
+  }}
+  .history-filters select {{
+    padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 4px;
+    background: var(--bg); color: var(--text); font-size: 13.5px; min-width: 120px;
+  }}
+  .history-count {{ font-size: 12.5px; color: var(--text-muted); align-self: center; }}
+  #history-table {{ border-collapse: collapse; width: 100%; font-size: 13.5px; }}
+  #history-table th, #history-table td {{
+    border-bottom: 1px solid var(--border); padding: 9px 12px; text-align: left;
+    white-space: nowrap;
+  }}
+  #history-table th {{
+    background: var(--th-bg); font-weight: 600;
+    border-bottom: 2px solid var(--border-strong);
+    position: sticky; top: 0; z-index: 1;
+  }}
+  #history-table tbody tr:nth-child(even) {{ background: var(--row-alt); }}
+  #history-table tbody tr:hover {{ background: var(--accent-bg); }}
+  .outcome-vrai {{ color: var(--dir-long-color); font-weight: 600; }}
+  .outcome-faux {{ color: var(--dir-short-color); font-weight: 600; }}
+  .outcome-neutre {{ color: var(--text-muted); }}
+  #history-summary {{
+    display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 8px 0;
+  }}
+  #history-summary .summary-card {{
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px;
+    background: var(--bg-panel); font-size: 12.5px; min-width: 120px;
+  }}
+  #history-summary .summary-card .sc-cell {{ color: var(--text-muted); }}
+  #history-summary .summary-card .sc-val {{ font-weight: 600; color: var(--text); }}
+  #history-empty {{ color: var(--text-muted); font-style: italic; padding: 20px 0; }}
   /* Overlay mobile pour fermer la sidebar */
   .sidebar-overlay {{
     display: none;
@@ -461,6 +595,10 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
 <div class="sidebar-overlay" id="sidebar-overlay"></div>
 <div class="layout">
   <aside id="sidebar">
+    <ul id="nav-views">
+      <li><a href="#vue=historique" id="nav-history" class="nav-view-link">📊 Historique / Performance</a></li>
+    </ul>
+    <div class="nav-section-label">Bulletins</div>
     <ul id="bulletin-list"></ul>
   </aside>
   <main id="bulletin-main">
@@ -508,11 +646,46 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
       <div id="bulletin-content">
         <p>Chargement...</p>
       </div>
+      <section id="history-view" hidden aria-label="Historique des décisions et performance">
+        <h1>Historique / Performance</h1>
+        <p class="history-intro">Toutes les décisions passées et leur résultat à l'échéance. La base de ce qui a été fait.</p>
+        <div id="history-summary"></div>
+        <div class="history-filters" role="group" aria-label="Filtres de l'historique">
+          <label>Actif
+            <select id="filter-actif" aria-label="Filtrer par actif"><option value="">Tous</option></select>
+          </label>
+          <label>Horizon
+            <select id="filter-horizon" aria-label="Filtrer par horizon"><option value="">Tous</option></select>
+          </label>
+          <label>Résultat
+            <select id="filter-outcome" aria-label="Filtrer par résultat">
+              <option value="">Tous</option>
+              <option value="vrai">✅ VRAI</option>
+              <option value="faux">❌ FAUX</option>
+              <option value="encours">⏳ En cours</option>
+            </select>
+          </label>
+          <span id="history-count" class="history-count"></span>
+        </div>
+        <div class="table-wrap">
+          <table id="history-table">
+            <thead>
+              <tr>
+                <th>Date</th><th>Actif</th><th>Horizon</th><th>Direction</th><th>Résultat</th><th>Réalisé %</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody"></tbody>
+          </table>
+        </div>
+        <p id="history-empty" hidden></p>
+      </section>
     </div>
   </main>
 </div>
 <script>
 const BULLETINS = {bulletins_js};
+const MEASURES = {measures_js};
+const PERF_AB = {perf_ab_js};
 
 // Colorisation idempotente des cellules de tableau :
 // - "LONG" / "SHORT" enveloppés dans <span class="dir-long|dir-short">
@@ -749,7 +922,154 @@ function buildSubnav(root) {{
   }});
 }}
 
+// --- Vue Historique / Performance -----------------------------------------
+// Classe un outcome brut (VRAI / FAUSSE / en-cours / interrompu / non-conclusive…)
+// en 3 familles d'affichage : vrai (✅), faux (❌), neutre (⏳/—).
+function outcomeClass(outcome) {{
+  const o = (outcome || '').toString().toUpperCase();
+  if (o === 'VRAI' || o.startsWith('VRAI')) return 'vrai';
+  if (o === 'FAUSSE' || o === 'FAUX' || o.startsWith('FAUS')) return 'faux';
+  // en-cours / interrompu / non-conclusive / inconnu → neutre
+  return 'neutre';
+}}
+function outcomeBadge(cls, outcome) {{
+  if (cls === 'vrai') return '✅ VRAI';
+  if (cls === 'faux') return '❌ FAUX';
+  // affiche l'outcome brut tel quel (en-cours, interrompu, non-conclusive…)
+  return '⏳ ' + (outcome || '—');
+}}
+function fmtPct(v) {{
+  if (v === null || v === undefined || v === '') return '—';
+  const n = Number(v);
+  if (!isFinite(n)) return '—';
+  return (n >= 0 ? '+' : '') + n.toFixed(2) + ' %';
+}}
+function uniqueSorted(values) {{
+  return Array.from(new Set(values.filter(v => v !== null && v !== undefined && v !== ''))).sort();
+}}
+
+let HISTORY_BUILT = false;
+function buildHistoryFilters() {{
+  const selA = document.getElementById('filter-actif');
+  const selH = document.getElementById('filter-horizon');
+  if (!selA || !selH) return;
+  uniqueSorted(MEASURES.map(m => m.actif)).forEach(a => {{
+    const o = document.createElement('option'); o.value = a; o.textContent = a; selA.appendChild(o);
+  }});
+  uniqueSorted(MEASURES.map(m => m.horizon)).forEach(h => {{
+    const o = document.createElement('option'); o.value = h; o.textContent = h; selH.appendChild(o);
+  }});
+  selA.addEventListener('change', renderHistoryTable);
+  selH.addEventListener('change', renderHistoryTable);
+  const selO = document.getElementById('filter-outcome');
+  if (selO) selO.addEventListener('change', renderHistoryTable);
+}}
+function buildHistorySummary() {{
+  const wrap = document.getElementById('history-summary');
+  if (!wrap) return;
+  const keys = Object.keys(PERF_AB);
+  if (keys.length === 0) {{ wrap.innerHTML = ''; return; }}
+  wrap.innerHTML = '';
+  keys.forEach(k => {{
+    const [actif, horizon] = k.split('|');
+    const v = PERF_AB[k] || {{}};
+    const card = document.createElement('div');
+    card.className = 'summary-card';
+    card.innerHTML = '<div class="sc-cell">' + actif + ' · ' + horizon + '</div>'
+      + '<div><span class="sc-val">Taux ' + (v.taux || '—') + '</span>'
+      + ' · Brier ' + (v.brier || '—') + '</div>';
+    wrap.appendChild(card);
+  }});
+}}
+function renderHistoryTable() {{
+  const tbody = document.getElementById('history-tbody');
+  const empty = document.getElementById('history-empty');
+  const countEl = document.getElementById('history-count');
+  const table = document.getElementById('history-table');
+  if (!tbody) return;
+  // 1er run : aucune mesure persistée → message de constitution.
+  if (!MEASURES || MEASURES.length === 0) {{
+    tbody.innerHTML = '';
+    if (table) table.hidden = true;
+    if (empty) {{ empty.hidden = false; empty.textContent = 'Historique en cours de constitution — les résultats par prédiction apparaîtront ici dès la première mesure d\\'échéance.'; }}
+    if (countEl) countEl.textContent = '';
+    return;
+  }}
+  if (table) table.hidden = false;
+  const fActif = (document.getElementById('filter-actif') || {{}}).value || '';
+  const fHorizon = (document.getElementById('filter-horizon') || {{}}).value || '';
+  const fOutcome = (document.getElementById('filter-outcome') || {{}}).value || '';
+  let rows = MEASURES.slice();
+  if (fActif) rows = rows.filter(m => m.actif === fActif);
+  if (fHorizon) rows = rows.filter(m => m.horizon === fHorizon);
+  if (fOutcome) rows = rows.filter(m => outcomeClass(m.outcome) === fOutcome);
+  // Tri par date décroissante (puis actif/horizon stable).
+  rows.sort((a, b) => {{
+    const da = (a.bulletin_date || '') + (a.bulletin_id || '');
+    const db = (b.bulletin_date || '') + (b.bulletin_id || '');
+    if (da < db) return 1;
+    if (da > db) return -1;
+    return (a.actif || '').localeCompare(b.actif || '');
+  }});
+  tbody.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  rows.forEach(m => {{
+    const tr = document.createElement('tr');
+    const cls = outcomeClass(m.outcome);
+    const dir = (m.conclusion || '—');
+    const dirCls = dir === 'LONG' ? 'dir-long' : (dir === 'SHORT' ? 'dir-short' : '');
+    tr.innerHTML =
+      '<td>' + (m.bulletin_date || '—') + '</td>'
+      + '<td>' + (m.actif || '—') + '</td>'
+      + '<td>' + (m.horizon || '—') + '</td>'
+      + '<td class="' + dirCls + '">' + dir + '</td>'
+      + '<td class="outcome-' + cls + '">' + outcomeBadge(cls, m.outcome) + '</td>'
+      + '<td>' + fmtPct(m.realized_pct) + '</td>';
+    frag.appendChild(tr);
+  }});
+  tbody.appendChild(frag);
+  if (empty) empty.hidden = true;
+  if (countEl) countEl.textContent = rows.length + ' / ' + MEASURES.length + ' décisions';
+}}
+function showHistory() {{
+  if (!HISTORY_BUILT) {{
+    buildHistoryFilters();
+    buildHistorySummary();
+    HISTORY_BUILT = true;
+  }}
+  renderHistoryTable();
+  const hv = document.getElementById('history-view');
+  const bc = document.getElementById('bulletin-content');
+  const subnav = document.getElementById('subnav');
+  const legend = document.getElementById('legend-bar');
+  const help = document.querySelector('.help-box');
+  if (hv) hv.hidden = false;
+  if (bc) bc.hidden = true;
+  if (subnav) subnav.style.display = 'none';
+  if (legend) legend.style.display = 'none';
+  if (help) help.style.display = 'none';
+  const nav = document.getElementById('nav-history');
+  if (nav) nav.classList.add('active');
+  renderList(null);
+  history.replaceState(null, '', '#vue=historique');
+  const mainEl = document.getElementById('bulletin-main');
+  if (mainEl) mainEl.scrollTop = 0;
+}}
+function hideHistory() {{
+  const hv = document.getElementById('history-view');
+  const bc = document.getElementById('bulletin-content');
+  const legend = document.getElementById('legend-bar');
+  const help = document.querySelector('.help-box');
+  if (hv) hv.hidden = true;
+  if (bc) bc.hidden = false;
+  if (legend) legend.style.display = '';
+  if (help) help.style.display = '';
+  const nav = document.getElementById('nav-history');
+  if (nav) nav.classList.remove('active');
+}}
+
 function selectBulletin(id) {{
+  hideHistory();
   const b = BULLETINS.find(x => x.id === id);
   const content = document.getElementById('bulletin-content');
   const mainEl = document.getElementById('bulletin-main');
@@ -809,13 +1129,25 @@ function closeSidebarMobile() {{
     if (e.key === 'Escape') closeSidebarMobile();
   }});
 
+  // Lien « Historique / Performance » de la sidebar.
+  const navHist = document.getElementById('nav-history');
+  if (navHist) navHist.addEventListener('click', (e) => {{
+    e.preventDefault();
+    showHistory();
+    closeSidebarMobile();
+  }});
+
+  const rawHash = (location.hash || '').replace(/^#/, '');
+
   if (BULLETINS.length === 0) {{
+    if (rawHash === 'vue=historique') {{ showHistory(); return; }}
     document.getElementById('bulletin-content').innerHTML = '<p>Aucun bulletin disponible.</p>';
     const subnav = document.getElementById('subnav');
     if (subnav) subnav.style.display = 'none';
     return;
   }}
-  const hash = decodeURIComponent((location.hash || '').replace(/^#/, ''));
+  if (rawHash === 'vue=historique') {{ showHistory(); return; }}
+  const hash = decodeURIComponent(rawHash);
   const found = BULLETINS.find(b => b.id === hash);
   selectBulletin(found ? found.id : BULLETINS[0].id);
 }})();
@@ -829,10 +1161,15 @@ def main() -> int:
     items = list_bulletins()
     total = len(items)
     payload = build_payload()
-    html = render_html(payload, total)
+    measures = load_measures()
+    perf_ab = parse_perf_ab_summary()
+    html = render_html(payload, total, measures=measures, perf_ab=perf_ab)
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(html, encoding="utf-8")
-    print(f"[build_html] {len(payload)}/{total} bulletins embarqués → {OUT_PATH} ({OUT_PATH.stat().st_size} octets)")
+    print(
+        f"[build_html] {len(payload)}/{total} bulletins + {len(measures)} mesures embarqués "
+        f"→ {OUT_PATH} ({OUT_PATH.stat().st_size} octets)"
+    )
     return 0
 
 

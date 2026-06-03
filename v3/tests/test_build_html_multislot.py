@@ -134,3 +134,25 @@ def test_html_bien_forme_smoke():
     # équilibre grossier des balises script
     assert html.count("<script") == html.count("</script>")
     assert html.count("<style>") == html.count("</style>")
+
+
+def test_html_contient_favicon_data_uri():
+    """(a) La page autonome embarque un favicon inline en data-URI SVG
+    (pas de fichier externe) et reste bien formée."""
+    html = _render_sample_html()
+    # un seul <link rel="icon"> dans le <head>
+    assert html.count('rel="icon"') == 1
+    assert 'href="data:image/svg+xml,' in html
+    # le favicon est dans le <head>, avant le </head>
+    head = html.split("</head>", 1)[0]
+    assert 'rel="icon"' in head
+    # le SVG est encodé en entités HTML (pas de balises brutes qui casseraient
+    # le parsing du document) → aucun "<svg" brut hors data-URI encodée.
+    assert "<svg" not in html  # uniquement &lt;svg&gt; encodé
+    assert "&lt;svg" in html
+    # couleurs trading (haussier/baissier) présentes dans l'icône
+    assert "limegreen" in html
+    assert "crimson" in html
+    # page toujours bien formée
+    assert html.startswith("<!DOCTYPE html>")
+    assert html.rstrip().endswith("</html>")

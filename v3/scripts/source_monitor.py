@@ -274,16 +274,22 @@ def render_briefing_block(health_path: Path) -> str:
         lines.append(m.group(1).strip())
         lines.append("")
 
-    # Extraire les lignes du tableau en panne (❌) ou muettes (⚪).
-    # Le partiel (⚠️) n'est PAS un problème bloquant : on le liste à part,
-    # en avertissement de diagnostic, sans le compter comme panne.
+    # Extraire les lignes du tableau, en trois groupes DISTINCTS :
+    #  - problems (❌) = VRAIES pannes (0 reçu / auth / dead) → bloquant.
+    #  - mutes    (⚪) = flux muets (reçus>0 mais 0 gardé = tout dédupliqué/
+    #                    filtré) → NORMAL, non bloquant, ne doit PAS affoler.
+    #  - partials (⚠️) = requêtes fautives mais données utiles reçues → non bloquant.
+    # On ne change PAS le calcul du statut (déjà en place), seulement le
+    # regroupement d'affichage pour ne plus présenter les muets comme problèmes.
     # Format colonnes : | icon | statut | name | http | recus | kept | reason |
     problems = []
+    mutes = []
     partials = []
     for ln in txt.splitlines():
-        is_problem = ln.startswith("| ❌ ") or ln.startswith("| ⚪ ")
+        is_problem = ln.startswith("| ❌ ")
+        is_mute = ln.startswith("| ⚪ ")
         is_partial = ln.startswith("| ⚠️ ")
-        if not (is_problem or is_partial):
+        if not (is_problem or is_mute or is_partial):
             continue
         parts = [c.strip() for c in ln.split("|")[1:-1]]
         if len(parts) >= 7:
@@ -296,6 +302,8 @@ def render_briefing_block(health_path: Path) -> str:
         entry = f"- {icon} `{name}` ({http}, reçus={recus}, gardés={kept}) — {reason or 'n/a'}"
         if is_partial:
             partials.append(entry)
+        elif is_mute:
+            mutes.append(entry)
         else:
             problems.append(entry)
     if problems:
@@ -305,7 +313,13 @@ def render_briefing_block(health_path: Path) -> str:
             lines.append(f"- _(+{len(problems) - 15} autres, voir source-health.md)_")
         lines.append("")
     else:
-        lines.append("Tous les flux appelés ont livré des items utiles.")
+        lines.append("Aucune vraie panne : tous les flux appelés ont répondu.")
+        lines.append("")
+    if mutes:
+        lines.append("**Flux muets** (normal — tout dédupliqué/filtré, non bloquant) :")
+        lines.extend(mutes[:10])
+        if len(mutes) > 10:
+            lines.append(f"- _(+{len(mutes) - 10} autres, voir source-health.md)_")
         lines.append("")
     if partials:
         lines.append("**Flux partiels** (données reçues, requêtes fautives non bloquantes) :")

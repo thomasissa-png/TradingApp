@@ -343,8 +343,63 @@ def test_render_briefing_block_extracts_synthese_and_problems(tmp_path):
     assert "HTTP 500" in block
     # ok_feed ne doit PAS apparaître dans la liste des problèmes
     # (mais peut apparaître dans la synthèse, donc on vérifie le bloc "Flux à problème")
-    problem_block = block.split("**Flux à problème :**")[1] if "**Flux à problème :**" in block else ""
+    problem_block = _section(block, "**Flux à problème :**")
     assert "ok_feed" not in problem_block
+
+
+def _section(block: str, header: str) -> str:
+    """Extrait le contenu d'une section markdown du briefing (jusqu'au header
+    suivant en **gras** ou la fin)."""
+    if header not in block:
+        return ""
+    rest = block.split(header, 1)[1]
+    # Couper au prochain en-tête de section en **gras** (ligne commençant par **).
+    out_lines = []
+    for ln in rest.splitlines():
+        if ln.startswith("**") and out_lines:
+            break
+        out_lines.append(ln)
+    return "\n".join(out_lines)
+
+
+def test_muet_separe_des_problemes_dans_briefing(tmp_path):
+    """Un flux ⚪ muet (reçus>0, 0 gardé = tout filtré/dédupliqué) NE doit PAS
+    apparaître dans 'Flux à problème' mais dans 'Flux muets' (non bloquant)."""
+    m = SourceMonitor()
+    m.record_call("eia_feed", ok=True, http_status="200", items_fetched=30)
+    m.record_call("ok_feed", ok=True, http_status="200", items_fetched=5)
+    m.set_items_kept({"eia_feed": 0, "ok_feed": 5})  # eia_feed = muet
+
+    out = tmp_path / "source-health.md"
+    write_source_health(m, out)
+    block = render_briefing_block(out)
+
+    assert "**Flux muets**" in block
+    problem_block = _section(block, "**Flux à problème :**")
+    mute_block = _section(block, "**Flux muets**")
+    assert "eia_feed" not in problem_block, "le muet ne doit pas affoler comme panne"
+    assert "eia_feed" in mute_block
+
+
+def test_panne_reelle_reste_dans_problemes_pas_dans_muets(tmp_path):
+    """Une vraie panne ❌ (échec total) reste dans 'Flux à problème' et n'est
+    PAS reléguée dans 'Flux muets'."""
+    m = SourceMonitor()
+    m.record_call("mining_com", ok=False, http_status="403",
+                  items_fetched=0, reason="HTTP 403")
+    m.record_call("eia_feed", ok=True, http_status="200", items_fetched=30)
+    m.set_items_kept({"mining_com": 0, "eia_feed": 0})  # mining=panne, eia=muet
+
+    out = tmp_path / "source-health.md"
+    write_source_health(m, out)
+    block = render_briefing_block(out)
+
+    problem_block = _section(block, "**Flux à problème :**")
+    mute_block = _section(block, "**Flux muets**")
+    assert "mining_com" in problem_block
+    assert "HTTP 403" in problem_block
+    assert "mining_com" not in mute_block
+    assert "eia_feed" in mute_block
 
 
 def test_render_briefing_block_no_file(tmp_path):

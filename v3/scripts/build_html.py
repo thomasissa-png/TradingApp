@@ -143,6 +143,7 @@ def render_html(payload: List[Dict[str, str]], total_count: int) -> str:
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TradingApp v3 — Bulletins</title>
+<link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'&gt;&lt;rect x='8' y='6' width='4' height='20' rx='1' fill='crimson'/&gt;&lt;line x1='10' y1='2' x2='10' y2='6' stroke='crimson' stroke-width='2'/&gt;&lt;line x1='10' y1='26' x2='10' y2='30' stroke='crimson' stroke-width='2'/&gt;&lt;rect x='20' y='12' width='4' height='14' rx='1' fill='limegreen'/&gt;&lt;line x1='22' y1='4' x2='22' y2='12' stroke='limegreen' stroke-width='2'/&gt;&lt;line x1='22' y1='26' x2='22' y2='28' stroke='limegreen' stroke-width='2'/&gt;&lt;/svg&gt;">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
   :root {{

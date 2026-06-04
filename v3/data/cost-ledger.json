@@ -34,5 +34,11 @@
     "calls": 460,
     "tokens_in": 871306,
     "tokens_out": 53640
+  },
+  "2026-06-04": {
+    "cost_usd": 0.026723,
+    "calls": 92,
+    "tokens_in": 170855,
+    "tokens_out": 10012
   }
 }

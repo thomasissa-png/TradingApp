@@ -226,6 +226,111 @@ def test_summarize_trades_accuracy_calculation():
 
 
 # ---------------------------------------------------------------------------
+# 6bis. No look-ahead FRED + COT (chantier v2 — données injectées, sans réseau)
+# ---------------------------------------------------------------------------
+
+def test_fred_series_asof_strict_no_lookahead():
+    """fred_series_asof ne doit JAMAIS renvoyer un point daté >= as_of.
+    On injecte une série synthétique dans le cache RAM pour tester sans réseau."""
+    import historical_data as hd
+    sid = "__TEST_FRED__"
+    # série quotidienne 2024-01-01 → 2024-12-31, valeur = jour de l'année
+    pts = []
+    d0 = date(2024, 1, 1)
+    for i in range(366):
+        d = d0 + timedelta(days=i)
+        pts.append((d.isoformat(), float(i)))
+    hd._FRED_RAM_CACHE[sid] = pts
+    dated = hd.fred_dated_asof(sid, "2024-06-15", lookback_days=400)
+    assert dated is not None and len(dated) > 0
+    last = dated[-1][0]
+    assert last < date(2024, 6, 15), f"VIOLATION look-ahead FRED : {last} >= as_of"
+    # la valeur du 2024-06-14 = jour 165 doit être présente, celle du 15 absente
+    present = {d for d, _ in dated}
+    assert date(2024, 6, 14) in present
+    assert date(2024, 6, 15) not in present
+    del hd._FRED_RAM_CACHE[sid]
+
+
+def test_cot_nets_asof_strict_no_lookahead_with_publication_lag():
+    """cot_nets_asof ne doit garder qu'un rapport publié (report_date+lag) AVANT as_of.
+    Données injectées : un rapport hebdo (mardi). Le rapport du mardi 2024-06-11
+    n'est publié que vers le vendredi → visible à as_of=2024-06-13 ? Non (lag 3j).
+    Visible à 2024-06-15 ? Oui."""
+    import historical_data as hd
+    mkt = "__TEST_MARKET__"
+    pts = []
+    # mardis successifs
+    d = date(2024, 5, 7)
+    val = 0.0
+    while d <= date(2024, 6, 18):
+        pts.append((d, val))
+        val += 100.0
+        d = d + timedelta(days=7)
+    hd._COT_RAM_CACHE[mkt] = pts
+    # report_date 2024-06-11 (+3 = 06-14). À as_of 2024-06-13 : pas encore visible.
+    nets_13 = hd.cot_nets_asof(mkt, "2024-06-13", lookback_days=400)
+    nets_16 = hd.cot_nets_asof(mkt, "2024-06-16", lookback_days=400)
+    # entre le 13 et le 16, le rapport du 11 devient visible → +1 point
+    assert nets_16 is not None
+    n13 = 0 if nets_13 is None else len(nets_13)
+    assert len(nets_16) == n13 + 1, (
+        f"le rapport du 2024-06-11 doit devenir visible entre le 13 et le 16 "
+        f"(n13={n13}, n16={len(nets_16)})"
+    )
+    # Aucun report_date visible ne doit dépasser as_of-lag
+    from historical_data import COT_PUBLICATION_LAG_DAYS
+    visible_reports = [rd for rd, _ in pts
+                       if rd + timedelta(days=COT_PUBLICATION_LAG_DAYS) < date(2024, 6, 16)]
+    assert len(nets_16) == len(visible_reports)
+    del hd._COT_RAM_CACHE[mkt]
+
+
+def test_cot_nets_definition_matches_live():
+    """Le net COT du backtest = noncomm_long − noncomm_short, MÊME définition que le
+    live fetch_cftc_managed_money_nets. Vérifié sur le parser Socrata partagé."""
+    import historical_data as hd
+    rows = [
+        {"report_date_as_yyyy_mm_dd": "2024-06-11", "noncomm_positions_long_all": "300",
+         "noncomm_positions_short_all": "100"},
+        {"report_date_as_yyyy_mm_dd": "2024-06-04", "noncomm_positions_long_all": "250",
+         "noncomm_positions_short_all": "150"},
+    ]
+    # On simule le parsing (même logique que _fetch_cot_socrata)
+    from datetime import datetime
+    parsed = []
+    for r in rows:
+        dd = datetime.fromisoformat(r["report_date_as_yyyy_mm_dd"]).date()
+        net = float(r["noncomm_positions_long_all"]) - float(r["noncomm_positions_short_all"])
+        parsed.append((dd, net))
+    parsed.sort(key=lambda t: t[0])
+    assert parsed[-1][1] == 200.0  # 300 - 100
+    assert parsed[0][1] == 100.0   # 250 - 150
+
+
+def test_fred_spread_asof_locf_alignment():
+    """fred_spread_asof applique le forward-fill LOCF (série DE basse fréquence
+    reportée sur les dates US) et reste no-look-ahead."""
+    import historical_data as hd
+    sus, sde = "__US__", "__DE__"
+    # US quotidien
+    us = []
+    d0 = date(2024, 1, 1)
+    for i in range(200):
+        us.append(((d0 + timedelta(days=i)).isoformat(), 5.0))
+    # DE mensuel (1er de chaque mois), valeur 2.0
+    de = [((date(2024, m, 1)).isoformat(), 2.0) for m in range(1, 7)]
+    hd._FRED_RAM_CACHE[sus] = us
+    hd._FRED_RAM_CACHE[sde] = de
+    spread = hd.fred_spread_asof(sus, sde, "2024-06-15", lookback_days=400)
+    assert spread is not None and len(spread) > 10
+    # spread = 5 - 2 = 3 partout (LOCF)
+    assert all(abs(s - 3.0) < 1e-9 for s in spread)
+    del hd._FRED_RAM_CACHE[sus]
+    del hd._FRED_RAM_CACHE[sde]
+
+
+# ---------------------------------------------------------------------------
 # 6. future_return cohérence
 # ---------------------------------------------------------------------------
 

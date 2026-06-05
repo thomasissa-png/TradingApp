@@ -57,10 +57,22 @@ from historical_data import (  # noqa: E402
     series_asof,
     future_return,
     non_overlapping_trading_dates,
+    fred_series_asof,
+    fred_spread_asof,
+    fred_delta_asof,
+    cot_nets_asof,
     TICKERS_V1,
+    TICKERS_V2_EXTENSION,
     TICKER_TO_FICHE,
     _get_full_df,
     _to_date,
+)
+# Mappings FRED/CFTC LIVE — réutilisés tels quels (zéro divergence)
+from criteres_calculator import (  # noqa: E402
+    FRED_SERIES_SIMPLE,
+    FRED_SPREADS,
+    FRED_DELTA,
+    CFTC_MARKETS,
 )
 
 logger = logging.getLogger("backtest.backtest_quant")
@@ -216,7 +228,9 @@ def quant_alpha_5j_zscore(ticker_a: str, ticker_b: str, as_of, *, window: int = 
 
 QUANT_SYMBOLS: Dict[str, Any] = {
     # --- Trend / risk-off ---
-    "dxy_trend_20j":         "DX-Y.NYB",
+    # dxy_trend_20j, taux_10y_us_reels_tips, taux_10y_us_delta_5j, hy_credit_spread
+    # sont désormais câblés sur FRED (cf. build_quant_value) — PLUS de proxies ETF
+    # (le proxy TIP était INVERSÉ en v1, bug corrigé via DFII10 direct).
     "vix_risk_off_proxy":    "^VIX",
     "niveau_vix_absolu":     "^VIX",
     "vix_regime":            "^VIX",          # mapping_non_monotone → traité spécifiquement
@@ -226,11 +240,6 @@ QUANT_SYMBOLS: Dict[str, Any] = {
     "sox_trend_5j":          "SOXX",
     # --- Term structure VIX ---
     "term_structure_vix_vix3m": ("^VIX3M", "^VIX"),
-    # --- Taux (proxies ETF) ---
-    "taux_10y_us_reels_tips":  "TIP",
-    "taux_10y_us_delta_5j":    "^TNX",
-    # --- Credit ---
-    "hy_credit_spread":      "HYG",
     # --- FX ---
     "usd_brl":               "USDBRL=X",
     "usd_jpy_proxy_risk":    "USDJPY=X",
@@ -257,6 +266,75 @@ QUANT_SYMBOLS: Dict[str, Any] = {
 }
 
 
+def build_macro_value(cle: str, crit: dict, as_of) -> Optional[Dict[str, float]]:
+    """Câble les critères FRED + CFTC COT, AS OF `as_of` (no look-ahead).
+
+    Réutilise les mappings ET formules LIVE (FRED_SERIES_SIMPLE/SPREADS/DELTA,
+    CFTC_MARKETS, zscore_from_series, compute_zscore_normalisee). Renvoie
+    {valeur, valeur_normalisee} ou None (n/a propre)."""
+    zscore_div = float(crit.get("zscore_div", 2.0))
+    cap = float(crit.get("cap", 1.0))
+
+    # --- FRED série simple (DFII10, BAMLH0A0HYM2, DTWEXBGS) ---
+    if cle in FRED_SERIES_SIMPLE:
+        window = int(crit.get("zscore_window", 252))
+        sid = FRED_SERIES_SIMPLE[cle]
+        series = fred_series_asof(sid, as_of, lookback_days=max(window + 30, 400))
+        if not series or len(series) < 10:
+            return None
+        value = series[-1]
+        hist = series[-window:] if len(series) >= window else series
+        norm = compute_zscore_normalisee(value, hist, zscore_div=zscore_div, cap=cap, label=cle)
+        if norm is None:
+            return None
+        return {"valeur": float(value), "valeur_normalisee": norm}
+
+    # --- FRED spread US-DE (DGS10-Bund, OAT-Bund) ---
+    if cle in FRED_SPREADS:
+        window = int(crit.get("zscore_window", 252))
+        sus, sde = FRED_SPREADS[cle]
+        # lookback large : la série DE mensuelle a besoin de profondeur pour le LOCF
+        series = fred_spread_asof(sus, sde, as_of, lookback_days=max(window * 2 + 60, 600))
+        if not series or len(series) < 10:
+            return None
+        value = series[-1]
+        hist = series[-window:] if len(series) >= window else series
+        norm = compute_zscore_normalisee(value, hist, zscore_div=zscore_div, cap=cap, label=cle)
+        if norm is None:
+            return None
+        return {"valeur": float(value), "valeur_normalisee": norm}
+
+    # --- FRED delta N jours (DGS10 delta 5j) ---
+    if cle in FRED_DELTA:
+        window = int(crit.get("zscore_window", 60))
+        series_id, n_days = FRED_DELTA[cle]
+        deltas = fred_delta_asof(series_id, as_of, n_days=n_days,
+                                 lookback_days=max(window + n_days + 30, 400))
+        if not deltas:
+            return None
+        hist = deltas[-window:] if len(deltas) >= window else deltas
+        res = zscore_from_series(hist, zscore_div=zscore_div, cap=cap, label=cle)
+        if res is None:
+            return None
+        return {"valeur": res[0], "valeur_normalisee": res[1]}
+
+    # --- CFTC COT noncomm nets z-score ---
+    if cle in CFTC_MARKETS:
+        window = int(crit.get("zscore_window", 252))
+        market = CFTC_MARKETS[cle]
+        nets = cot_nets_asof(market, as_of, lookback_days=max((window + 20) * 7, 1900))
+        if not nets or len(nets) < 20:
+            return None
+        value = nets[-1]
+        hist = nets[-window:] if len(nets) >= window else nets
+        norm = compute_zscore_normalisee(value, hist, zscore_div=zscore_div, cap=cap, label=cle)
+        if norm is None:
+            return None
+        return {"valeur": float(value), "valeur_normalisee": norm}
+
+    return None
+
+
 def build_quant_value(cle: str, crit: dict, as_of) -> Optional[Any]:
     """Construit la valeur historique pour un critère, AS OF `as_of`.
 
@@ -275,6 +353,11 @@ def build_quant_value(cle: str, crit: dict, as_of) -> Optional[Any]:
     # → on retourne None (n/a, poids 0)
     if type_norm == "triplet":
         return None
+
+    # Macro FRED/COT (câblé v2) — prioritaire sur QUANT_SYMBOLS
+    macro = build_macro_value(cle, crit, as_of)
+    if macro is not None:
+        return macro
 
     spec = QUANT_SYMBOLS.get(cle)
     if spec is None:

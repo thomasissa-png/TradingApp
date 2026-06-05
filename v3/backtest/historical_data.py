@@ -20,6 +20,7 @@ côté backtest. Documenté dans REPORT.md.
 from __future__ import annotations
 
 import logging
+import sys
 import warnings
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
@@ -27,6 +28,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger("backtest.historical_data")
+
+# Permet d'importer les helpers LIVE (fetch_fred_series_dated, etc.) même quand
+# ce module est chargé seul (tests). Idempotent.
+_SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
 
 # Cache disque optionnel pour éviter de spammer yfinance pendant le dev.
 CACHE_DIR = Path(__file__).resolve().parent / ".cache"
@@ -273,6 +280,282 @@ def non_overlapping_trading_dates(ticker: str, start_date: "date | str", end_dat
             selected.append(d)
             last_picked = d
     return selected
+
+
+# ---------------------------------------------------------------------------
+# FRED historique as-of (chantier v2.1)
+# ---------------------------------------------------------------------------
+#
+# Garantie centrale (identique à series_asof) : ZÉRO LOOK-AHEAD. On récupère la
+# série datée FRED via le helper LIVE `fetch_fred_series_dated` (réutilisation,
+# pas de réimplémentation), puis on filtre STRICTEMENT `date < as_of`.
+#
+# Subtilité FRED : la date d'observation FRED (`row.date`) est la date à laquelle
+# la donnée se RAPPORTE, pas la date de publication. Pour les séries quotidiennes
+# (DFII10, DGS10, BAMLH0A0HYM2, DTWEXBGS) le décalage de publication est de ~1
+# jour ouvré, donc filtrer `date < as_of` reste prudent (la valeur du jour J est
+# publiée J+1, on ne la verrait pas au matin de J de toute façon). Pour les séries
+# mensuelles OECD (IRLTLT01*M156N) le lag de publication est plus long (~1-2 mois) :
+# c'est une limite documentée (léger optimisme), mais le forward-fill LOCF n'utilise
+# que des points `< as_of`, donc pas de fuite du futur au sens strict.
+
+_FRED_RAM_CACHE: Dict[str, object] = {}
+
+
+def _fred_dated_cached(series_id: str, n: int = 5000):
+    """Récupère la série FRED complète datée (oldest→newest) via le helper LIVE,
+    avec cache disque CSV + RAM. Retourne List[(date_str, value)] ou None.
+
+    On charge une fenêtre large (n par défaut ~20 ans de daily) UNE fois, puis
+    on filtre par as_of en mémoire (comme yfinance _get_full_df)."""
+    if series_id in _FRED_RAM_CACHE:
+        return _FRED_RAM_CACHE[series_id]
+
+    cache_file = CACHE_DIR / f"fred__{series_id}__n{n}.csv"
+    points: Optional[List[Tuple[str, float]]] = None
+    if cache_file.exists():
+        try:
+            import csv
+            with cache_file.open() as f:
+                rd = csv.reader(f)
+                next(rd, None)  # header
+                points = [(row[0], float(row[1])) for row in rd if len(row) >= 2]
+            if not points:
+                points = None
+        except Exception:  # noqa: BLE001
+            points = None
+
+    if points is None:
+        try:
+            from criteres_calculator import fetch_fred_series_dated  # type: ignore
+        except Exception as e:  # noqa: BLE001
+            logger.warning("import fetch_fred_series_dated KO : %s", e)
+            _FRED_RAM_CACHE[series_id] = None
+            return None
+        try:
+            points = fetch_fred_series_dated(series_id, n=n)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("fetch_fred_series_dated(%s) KO (réseau ?) : %s", series_id, e)
+            points = None
+        if points:
+            try:
+                import csv
+                with cache_file.open("w", newline="") as f:
+                    wr = csv.writer(f)
+                    wr.writerow(["date", "value"])
+                    wr.writerows(points)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("cache FRED write KO : %s", e)
+
+    _FRED_RAM_CACHE[series_id] = points
+    return points
+
+
+def fred_series_asof(series_id: str, as_of: "date | str | datetime",
+                     lookback_days: int = 400) -> Optional[List[float]]:
+    """Valeurs FRED (oldest→newest) STRICTEMENT antérieures à `as_of`.
+
+    Réutilise le fetch LIVE. Filtre `date < as_of` (zéro look-ahead) ET
+    `date >= as_of - lookback_days`. Retourne la liste des valeurs (sans dates),
+    prête pour zscore_from_series, OU None si rien."""
+    pts = fred_dated_asof(series_id, as_of, lookback_days=lookback_days)
+    if not pts:
+        return None
+    return [v for _, v in pts]
+
+
+def fred_dated_asof(series_id: str, as_of: "date | str | datetime",
+                    lookback_days: int = 400) -> Optional[List[Tuple["date", float]]]:
+    """Comme fred_series_asof mais conserve les dates → [(date, value)], oldest→newest.
+
+    Filtre STRICT `date < as_of` (no look-ahead) et borne basse `>= as_of - lookback`."""
+    points = _fred_dated_cached(series_id)
+    if not points:
+        return None
+    asof_d = _to_date(as_of)
+    lo = asof_d - timedelta(days=lookback_days)
+    out: List[Tuple[date, float]] = []
+    for ds, v in points:
+        try:
+            dd = _to_date(ds)
+        except Exception:  # noqa: BLE001
+            continue
+        if dd < asof_d and dd >= lo:  # STRICT < as_of
+            out.append((dd, v))
+    if not out:
+        return None
+    out.sort(key=lambda t: t[0])
+    return out
+
+
+def fred_spread_asof(series_us: str, series_de: str, as_of: "date | str | datetime",
+                     lookback_days: int = 600) -> Optional[List[float]]:
+    """Spread US − DE aligné par forward-fill LOCF, as-of (no look-ahead).
+
+    Réplique EXACTEMENT la logique d'alignement de `fetch_fred_spread` (live) :
+    la série DE basse-fréquence (mensuelle OECD) est reportée (LOCF) sur chaque
+    date US haute-fréquence. Ici les deux séries sont d'abord filtrées `< as_of`.
+    Retourne la liste des spreads (oldest→newest) ou None."""
+    us = fred_dated_asof(series_us, as_of, lookback_days=lookback_days)
+    de = fred_dated_asof(series_de, as_of, lookback_days=lookback_days + 400)
+    if not us or not de:
+        return None
+    map_de = {d: v for d, v in de}
+    de_dates = sorted(map_de)
+    us_dates = [d for d, _ in us]
+    map_us = {d: v for d, v in us}
+    spread: List[float] = []
+    j = 0
+    last_de: Optional[float] = None
+    for d in us_dates:
+        while j < len(de_dates) and de_dates[j] <= d:
+            last_de = map_de[de_dates[j]]
+            j += 1
+        if last_de is None:
+            continue
+        spread.append(map_us[d] - last_de)
+    if len(spread) < 10:
+        return None
+    return spread
+
+
+def fred_delta_asof(series_id: str, as_of: "date | str | datetime",
+                    n_days: int = 5, lookback_days: int = 400) -> Optional[List[float]]:
+    """Série des deltas glissants sur `n_days` observations, as-of (no look-ahead).
+
+    Réplique `_handle_fred_delta` (live) : delta[i] = série[i] − série[i−n_days].
+    Filtrage `< as_of` en amont. Retourne la série de deltas (oldest→newest)."""
+    series = fred_series_asof(series_id, as_of, lookback_days=lookback_days)
+    if not series or len(series) <= n_days + 5:
+        return None
+    deltas = [series[i] - series[i - n_days] for i in range(n_days, len(series))]
+    if len(deltas) < 10:
+        return None
+    return deltas
+
+
+# ---------------------------------------------------------------------------
+# CFTC COT historique as-of (chantier v2.2)
+# ---------------------------------------------------------------------------
+#
+# Garantie centrale : ZÉRO LOOK-AHEAD. On requête le dataset Socrata Legacy COT
+# (jun7-fc8e), filtré côté serveur `report_date_as_yyyy_mm_dd < as_of`, et on
+# calcule le NET non-commercial = noncomm_long − noncomm_short, EXACTEMENT comme
+# le live (`fetch_cftc_managed_money_nets`). Le z-score est ensuite appliqué côté
+# backtest avec la même normalisation (compute_zscore_normalisee).
+#
+# Subtilité de publication COT : le rapport COT porte une `report_date` (mardi de
+# référence) mais n'est PUBLIÉ que le vendredi suivant (T+3 jours ouvrés). Filtrer
+# `report_date < as_of` est donc LÉGÈREMENT optimiste les 3 jours suivant un mardi
+# (on "verrait" un rapport pas encore publié). Pour être strictement prudent, on
+# applique un décalage de publication COT_PUBLICATION_LAG_DAYS : on ne considère
+# visible qu'un rapport dont report_date + lag < as_of. Garde-fou no-look-ahead.
+
+CFTC_BASE_BT = "https://publicreporting.cftc.gov/resource/jun7-fc8e.json"
+COT_PUBLICATION_LAG_DAYS = 3  # report_date (mardi) publié vendredi → T+3
+
+_COT_RAM_CACHE: Dict[str, object] = {}
+
+
+def _cot_full_cached(market: str):
+    """Récupère TOUT l'historique COT (date, net) pour un marché, oldest→newest.
+    Cache disque CSV + RAM. Retourne List[(date, net)] ou None."""
+    if market in _COT_RAM_CACHE:
+        return _COT_RAM_CACHE[market]
+
+    safe = "".join(c if c.isalnum() else "_" for c in market)[:60]
+    cache_file = CACHE_DIR / f"cot__{safe}.csv"
+    points: Optional[List[Tuple[date, float]]] = None
+    if cache_file.exists():
+        try:
+            import csv
+            with cache_file.open() as f:
+                rd = csv.reader(f)
+                next(rd, None)
+                points = [(_to_date(row[0]), float(row[1])) for row in rd if len(row) >= 2]
+            if not points:
+                points = None
+        except Exception:  # noqa: BLE001
+            points = None
+
+    if points is None:
+        points = _fetch_cot_socrata(market)
+        if points:
+            try:
+                import csv
+                with cache_file.open("w", newline="") as f:
+                    wr = csv.writer(f)
+                    wr.writerow(["report_date", "net"])
+                    wr.writerows([(d.isoformat(), v) for d, v in points])
+            except Exception as e:  # noqa: BLE001
+                logger.warning("cache COT write KO : %s", e)
+
+    _COT_RAM_CACHE[market] = points
+    return points
+
+
+def _fetch_cot_socrata(market: str, limit: int = 2000):
+    """Requête Socrata pour TOUT l'historique d'un marché. net = noncomm long−short
+    (MÊME définition que le live fetch_cftc_managed_money_nets). Retourne
+    List[(date, net)] oldest→newest ou None (réseau KO)."""
+    try:
+        from urllib.parse import urlencode
+        from urllib.request import urlopen, Request
+        import json
+    except Exception:  # noqa: BLE001
+        return None
+    params = {
+        "$select": "report_date_as_yyyy_mm_dd,noncomm_positions_long_all,noncomm_positions_short_all",
+        "$where": f"market_and_exchange_names='{market}'",
+        "$order": "report_date_as_yyyy_mm_dd ASC",
+        "$limit": limit,
+    }
+    url = f"{CFTC_BASE_BT}?{urlencode(params)}"
+    try:
+        req = Request(url, headers={"User-Agent": "Mozilla/5.0 (backtest)"})
+        with urlopen(req, timeout=30) as resp:  # noqa: S310
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("CFTC Socrata KO (réseau ?) market=%s : %s", market, e)
+        return None
+    if not isinstance(data, list) or not data:
+        logger.warning("CFTC Socrata vide pour market=%s", market)
+        return None
+    pts: List[Tuple[date, float]] = []
+    for row in data:
+        try:
+            ds = row["report_date_as_yyyy_mm_dd"].replace("Z", "")
+            dd = datetime.fromisoformat(ds).date()
+            longp = float(row["noncomm_positions_long_all"])
+            shortp = float(row["noncomm_positions_short_all"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        pts.append((dd, longp - shortp))
+    if not pts:
+        return None
+    pts.sort(key=lambda t: t[0])
+    return pts
+
+
+def cot_nets_asof(market: str, as_of: "date | str | datetime",
+                  lookback_days: int = 1900) -> Optional[List[float]]:
+    """Série des nets non-commerciaux (long−short) STRICTEMENT visibles à `as_of`.
+
+    No look-ahead : on ne garde qu'un rapport dont `report_date + lag < as_of`
+    (lag de publication COT). Retourne la liste des nets (oldest→newest) ou None."""
+    points = _cot_full_cached(market)
+    if not points:
+        return None
+    asof_d = _to_date(as_of)
+    lo = asof_d - timedelta(days=lookback_days)
+    out: List[float] = []
+    for dd, net in points:
+        visible_at = dd + timedelta(days=COT_PUBLICATION_LAG_DAYS)
+        if visible_at < asof_d and dd >= lo:  # publié AVANT as_of
+            out.append(net)
+    if not out:
+        return None
+    return out
 
 
 # ---------------------------------------------------------------------------

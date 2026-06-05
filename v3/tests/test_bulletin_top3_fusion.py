@@ -49,6 +49,27 @@ def _vals(quant_val: float) -> dict:
     return {"quant": {"valeur": quant_val, "source_track": "twelvedata"}}
 
 
+def _fiche_equilibree() -> dict:
+    """Fiche à 2 critères de poids égaux → PAS de mono-critère dominant (◧).
+    Utile pour isoler les autres flags de surveillance sans déclencher A1."""
+    return {
+        "actif": "TestActif",
+        "criteres": [
+            {"id": 1, "nom": "QuantA", "cle_courante": "qa", "normalisation": "lineaire",
+             "centre": 0.0, "echelle": 1.0, "cap": 5.0, "signe": 1, "poids": 10,
+             "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0}},
+            {"id": 2, "nom": "QuantB", "cle_courante": "qb", "normalisation": "lineaire",
+             "centre": 0.0, "echelle": 1.0, "cap": 5.0, "signe": 1, "poids": 10,
+             "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0}},
+        ],
+    }
+
+
+def _vals2(va: float, vb: float) -> dict:
+    return {"qa": {"valeur": va, "source_track": "twelvedata"},
+            "qb": {"valeur": vb, "source_track": "twelvedata"}}
+
+
 # ===========================================================================
 # #4.2 — Une seule table de synthèse (fusion)
 # ===========================================================================
@@ -259,7 +280,9 @@ def test_regime_extreme_garde_le_drapeau_par_cellule_si_partiel():
 def test_surveillance_exclut_flag_couverture_isole():
     """Une cellule dont le SEUL flag est ⚠️ conf. faible (qualificatif de
     couverture, pas une alerte directionnelle) n'est PAS dans la surveillance."""
-    r = sa.score_actif("a", _fiche(quant_poids=10), _vals(1.0))
+    # Fiche équilibrée (2 critères) → pas de ◧ mono-critère pour isoler le cas
+    # « seul flag = qualificatif de couverture » (A1 n'interfère pas).
+    r = sa.score_actif("a", _fiche_equilibree(), _vals2(1.0, 1.0))
     r.nom = "ConfFaible"
     r.confidence = {h: "faible" for h in sa.HORIZONS}
     r.divergence_quant_news = {h: False for h in sa.HORIZONS}
@@ -273,7 +296,9 @@ def test_surveillance_exclut_flag_couverture_isole():
 
 def test_surveillance_garde_alerte_directionnelle_sur_direction_actee():
     """Une direction ACTÉE (LONG/SHORT) avec divergence ↯ est bien surveillée."""
-    r = sa.score_actif("a", _fiche(quant_poids=10), _vals(1.0))
+    # Fiche équilibrée (2 critères) : seul le ↯ du 24h doit faire remonter la
+    # cellule (sans ◧ mono-critère qui remonterait aussi 7j/1m).
+    r = sa.score_actif("a", _fiche_equilibree(), _vals2(1.0, 1.0))
     r.nom = "AvecDivergence"
     r.confidence = {h: "normale" for h in sa.HORIZONS}
     r.divergence_quant_news = {"24h": True, "7j": False, "1m": False}

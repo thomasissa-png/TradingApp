@@ -1306,6 +1306,7 @@ SURVEILLANCE_FLAGS = {
     "incoherence_ih": "⇆",  # incohérence inter-horizons (1 marqueur/actif)
     "deja_cote": "⌛",       # already-priced
     "dementi": "⊘",         # démenti / correction
+    "mono_critere": "◧",    # A1 — un seul critère porte >50% du |score| (fragilité)
 }
 
 
@@ -1375,6 +1376,14 @@ def _compute_cell_risk_flags(
     if denial_present:
         flags.append(SURVEILLANCE_FLAGS["dementi"])
 
+    # ◧ mono-critère dominant (A1) — alerte de FRAGILITÉ sur une direction actée :
+    # un seul critère porte >50% du |score|. Réservé aux directions LONG/SHORT
+    # (un INSUFFISANT n'a pas de direction à fragiliser).
+    if conc in ("LONG", "SHORT"):
+        mono_dom, _ = detect_mono_critere_dominant(r, h)
+        if mono_dom:
+            flags.append(SURVEILLANCE_FLAGS["mono_critere"])
+
     return flags
 
 
@@ -1391,6 +1400,7 @@ SURVEILLANCE_ALERTES_FORTES = {
     SURVEILLANCE_FLAGS["incoherence_ih"],    # ⇆
     SURVEILLANCE_FLAGS["deja_cote"],         # ⌛
     SURVEILLANCE_FLAGS["dementi"],           # ⊘
+    SURVEILLANCE_FLAGS["mono_critere"],      # ◧ — fragilité mono-critère (A1)
 }
 
 
@@ -1518,6 +1528,7 @@ _LEGENDE_DEFS: List[Tuple[str, str]] = [
     ("⇆", "incohérence inter-horizons (zig-zag)"),
     ("⌛", "déjà coté (event hors fenêtre already-priced)"),
     ("⊘", "démenti / correction détecté sur l'event source"),
+    ("◧", "mono-critère dominant (>50% du score sur 1 seul critère) — fragilité, à lire avec prudence"),
 ]
 
 
@@ -1533,7 +1544,7 @@ def _build_legende(flags_present: set) -> str:
     for sym, desc in _LEGENDE_DEFS:
         if sym not in flags_present:
             continue
-        if sym in ("↯", "⇄", "⇆", "⌛", "⊘", "⚠", "⚠️"):
+        if sym in ("↯", "⇄", "⇆", "⌛", "⊘", "⚠", "⚠️", "◧"):
             any_shadow = True
         lines.append(f"- {sym} {desc}")
     # Échelle de la Note (toujours affichée) : la Note est une somme pondérée
@@ -1855,6 +1866,16 @@ def render_bulletin(
                 if EPSILON_CARRY <= abs(score) < NEUTRAL_BAND:
                     neutral_band_flag = " ≈"
                     flags_present.add("≈")
+            # A1 (audit trio 05/06) — mono-critère dominant rendu VISIBLE.
+            # La détection existait déjà (decision-log), mais le flag n'était jamais
+            # affiché dans la matrice. Les 3 experts soulignent que le mono-critère
+            # est un piège (« haute conviction » illusoire portée par 1 paramètre,
+            # ex. EUR/USD 7j 96% sur le diff 2Y, CAC 7j sur l'OAT-Bund). On le rend
+            # lisible. FLAG-ONLY : la conclusion LONG/SHORT reste inchangée.
+            mono_dom_cell, _ = detect_mono_critere_dominant(r, h)
+            mono_flag = " ◧" if mono_dom_cell else ""
+            if mono_flag:
+                flags_present.add("◧")
             div_qn_flag = " ↯" if r.divergence_quant_news.get(h, False) else ""
             if div_qn_flag:
                 flags_present.add("↯")
@@ -1919,7 +1940,7 @@ def render_bulletin(
             core_out = core.replace(news_flag, "") if (regime_flag and news_flag) else core
             cells.append(
                 f"{core_out}{coin_flip_flag}{neutral_band_flag}{carry_flag}{regime_flag}{conf_flag}"
-                f"{div_qn_flag}{cmom_flag}{incoh_flag}{ap_flag}{denial_flag}"
+                f"{mono_flag}{div_qn_flag}{cmom_flag}{incoh_flag}{ap_flag}{denial_flag}"
             )
         detail_cells[r.nom] = cells
 
@@ -2328,6 +2349,13 @@ def build_decision_log_records(
                 "conclusion_pond": r.conclusions_pond.get(h, ""),
                 "diverge": bool(r.diverge.get(h, False)),
                 "coin_flip": bool(abs(score_pm1_val) < 0.05),
+                # A2 (audit trio 05/06) — quasi-neutre : note non-actionnable au
+                # sens du trader (|note| < NEUTRAL_BAND=0.30), englobe coin_flip
+                # strict ET la bande ≈. Champ shadow requêtable pour la mesure :
+                # le seuil coin_flip historique (0.05) NE bouge PAS (il est couplé
+                # à EPSILON_CARRY = contradiction du carry-forward, seuil décisionnel).
+                # Ex. Cuivre 7j (-0.22) : coin_flip=False mais quasi_neutre=True.
+                "quasi_neutre": bool(abs(score_pm1_val) < NEUTRAL_BAND),
                 # K1 — mono-critère dominant (SHADOW, mesure du sur-poids).
                 "mono_critere_dominant": bool(mono_dominant),
                 "mono_critere_nom": mono_nom,

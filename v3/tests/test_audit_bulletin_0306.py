@@ -201,9 +201,10 @@ def test_mono_critere_absent_quand_equilibre():
     assert nom is None
 
 
-def test_mono_critere_pas_affiche_en_matrice():
-    """K1 SHADOW : le champ existe dans le decision-log mais N'EST PAS affiché
-    dans la matrice du bulletin (anti soupe de symboles)."""
+def test_mono_critere_affiche_en_matrice():
+    """A1 (audit trio 05/06) — REVERSAL du choix K1 : le mono-critère dominant
+    est désormais rendu VISIBLE dans la matrice via le drapeau ◧ (flag-only).
+    Les 3 experts ont jugé le mono-critère trop fragile pour rester invisible."""
     r = sa.score_actif(
         "mono", _fiche_deux_criteres(),
         {"vix": {"valeur": 5.0, "source_track": "cboe"},
@@ -211,8 +212,86 @@ def test_mono_critere_pas_affiche_en_matrice():
     )
     r.nom = "SP"
     b = sa.render_bulletin([r], {}, NOW, "h", "ok")
-    assert "mono_critere" not in b
-    assert "mono-critère" not in b.split("## Détail")[0]
+    synth = b.split("## Synthèse des décisions")[1].split("## Détail")[0]
+    # Le drapeau ◧ apparaît dans la matrice ET dans la légende.
+    assert "◧" in synth
+    assert "mono-critère dominant" in b  # légende
+
+
+def test_mono_critere_flag_only_conclusion_inchangee():
+    """A1 — le drapeau ◧ est FLAG-ONLY : la conclusion LONG/SHORT n'est jamais
+    mutée par l'ajout du drapeau."""
+    r = sa.score_actif(
+        "mono", _fiche_deux_criteres(),
+        {"vix": {"valeur": 5.0, "source_track": "cboe"},
+         "mom": {"valeur": 0.1, "source_track": "twelvedata"}},
+    )
+    r.nom = "SP"
+    avant = dict(r.conclusions)
+    sa.render_bulletin([r], {}, NOW, "h", "ok")
+    assert dict(r.conclusions) == avant
+
+
+def test_mono_critere_dans_cellules_a_surveiller():
+    """A1 — une cellule mono-critère (direction actée) doit apparaître dans la
+    section 'Cellules à surveiller' (alerte de fragilité)."""
+    r = sa.score_actif(
+        "mono", _fiche_deux_criteres(),
+        {"vix": {"valeur": 5.0, "source_track": "cboe"},
+         "mom": {"valeur": 0.1, "source_track": "twelvedata"}},
+    )
+    r.nom = "SP"
+    flags = sa._compute_cell_risk_flags(r, "24h", NOW)
+    assert "◧" in flags
+    assert sa._cellule_a_surveiller(r, "24h", flags) is True
+
+
+def test_mono_critere_pas_de_surveillance_si_insuffisant():
+    """A1 — pas de ◧ sur une cellule INSUFFISANT (pas de direction à fragiliser)."""
+    r = sa.score_actif(
+        "mono", _fiche_deux_criteres(),
+        {"vix": {"valeur": 5.0, "source_track": "cboe"},
+         "mom": {"valeur": 0.1, "source_track": "twelvedata"}},
+    )
+    r.nom = "SP"
+    r.conclusions = {h: sa.CONCLUSION_INSUFFISANT for h in sa.HORIZONS}
+    flags = sa._compute_cell_risk_flags(r, "24h", NOW)
+    assert "◧" not in flags
+
+
+def test_quasi_neutre_champ_decision_log():
+    """A2 (audit trio 05/06) — le champ shadow quasi_neutre marque les notes
+    |score|<0.30 (NEUTRAL_BAND), englobant coin_flip strict ET bande ≈.
+    Cas réel : Cuivre 7j (-0.22) → coin_flip=False mais quasi_neutre=True.
+    Le seuil coin_flip (0.05) NE bouge PAS (couplé à EPSILON_CARRY)."""
+    r = sa.score_actif("a", _fiche(), _vals(5.0))
+    r.nom = "Cuivre"
+    # 7j à -0.22 (bande ≈, pas coin-flip strict) ; 1m à -0.53 (au-delà de la bande).
+    r.scores = {"24h": -0.02, "7j": -0.22, "1m": -0.53}
+    r.conclusions = {h: "SHORT" for h in sa.HORIZONS}
+    r.confidence = {h: "normale" for h in sa.HORIZONS}
+    records = {rec["horizon"]: rec for rec in sa.build_decision_log_records([r], NOW)}
+    # 24h : coin_flip ET quasi_neutre.
+    assert records["24h"]["coin_flip"] is True
+    assert records["24h"]["quasi_neutre"] is True
+    # 7j (-0.22) : PAS coin_flip (>0.05) MAIS quasi_neutre (<0.30) — le cas raté.
+    assert records["7j"]["coin_flip"] is False
+    assert records["7j"]["quasi_neutre"] is True
+    # 1m (-0.53) : ni l'un ni l'autre (au-delà de la bande).
+    assert records["1m"]["coin_flip"] is False
+    assert records["1m"]["quasi_neutre"] is False
+
+
+def test_coin_flip_seuil_inchange():
+    """A2 — garde-fou : le seuil coin_flip reste à 0.05 (EPSILON_CARRY), il N'a
+    PAS été déplacé à 0.30. -0.10 = au-dessus du seuil coin_flip."""
+    r = sa.score_actif("a", _fiche(), _vals(5.0))
+    r.scores = {h: -0.10 for h in sa.HORIZONS}
+    r.conclusions = {h: "SHORT" for h in sa.HORIZONS}
+    r.confidence = {h: "normale" for h in sa.HORIZONS}
+    rec = sa.build_decision_log_records([r], NOW)[0]
+    assert rec["coin_flip"] is False  # 0.10 > 0.05 → pas coin_flip
+    assert rec["quasi_neutre"] is True  # 0.10 < 0.30 → quasi_neutre
 
 
 # ===========================================================================

@@ -86,9 +86,23 @@ def test_surveillance_block_present_avec_titre():
 
 def test_surveillance_block_placeholder_si_aucune_cellule_a_risque():
     """Aucune cellule flaggée → ligne placeholder explicite."""
-    # Score franc, news cohérente avec quant, pas de divergence/contre-momentum.
-    fiche = _fiche(quant_poids=10, news_poids=10)
-    res = sa.score_actif("test", fiche, _vals(0.5, 0.5))
+    # A1 (audit 05/06) : pour éviter le ◧ mono-critère (qui se déclenche si 1
+    # critère porte >50% du score), on utilise une fiche à 2 critères quant de
+    # contributions ÉGALES (50/50) → ni mono-critère, ni autre alerte.
+    fiche = {
+        "actif": "TestActif",
+        "criteres": [
+            {"id": 1, "nom": "QuantA", "cle_courante": "qa", "normalisation": "lineaire",
+             "centre": 0.0, "echelle": 1.0, "cap": 1.0, "signe": 1, "poids": 10,
+             "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0}},
+            {"id": 2, "nom": "QuantB", "cle_courante": "qb", "normalisation": "lineaire",
+             "centre": 0.0, "echelle": 1.0, "cap": 1.0, "signe": 1, "poids": 10,
+             "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0}},
+        ],
+    }
+    vals = {"qa": {"valeur": 0.5, "source_track": "twelvedata"},
+            "qb": {"valeur": 0.5, "source_track": "twelvedata"}}
+    res = sa.score_actif("test", fiche, vals)
     # Force confidence normale (coverage = 1.0 sur 2 critères valides).
     # Force pas d'incohérence inter-horizons, pas de denial, etc.
     res.divergence_quant_news = {h: False for h in sa.HORIZONS}

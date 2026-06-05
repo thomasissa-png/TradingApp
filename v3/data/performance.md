@@ -1,6 +1,6 @@
 # Performance du bulletin — Journaliste
 
-- Généré : 2026-06-04T20:35:19.961135+02:00
+- Généré : 2026-06-05T07:05:58.416135+02:00
 - Journaliste version : v3.1.0
 - Fenêtre KPI : 30 dernières conclusions terminées par cellule
 - PROBA_SCALE : 15.0 (proba = 0.5 + clip(|score|/SCALE, 0, 0.5))
@@ -10,22 +10,34 @@
 
 | Actif | Horizon | N_total | Taux_brut | N_eff | Taux_eff | Wilson_low | Brier | LONG/SHORT | Statut | Alertes |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Argent | 24h | 9 | 80.0% | 3 | 100.0% | 0.439 | 0.2442 | 11/89% | shadow | warm-up non-chevauchant : 3/15 obs effectives; 9/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 11.1% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
-| Blé | 24h | 9 | 66.7% | 4 | 100.0% | 0.510 | 0.1993 | 33/67% | shadow | warm-up non-chevauchant : 4/15 obs effectives; 9/30 mesures terminées (fenêtre brute warm-up); 2 suivi(s) interrompu(s) sur la fenêtre observable |
-| CAC 40 | 24h | 9 | 33.3% | 3 | 66.7% | 0.208 | 0.3082 | 22/78% | shadow | warm-up non-chevauchant : 3/15 obs effectives; 9/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 22.2% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
-| Cacao | 24h | 8 | 0.0% | 2 | 0.0% | 0.000 | 0.3644 | 100/0% | shadow | warm-up non-chevauchant : 2/15 obs effectives; 8/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 100.0% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
-| Café (Arabica) | 24h | 7 | 71.4% | 4 | 50.0% | 0.150 | 0.2369 | 29/71% | shadow | warm-up non-chevauchant : 4/15 obs effectives; 7/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 28.6% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
-| Cuivre | 24h | 8 | 33.3% | 4 | 25.0% | 0.046 | 0.3407 | 88/12% | shadow | warm-up non-chevauchant : 4/15 obs effectives; 8/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 87.5% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
-| EUR/USD | 24h | 5 | 100.0% | 2 | 100.0% | 0.342 | 0.2081 | 0/100% | shadow | warm-up non-chevauchant : 2/15 obs effectives; 5/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 0.0% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
-| Nasdaq | 24h | 9 | — | 0 | — | — | — | 22/78% | shadow | warm-up non-chevauchant : 0/15 obs effectives; 9/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 22.2% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
-| Or | 24h | 9 | 42.9% | 4 | 75.0% | 0.301 | 0.2660 | 0/100% | shadow | warm-up non-chevauchant : 4/15 obs effectives; 9/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 0.0% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
-| Pétrole (Brent) | 24h | 9 | 33.3% | 4 | 75.0% | 0.301 | 0.6460 | 100/0% | shadow | warm-up non-chevauchant : 4/15 obs effectives; 9/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 100.0% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
-| S&P 500 | 24h | 9 | 100.0% | 1 | 100.0% | 0.206 | 0.0356 | 89/11% | shadow | warm-up non-chevauchant : 1/15 obs effectives; 9/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 88.9% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
-| VIX | 24h | 9 | 0.0% | 1 | 0.0% | 0.000 | 0.4312 | 78/22% | shadow | warm-up non-chevauchant : 1/15 obs effectives; 9/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 77.8% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| Argent | 24h | 15 | 92.9% | 5 | 80.0% | 0.376 | 0.1586 | 7/93% | shadow | warm-up non-chevauchant : 5/15 obs effectives; 15/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 6.7% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| Argent | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Blé | 24h | 15 | 50.0% | 5 | 80.0% | 0.376 | 0.2155 | 60/40% | shadow | warm-up non-chevauchant : 5/15 obs effectives; 15/30 mesures terminées (fenêtre brute warm-up); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| Blé | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| CAC 40 | 24h | 15 | 28.6% | 4 | 50.0% | 0.150 | 0.3170 | 13/87% | shadow | warm-up non-chevauchant : 4/15 obs effectives; 15/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 13.3% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| CAC 40 | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Cacao | 24h | 14 | 18.2% | 5 | 40.0% | 0.118 | 0.3591 | 100/0% | shadow | warm-up non-chevauchant : 5/15 obs effectives; 14/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 100.0% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| Cacao | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Café (Arabica) | 24h | 13 | 81.8% | 5 | 60.0% | 0.231 | 0.2257 | 15/85% | shadow | warm-up non-chevauchant : 5/15 obs effectives; 13/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 15.4% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| Café (Arabica) | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Cuivre | 24h | 14 | 9.1% | 5 | 20.0% | 0.036 | 0.4956 | 93/7% | shadow | warm-up non-chevauchant : 5/15 obs effectives; 14/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 92.9% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| Cuivre | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| EUR/USD | 24h | 11 | 100.0% | 2 | 100.0% | 0.342 | 0.2081 | 0/100% | shadow | warm-up non-chevauchant : 2/15 obs effectives; 11/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 0.0% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| EUR/USD | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Nasdaq | 24h | 15 | 100.0% | 2 | 100.0% | 0.342 | 0.2347 | 13/87% | shadow | warm-up non-chevauchant : 2/15 obs effectives; 15/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 13.3% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| Nasdaq | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Or | 24h | 15 | 100.0% | 4 | 100.0% | 0.510 | 0.1436 | 0/100% | shadow | warm-up non-chevauchant : 4/15 obs effectives; 15/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 0.0% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| Or | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| Pétrole (Brent) | 24h | 15 | 44.4% | 5 | 80.0% | 0.376 | 0.5906 | 93/7% | shadow | warm-up non-chevauchant : 5/15 obs effectives; 15/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 93.3% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| Pétrole (Brent) | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| S&P 500 | 24h | 15 | — | 0 | — | — | — | 93/7% | shadow | warm-up non-chevauchant : 0/15 obs effectives; 15/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 93.3% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| S&P 500 | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
+| VIX | 24h | 15 | 18.2% | 3 | 0.0% | 0.000 | 0.3945 | 80/20% | shadow | warm-up non-chevauchant : 3/15 obs effectives; 15/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 80.0% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| VIX | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
 
 ## Synthèse
-- Cellules éligibles actif (Wilson low > 50%, taux_eff ≥ 70%) : **0** / 12
-- Cellules shadow : 12 / 12
+- Cellules éligibles actif (Wilson low > 50%, taux_eff ≥ 70%) : **0** / 24
+- Cellules shadow : 24 / 24
 
 ### Critère global (multiple testing — audit-data §2)
 
@@ -38,42 +50,42 @@ Critère d'éligibilité renforcé : Wilson low > 50 % (borne basse IC 95 % sur 
 
 | Actif | Horizon | N_flip | Taux_flip | N_continuation | Taux_continuation |
 |---|---|---|---|---|---|
-| Argent | 24h | 1 | 100.0% | 4 | 75.0% |
-| Blé | 24h | 2 | 50.0% | 7 | 71.4% |
-| CAC 40 | 24h | 0 | — | 6 | 33.3% |
-| Cacao | 24h | 0 | — | 5 | 0.0% |
-| Café (Arabica) | 24h | 1 | 0.0% | 4 | 75.0% |
-| Cuivre | 24h | 1 | 100.0% | 4 | 25.0% |
+| Argent | 24h | 2 | 50.0% | 12 | 100.0% |
+| Blé | 24h | 2 | 50.0% | 10 | 50.0% |
+| CAC 40 | 24h | 0 | — | 7 | 28.6% |
+| Cacao | 24h | 0 | — | 10 | 20.0% |
+| Café (Arabica) | 24h | 1 | 0.0% | 8 | 87.5% |
+| Cuivre | 24h | 1 | 100.0% | 9 | 0.0% |
 | EUR/USD | 24h | 0 | — | 2 | 100.0% |
-| Or | 24h | 1 | 100.0% | 6 | 33.3% |
-| Pétrole (Brent) | 24h | 0 | — | 9 | 33.3% |
-| S&P 500 | 24h | 0 | — | 1 | 100.0% |
-| VIX | 24h | 0 | — | 1 | 0.0% |
+| Nasdaq | 24h | 0 | — | 3 | 100.0% |
+| Or | 24h | 1 | 100.0% | 7 | 100.0% |
+| Pétrole (Brent) | 24h | 1 | 100.0% | 8 | 37.5% |
+| VIX | 24h | 4 | 50.0% | 7 | 0.0% |
 
-- **Taux global flips** : 66.7% (N=6 mesures avec is_flip=True)
-- **Taux global continuations** : 44.9% (N=49 mesures avec is_flip=False)
+- **Taux global flips** : 58.3% (N=12 mesures avec is_flip=True)
+- **Taux global continuations** : 51.8% (N=83 mesures avec is_flip=False)
 
 ## Dernières mesures (max 20)
 
 | Émission | Échéance | Actif | Horizon | Concl. | Prix émis. | Prix actuel | Delta % | Seuil % | Outcome | Note |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 2026-06-03 | 2026-06-04 | Argent | 24h | SHORT | 74.6938 | 73.8771 | -1.093% | 0.8% | VRAI | delta=-1.093% vs seuil=0.8% |
-| 2026-06-03 | 2026-06-04 | Blé | 24h | SHORT | 598.8305 | 581.4389 | -2.904% | 0.8% | VRAI | delta=-2.904% vs seuil=0.8% |
-| 2026-06-03 | 2026-06-04 | CAC 40 | 24h | SHORT | 8209.0898 | 8244.2900 | +0.429% | 0.5% | non-conclusive | |delta|=0.429% ≤ seuil=0.5% |
-| 2026-06-03 | 2026-06-04 | Cacao | 24h | LONG | 4109.7536 | 3927.6033 | -4.432% | 1.0% | FAUSSE | delta=-4.432% vs seuil=1.0% |
-| 2026-06-03 | 2026-06-04 | Café (Arabica) | 24h | SHORT | 259.1988 | 247.2572 | -4.607% | 1.0% | VRAI | delta=-4.607% vs seuil=1.0% |
-| 2026-06-03 | 2026-06-04 | Cuivre | 24h | LONG | 6.6240 | 6.5259 | -1.480% | 0.8% | FAUSSE | delta=-1.480% vs seuil=0.8% |
-| 2026-06-03 | 2026-06-04 | EUR/USD | 24h | INSUFFISANT | 1.1626 | 1.1616 | — | 0.25% | non-notee | cellule INSUFFISANT — pas de prédiction (gate suffisance) |
-| 2026-06-03 | 2026-06-04 | Nasdaq | 24h | SHORT | 746.1400 | 742.8600 | -0.440% | 0.7% | non-conclusive | |delta|=0.440% ≤ seuil=0.7% |
-| 2026-06-03 | 2026-06-04 | Or | 24h | SHORT | 4470.2727 | 4474.8736 | +0.103% | 0.5% | non-conclusive | |delta|=0.103% ≤ seuil=0.5% |
-| 2026-06-03 | 2026-06-04 | Pétrole (Brent) | 24h | LONG | 97.0872 | 95.1296 | -2.016% | 1.0% | FAUSSE | delta=-2.016% vs seuil=1.0% |
-| 2026-06-03 | 2026-06-04 | S&P 500 | 24h | LONG | 759.4700 | 757.7800 | -0.223% | 0.4% | non-conclusive | |delta|=0.223% ≤ seuil=0.4% |
-| 2026-06-03 | 2026-06-04 | VIX | 24h | LONG | 23.4600 | 22.9900 | -2.003% | 3.0% | non-conclusive | |delta|=2.003% ≤ seuil=3.0% |
-| 2026-06-03 | 2026-06-04 | Argent | 24h | SHORT | 74.1125 | 73.8771 | -0.318% | 0.8% | non-conclusive | |delta|=0.318% ≤ seuil=0.8% |
-| 2026-06-03 | 2026-06-04 | Blé | 24h | SHORT | 602.7865 | 581.4389 | -3.541% | 0.8% | VRAI | delta=-3.541% vs seuil=0.8% |
-| 2026-06-03 | 2026-06-04 | CAC 40 | 24h | SHORT | 8184.6602 | 8244.2900 | +0.729% | 0.5% | FAUSSE | delta=+0.729% vs seuil=0.5% |
-| 2026-06-03 | 2026-06-04 | Cacao | 24h | LONG | 4065.9017 | 3927.6033 | -3.401% | 1.0% | FAUSSE | delta=-3.401% vs seuil=1.0% |
-| 2026-06-03 | 2026-06-04 | Café (Arabica) | 24h | SHORT | 258.8803 | 247.2572 | -4.490% | 1.0% | VRAI | delta=-4.490% vs seuil=1.0% |
-| 2026-06-03 | 2026-06-04 | Cuivre | 24h | LONG | 6.5798 | 6.5259 | -0.819% | 0.8% | FAUSSE | delta=-0.819% vs seuil=0.8% |
-| 2026-06-03 | 2026-06-04 | EUR/USD | 24h | INSUFFISANT | 1.1615 | 1.1616 | — | 0.25% | non-notee | cellule INSUFFISANT — pas de prédiction (gate suffisance) |
-| 2026-06-03 | 2026-06-04 | Nasdaq | 24h | SHORT | 746.1400 | 742.8600 | -0.440% | 0.7% | non-conclusive | |delta|=0.440% ≤ seuil=0.7% |
+| 2026-05-29 | 2026-06-05 | Argent | 7j | LONG | — | 72.8014 | — | 2.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | Blé | 7j | SHORT | — | 580.9226 | — | 2.5% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | CAC 40 | 7j | LONG | — | 8244.2900 | — | 1.2% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | Cacao | 7j | LONG | — | 3964.7694 | — | 4.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | Café (Arabica) | 7j | SHORT | — | 247.2584 | — | 3.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | Cuivre | 7j | SHORT | — | 6.4164 | — | 2.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | EUR/USD | 7j | LONG | — | 1.1615 | — | 0.7% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | Nasdaq | 7j | SHORT | — | 740.5000 | — | 1.5% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | Or | 7j | LONG | — | 4448.3986 | — | 1.3% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | Pétrole (Brent) | 7j | LONG | — | 95.4216 | — | 2.5% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | S&P 500 | 7j | LONG | — | 757.0500 | — | 1.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | VIX | 7j | SHORT | — | 22.7100 | — | 10.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-06-04 | 2026-06-05 | Argent | 24h | SHORT | 73.6323 | 72.8014 | -1.128% | 0.8% | VRAI | delta=-1.128% vs seuil=0.8% |
+| 2026-06-04 | 2026-06-05 | Blé | 24h | LONG | 583.2138 | 580.9226 | -0.393% | 0.8% | non-conclusive | |delta|=0.393% ≤ seuil=0.8% |
+| 2026-06-04 | 2026-06-05 | CAC 40 | 24h | SHORT | 8150.4199 | 8244.2900 | +1.152% | 0.5% | FAUSSE | delta=+1.152% vs seuil=0.5% |
+| 2026-06-04 | 2026-06-05 | Cacao | 24h | LONG | 4073.7314 | 3964.7694 | -2.675% | 1.0% | FAUSSE | delta=-2.675% vs seuil=1.0% |
+| 2026-06-04 | 2026-06-05 | Café (Arabica) | 24h | SHORT | 253.0483 | 247.2584 | -2.288% | 1.0% | VRAI | delta=-2.288% vs seuil=1.0% |
+| 2026-06-04 | 2026-06-05 | Cuivre | 24h | LONG | 6.4376 | 6.4164 | -0.329% | 0.8% | non-conclusive | |delta|=0.329% ≤ seuil=0.8% |
+| 2026-06-04 | 2026-06-05 | EUR/USD | 24h | SHORT | 1.1610 | 1.1615 | +0.048% | 0.25% | non-conclusive | |delta|=0.048% ≤ seuil=0.25% |
+| 2026-06-04 | 2026-06-05 | Nasdaq | 24h | SHORT | 744.2300 | 740.5000 | -0.501% | 0.7% | non-conclusive | |delta|=0.501% ≤ seuil=0.7% |

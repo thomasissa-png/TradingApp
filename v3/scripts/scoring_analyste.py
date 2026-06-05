@@ -2638,12 +2638,17 @@ def run(
 
     fhash = fiches_hash(fiches)
     content = render_bulletin(results, veille_conclusions, now, fhash, fresh_msg)
-    # Un fichier distinct par créneau (3 runs/jour : cron UTC 5/10/16). Le
-    # créneau est l'HEURE UTC du run, zéro-paddée (ex. bulletin-2026-06-02-16h.md).
-    # Sans le créneau, chaque run écrasait le bulletin du jour → seul le run du
-    # soir survivait (biais de survie + perte de mesure pour matin/midi).
-    now_utc = now.astimezone(timezone.utc)
-    out_path = bulletins_dir / f"bulletin-{now_utc:%Y-%m-%d}-{now_utc:%H}h.md"
+    # Un fichier distinct par créneau (3 runs/jour). Le créneau est l'HEURE DE
+    # PARIS du run, zéro-paddée (ex. bulletin-2026-06-05-18h.md pour un run 18h04
+    # Paris). On utilise `now` (Europe/Paris) — la MÊME source d'heure que le
+    # titre du bulletin (« HHhMM (Paris) ») et que le decision-log (HHMM Paris),
+    # pour garantir la cohérence nom de fichier ⇄ titre ⇄ decision-log.
+    # Historique : avant le 05/06 le nom utilisait l'heure UTC (bug d'affichage)
+    # → le fichier disait 16h alors que le titre disait 18h04. Les bulletins
+    # déjà produits ne sont PAS renommés (rétro-compat lecture/tri par stem).
+    # Sans le créneau, chaque run écraserait le bulletin du jour → seul le run du
+    # soir survivrait (biais de survie + perte de mesure pour matin/midi).
+    out_path = bulletins_dir / f"bulletin-{now:%Y-%m-%d}-{now:%H}h.md"
     if write:
         out_path.write_text(content, encoding="utf-8")
         logger.info("Bulletin écrit : %s", out_path)

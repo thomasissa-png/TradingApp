@@ -394,6 +394,56 @@ def test_run_full_petrole(tmp_path, petrole, fiches_dir):
     assert r.conclusions["7j"] == "LONG"
 
 
+def _petrole_cc(tmp_path, now):
+    """Écrit un criteres-courants Pétrole suffisant pour passer le gate."""
+    cc = tmp_path / "criteres-courants.md"
+    cc.write_text(
+        "```yaml\n"
+        f"last_update: {now.astimezone(timezone.utc).isoformat()}\n"
+        "petrole:\n"
+        "  eia_crude_surprise: { valeur_normalisee: 0.0 }\n"
+        "  api_weekly_surprise: { valeur_normalisee: 0.0 }\n"
+        "  tension_geopol_moyen_orient: { valeur: 0 }\n"
+        "  cftc_cot_crude_nets: { valeur_normalisee: 0.0 }\n"
+        "  opec_production_policy: { valeur: 0 }\n"
+        "  brent_term_structure_m1m2: { valeur: 0.5 }\n"
+        "  spread_brent_wti: { valeur: 5.0 }\n"
+        "  caixin_pmi_manuf: { valeur: 51.5 }\n"
+        "  gate_evenement_extreme: { valeur: true }\n"
+        "```\n",
+        encoding="utf-8",
+    )
+    return cc
+
+
+def test_run_nom_fichier_heure_paris_pas_utc(tmp_path, fiches_dir):
+    """Bug 05/06 : le nom de fichier du bulletin doit utiliser l'heure de PARIS
+    (cohérente avec le titre « HHhMM (Paris) » et le decision-log), PAS l'heure
+    UTC. Un run à 18h04 Paris (= 16h UTC) doit produire bulletin-...-18h.md, pas
+    bulletin-...-16h.md."""
+    from zoneinfo import ZoneInfo
+
+    # 18h04 Paris = 16h04 UTC (été, UTC+2).
+    now = datetime(2026, 6, 5, 18, 4, tzinfo=ZoneInfo("Europe/Paris"))
+    cc = _petrole_cc(tmp_path, now)
+    bulletins = tmp_path / "bulletins"
+
+    out, _ = sa.run(
+        fiches_dir=fiches_dir,
+        criteres_path=cc,
+        bulletins_dir=bulletins,
+        now=now,
+        write=True,
+    )
+
+    # Nom de fichier = heure Paris (18h), PAS heure UTC (16h).
+    assert out.name == "bulletin-2026-06-05-18h.md", out.name
+    assert "-16h.md" not in out.name
+    # Cohérence nom de fichier ⇄ titre interne (« 18h04 (Paris) »).
+    txt = out.read_text(encoding="utf-8")
+    assert "18h04 (Paris)" in txt
+
+
 # ---------------------------------------------------------------------------
 # #6 — _fmt_raw : arrondi 4 chiffres significatifs pour les floats
 # ---------------------------------------------------------------------------

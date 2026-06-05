@@ -20,6 +20,7 @@ import feedparser
 import requests  # noqa: F401 — exposé pour les tests (patch nc.requests.get) ; http_retry partage le même module
 
 from config import (
+    BROWSER_HEADERS,
     DEDUP_CACHE_SIZE,
     DEDUP_JACCARD_THRESHOLD,
     EARLY_SIGNAL_FEEDS,
@@ -30,7 +31,7 @@ from config import (
     TITLES_CACHE_DB,
     USER_AGENT,
 )
-from http_retry import http_get_retry
+from http_retry import http_get_retry, RETRY_STATUS_WITH_403
 from source_monitor import SourceMonitor
 
 logger = logging.getLogger(__name__)
@@ -418,16 +419,22 @@ def _fetch_rss(name: str, url: str, monitor: "SourceMonitor | None" = None) -> l
     Retour : liste de NewsItem (peut être vide). Les détails d'erreur sont
     persistés dans le monitor (HTTP status, type d'erreur, items_fetched bruts).
     """
-    headers = {"User-Agent": USER_AGENT}
+    # Headers d'un vrai navigateur (UA + Accept + Accept-Language), pas seulement
+    # l'UA : certains WAF (Cloudflare/mining.com) inspectent aussi Accept* et
+    # 403 un client UA-only. Gratuit, standard, aucun scraping.
+    headers = dict(BROWSER_HEADERS)
     # Fetch résilient : retry backoff sur 429/5xx + Retry-After (helper partagé).
-    # Le 403 (ex mining.com filtrant les UA non-navigateur) n'est PAS retriable —
-    # le helper échoue immédiatement (cf. http_retry.RETRY_STATUS). On envoie un
-    # User-Agent navigateur réaliste (config.USER_AGENT) pour limiter ces 403 ;
-    # si un flux reste 403, source_monitor le signale muet (visibilité en place).
+    # On INCLUT 403 dans les statuts retriables POUR LES RSS uniquement : le 403
+    # mining.com (revenu le 05/06 malgré l'UA Chrome) est un challenge WAF
+    # INTERMITTENT — le feed répond 200 la plupart du temps depuis une autre IP /
+    # tentative — donc un 403 ponctuel est récupérable au retry suivant (contraire
+    # d'un 403 d'API à clé invalide). Si le 403 PERSISTE après tous les retries,
+    # source_monitor signale le flux muet → dégradation propre, zéro acharnement.
     status_out: dict = {}
     response = http_get_retry(
         url, headers=headers, timeout=HTTP_TIMEOUT, bucket="rss",
         label=f"rss:{name}", status_out=status_out,
+        retry_status=RETRY_STATUS_WITH_403,
     )
     if response is None:
         # Échec APRÈS épuisement des retries (429/5xx) ou statut non-retriable

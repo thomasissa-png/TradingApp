@@ -32,8 +32,16 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger("http_retry")
 
 # Statuts qui justifient un retry (rate-limit + erreurs serveur transitoires).
-# 403/404/401 NE sont PAS ici : retry inutile (accès bloqué / ressource absente).
+# 403/404/401 NE sont PAS ici : retry inutile sur un blocage d'accès stable.
 RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
+
+# Set étendu pour les flux protégés par un WAF (ex Cloudflare) qui renvoie un
+# 403 INTERMITTENT (challenge transitoire selon l'IP/géo de l'appelant) plutôt
+# qu'un refus permanent. Sur ces flux précis (RSS scrapables type mining.com),
+# un 403 est souvent récupérable au retry suivant — contrairement à un 403 d'API
+# (clé invalide). À n'utiliser QUE via le paramètre retry_status d'un appel ciblé,
+# jamais en défaut global (FRED/GNews/NewsAPI gardent RETRY_STATUS).
+RETRY_STATUS_WITH_403 = frozenset({403, 429, 500, 502, 503, 504})
 
 # Paramètres par défaut (env-configurables). Le préfixe HTTP_RETRY_* évite toute
 # collision avec les variables FRED_* déjà en place.
@@ -106,6 +114,7 @@ def http_get_retry(
     min_interval: float = DEFAULT_MIN_INTERVAL,
     label: str = "",
     status_out: Optional[Dict[str, Any]] = None,
+    retry_status: Optional[frozenset] = None,
 ) -> Optional[Any]:
     """GET résilient : throttle + retry backoff sur 429/5xx, retourne la Response.
 
@@ -121,6 +130,10 @@ def http_get_retry(
             caller le dernier statut HTTP observé (clé "status", str) et l'erreur
             réseau éventuelle (clé "error"). Permet au monitoring de garder la
             visibilité du code (ex 403/404/429) même quand le helper renvoie None.
+        retry_status : set de statuts HTTP à retenter (défaut RETRY_STATUS =
+            {429,5xx}). Passer RETRY_STATUS_WITH_403 pour les flux derrière un WAF
+            qui renvoie des 403 intermittents (ex RSS mining.com). N'élargit le
+            retry QUE pour cet appel — pas de changement global.
 
     Returns:
         La `requests.Response` en cas de succès HTTP < 400.
@@ -139,6 +152,7 @@ def http_get_retry(
 
     tag = label or url
     last_err: Optional[str] = None
+    retriable = retry_status if retry_status is not None else RETRY_STATUS
 
     for attempt in range(1, max_retries + 1):
         _throttle(bucket, min_interval)
@@ -165,8 +179,9 @@ def http_get_retry(
         if status < 400:
             return resp
 
-        # Statut retriable (429/5xx) ET il reste des tentatives → backoff.
-        if status in RETRY_STATUS and attempt < max_retries:
+        # Statut retriable (429/5xx, +403 si retry_status l'inclut) ET il reste
+        # des tentatives → backoff.
+        if status in retriable and attempt < max_retries:
             retry_after = parse_retry_after(resp.headers.get("Retry-After"))
             delay = backoff_delay(attempt, retry_after, backoff_base=backoff_base)
             logger.warning(
@@ -177,8 +192,9 @@ def http_get_retry(
             last_err = f"HTTP {status}"
             continue
 
-        # Statut non-retriable (4xx ≠ 429, ex 403/404) OU dernière tentative
-        # épuisée sur un statut retriable → échec sans nouveau retry.
+        # Statut non-retriable (4xx hors `retriable`, ex 404, ou 403 quand
+        # retry_status ne l'inclut pas) OU dernière tentative épuisée sur un
+        # statut retriable → échec sans nouveau retry.
         last_err = f"HTTP {status}"
         break
 

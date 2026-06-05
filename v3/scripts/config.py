@@ -40,6 +40,17 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
+
+# Headers d'un vrai navigateur (au-delà du seul User-Agent). Certains WAF
+# (Cloudflare sur mining.com, réapparu en 403 le 05/06 malgré l'UA Chrome)
+# inspectent aussi Accept / Accept-Language : un client qui n'envoie QUE le UA
+# ressemble encore à un bot. Ces en-têtes sont gratuits et standards — aucun
+# scraping, aucun contournement. Utilisés sur les flux RSS (fetch type page).
+BROWSER_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 HTTP_TIMEOUT = 15
 
 # ============================================================

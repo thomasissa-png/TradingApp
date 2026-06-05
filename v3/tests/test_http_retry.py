@@ -146,6 +146,46 @@ def test_401_no_retry(_no_sleep):
 
 
 # ---------------------------------------------------------------------------
+# retry_status=RETRY_STATUS_WITH_403 — WAF 403 intermittent (mining.com 05/06)
+# ---------------------------------------------------------------------------
+
+def test_403_retried_when_retry_status_includes_403(_no_sleep):
+    """Avec retry_status incluant 403, un 403 intermittent EST retenté."""
+    status_out: dict = {}
+    with patch("requests.get", return_value=_resp(403)) as g:
+        out = hr.http_get_retry(
+            "https://x", min_interval=0.0, max_retries=3,
+            status_out=status_out, label="rss:mining_com",
+            retry_status=hr.RETRY_STATUS_WITH_403,
+        )
+    assert out is None  # 403 persistant après retries → échec (dégradation propre)
+    assert g.call_count == 3  # 3 tentatives, PAS un seul essai
+    assert status_out["status"] == "403"
+
+
+def test_403_then_200_recovers_with_403_retry(_no_sleep):
+    """403 transitoire (WAF) suivi d'un 200 : le retry récupère le feed."""
+    seq = [_resp(403), _resp(200, content=b"<rss/>")]
+    with patch("requests.get", side_effect=seq) as g:
+        out = hr.http_get_retry(
+            "https://x", min_interval=0.0, max_retries=3,
+            label="rss:mining_com", retry_status=hr.RETRY_STATUS_WITH_403,
+        )
+    assert out is not None
+    assert out.status_code == 200
+    assert g.call_count == 2  # 1 échec 403 + 1 succès
+
+
+def test_default_still_no_retry_on_403(_no_sleep):
+    """Sans retry_status (défaut), le 403 reste non-retriable : zéro régression
+    pour FRED/GNews/NewsAPI."""
+    with patch("requests.get", return_value=_resp(403)) as g:
+        out = hr.http_get_retry("https://x", min_interval=0.0, max_retries=3)
+    assert out is None
+    assert g.call_count == 1
+
+
+# ---------------------------------------------------------------------------
 # Retry-After
 # ---------------------------------------------------------------------------
 

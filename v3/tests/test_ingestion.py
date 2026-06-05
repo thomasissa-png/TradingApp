@@ -216,6 +216,36 @@ def test_newsapi_status_error_returns_empty():
 
 
 # ============================================================
+# Fetch RSS — headers navigateur + 403 WAF intermittent (mining.com 05/06)
+# ============================================================
+
+def test_fetch_rss_sends_browser_headers():
+    """Le fetch RSS envoie des en-têtes navigateur complets (UA + Accept +
+    Accept-Language), pas seulement l'User-Agent — pour passer les WAF qui
+    inspectent Accept* (mining.com)."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.content = b"<rss/>"
+    with patch.object(nc.requests, "get", return_value=resp) as mock_get:
+        nc._fetch_rss("mining_com", "https://www.mining.com/feed/")
+    _, kwargs = mock_get.call_args
+    headers = kwargs.get("headers", {})
+    assert headers.get("User-Agent", "").startswith("Mozilla/5.0")
+    assert "Accept" in headers
+    assert "Accept-Language" in headers
+
+
+def test_fetch_rss_retries_on_403_then_recovers():
+    """403 WAF transitoire suivi d'un 200 : le fetch RSS récupère le feed
+    (retry_status incluant 403 propagé au helper)."""
+    resp403 = MagicMock(); resp403.status_code = 403; resp403.content = b""
+    resp200 = MagicMock(); resp200.status_code = 200; resp200.content = b"<rss/>"
+    with patch.object(nc.requests, "get", side_effect=[resp403, resp200]) as mock_get:
+        nc._fetch_rss("mining_com", "https://www.mining.com/feed/")
+    assert mock_get.call_count == 2  # 403 retenté → 200
+
+
+# ============================================================
 # Structured collect — clés absentes
 # ============================================================
 

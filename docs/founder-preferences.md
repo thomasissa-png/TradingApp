@@ -20,3 +20,4 @@
 
 - [PRÉFÉRENCE FONDATEUR] : Objectif **non négociable = justesse de TENDANCE** (trend-following directionnel), PAS la vitesse de capture des news. Un retard de 4h sur une news n'est pas grave. Tout raisonnement qui optimise la *vitesse* est hors-sujet.
 - [PRÉFÉRENCE FONDATEUR] : **Zéro invention de donnée** — source absente → n/a, jamais combler. Et **zéro modification silencieuse** des poids/seuils/prompts (changelog + validation).
+- [PRÉFÉRENCE FONDATEUR] : Thomas valide **uniquement en conditions réelles (shadow live)** — le **backtest ne l'intéresse pas** (rejeu historique news-blind, ne capte pas la valeur réelle du système, qui vient de la couche news). Seuls comptent les **bulletins réels mesurés en forward** (boucle prédiction→mesure, KPI > 70 % / Brier < 0,25). Ne plus proposer le backtest comme jalon ni relancer dessus.

@@ -2,7 +2,7 @@
 
 > Lu par tous les agents avant toute action.
 > **Repo privé** (données financières personnelles). Dernière mise à jour : 2026-06-02.
-> **Stade : V1 EN COURS** (mode shadow — rien émis publiquement). Reste avant V1 : (1) valider/calibrer le gate coverage sur données fraîches, (2) ~30 j shadow avec KPI > 70%, (3) backtest v2 concluant sur l'edge directionnel.
+> **Stade : V1 EN COURS** (mode shadow — rien émis publiquement). Reste avant V1 : (1) valider/calibrer le gate coverage sur données fraîches, (2) ~30 j shadow avec KPI > 70% + Brier < 0,25. **Validation = SHADOW RÉEL uniquement** (décision fondateur 05/06 : le backtest n'est PAS un jalon — rejeu news-blind écarté ; outil `backtest-v2-fred` conservé mais non requis).
 > **Source de vérité produit complète : vault Drive `Bourse/Bourse.md`** (ce fichier en est le résumé technique).
 
 ## En une phrase

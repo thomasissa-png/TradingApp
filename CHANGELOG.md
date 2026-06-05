@@ -2,6 +2,20 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-05 (Session 4) — Corrections audit trio bulletins live (A1/A2 flag-only) + recos Lot 4b/ticket C
+
+**Contexte** : audit trio des bulletins live 04-05/06 (Analyst/News Trader/Spéculateur). Verdict unanime **AJUSTER**. Corrections appliquées = **flag-only, zéro impact conclusion/mesure**. Tout ce qui touchait une DÉCISION (Lot 4b contre-momentum, ticket C calibration) → **reco À VALIDER THOMAS**, pas appliqué (garde-fous fondateur). 870 → **873 tests**, 0 régression. Doc clé : `v3/audit/reco-corrections-2026-06-05.md`.
+
+### Vrais bugs corrigés (affichage uniquement)
+- **A1 — mono-critère rendu VISIBLE** (`◧`) : la détection `mono_critere_dominant` fonctionnait déjà (CAC 7j ET EUR/USD 7j = True au decision-log — l'« incohérence d'affichage » de l'audit n'existait pas), mais le flag était SHADOW decision-log only, jamais affiché. Les 3 experts jugent le mono-critère trop fragile pour rester invisible (EUR/USD 7j = 96% sur 1 critère). Ajouté : drapeau `◧` dans la matrice + section « Cellules à surveiller » + légende. **Conclusion/mesure inchangées.**
+- **A2 — champ shadow `quasi_neutre`** au decision-log (`|score| < NEUTRAL_BAND=0.30`) : englobe coin-flip strict ET bande `≈`. Cuivre 7j (-0.22) était raté par `coin_flip` (seuil 0.05) → désormais `quasi_neutre=True`. **Le seuil `coin_flip`/`EPSILON_CARRY` (0.05) N'A PAS bougé** (il est couplé à la contradiction du carry-forward = seuil décisionnel, garde-fou).
+
+### Enquêtes → reportées (pas de bug → reco)
+- **B1 CAC « à l'envers »** : signe spread OAT-Bund **vérifié CORRECT** (élargissement → SHORT = risque France baissier, conforme). SHORT = contre-momentum pur (déjà flaggé `⇄`). Faire agir le `⇄` = **Lot 4b → reco À VALIDER THOMAS** (cap contre-momentum), non appliqué.
+- **B2 Cuivre SHORT 7j/1m** : mono-critère COT + couverture 48%. Marquage déjà correct (`≈`+`⚠️`+`↯`). Abaisser couverture = **ticket C → reco**.
+- **C1 S&P 7j / C2 Argent 1m / C3 échelles saturées** : pertinence par horizon + échelles. Aucun bug technique trouvé (fenêtres/séries correctes, saturation modérée ~1.1-1.3σ non absurde) → **ticket C → recos**, non appliqué.
+- **DXY 118.9** (bonus News Trader) : **faux positif d'audit** — `dxy_trend_20j` câblé sur FRED DTWEXBGS (base 2006=100, ~120-130 normal), PAS le DXY classique. z-score = tendance 20j (pas niveau). Donnée + signe **sains** → aucune correction.
+
 ## 2026-06-03 (Session 3) — Audits trio, refonte page de rendu & comblement des données
 
 **Contexte** : revue fondateur du bulletin frais + audits par le trio + le designer. Beaucoup de polissage, de fiabilisation et de **branchement de données** (le gros levier de qualité). 684 → **859 tests**, 0 régression.

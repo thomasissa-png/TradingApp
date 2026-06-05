@@ -19,6 +19,7 @@
 | C2 — Argent 1m instable | Pertinence par horizon | **À VALIDER THOMAS** (ticket C) | OUI si appliqué → reporté |
 | C3 — Échelles saturées (G/S, VIX term) | Qualité de donnée / calibration | **À VALIDER THOMAS** (ticket C — pas un bug manifeste) | OUI si appliqué → reporté |
 | Bonus — DXY 118.9 implausible (News Trader §3) | Faux positif d'audit (DTWEXBGS, pas DXY) | **ENQUÊTÉ → AUCUNE CORRECTION** (donnée et signe sains) | NON |
+| #8 — Or SHORT « à contre-sens » (backtest 1m 18.2 %) | Régime 2025 (or +70 % malgré TIPS hauts), PAS un signe inversé | **ENQUÊTÉ → AUCUNE CORRECTION** · reco ticket C (cf. `enquete-or-2026-06-05.md`) | NON |
 
 ---
 

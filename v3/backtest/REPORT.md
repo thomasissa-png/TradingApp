@@ -130,6 +130,41 @@ Réseau requis : yfinance (prix), Socrata CFTC (COT), FRED (macro). Cache disque
 `v3/backtest/.cache/`. Tests : `pytest v3/tests/test_backtest.py` (21, dont 6
 no-look-ahead : 2 prix + 4 FRED/COT).
 
+### Comment relancer AVEC FRED (clore le verdict `+FRED`)
+
+Le verdict ci-dessus est NON CONCLUANT sur FRED (clé absente lors du run). Pour
+relancer dans un contexte qui a la clé :
+
+**Option A — GitHub Actions (recommandé, clé déjà en secret) :**
+1. Onglet **Actions → workflow `backtest-v2-fred` → Run workflow** (branche au choix).
+   Déclenchement **100 % manuel** (`workflow_dispatch`, aucun cron) → ne concurrence
+   jamais `cycle-decision`.
+2. Le workflow lit le **cache prix/COT committé** (`v3/backtest/.cache/*.csv`) car
+   **yfinance est bloqué sur les runners CI** ; il appelle **FRED réellement** via le
+   secret `FRED_API_KEY` (les `fred__*.csv` ne sont volontairement PAS committés) +
+   **CFTC Socrata** (OK sur CI).
+3. Résultat = **artifact `backtest-v2-fred-report`** (log complet `backtest-v2-fred.log`
+   avec tous les tableaux + `cache-status.txt` prouvant que FRED a tapé le réseau).
+   Récupérer l'artifact, comparer l'arm **`+FRED` vs `price-only`** : s'ils diffèrent,
+   FRED est réellement testé → conclure (GO/NO-GO sur la contribution FRED).
+
+⚠️ **Le workflow ne commite RIEN** : l'exécution importe des modules `v3/scripts/`
+qui peuvent écrire dans `v3/data/` (criteres-courants.md, index.html). Un commit auto
+écraserait les données des runs réels de `cycle-decision`. La sortie passe donc
+**uniquement** par l'artifact. Ne jamais ajouter de step `git add v3/data/` à ce workflow.
+
+♻️ **Rafraîchir le cache prix/COT** (s'il devient périmé / un actif manque) : régénérer
+dans un environnement où **yfinance fonctionne** (poste local, pas le runner CI) via
+`python3 v3/backtest/backtest_quant.py`, puis committer le delta avec
+`git add -f v3/backtest/.cache/*.csv` (le dossier est dans `.gitignore`). **Ne jamais
+committer de `fred__*.csv`** (sinon FRED lirait le cache au lieu du réseau → re-fausse
+l'arm `+FRED`).
+
+**Option B — VPS Anya (fallback, si cache CI indispo ou trop vieux) :**
+Si yfinance fonctionne sur le VPS et que `FRED_API_KEY` y est exporté, lancer
+directement `python3 v3/backtest/backtest_quant.py` (cf. « Reproductibilité »). Le VPS
+chauffe alors son propre cache yfinance + FRED. Récupérer le stdout manuellement.
+
 ---
 
 ## Annexe — verdict v1 (2026-06-01, conservé)

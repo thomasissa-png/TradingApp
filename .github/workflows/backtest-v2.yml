@@ -1,0 +1,119 @@
+name: backtest-v2-fred
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Objectif : RELANCER le backtest quant v2 AVEC la clé FRED, pour clore le
+# verdict sur la contribution de l'arm d'ablation `+FRED` (cf. v3/backtest/REPORT.md,
+# section « Limite majeure : FRED n/a »). Le run de référence a tourné SANS
+# FRED_API_KEY → l'arm `+FRED` était identique à `price-only` (branche non testée).
+#
+# ⚠️ DÉCLENCHEMENT MANUEL UNIQUEMENT (workflow_dispatch). JAMAIS de cron : ce
+#    workflow ne doit PAS concurrencer `cycle-decision` (mode shadow préservé,
+#    quotas FRED/Socrata partagés). Thomas le lance à la demande.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# SUBTILITÉ yfinance (raison d'être de la stratégie cache) :
+#   yfinance est BLOQUÉ sur les runners GitHub Actions (c'est pourquoi le live
+#   passe par Twelve Data). Or le backtest appelle yfinance EN DIRECT pour les
+#   prix historiques. Un workflow naïf échouerait donc sur yfinance, même avec
+#   la clé FRED.
+#   → Parade : le cache prix/COT (`v3/backtest/.cache/*.csv`) est PRÉ-CHAUFFÉ et
+#     COMMITÉ depuis un environnement où yfinance marche. En CI, le backtest lit
+#     ce cache (ZÉRO appel yfinance) ; seuls FRED (clé secrète) et CFTC Socrata
+#     (OK sur CI) tapent le réseau.
+#   → Les fichiers `fred__*.csv` ne sont VOLONTAIREMENT PAS committés : on veut
+#     que FRED soit RÉELLEMENT appelé avec la clé pour produire un vrai arm `+FRED`.
+#
+# ⚠️ EFFET DE BORD — PAS DE COMMIT AUTO :
+#   l'exécution du backtest importe des modules de `v3/scripts/` qui peuvent
+#   écrire dans `v3/data/` (criteres-courants.md, index.html…). Ce workflow ne
+#   FAIT AUCUN `git add`/`git commit` : il publie un ARTIFACT (log + statut cache).
+#   Committer écraserait les données des runs réels de `cycle-decision`.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch: {}
+
+# Lecture seule : ce workflow ne pousse jamais (artifact uniquement).
+permissions:
+  contents: read
+
+# Ne jamais tourner en parallèle de lui-même (quotas FRED/Socrata).
+# NB : groupe distinct de `cycle-decision` → ne le bloque/annule pas.
+concurrency:
+  group: backtest-v2-fred
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: v3/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r v3/requirements.txt
+
+      - name: Sanity — cache prix/COT présent (sinon yfinance échouera)
+        run: |
+          # Le backtest a besoin du cache prix/COT pré-chauffé (yfinance bloqué CI).
+          # On compte les CSV non-FRED. Si 0 → abort explicite (échec visible plutôt
+          # qu'un run yfinance qui crashe en plein milieu).
+          n=$(ls v3/backtest/.cache/*.csv 2>/dev/null | grep -vc '/fred__' || true)
+          echo "Fichiers cache prix/COT trouvés : ${n:-0}"
+          if [ "${n:-0}" -lt 20 ]; then
+            echo "::error::Cache prix/COT insuffisant (${n:-0} < 20). yfinance est bloqué sur les"
+            echo "::error::runners CI → re-chauffer le cache en local et le committer, OU lancer"
+            echo "::error::sur le VPS Anya (cf. REPORT.md « Comment relancer avec FRED »)."
+            exit 1
+          fi
+          echo "OK — cache prix/COT présent. FRED sera appelé en réseau (clé secrète)."
+          echo "fred__ committés (doivent être ABSENTS pour un vrai arm +FRED) :"
+          ls v3/backtest/.cache/fred__*.csv 2>/dev/null && echo "::warning::des fred__ sont committés → FRED lira le cache au lieu du réseau" || echo "  (aucun — bon)"
+
+      - name: Run backtest quant v2 (AVEC FRED)
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          LOG_LEVEL: INFO
+          PYTHONUNBUFFERED: "1"
+        run: |
+          # Garde-fou : sans clé FRED, ce workflow n'a aucun intérêt (= run de réf).
+          if [ -z "${FRED_API_KEY}" ]; then
+            echo "::error::FRED_API_KEY absent du secret GitHub → run identique à la référence."
+            exit 1
+          fi
+          mkdir -p backtest-artifacts
+          # stdout = le REPORT/tableaux ; tee → fichier artifact + logs Actions.
+          set -o pipefail
+          python3 v3/backtest/backtest_quant.py 2>&1 | tee backtest-artifacts/backtest-v2-fred.log
+
+      - name: Snapshot statut cache FRED (preuve que FRED a bien tapé le réseau)
+        if: always()
+        run: |
+          # Après le run, des fred__*.csv ont dû apparaître (écrits par le fetch live).
+          # Leur présence prouve que la branche FRED a été RÉELLEMENT exercée.
+          {
+            echo "=== Fichiers FRED générés pendant le run (preuve appel réseau FRED) ==="
+            ls -la v3/backtest/.cache/fred__*.csv 2>/dev/null || echo "AUCUN fred__ généré → FRED n'a PAS répondu (clé/quota ?)"
+          } | tee -a backtest-artifacts/cache-status.txt
+
+      - name: Publier l'artifact (log + statut cache)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backtest-v2-fred-report
+          path: backtest-artifacts/
+          retention-days: 30
+          if-no-files-found: warn
+
+      # ⚠️ AUCUN step de commit/push ici (volontaire). Voir l'en-tête : l'exécution
+      # peut salir v3/data/ ; on ne committe RIEN pour préserver les runs réels.

@@ -335,6 +335,21 @@ def build_macro_value(cle: str, crit: dict, as_of) -> Optional[Dict[str, float]]
     return None
 
 
+# Filtre d'ablation : restreint les critères câblés à un sous-groupe.
+# None = tous (comportement normal). Sinon un set de groupes parmi
+# {"price", "fred", "cot"}. Utilisé par run_ablation.
+_ABLATION_GROUPS: Optional[set] = None
+
+
+def criterion_group(cle: str) -> str:
+    """Classe un critère dans un grand groupe pour l'ablation."""
+    if cle in CFTC_MARKETS:
+        return "cot"
+    if cle in FRED_SERIES_SIMPLE or cle in FRED_SPREADS or cle in FRED_DELTA:
+        return "fred"
+    return "price"
+
+
 def build_quant_value(cle: str, crit: dict, as_of) -> Optional[Any]:
     """Construit la valeur historique pour un critère, AS OF `as_of`.
 
@@ -352,6 +367,10 @@ def build_quant_value(cle: str, crit: dict, as_of) -> Optional[Any]:
     # Triplet : non câblable en historique (vient de classification d'events news)
     # → on retourne None (n/a, poids 0)
     if type_norm == "triplet":
+        return None
+
+    # Ablation : si un sous-groupe est imposé, on masque les critères hors groupe.
+    if _ABLATION_GROUPS is not None and criterion_group(cle) not in _ABLATION_GROUPS:
         return None
 
     # Macro FRED/COT (câblé v2) — prioritaire sur QUANT_SYMBOLS
@@ -696,6 +715,60 @@ def print_cell_summary(ticker: str, fiche_key: str, horizon: str, label: str,
           f"long%={fmt_pct(m['long_ratio'])}")
 
 
+def run_ablation(tickers: List[str], horizons: List[Tuple[str, int]]) -> None:
+    """Étude d'ablation : recalcule l'accuracy pooled OOS en activant
+    progressivement les groupes de critères (price-only / +FRED / +COT / tous).
+
+    Montre quel groupe porte (ou non) l'edge. Léger : pooled global uniquement.
+    Modifie le filtre module-level `_ABLATION_GROUPS` puis le restaure."""
+    global _ABLATION_GROUPS
+    scenarios = [
+        ("price-only", {"price"}),
+        ("+FRED",      {"price", "fred"}),
+        ("+COT",       {"price", "cot"}),
+        ("tous",       {"price", "fred", "cot"}),
+    ]
+    print("\n" + "=" * 100)
+    print("ÉTUDE D'ABLATION — pooled OOS par groupe de critères")
+    print("=" * 100)
+    print(f"{'Scénario':<14} {'N_concl':>8} {'acc':>8} {'WL':>8} {'p-val':>8}")
+    print("-" * 100)
+    saved = _ABLATION_GROUPS
+    try:
+        for name, groups in scenarios:
+            _ABLATION_GROUPS = groups
+            kt = kf = 0
+            all_preds: List[str] = []
+            all_rets: List[float] = []
+            seuil_ref = 0.5
+            for ticker in tickers:
+                for h_lbl, h_days in horizons:
+                    try:
+                        cell = run_backtest_cell(
+                            ticker, horizon_label=h_lbl, horizon_days=h_days,
+                            is_start="2021-01-01", is_end="2024-12-31",
+                            oos_start="2025-01-01", oos_end=None,
+                            warmup_skip_days=300,
+                        )
+                    except Exception:  # noqa: BLE001
+                        continue
+                    for t in cell.trades_oos:
+                        all_preds.append(t.prediction)
+                        all_rets.append(t.return_pct)
+                        seuil_ref = t.seuil_pct
+                        if t.outcome == "VRAI":
+                            kt += 1
+                        elif t.outcome == "FAUSSE":
+                            kf += 1
+            n = kt + kf
+            acc = (kt / n) if n else None
+            wl, _ = wilson_interval(kt, n) if n else (None, None)
+            p = permutation_pvalue(all_preds, all_rets, seuil_ref, n_iter=500) if all_preds else None
+            print(f"{name:<14} {fmt_n(n):>8} {fmt_pct(acc):>8} {fmt_pct(wl):>8} {fmt_p(p):>8}")
+    finally:
+        _ABLATION_GROUPS = saved
+
+
 def main():
     logging.basicConfig(
         level=logging.INFO,
@@ -703,15 +776,30 @@ def main():
     )
     warnings.filterwarnings("ignore")
 
-    tickers = TICKERS_V1
-    horizons = [("24h", 1)]   # v1 : 24h uniquement (le plus de N indépendant)
+    # 12 actifs distincts (1 ticker par fiche). BZ=F et CL=F mappent tous deux
+    # sur la fiche "petrole" → on garde CL=F (WTI, historique yfinance propre,
+    # cohérent avec v1) et on écarte BZ=F pour ne pas double-compter le pétrole.
+    tickers_raw = TICKERS_V1 + TICKERS_V2_EXTENSION
+    tickers = []
+    seen_fiches = set()
+    for tk in tickers_raw:
+        fk = TICKER_TO_FICHE.get(tk)
+        if not fk or fk in seen_fiches:
+            continue
+        seen_fiches.add(fk)
+        tickers.append(tk)
+    # Mapping jours = celui du LIVE (journaliste.HORIZON_DAYS = 24h:1, 7j:7, 1m:30
+    # jours CALENDAIRES, vérifié — le live mesure l'échéance en jours calendaires,
+    # pas en jours de trading). On reste strictement aligné.
+    horizons = [("24h", 1), ("7j", 7), ("1m", 30)]
 
     all_oos_metrics: Dict[str, Dict[str, Any]] = {}
     all_is_metrics: Dict[str, Dict[str, Any]] = {}
     all_cells: Dict[str, CellResults] = {}
 
     print("\n" + "=" * 100)
-    print("BACKTEST QUANT-ONLY v1 — 4 actifs × 24h, walk-forward IS 2022-2024 / OOS 2025+")
+    print(f"BACKTEST QUANT v2 — {len(tickers)} actifs × {len(horizons)} horizons "
+          f"({', '.join(h for h, _ in horizons)}), walk-forward IS 2021-2024 / OOS 2025+")
     print("=" * 100)
 
     for ticker in tickers:
@@ -738,29 +826,50 @@ def main():
             v = verdict(m_oos)
             print(f"  VERDICT cellule : {v}")
 
-    # Agrégat OOS
+    # Agrégat OOS détaillé
     print("\n" + "=" * 100)
-    print("AGRÉGAT OOS — verdict global GO/NO-GO")
+    print("AGRÉGAT OOS — par cellule")
     print("=" * 100)
-    print(f"{'Cellule':<20} {'N_concl':>8} {'acc':>8} {'WL':>8} {'p-val':>8} {'verdict':>12}")
+    print(f"{'Cellule':<22} {'N_concl':>8} {'acc':>8} {'WL':>8} {'p-val':>8} {'verdict':>12}")
     print("-" * 100)
     total_true = total_false = 0
+    pooled_by_h: Dict[str, List[int]] = {h: [0, 0] for h, _ in horizons}
     for key, m in all_oos_metrics.items():
         v = verdict(m)
+        h_lbl = key.split("|")[1]
         if m["k_true"] is not None:
             total_true += m["k_true"]
             total_false += m["k_false"]
-        print(f"{key:<20} {fmt_n(m['n_conclusive']):>8} "
+            pooled_by_h[h_lbl][0] += m["k_true"]
+            pooled_by_h[h_lbl][1] += m["k_false"]
+        print(f"{key:<22} {fmt_n(m['n_conclusive']):>8} "
               f"{fmt_pct(m['accuracy']):>8} {fmt_pct(m['wilson_low']):>8} "
               f"{fmt_p(m['p_value']):>8} {v:>12}")
-    # Verdict global pooled
+
+    # Pooled par horizon + global
+    print("\n" + "=" * 100)
+    print("POOLED OOS — par horizon (tous actifs)")
+    print("=" * 100)
+    print(f"{'Horizon':<22} {'N_concl':>8} {'acc':>8} {'WL':>8}")
+    print("-" * 100)
+    for h_lbl, _ in horizons:
+        kt, kf = pooled_by_h[h_lbl]
+        n = kt + kf
+        if n == 0:
+            continue
+        acc = kt / n
+        wl, _ = wilson_interval(kt, n)
+        print(f"{('POOLED ' + h_lbl):<22} {fmt_n(n):>8} {fmt_pct(acc):>8} {fmt_pct(wl):>8}")
     n_pool = total_true + total_false
     if n_pool > 0:
         pool_acc = total_true / n_pool
         pool_wl, _ = wilson_interval(total_true, n_pool)
         print("-" * 100)
-        print(f"{'POOLED OOS (4 actifs)':<20} {fmt_n(n_pool):>8} "
+        print(f"{'POOLED GLOBAL':<22} {fmt_n(n_pool):>8} "
               f"{fmt_pct(pool_acc):>8} {fmt_pct(pool_wl):>8}")
+
+    # Étude d'ablation par groupe de critères
+    run_ablation(tickers, horizons)
 
     return all_cells, all_is_metrics, all_oos_metrics
 

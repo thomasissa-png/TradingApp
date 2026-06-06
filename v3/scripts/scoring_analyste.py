@@ -1716,6 +1716,43 @@ def build_top3_block(results: List["ActifResult"]) -> List[str]:
     return lines
 
 
+# Traduction des types de normalisation en libellé humain pour le tableau
+# « Détail par actif » (reco-wording-detail-bulletin.md §2). N'affecte QUE
+# l'affichage — la valeur brute `type_norm` reste dans le decision-log.
+TYPE_NORM_LABELS: Dict[str, str] = {
+    "zscore": "Écart à la normale",
+    "lineaire": "Échelle graduée",
+    "mapping_non_monotone": "Régime par seuils",
+    "composite": "Signal combiné",
+    "triplet": "Direction news",
+    "gate": "Drapeau régime",
+}
+
+
+def _label_type_norm(type_norm: str) -> str:
+    """Libellé humain d'un type de normalisation ; retombe sur le brut si inconnu."""
+    return TYPE_NORM_LABELS.get(type_norm, type_norm)
+
+
+# Encart statique « Comment lire ce tableau » (reco-wording §5). Inséré une
+# seule fois, juste avant la première section « Détail par actif ».
+DETAIL_TABLE_HELP_LINES: List[str] = [
+    "**Comment lire ce tableau**",
+    "",
+    "Chaque ligne est un critère qui influence la direction de l'actif.",
+    "",
+    "- **Penchant** (de −1 à +1) : à quel point ce critère pousse dans un sens. "
+    "−1 = fortement baissier, +1 = fortement haussier, 0 = neutre.",
+    "- **Importance** : le poids de ce critère dans la note finale. "
+    "Un critère à 8 compte 4× plus qu'un critère à 2.",
+    "- **Sens** : `normal` = quand la valeur monte, c'est haussier. "
+    "`inversé` = quand la valeur monte, c'est baissier (ex. des taux réels élevés pèsent sur l'or).",
+    "- **Effet 24h / 7j / 1m** : la contribution chiffrée de ce critère à chaque horizon. "
+    "Positif = pousse LONG, négatif = pousse SHORT. La somme de tous les effets donne la note finale.",
+    "",
+]
+
+
 def render_bulletin(
     results: List[ActifResult],
     veille_conclusions: Dict[str, Dict[str, str]],
@@ -1983,23 +2020,32 @@ def render_bulletin(
     lines = lines[:_meta_end] + [""] + build_top3_block(results) + synth_lines + lines[_meta_end:]
 
     lines.append("## Détail par actif")
+    lines.append("")
+    # Encart « Comment lire ce tableau » : une seule fois, avant le 1er actif.
+    lines.extend(DETAIL_TABLE_HELP_LINES)
     for r in results:
         lines.append(f"### {r.nom}")
         lines.append("")
-        lines.append("| Critère | Type | Valeur brute | Norm. | Poids | Signe | 24h | 7j | 1m | Note |")
-        lines.append("|---|---|---|---|---|---|---|---|---|---|")
+        lines.append("| Critère | Comment c'est lu | Valeur actuelle | Penchant | Importance | Sens | Effet 24h | Effet 7j | Effet 1m |")
+        lines.append("|---|---|---|---|---|---|---|---|---|")
         for c in r.criteres:
             valeur_brute_str = _fmt_raw(c.valeur_brute)
             vn = "—" if c.valeur_norm is None else f"{c.valeur_norm:+.3f}"
             poids = "—" if c.is_gate else f"{c.poids:g}"
-            signe = "—" if c.is_gate else f"{c.signe:+d}"
+            # Sens : texte humain (normal / inversé), — pour les gates.
+            if c.is_gate:
+                sens = "—"
+            else:
+                sens = "normal" if c.signe == 1 else "inversé"
             ctr = {h: ("—" if c.is_na or c.is_gate else f"{c.contributions[h]:+.3f}") for h in HORIZONS}
-            note = c.note
+            # « Comment c'est lu » : type traduit. Le gate ACTIF garde sa
+            # visibilité de risque (info auparavant portée par la colonne Note).
+            lu = _label_type_norm(c.type_norm)
             if c.is_gate and c.gate_active:
-                note = "⚑ GATE ACTIF — " + note
+                lu = lu + " ⚑ actif"
             lines.append(
-                f"| {c.nom} | {c.type_norm} | {valeur_brute_str} | {vn} | {poids} | {signe} | "
-                f"{ctr['24h']} | {ctr['7j']} | {ctr['1m']} | {note} |"
+                f"| {c.nom} | {lu} | {valeur_brute_str} | {vn} | {poids} | {sens} | "
+                f"{ctr['24h']} | {ctr['7j']} | {ctr['1m']} |"
             )
         if r.tie_break_notes:
             lines.append("")

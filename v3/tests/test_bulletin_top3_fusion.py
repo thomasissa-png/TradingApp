@@ -252,9 +252,12 @@ def test_regime_extreme_annonce_une_fois_quand_global():
     # ⚑ retiré de la table de synthèse (cellules)
     synth = b.split("## Synthèse des décisions")[1].split("## ⚠️")[0]
     assert "⚑" not in synth
-    # ⚑ conservé dans le détail par critère (où il discrimine)
+    # ⚑ conservé dans le détail par critère (où il discrimine) — le gate actif
+    # est marqué « Drapeau régime ⚑ actif » dans la colonne « Comment c'est lu »
+    # (info de risque préservée après suppression de la colonne « Note »).
     detail = b.split("## Détail par actif")[1]
-    assert "GATE ACTIF" in detail
+    assert "⚑ actif" in detail
+    assert "Drapeau régime ⚑ actif" in detail
 
 
 def test_regime_extreme_garde_le_drapeau_par_cellule_si_partiel():
@@ -310,3 +313,45 @@ def test_surveillance_garde_alerte_directionnelle_sur_direction_actee():
     assert "↯" in section
     # Les horizons sans alerte ne remontent pas
     assert "AvecDivergence 7j" not in section
+
+
+# ===========================================================================
+# Reformulation tableau « Détail par actif » (reco-wording-detail-bulletin.md)
+# ===========================================================================
+
+def test_detail_table_wording_humain():
+    """Les nouveaux en-têtes, la traduction des types, la colonne Sens humaine
+    et l'encart « Comment lire ce tableau » (1×) sont rendus ; les anciens
+    libellés techniques ont disparu de la section Détail."""
+    r = sa.score_actif("a", _fiche_equilibree(), _vals2(1.0, 1.0))
+    r.nom = "ActifWording"
+    b = sa.render_bulletin([r], {}, NOW, "h", "ok")
+    detail = b.split("## Détail par actif")[1]
+
+    # Nouveaux en-têtes (9 colonnes, plus de « Note »)
+    assert "| Critère | Comment c'est lu | Valeur actuelle | Penchant | Importance | Sens | Effet 24h | Effet 7j | Effet 1m |" in detail
+    # Séparateur à 9 colonnes (9 cellules → 10 pipes)
+    assert "|---|---|---|---|---|---|---|---|---|\n" in detail
+
+    # Anciens libellés techniques retirés de la vue
+    assert "| Type |" not in detail
+    assert "Valeur brute" not in detail
+    assert "| Norm. |" not in detail
+
+    # Traduction de type : la fiche équilibrée utilise des critères « lineaire »
+    assert "Échelle graduée" in detail
+    # Sens humain (signe +1 → « normal »), plus de « +1 » brut en colonne Sens
+    assert "| normal |" in detail
+
+    # Encart inséré exactement une fois, avant le 1er actif
+    assert b.count("**Comment lire ce tableau**") == 1
+    assert b.index("**Comment lire ce tableau**") < b.index("### ActifWording")
+
+
+def test_detail_table_sens_inverse():
+    """Un critère de signe -1 affiche « inversé » dans la colonne Sens."""
+    r = sa.score_actif("a", _fiche(quant_signe=-1), _vals(1.0))
+    r.nom = "ActifInverse"
+    b = sa.render_bulletin([r], {}, NOW, "h", "ok")
+    detail = b.split("## Détail par actif")[1]
+    assert "| inversé |" in detail

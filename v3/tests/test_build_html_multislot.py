@@ -96,13 +96,15 @@ def test_html_regex_colorisation_corrige():
 
 def test_html_dense_table_et_media_mobile():
     html = _render_sample_html()
-    # (c) classe dense-table appliquée en JS + media query mobile sur 3e/10e col
+    # (c) classe dense-table appliquée en JS + media query mobile sur les
+    # colonnes secondaires du tableau « Détail par actif » (9 colonnes) :
+    # 3e (« Valeur actuelle ») et 4e (« Penchant »).
     assert "markDenseTables" in html
     assert "dense-table" in html
     assert ".dense-table td:nth-child(3)" in html
-    assert ".dense-table td:nth-child(10)" in html
+    assert ".dense-table td:nth-child(4)" in html
     assert ".dense-table th:nth-child(3)" in html
-    assert ".dense-table th:nth-child(10)" in html
+    assert ".dense-table th:nth-child(4)" in html
 
 
 def test_html_tooltips_symboles():

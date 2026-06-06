@@ -2,6 +2,15 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-06 (Session 4) — Tableau « Détail par actif » reformulé en langage trader
+
+Thomas ne comprenait pas les lignes critères du tableau (`zscore`, `Norm.`, `Signe -1`, `lineaire centre=75 echelle=12`…). Implémentation de la spec @copywriter `v3/audit/reco-wording-detail-bulletin.md` — refonte des libellés/colonnes uniquement, **zéro changement de chiffre, score, logique ou conclusion**.
+
+### Correctif (@fullstack)
+- **`v3/scripts/scoring_analyste.py`** — en-têtes reformulés (9 colonnes, « Note » supprimée) : `Critère | Comment c'est lu | Valeur actuelle | Penchant | Importance | Sens | Effet 24h | Effet 7j | Effet 1m`. Types traduits via `TYPE_NORM_LABELS` (zscore→Écart à la normale, lineaire→Échelle graduée, mapping_non_monotone→Régime par seuils, composite→Signal combiné, triplet→Direction news, gate→Drapeau régime ; fallback sur le brut si type inconnu, pas de crash). Colonne **Sens** humaine : `normal` (signe +1) / `inversé` (signe -1), `—` pour les gates. **Gate actif préservé** : « Drapeau régime ⚑ actif » affiché dans « Comment c'est lu » (info de risque ex-portée par la colonne Note). Paramètres techniques `centre=X echelle=Y` retirés de la vue (restent au decision-log). Encart **« Comment lire ce tableau »** statique inséré 1× avant le 1er actif.
+- **`v3/scripts/build_html.py`** — masquage mobile recalé sur le tableau 9 colonnes : 3e (« Valeur actuelle ») + 4e (« Penchant ») au lieu de l'ex-10e (« Note » disparue). Tableau lisible sur mobile (Critère + Sens + 3 colonnes Effet conservés).
+- **Tests** : assertions des en-têtes / Note / masquage mobile mises à jour (`test_bulletin_top3_fusion.py`, `test_build_html_multislot.py`), + 2 tests neufs (`test_detail_table_wording_humain`, `test_detail_table_sens_inverse`) vérifiant nouveaux en-têtes, traduction de type, Sens normal/inversé et encart unique. **893 tests verts**, `v3/data/` non pollué (`git checkout` post-run). Mesure VRAI/FAUX et decision-log identiques. Shadow préservé.
+
 ## 2026-06-06 (Session 4) — Fériés de marché AUTO via lib `holidays` (NYSE XNYS + Euronext XECB) — fin de la maintenance annuelle manuelle
 
 **Demande fondateur** : que la mise à jour des jours fériés de marché soit **automatique chaque année, zéro maintenance manuelle**. Avant : `MARKET_HOLIDAYS` était une liste statique « à étendre chaque année » → dette de maintenance + risque d'oubli (un férié non recopié = run sur prix figés).

@@ -566,14 +566,16 @@ def render_html(
     main h2 {{ font-size: 18px; margin-top: 28px; scroll-margin-top: 130px; }}
     main h3 {{ font-size: 15.5px; scroll-margin-top: 130px; }}
     .help-box {{ font-size: 13px; }}
-    /* Tables denses (Détail par actif, ≥8 colonnes) : on masque sur mobile la
-       3e colonne (« Valeur brute », 15 décimales) et la 10e (« Note », redondante).
-       La classe .dense-table est posée en JS UNIQUEMENT sur les tables à ≥8
-       colonnes — la table Synthèse (4 colonnes) n'est PAS ciblée. */
+    /* Tables denses (Détail par actif, 9 colonnes) : on masque sur mobile la
+       3e colonne (« Valeur actuelle », nombreuses décimales) et la 4e
+       (« Penchant », valeur normalisée interne secondaire) pour garder le
+       Critère + Sens + les 3 colonnes « Effet » lisibles. La classe
+       .dense-table est posée en JS UNIQUEMENT sur les tables à ≥8 colonnes —
+       la table Synthèse (4 colonnes) n'est PAS ciblée. */
     .dense-table td:nth-child(3),
     .dense-table th:nth-child(3),
-    .dense-table td:nth-child(10),
-    .dense-table th:nth-child(10) {{ display: none; }}
+    .dense-table td:nth-child(4),
+    .dense-table th:nth-child(4) {{ display: none; }}
   }}
 </style>
 </head>

@@ -2,6 +2,17 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-06 (Session 4) — Garde de run étendue aux jours fériés de marché (réutilise `MARKET_HOLIDAYS`)
+
+**Demande fondateur (« point final »)** : des rapports **uniquement les jours où la bourse est OUVERTE**. Le week-end était déjà coupé ; il manquait les **jours fériés de marché** — un lundi férié (NYSE/Euronext fermés) produisait encore un bulletin sur **prix figés à la clôture précédente** + mesures 24h dégénérées (« +0.0% ») qui polluent le shadow.
+
+### Correctif (@infrastructure)
+- **`v3/scripts/journaliste.py`** : nouvelle fonction importable **`is_trading_day(d: date) -> bool`** = `jour ouvré (lun-ven) and not _is_market_holiday(d)`. **SOURCE DE VÉRITÉ UNIQUE** : réutilise EXACTEMENT le calendrier existant `_is_market_holiday` / `MARKET_HOLIDAYS` (NYSE ∪ Euronext) — **zéro liste de dates dupliquée**, une seule à maintenir. La fonction ne juge QUE le jour (le bypass `force` reste dans la garde YAML).
+- **`.github/workflows/cycle.yml`** — étape Guard : le test week-end bash pur est remplacé par un appel **Python** à `is_trading_day(today Europe/Paris)` (stdlib + `MARKET_HOLIDAYS` statique, aucune dépendance réseau/pip — `python3` est dispo sur les runners avant le setup deps). Conservé : échappatoire `force`/`RUN-CYCLE.txt` (bypass tout), anti-doublon ×3 schedule-only. Si bourse fermée (week-end **OU** férié) et pas de force → `run=false` (NO-OP) avec log clair (« week-end » / « férié de marché AAAA-MM-JJ »). Table de vérité mise à jour (ligne « dispatch (VPS) / jour férié / false → NON ← FIX »).
+- **VPS (`trigger-cycle.sh`)** : la garde week-end bash y reste (fast-path) ; les **fériés** sont gérés de façon **autoritaire au niveau du workflow** (le VPS n'a pas l'env Python du repo et NE recopie AUCUNE liste de fériés). Le VPS peut tirer un lundi férié → le workflow NO-OP. Documenté dans `v3/ops/vps-trigger/README.md`.
+- **Tests** : `v3/tests/test_is_trading_day.py` (7 cas : mardi True, samedi/dimanche False, **férié réel de `MARKET_HOLIDAYS`** False, cohérence calendrier, signature `is_trading_day(d)` sans `force`). `test-guard-logic.sh` étendu (param `holiday`) → **13 cas verts** dont férié schedule/dispatch/force/push. `v3/data/` non pollué (vérifié).
+- **Garde-fous** : zéro duplication du calendrier, zéro invention, mode shadow, aucun jour ouvré normal bloqué, logique de compute non touchée (garde de déclenchement uniquement). Aucun run déclenché.
+
 ## 2026-06-06 (Session 4) — Garde week-end étendue à `workflow_dispatch` (VPS) + input `force` + garde jour-ouvré VPS
 
 **Bug** : un briefing a été produit **samedi 06/06 07h** alors que le week-end doit être coupé. **Cause racine** (diagnostiquée, non ré-enquêtée) : la garde week-end de `cycle.yml` ne s'appliquait qu'aux événements `schedule`. Or le **driver réel** est le **pinger VPS**, qui déclenche en **`workflow_dispatch`**. L'early-exit en tête de garde (`if event != schedule → run=true; exit`) traitait `workflow_dispatch` comme un forçage manuel → le NO-OP week-end (plus bas) n'était jamais atteint pour le VPS. Résultat : run samedi sur prix figés (clôture vendredi) → mesures 24h dégénérées polluant le shadow.

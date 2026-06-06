@@ -41,7 +41,7 @@ jobs:
         with:
           fetch-depth: 50
 
-      - name: Guard — week-end NO-OP + redondance intra-créneau
+      - name: Guard — jour de bourse NO-OP (week-end + fériés) + redondance intra-créneau
         id: guard
         env:
           # Input booléen exposé seulement sur workflow_dispatch (vide sinon).
@@ -50,37 +50,61 @@ jobs:
           # ===================================================================
           # TABLE DE VÉRITÉ  (déclencheur × jour × force → run ?)
           # -------------------------------------------------------------------
-          #   déclencheur            jour      force   → run ?   pourquoi
-          #   schedule               lun-ven    —      → OUI*    jour ouvré (*sauf doublon ×3)
-          #   schedule               sam/dim    —      → NON     week-end : marchés fermés
-          #   dispatch (VPS)         lun-ven   false   → OUI     jour ouvré (driver réel)
-          #   dispatch (VPS)         sam/dim   false   → NON     week-end : marchés fermés  ← FIX
-          #   dispatch (force)       sam/dim   true    → OUI     échappatoire humaine (bypass)
-          #   push RUN-CYCLE.txt     sam/dim    —      → OUI     échappatoire humaine (bypass)
+          #   déclencheur            jour          force  → run ?  pourquoi
+          #   schedule               lun-ven ouvré   —    → OUI*   jour de bourse (*sauf doublon ×3)
+          #   schedule               sam/dim         —    → NON    week-end : marchés fermés
+          #   schedule               jour férié      —    → NON    férié de marché : prix figés ← FIX
+          #   dispatch (VPS)         lun-ven ouvré  false → OUI    jour de bourse (driver réel)
+          #   dispatch (VPS)         sam/dim        false → NON    week-end : marchés fermés
+          #   dispatch (VPS)         jour férié     false → NON    férié de marché : prix figés ← FIX
+          #   dispatch (force)       férié/we       true  → OUI    échappatoire humaine (bypass)
+          #   push RUN-CYCLE.txt     férié/we        —    → OUI    échappatoire humaine (bypass)
           #
-          # Principe : la coupure week-end s'applique à TOUS les déclencheurs
-          # AUTOMATIQUES (schedule ET workflow_dispatch sans force = le cas du
-          # VPS), car le week-end les prix sont figés à la clôture de vendredi
-          # → bulletin sur prix morts + mesures 24h dégénérées (« +0.0% »),
-          # qui polluent le shadow. Seul un FORÇAGE EXPLICITE bypass la garde.
+          # Principe : la coupure s'applique à TOUS les déclencheurs AUTOMATIQUES
+          # (schedule ET workflow_dispatch sans force = le cas du VPS) dès que la
+          # bourse est FERMÉE (week-end OU férié de marché). Ces jours-là les
+          # prix sont figés à la dernière clôture → bulletin sur prix morts +
+          # mesures 24h dégénérées (« +0.0% ») qui polluent le shadow. Seul un
+          # FORÇAGE EXPLICITE (force=true / push RUN-CYCLE.txt) bypass la garde.
+          #
+          # « Jour de bourse ouvert » = is_trading_day(d) de v3/scripts/journaliste.py
+          # (SOURCE DE VÉRITÉ UNIQUE : not week-end and not _is_market_holiday).
+          # On appelle ce code Python (stdlib + MARKET_HOLIDAYS statique : aucune
+          # dépendance réseau ni pip requise à ce stade — python3 est présent sur
+          # les runners ubuntu avant le setup deps). ZÉRO liste de fériés dupliquée
+          # dans ce YAML : la divergence est ainsi structurellement impossible.
           # ===================================================================
 
-          # --- 1. Forçage explicite = échappatoire humaine → run, bypass tout (week-end inclus)
+          # --- 1. Forçage explicite = échappatoire humaine → run, bypass tout (week-end + fériés inclus)
           #     a) workflow_dispatch avec input force=true   b) push RUN-CYCLE.txt
           if [ "${FORCE_INPUT}" = "true" ] || [ "${GITHUB_EVENT_NAME}" = "push" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Forçage explicite (force=${FORCE_INPUT:-n/a} / event=${GITHUB_EVENT_NAME}) → run, bypass garde week-end."
+            echo "Forçage explicite (force=${FORCE_INPUT:-n/a} / event=${GITHUB_EVENT_NAME}) → run, bypass garde jour de bourse."
             exit 0
           fi
 
-          # --- 2. Déclencheurs automatiques (schedule OU dispatch-VPS sans force) : garde WEEK-END
-          #     Marchés actions fermés sam/dim → prix figés à la clôture de vendredi.
-          #     Un run produirait un bulletin sur prix morts et des mesures 24h
-          #     dégénérées (vendredi comparé à lui-même), polluant les stats.
-          dow=$(TZ='Europe/Paris' date +%u)  # 1=lundi … 6=samedi, 7=dimanche
-          if [ "$dow" -ge 6 ]; then
+          # --- 2. Déclencheurs automatiques (schedule OU dispatch-VPS sans force) : garde JOUR DE BOURSE
+          #     Marchés actions fermés sam/dim ET jours fériés → prix figés à la
+          #     dernière clôture. Un run produirait un bulletin sur prix morts et
+          #     des mesures 24h dégénérées, polluant les stats. On délègue le
+          #     verdict « jour de bourse ouvert » à is_trading_day (calendrier
+          #     unique NYSE ∪ Euronext de journaliste.py — aucune date recopiée ici).
+          today_paris=$(TZ='Europe/Paris' date +%Y-%m-%d)  # AAAA-MM-JJ heure de Paris
+          # On passe le code via `-c` (pas de heredoc indenté : l'indentation YAML
+          # casserait l'indentation Python). `is_trading_day` = SOURCE DE VÉRITÉ
+          # UNIQUE (réutilise _is_market_holiday). exit 0 = bourse ouverte (on
+          # continue) ; exit 1 = fermée (NO-OP plus bas).
+          export TODAY_PARIS="$today_paris"
+          if ! python3 -c "import os, sys; sys.path.insert(0, 'v3/scripts'); from journaliste import is_trading_day; from datetime import date; y, m, d = (int(x) for x in os.environ['TODAY_PARIS'].split('-')); sys.exit(0 if is_trading_day(date(y, m, d)) else 1)"; then
+            # is_trading_day == False : week-end OU férié de marché → NO-OP.
+            dow=$(TZ='Europe/Paris' date +%u)  # 1=lundi … 6=samedi, 7=dimanche
+            if [ "$dow" -ge 6 ]; then
+              raison="week-end (jour=$dow)"
+            else
+              raison="férié de marché ${today_paris}"
+            fi
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Week-end (jour=$dow, Europe/Paris) + déclenchement automatique (${GITHUB_EVENT_NAME}) → marchés fermés, NO-OP."
+            echo "Marchés fermés : ${raison}, Europe/Paris + déclenchement automatique (${GITHUB_EVENT_NAME}) → NO-OP."
             exit 0
           fi
 

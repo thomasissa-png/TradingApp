@@ -208,6 +208,32 @@ def _is_market_holiday(d: date) -> bool:
         return False
 
 
+def is_trading_day(d: date) -> bool:
+    """True si `d` est un JOUR DE BOURSE OUVERT = ni week-end ni férié de marché.
+
+    Source de vérité UNIQUE de la garde de run (cycle.yml) : un run automatique
+    (schedule OU workflow_dispatch du VPS, sans forçage) ne doit s'exécuter que
+    les jours où la bourse est ouverte, sinon les prix sont figés à la clôture
+    précédente (bulletin sur prix morts + mesures 24h dégénérées « +0.0% »).
+
+    Réutilise EXACTEMENT le calendrier existant `_is_market_holiday` (NYSE ∪
+    Euronext, MARKET_HOLIDAYS ∪ lib optionnelle `holidays`) — zéro duplication
+    de dates, une seule liste à maintenir.
+
+    Cette fonction ne juge QUE le jour. Le bypass « forçage explicite »
+    (force=true / push RUN-CYCLE.txt) est géré dans la garde de cycle.yml, pas
+    ici (séparation des responsabilités : déterminisme calendaire ici, politique
+    de déclenchement dans le workflow).
+
+    Args:
+        d: date (jour local, typiquement Europe/Paris) à évaluer.
+
+    Returns:
+        True si `d` est un jour ouvré (lun-ven) ET non férié de marché.
+    """
+    return d.weekday() < 5 and not _is_market_holiday(d)
+
+
 def _next_business_day(d: date) -> date:
     """Prochain jour ouvré ≥ d (saute samedi/dimanche ET fériés de marché).
 

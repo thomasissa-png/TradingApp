@@ -13,7 +13,7 @@ seuils_reussite_pct:
 
 criteres:
   - id: 1
-    nom: "VIX régime"
+    nom: "Régime de volatilité (VIX)"
     source: "Twelve Data"
     cle_courante: "vix_regime"
     normalisation: "mapping_non_monotone"   # non-monotone : +1 au centre, -1 aux extrêmes ; échelle à calibrer
@@ -26,7 +26,7 @@ criteres:
     effet_short: "VIX>28 OU <11"
 
   - id: 2
-    nom: "Taux 10Y US delta 5j"
+    nom: "Variation des taux US 10 ans (5 jours)"
     source: "Twelve Data"
     cle_courante: "taux_10y_us_delta_5j"
     normalisation: "zscore"
@@ -40,7 +40,7 @@ criteres:
     effet_short: "Taux monte (z>+1)"
 
   - id: 3
-    nom: "HY credit spread (ICE BofA HY OAS)"
+    nom: "Écart de crédit obligataire haut rendement US"
     source: "FRED (ICE BofA HY OAS)"
     cle_courante: "hy_credit_spread"
     normalisation: "zscore"
@@ -54,7 +54,7 @@ criteres:
     effet_short: "Spread élargit (z>+1)"
 
   - id: 4
-    nom: "Breadth S&P (proxy RSP/SPY)"
+    nom: "Participation des actions au rallye S&P"
     # PROXY RSP/SPY — pas le vrai % >MA50. Participation interne via ratio
     # equal-weight (RSP) / cap-weight (SPY) : ratio qui monte = rallye large
     # (participation saine) = haussier pour l'indice ; ratio qui baisse =
@@ -72,7 +72,7 @@ criteres:
     effet_short: "RSP/SPY en baisse (rallye méga-caps)"
 
   - id: 5
-    nom: "DXY trend 20j"
+    nom: "Tendance du dollar (20 jours)"
     source: "Twelve Data"
     cle_courante: "dxy_trend_20j"
     normalisation: "zscore"
@@ -86,7 +86,7 @@ criteres:
     effet_short: "DXY monte"
 
   - id: 6
-    nom: "Flux ETF SPY+IVV 5j net"
+    nom: "Flux vers les fonds S&P 500 (5 jours)"
     source: "Twelve Data / fournisseur flux"
     cle_courante: "flux_etf_spy_ivv_5j"
     normalisation: "zscore"
@@ -100,7 +100,7 @@ criteres:
     effet_short: "Sorties <-1σ"
 
   - id: 7
-    nom: "AAII bull-bear"
+    nom: "Sentiment des investisseurs particuliers US"
     source: "AAII (hebdomadaire)"
     cle_courante: "aaii_bull_bear"
     normalisation: "zscore"
@@ -114,7 +114,7 @@ criteres:
     effet_short: "Bulls>Bears +1σ"
 
   - id: 8
-    nom: "Shiller CAPE / Forward P/E"
+    nom: "Valorisation du marché (Shiller CAPE / P/E à terme)"
     source: "multpl / fournisseur valorisation"
     cle_courante: "shiller_cape_fwd_pe"
     normalisation: "composite"   # percentile 252j, signe INVERSÉ, max des deux (CAPE, FwdPE) — valeur pré-normalisée fournie
@@ -126,7 +126,7 @@ criteres:
     effet_short: "CAPE>35 OU FwdPE>22"
 
   - id: 9
-    nom: "RSI 14j ^GSPC"
+    nom: "Indicateur technique S&P 500 (RSI 14 jours)"
     source: "Twelve Data (calculé)"
     cle_courante: "rsi_14j_gspc"
     normalisation: "lineaire"
@@ -140,7 +140,7 @@ criteres:
     effet_short: "RSI>75"
 
   - id: 10
-    nom: "Taux 10Y US réels (TIPS)"
+    nom: "Taux d'intérêt réels US (10 ans)"
     source: "FRED (DFII10)"
     cle_courante: "taux_10y_us_reels_tips"
     normalisation: "zscore"
@@ -155,7 +155,7 @@ criteres:
 
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 11
-    nom: "GATE régime extrême"
+    nom: "Drapeau : événement de marché majeur imminent"
     source: "events-log + calendrier"
     cle_courante: "gate_regime_extreme"
     normalisation: "gate"

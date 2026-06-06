@@ -13,7 +13,7 @@ seuils_reussite_pct:
 
 criteres:
   - id: 1
-    nom: "Taux 10Y US réels (TIPS)"
+    nom: "Taux d'intérêt réels US (10 ans)"
     source: "FRED (DFII10)"
     cle_courante: "taux_10y_us_reels_tips"
     normalisation: "zscore"
@@ -27,7 +27,7 @@ criteres:
     effet_short: "TIPS monte (z>+1)"
 
   - id: 2
-    nom: "Achats PBoC + CB émergentes (12m cumulés vs 24m précédents)"
+    nom: "Achats d'or des banques centrales (12 derniers mois)"
     source: "WGC (mensuel)"
     cle_courante: "achats_pboc_cb_emergentes"
     normalisation: "zscore"
@@ -41,7 +41,7 @@ criteres:
     effet_short: "Sortie/ralentissement"
 
   - id: 3
-    nom: "DXY trend 20j"
+    nom: "Tendance du dollar (20 jours)"
     source: "Twelve Data"
     cle_courante: "dxy_trend_20j"
     normalisation: "zscore"
@@ -55,7 +55,7 @@ criteres:
     effet_short: "DXY monte (z>+1)"
 
   - id: 4
-    nom: "CFTC COT nets"
+    nom: "Positionnement des gros spéculateurs (or)"
     source: "CFTC (vendredi)"
     cle_courante: "cftc_cot_nets"
     normalisation: "zscore"
@@ -69,7 +69,7 @@ criteres:
     effet_short: "Nets LONG extreme"
 
   - id: 5
-    nom: "Flux ETF or agrégés 5j net"
+    nom: "Flux vers les fonds or (5 jours)"
     source: "WGC / fournisseur flux"
     cle_courante: "flux_etf_or_5j"
     normalisation: "zscore"
@@ -83,7 +83,7 @@ criteres:
     effet_short: "Sorties <-1σ"
 
   - id: 6
-    nom: "Tension géopolitique"
+    nom: "Tension géopolitique mondiale"
     source: "events-log L1=Géopolitique"
     cle_courante: "tension_geopolitique"
     normalisation: "triplet"     # +1 escalade 7j / 0 / -1 détente
@@ -95,7 +95,7 @@ criteres:
     effet_short: "Détente"
 
   - id: 7
-    nom: "Demande indienne saisonnière"
+    nom: "Demande saisonnière en Inde"
     source: "calendrier"
     cle_courante: "demande_indienne_saisonniere"
     normalisation: "triplet"     # +1 Diwali/mariages / 0 / -1 off-season
@@ -107,7 +107,7 @@ criteres:
     effet_short: "Off-season (jan-mai)"
 
   - id: 8
-    nom: "VIX (risk-off proxy)"
+    nom: "Indice de peur des marchés (VIX)"
     source: "Twelve Data"
     cle_courante: "vix_risk_off_proxy"
     normalisation: "lineaire"
@@ -122,7 +122,7 @@ criteres:
 
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 9
-    nom: "GATE régime extrême"
+    nom: "Drapeau : événement de marché majeur imminent"
     source: "events-log + calendrier"
     cle_courante: "gate_regime_extreme"
     normalisation: "gate"

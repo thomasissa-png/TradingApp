@@ -13,7 +13,7 @@ seuils_reussite_pct:
 
 criteres:
   - id: 1
-    nom: "Taux 10Y US réels (TIPS)"
+    nom: "Taux d'intérêt réels US (10 ans)"
     source: "FRED (DFII10)"
     cle_courante: "taux_10y_us_reels_tips"
     normalisation: "zscore"
@@ -27,7 +27,7 @@ criteres:
     effet_short: "TIPS monte (z>+1)"
 
   - id: 2
-    nom: "VXN régime"
+    nom: "Régime de volatilité Nasdaq (VXN)"
     source: "Twelve Data"
     cle_courante: "vxn_regime"
     normalisation: "mapping_non_monotone"   # non-monotone : +1 au centre, -1 aux extrêmes ; échelle à calibrer
@@ -40,7 +40,7 @@ criteres:
     effet_short: "VXN>35 OU <14"
 
   - id: 3
-    nom: "SOX trend 5j"
+    nom: "Tendance des semi-conducteurs (5 jours)"
     source: "Twelve Data"
     cle_courante: "sox_trend_5j"
     normalisation: "zscore"
@@ -54,7 +54,7 @@ criteres:
     effet_short: "SOX baisse (z<-1)"
 
   - id: 4
-    nom: "Breadth Nasdaq 100 (proxy QQQE/QQQ)"
+    nom: "Participation des actions au rallye Nasdaq"
     # PROXY QQQE/QQQ — pas le vrai % >MA50. Participation interne Nasdaq-100 via
     # ratio equal-weight (QQQE) / cap-weight (QQQ) : ratio en hausse = rallye
     # large (participation saine) = haussier ; ratio en baisse = rallye porté
@@ -72,7 +72,7 @@ criteres:
     effet_short: "QQQE/QQQ en baisse (rallye méga-caps)"
 
   - id: 5
-    nom: "Concentration top 7"
+    nom: "Concentration sur les 7 plus grosses valeurs"
     source: "Twelve Data (calculé)"
     cle_courante: "concentration_top7"
     normalisation: "zscore"
@@ -86,7 +86,7 @@ criteres:
     effet_short: ">52% top 7 (overheated)"
 
   - id: 6
-    nom: "Sentiment IA / méga-caps"
+    nom: "Sentiment sur l'IA et les méga-caps tech"
     source: "events-log L1=Tech-IA (7j)"
     cle_courante: "sentiment_ia_megacaps"
     normalisation: "triplet"     # +1 beat+guidance haussière / 0 / -1 miss OU correction guidance
@@ -98,7 +98,7 @@ criteres:
     effet_short: "Miss OU correction guidance"
 
   - id: 7
-    nom: "Flux ETF QQQ 5j net"
+    nom: "Flux vers le fonds Nasdaq (5 jours)"
     source: "Twelve Data / fournisseur flux"
     cle_courante: "flux_etf_qqq_5j"
     normalisation: "zscore"
@@ -112,7 +112,7 @@ criteres:
     effet_short: "Sorties <-1σ"
 
   - id: 8
-    nom: "Spread Nasdaq-Russell 2000"
+    nom: "Écart de performance Nasdaq − petites valeurs US"
     source: "Twelve Data (calculé)"
     cle_courante: "spread_nasdaq_russell2000"
     normalisation: "zscore"
@@ -126,7 +126,7 @@ criteres:
     effet_short: "Nasdaq out-perf très large"
 
   - id: 9
-    nom: "RSI 14j ^IXIC"
+    nom: "Indicateur technique Nasdaq (RSI 14 jours)"
     source: "Twelve Data (calculé)"
     cle_courante: "rsi_14j_ixic"
     normalisation: "lineaire"
@@ -141,7 +141,7 @@ criteres:
 
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 10
-    nom: "GATE régime extrême"
+    nom: "Drapeau : événement de marché majeur imminent"
     source: "events-log + calendrier"
     cle_courante: "gate_regime_extreme"
     normalisation: "gate"

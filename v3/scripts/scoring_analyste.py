@@ -1753,6 +1753,21 @@ DETAIL_TABLE_HELP_LINES: List[str] = [
 ]
 
 
+# Mini-glossaire des acronymes conservés dans les noms de critères
+# (reco-wording-noms-criteres.md §8). Affiché une seule fois, en pied de la
+# section « Détail par actif ». N'affecte QUE l'affichage.
+DETAIL_TABLE_GLOSSARY_LINES: List[str] = [
+    "_**Glossaire** — "
+    "PMI : indice d'activité industrielle (>50 = expansion) · "
+    "RSI : indicateur de sur-achat / sur-vente (30 = très vendu, 70+ = très acheté) · "
+    "VIX / VXN / V2X : indices de la « peur » du marché — volatilité attendue à 30 jours "
+    "(US / Nasdaq / Europe) · "
+    "SKEW / VVIX : risque de choc extrême et nervosité sur le VIX lui-même "
+    "(montent avant les crises)._",
+    "",
+]
+
+
 def render_bulletin(
     results: List[ActifResult],
     veille_conclusions: Dict[str, Dict[str, str]],
@@ -2054,6 +2069,8 @@ def render_bulletin(
         lines.append("")
         lines.append(f"- Scores : 24h={r.scores['24h']:+.3f} · 7j={r.scores['7j']:+.3f} · 1m={r.scores['1m']:+.3f}")
         lines.append("")
+    # Glossaire en pied de section « Détail par actif » (une seule fois).
+    lines.extend(DETAIL_TABLE_GLOSSARY_LINES)
     # ── Limites du jour (filtrées) ──────────────────────────────────────────
     # #8 (audit design 2026-06-02) : on ne liste QUE les critères absents qui
     # comptent vraiment (poids ≥ LIMITES_POIDS_MIN). Les critères mineurs (poids

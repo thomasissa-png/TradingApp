@@ -14,7 +14,7 @@ seuils_reussite_pct:           # en % de variation du VIX
 
 criteres:
   - id: 1
-    nom: "Niveau VIX absolu"
+    nom: "Niveau absolu de la peur des marchés (VIX)"
     source: "Twelve Data"
     cle_courante: "niveau_vix_absolu"
     normalisation: "lineaire"
@@ -28,7 +28,7 @@ criteres:
     effet_short: "VIX>32 (baisse attendue)"
 
   - id: 2
-    nom: "Term structure VIX/VIX3M"
+    nom: "Structure des prix : VIX court vs VIX 3 mois"
     source: "Twelve Data (calculé)"
     cle_courante: "term_structure_vix_vix3m"
     normalisation: "lineaire"
@@ -42,7 +42,7 @@ criteres:
     effet_short: "Ratio<0,85 (contango fort)"
 
   - id: 3
-    nom: "Put/Call ratio CBOE 5j moy"
+    nom: "Ratio puts / calls options US (moyenne 5 jours)"
     source: "CBOE"
     cle_courante: "put_call_ratio_cboe_5j"
     normalisation: "zscore"
@@ -56,7 +56,7 @@ criteres:
     effet_short: "P/C<0,7 (complacency)"
 
   - id: 4
-    nom: "SKEW Index CBOE"
+    nom: "Indice de risque de choc extrême (SKEW)"
     source: "CBOE"
     cle_courante: "skew_index_cboe"
     normalisation: "lineaire"
@@ -70,7 +70,7 @@ criteres:
     effet_short: "SKEW<120"
 
   - id: 5
-    nom: "VVIX"
+    nom: "Volatilité de la volatilité (VVIX)"
     source: "CBOE"
     cle_courante: "vvix"
     normalisation: "lineaire"
@@ -84,7 +84,7 @@ criteres:
     effet_short: "VVIX<80"
 
   - id: 6
-    nom: "Gap RV-IV (réalisée 20j vs implicite)"
+    nom: "Écart volatilité réelle − volatilité implicite (20 jours)"
     source: "Twelve Data (calculé)"
     cle_courante: "gap_rv_iv"
     normalisation: "lineaire"
@@ -98,7 +98,7 @@ criteres:
     effet_short: "RV>>IV +5pts"
 
   - id: 7
-    nom: "CFTC COT VIX nets"
+    nom: "Positionnement des gros spéculateurs (VIX futures)"
     source: "CFTC (vendredi)"
     cle_courante: "cftc_cot_vix_nets"
     normalisation: "zscore"
@@ -112,7 +112,7 @@ criteres:
     effet_short: "Nets LONG extreme"
 
   - id: 8
-    nom: "Tension géopolitique active"
+    nom: "Événement géopolitique actif (3 jours)"
     source: "events-log L1=Géopolitique (3j)"
     cle_courante: "tension_geopolitique_active"
     normalisation: "triplet"     # +1 event actif / 0 / -1 détente
@@ -125,7 +125,7 @@ criteres:
 
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 9
-    nom: "GATE événement macro imminent"
+    nom: "Drapeau : événement macro majeur imminent"
     source: "events-log + calendrier"
     cle_courante: "gate_evenement_macro_imminent"
     normalisation: "gate"

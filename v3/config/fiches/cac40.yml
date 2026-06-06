@@ -13,7 +13,7 @@ seuils_reussite_pct:
 
 criteres:
   - id: 1
-    nom: "V2X régime"
+    nom: "Régime de volatilité Europe (V2X)"
     source: "Twelve Data"
     cle_courante: "v2x_regime"
     normalisation: "mapping_non_monotone"   # non-monotone : +1 au centre, -1 aux extrêmes ; échelle à calibrer
@@ -26,7 +26,7 @@ criteres:
     effet_short: "V2X>30 OU <11"
 
   - id: 2
-    nom: "Spread OAT-Bund 10Y (bp)"
+    nom: "Écart de taux France − Allemagne (10 ans)"
     source: "Twelve Data (calculé)"
     cle_courante: "spread_oat_bund_10y"
     normalisation: "zscore"
@@ -40,7 +40,7 @@ criteres:
     effet_short: "Spread élargit (z>+1)"
 
   - id: 3
-    nom: "Alpha CAC vs S&P 5j"
+    nom: "Sur-performance du CAC face au S&P 500 (5 jours)"
     source: "Twelve Data (calculé)"
     cle_courante: "alpha_cac_vs_sp_5j"
     normalisation: "zscore"
@@ -54,7 +54,7 @@ criteres:
     effet_short: "CAC under-perf >-1%"
 
   - id: 4
-    nom: "Breadth CAC (%>MA50)"
+    nom: "Participation des valeurs CAC au-dessus de leur moyenne (non disponible)"
     # n/a ASSUMÉ : pas d'ETF CAC 40 equal-weight gratuit évident → pas de proxy
     # participation type RSP/SPY (S&P) ou QQQE/QQQ (Nasdaq). Calcul maison (40
     # titres × MA50) techniquement jouable mais asymétrique avec S&P/Nasdaq en
@@ -73,7 +73,7 @@ criteres:
     effet_short: "Breadth <30%"
 
   - id: 5
-    nom: "Flux ETF MSCI France 5j net"
+    nom: "Flux vers les fonds actions France (5 jours)"
     source: "Twelve Data / fournisseur flux"
     cle_courante: "flux_etf_msci_france_5j"
     normalisation: "zscore"
@@ -87,7 +87,7 @@ criteres:
     effet_short: "Sorties <-1σ"
 
   - id: 6
-    nom: "Tension politique FR"
+    nom: "Stabilité politique en France"
     source: "events-log L2=France-politique"
     cle_courante: "tension_politique_fr"
     normalisation: "triplet"     # +1 accord budget/stabilité / 0 / -1 motion/dissolution/dégradation/shutdown
@@ -99,7 +99,7 @@ criteres:
     effet_short: "Motion/dissolution/dégradation rating/shutdown"
 
   - id: 7
-    nom: "RSI 14j ^FCHI"
+    nom: "Indicateur technique CAC 40 (RSI 14 jours)"
     source: "Twelve Data (calculé)"
     cle_courante: "rsi_14j_fchi"
     normalisation: "lineaire"
@@ -114,7 +114,7 @@ criteres:
 
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 8
-    nom: "GATE régime extrême"
+    nom: "Drapeau : événement de marché majeur imminent"
     source: "events-log + calendrier"
     cle_courante: "gate_regime_extreme"
     normalisation: "gate"

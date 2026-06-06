@@ -13,7 +13,7 @@ seuils_reussite_pct:
 
 criteres:
   - id: 1
-    nom: "Caixin PMI Chine manuf"
+    nom: "Activité industrielle Chine (indice PMI)"
     source: "Caixin (mensuel)"
     cle_courante: "caixin_pmi_manuf"
     normalisation: "lineaire"
@@ -27,7 +27,7 @@ criteres:
     effet_short: "PMI<48"
 
   - id: 2
-    nom: "Inventaires LME+SHFE (trend 5j)"
+    nom: "Stocks de cuivre mondiaux (tendance 5 jours)"
     source: "LME + SHFE"
     cle_courante: "inventaires_lme_shfe_5j"
     normalisation: "zscore"
@@ -41,7 +41,7 @@ criteres:
     effet_short: "Inventaires montent (z>+1)"
 
   - id: 3
-    nom: "Mining strikes Chili/Pérou"
+    nom: "Grèves minières (Chili / Pérou)"
     source: "events-log"
     cle_courante: "mining_strikes_chili_perou"
     normalisation: "triplet"     # +1 grève active/annonce 30j / 0 / -1 production normale
@@ -53,7 +53,7 @@ criteres:
     effet_short: "Production normale"
 
   - id: 4
-    nom: "DXY trend 20j"
+    nom: "Tendance du dollar (20 jours)"
     source: "Twelve Data"
     cle_courante: "dxy_trend_20j"
     normalisation: "zscore"
@@ -67,7 +67,7 @@ criteres:
     effet_short: "DXY monte"
 
   - id: 5
-    nom: "CFTC COT Copper nets"
+    nom: "Positionnement des gros spéculateurs (cuivre)"
     source: "CFTC (vendredi)"
     cle_courante: "cftc_cot_copper_nets"
     normalisation: "zscore"
@@ -81,7 +81,7 @@ criteres:
     effet_short: "Nets LONG extreme"
 
   - id: 6
-    nom: "Term structure M1-M3"
+    nom: "Structure des prix futurs cuivre (spot vs M+3)"
     source: "Twelve Data (contrats)"
     cle_courante: "term_structure_m1_m3"
     normalisation: "lineaire"
@@ -95,7 +95,7 @@ criteres:
     effet_short: "Contango >100 USD/T"
 
   - id: 7
-    nom: "News construction/infra US-Chine"
+    nom: "Plans de construction et infrastructures US-Chine"
     source: "events-log"
     cle_courante: "news_construction_infra"
     normalisation: "triplet"     # +1 stimulus/plan infra 30j / 0 / -1 annulation/réduction
@@ -107,7 +107,7 @@ criteres:
     effet_short: "Annulation/réduction"
 
   - id: 8
-    nom: "Ratio Cuivre/Or"
+    nom: "Ratio cuivre / or (appétit pour le risque)"
     source: "Twelve Data (calculé)"
     cle_courante: "ratio_cuivre_or"
     normalisation: "zscore"
@@ -122,7 +122,7 @@ criteres:
 
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 9
-    nom: "GATE régime extrême"
+    nom: "Drapeau : événement de marché majeur imminent"
     source: "events-log + calendrier"
     cle_courante: "gate_regime_extreme"
     normalisation: "gate"

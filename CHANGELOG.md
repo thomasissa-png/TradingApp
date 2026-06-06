@@ -2,6 +2,14 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-06 (Session 4) — Noms des 100 critères reformulés en langage trader
+
+Thomas ne comprenait pas les noms de critères (« NOAA drought % Midwest+Plains D2+ », « USDA WASDE stocks-to-use mondial », « CFTC COT nets »…). Implémentation de la spec @copywriter `v3/audit/reco-wording-noms-criteres.md` — **champ `nom:` uniquement**, zéro modification de `cle_courante`, poids, signe, source, normalisation, seuils, logique, score ou conclusion.
+
+### Correctif (@fullstack)
+- **`v3/config/fiches/*.yml` (12 fiches)** — les **noms des 100 critères** (115 libellés `nom:` gates inclus) reformulés en langage trader : **acronymes de sources retirés** (NOAA, WASDE, COT/CFTC, COMEX, LME, SHFE, EIA, API, DXY, GATE, NASS, GASC, EUDR, FedWatch, Caixin…) → libellés clairs (ex. « NOAA drought % Midwest+Plains D2+ » → « Sécheresse dans les plaines céréalières US » ; « CFTC COT nets » → « Positionnement des gros spéculateurs (or) » ; « DXY trend 20j » → « Tendance du dollar (20 jours) »). **Acronymes porteurs d'info conservés** (PMI, RSI, VIX/VXN/V2X, SKEW/VVIX, ICE, CAPE) + **mini-glossaire** ajouté 1× en pied de la section « Détail par actif » (`v3/scripts/scoring_analyste.py`, `DETAIL_TABLE_GLOSSARY_LINES`).
+- **Tests** : `v3/tests/test_fiches_wording.py` (neuf, 4 cas) — aucun acronyme de source dans les `nom:` des fiches réelles, blé sans « NOAA », COT or traduit, glossaire citant PMI/RSI/VIX/SKEW/VVIX. **897 tests verts**, `v3/data/` non pollué (`git checkout` post-run). Shadow préservé, aucun run déclenché.
+
 ## 2026-06-06 (Session 4) — Tableau « Détail par actif » reformulé en langage trader
 
 Thomas ne comprenait pas les lignes critères du tableau (`zscore`, `Norm.`, `Signe -1`, `lineaire centre=75 echelle=12`…). Implémentation de la spec @copywriter `v3/audit/reco-wording-detail-bulletin.md` — refonte des libellés/colonnes uniquement, **zéro changement de chiffre, score, logique ou conclusion**.

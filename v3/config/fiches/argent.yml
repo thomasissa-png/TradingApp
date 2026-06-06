@@ -13,7 +13,7 @@ seuils_reussite_pct:
 
 criteres:
   - id: 1
-    nom: "Taux 10Y US réels (TIPS)"
+    nom: "Taux d'intérêt réels US (10 ans)"
     source: "FRED (DFII10)"
     cle_courante: "taux_10y_us_reels_tips"
     normalisation: "zscore"
@@ -27,7 +27,7 @@ criteres:
     effet_short: "TIPS monte (z>+1)"
 
   - id: 2
-    nom: "Mouvement de l'or 5j"
+    nom: "Mouvement de l'or (5 jours)"
     source: "Twelve Data (calculé)"
     cle_courante: "mouvement_or_5j"
     normalisation: "zscore"
@@ -41,7 +41,7 @@ criteres:
     effet_short: "Or <-2% 5j"
 
   - id: 3
-    nom: "Ratio Gold/Silver"
+    nom: "Ratio or / argent"
     source: "Twelve Data (calculé)"
     cle_courante: "ratio_gold_silver"
     normalisation: "lineaire"
@@ -55,7 +55,7 @@ criteres:
     effet_short: "Ratio<60 (cher)"
 
   - id: 4
-    nom: "Alpha Argent-vs-Or 5j"
+    nom: "Sur-performance de l'argent face à l'or (5 jours)"
     source: "Twelve Data (calculé)"
     cle_courante: "alpha_argent_vs_or_5j"
     normalisation: "zscore"
@@ -69,7 +69,7 @@ criteres:
     effet_short: "Argent under-perf >-2%"
 
   - id: 5
-    nom: "Caixin PMI Chine manuf"
+    nom: "Activité industrielle Chine (indice PMI)"
     source: "Caixin (mensuel)"
     cle_courante: "caixin_pmi_manuf"
     normalisation: "lineaire"
@@ -83,7 +83,7 @@ criteres:
     effet_short: "PMI<49"
 
   - id: 6
-    nom: "CFTC COT Silver"
+    nom: "Positionnement des gros spéculateurs (argent)"
     source: "CFTC (vendredi)"
     cle_courante: "cftc_cot_silver"
     normalisation: "zscore"
@@ -97,7 +97,7 @@ criteres:
     effet_short: "Nets LONG extreme"
 
   - id: 7
-    nom: "Inventaires COMEX Silver"
+    nom: "Stocks d'argent physique (marchés US)"
     source: "COMEX"
     cle_courante: "inventaires_comex_silver"
     normalisation: "zscore"
@@ -111,7 +111,7 @@ criteres:
     effet_short: "Hausse (z>+1)"
 
   - id: 8
-    nom: "Flux ETF SLV+PSLV 5j net"
+    nom: "Flux vers les fonds argent (5 jours)"
     source: "Twelve Data / fournisseur flux"
     cle_courante: "flux_etf_slv_pslv_5j"
     normalisation: "zscore"
@@ -125,7 +125,7 @@ criteres:
     effet_short: "Sorties <-1σ"
 
   - id: 9
-    nom: "Demande photovoltaïque + mining strikes"
+    nom: "Demande solaire et grèves minières"
     source: "events-log + rapports industrie"
     cle_courante: "demande_pv_mining_strikes"
     normalisation: "composite"   # triplet composite : demande PV (haussière/baisse) combinée aux strikes Mexique/Pérou — valeur pré-résolue {-1,0,+1}
@@ -138,7 +138,7 @@ criteres:
 
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 10
-    nom: "GATE régime extrême"
+    nom: "Drapeau : événement de marché majeur imminent"
     source: "events-log + calendrier"
     cle_courante: "gate_regime_extreme"
     normalisation: "gate"

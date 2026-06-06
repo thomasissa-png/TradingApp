@@ -13,7 +13,7 @@ seuils_reussite_pct:        # |delta| % dans le sens prédit pour compter une co
 
 criteres:
   - id: 1
-    nom: "EIA Crude surprise (vs consensus)"
+    nom: "Stocks de brut US : surprise hebdomadaire"
     source: "EIA API"
     cle_courante: "eia_crude_surprise"
     normalisation: "zscore"
@@ -27,7 +27,7 @@ criteres:
     effet_short: "Stocks build > 2σ vs consensus"
 
   - id: 2
-    nom: "API Weekly Statistical Bulletin surprise"
+    nom: "Stocks de brut US : pré-indicateur du mardi"
     source: "API publication (mardi 22h30 CET)"
     cle_courante: "api_weekly_surprise"
     normalisation: "zscore"
@@ -41,7 +41,7 @@ criteres:
     effet_short: "API build > consensus"
 
   - id: 3
-    nom: "Tension géopolitique Moyen-Orient"
+    nom: "Tension géopolitique au Moyen-Orient"
     source: "events-log L2=Iran-Moyen-Orient"
     cle_courante: "tension_geopol_moyen_orient"
     normalisation: "triplet"     # +1 escalade / 0 / -1 détente (triggers-and-windows.yml)
@@ -53,7 +53,7 @@ criteres:
     effet_short: "Détente (accord, cessez-le-feu)"
 
   - id: 4
-    nom: "CFTC COT — managed money nets"
+    nom: "Positionnement des gros spéculateurs (pétrole)"
     source: "CFTC (vendredi)"
     cle_courante: "cftc_cot_crude_nets"
     normalisation: "zscore"
@@ -67,7 +67,7 @@ criteres:
     effet_short: "Nets LONG extreme (positions à déboucler)"
 
   - id: 5
-    nom: "OPEC+ politique production"
+    nom: "Décision de production de l'OPEC+"
     source: "events-log L2=OPEC"
     cle_courante: "opec_production_policy"
     normalisation: "triplet"     # +1 cut / 0 / -1 hike ou dispute
@@ -79,7 +79,7 @@ criteres:
     effet_short: "Hike production OU dispute interne"
 
   - id: 6
-    nom: "Term structure Brent (M1-M2)"
+    nom: "Structure des prix futurs Brent (spot vs M+1)"
     source: "Twelve Data (contrats)"
     cle_courante: "brent_term_structure_m1m2"
     normalisation: "lineaire"
@@ -93,7 +93,7 @@ criteres:
     effet_short: "Contango > 0,5 USD (oversupply)"
 
   - id: 7
-    nom: "DXY trend 20j"
+    nom: "Tendance du dollar (20 jours)"
     source: "Twelve Data"
     cle_courante: "dxy_trend_20j"
     normalisation: "zscore"
@@ -107,7 +107,7 @@ criteres:
     effet_short: "DXY monte"
 
   - id: 8
-    nom: "Stocks Cushing (hub Brent-WTI)"
+    nom: "Stocks au hub pétrolier américain (Cushing)"
     source: "EIA API"
     cle_courante: "cushing_stocks"
     normalisation: "zscore"
@@ -121,7 +121,7 @@ criteres:
     effet_short: "Stocks Cushing montent (z > +1)"
 
   - id: 9
-    nom: "Spread Brent-WTI"
+    nom: "Écart de prix Brent − WTI"
     source: "Twelve Data (calculé)"
     cle_courante: "spread_brent_wti"
     normalisation: "lineaire"
@@ -135,7 +135,7 @@ criteres:
     effet_short: "Spread < 1 USD (équilibre régional)"
 
   - id: 10
-    nom: "Caixin PMI Chine manuf."
+    nom: "Activité industrielle Chine (indice PMI)"
     source: "Caixin / NBS (mensuel)"
     cle_courante: "caixin_pmi_manuf"
     normalisation: "lineaire"
@@ -151,7 +151,7 @@ criteres:
   # ⚠️ GATE — sémantique non définie dans Analyste.md. Traité en DRAPEAU (n'entre pas dans le score)
   # tant que Thomas n'a pas tranché (voir SCHEMA-fiche.md § GATE). N'a pas de poids numérique.
   - id: 11
-    nom: "GATE — événement extrême"
+    nom: "Drapeau : événement de marché majeur imminent"
     source: "events-log + calendrier"
     cle_courante: "gate_evenement_extreme"
     normalisation: "gate"

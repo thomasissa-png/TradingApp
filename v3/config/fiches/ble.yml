@@ -13,7 +13,7 @@ seuils_reussite_pct:
 
 criteres:
   - id: 1
-    nom: "USDA WASDE stocks-to-use mondial (delta)"
+    nom: "Stocks mondiaux de blé (rapport USDA mensuel)"
     source: "USDA WASDE (mensuel)"
     cle_courante: "usda_wasde_stocks_to_use"
     normalisation: "zscore"
@@ -27,7 +27,7 @@ criteres:
     effet_short: "Ratio monte (oversupply)"
 
   - id: 2
-    nom: "NOAA drought % Midwest+Plains D2+"
+    nom: "Sécheresse dans les plaines céréalières US"
     source: "NOAA US Drought Monitor"
     cle_courante: "noaa_drought_midwest_plains"
     normalisation: "zscore"
@@ -41,7 +41,7 @@ criteres:
     effet_short: "<10% (z<-1)"
 
   - id: 3
-    nom: "Géopolitique mer Noire"
+    nom: "Tensions géopolitiques en mer Noire"
     source: "events-log"
     cle_courante: "geopolitique_mer_noire"
     normalisation: "triplet"     # +1 escalade 14j / 0 / -1 détente
@@ -53,7 +53,7 @@ criteres:
     effet_short: "Détente (accord/reconduction)"
 
   - id: 4
-    nom: "NASS Crop Progress % good/excellent"
+    nom: "État des cultures US (bon / excellent)"
     source: "USDA NASS"
     cle_courante: "nass_crop_progress"
     normalisation: "zscore"
@@ -67,7 +67,7 @@ criteres:
     effet_short: ">70% (z>+1)"
 
   - id: 5
-    nom: "Demande chinoise (imports USDA FAS)"
+    nom: "Demande chinoise à l'import (blé)"
     source: "USDA FAS"
     cle_courante: "demande_chinoise_imports"
     normalisation: "zscore"
@@ -81,7 +81,7 @@ criteres:
     effet_short: "< consensus"
 
   - id: 6
-    nom: "CFTC COT Wheat"
+    nom: "Positionnement des gros spéculateurs (blé)"
     source: "CFTC (vendredi)"
     cle_courante: "cftc_cot_wheat"
     normalisation: "zscore"
@@ -95,7 +95,7 @@ criteres:
     effet_short: "Nets LONG extreme"
 
   - id: 7
-    nom: "Météo Australie (dryland)"
+    nom: "Météo dans les zones céréalières australiennes"
     source: "BoM / météo (NSW/VIC/WA)"
     cle_courante: "meteo_australie_dryland"
     normalisation: "zscore"
@@ -109,7 +109,7 @@ criteres:
     effet_short: "Normales/favorables"
 
   - id: 8
-    nom: "Égypte GASC tenders"
+    nom: "Appels d'offres blé de l'Égypte"
     source: "GASC"
     cle_courante: "egypte_gasc_tenders"
     normalisation: "zscore"
@@ -123,7 +123,7 @@ criteres:
     effet_short: "Annulation OU prix très bas"
 
   - id: 9
-    nom: "DXY trend 20j"
+    nom: "Tendance du dollar (20 jours)"
     source: "Twelve Data"
     cle_courante: "dxy_trend_20j"
     normalisation: "zscore"
@@ -138,7 +138,7 @@ criteres:
 
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 10
-    nom: "GATE régime extrême"
+    nom: "Drapeau : événement de marché majeur imminent"
     source: "events-log + calendrier"
     cle_courante: "gate_regime_extreme"
     normalisation: "gate"

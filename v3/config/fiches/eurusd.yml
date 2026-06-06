@@ -14,7 +14,7 @@ seuils_reussite_pct:
 
 criteres:
   - id: 1
-    nom: "Différentiel taux 2Y US-DE"
+    nom: "Écart de taux courts US − Allemagne (2 ans)"
     source: "FRED / Twelve Data (calculé)"
     cle_courante: "differentiel_taux_2y_us_de"
     normalisation: "zscore"
@@ -28,7 +28,7 @@ criteres:
     effet_short: "S'élargit (Fed+hawkish)"
 
   - id: 2
-    nom: "Différentiel taux 10Y US-Bund"
+    nom: "Écart de taux longs US − Allemagne (10 ans)"
     source: "FRED / Twelve Data (calculé)"
     cle_courante: "differentiel_taux_10y_us_bund"
     normalisation: "zscore"
@@ -42,7 +42,7 @@ criteres:
     effet_short: "S'élargit"
 
   - id: 3
-    nom: "DXY trend 20j"
+    nom: "Tendance du dollar (20 jours)"
     source: "Twelve Data"
     cle_courante: "dxy_trend_20j"
     normalisation: "zscore"
@@ -56,7 +56,7 @@ criteres:
     effet_short: "DXY monte (z>+1)"
 
   - id: 4
-    nom: "USD/JPY (proxy risk)"
+    nom: "Taux de change dollar / yen (signal de risque)"
     source: "Twelve Data"
     cle_courante: "usd_jpy_proxy_risk"
     normalisation: "zscore"
@@ -70,7 +70,7 @@ criteres:
     effet_short: "USD/JPY monte"
 
   - id: 5
-    nom: "FedWatch proba"
+    nom: "Probabilité de baisse des taux Fed (marché)"
     source: "CME FedWatch"
     cle_courante: "fedwatch_proba"
     normalisation: "lineaire"
@@ -84,7 +84,7 @@ criteres:
     effet_short: "Proba hike >70% OU aucun cut"
 
   - id: 6
-    nom: "CFTC COT EUR nets"
+    nom: "Positionnement des gros spéculateurs (euro)"
     source: "CFTC (vendredi)"
     cle_courante: "cftc_cot_eur_nets"
     normalisation: "zscore"
@@ -98,7 +98,7 @@ criteres:
     effet_short: "Nets LONG extreme"
 
   - id: 7
-    nom: "Spread OAT-Bund (stress EZ)"
+    nom: "Écart de taux France − Allemagne (stress zone euro)"
     source: "Twelve Data (calculé)"
     cle_courante: "spread_oat_bund_stress_ez"
     normalisation: "zscore"
@@ -112,7 +112,7 @@ criteres:
     effet_short: "S'élargit"
 
   - id: 8
-    nom: "Balance commerciale EZ"
+    nom: "Balance commerciale de la zone euro"
     source: "Eurostat (mensuel)"
     cle_courante: "balance_commerciale_ez"
     normalisation: "zscore"
@@ -127,7 +127,7 @@ criteres:
 
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 9
-    nom: "GATE régime extrême"
+    nom: "Drapeau : événement de marché majeur imminent"
     source: "events-log + calendrier"
     cle_courante: "gate_regime_extreme"
     normalisation: "gate"

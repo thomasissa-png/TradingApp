@@ -2,6 +2,17 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-06 (Session 4) — `mining_com` retiré (403 Cloudflare persistant CI, retry inefficace)
+
+**Contexte** : le retry 403 borné posé le 05/06 (`RETRY_STATUS_WITH_403`, cf. Bug 2 plus bas) **n'a PAS résolu** le problème. Le run live frais du 06/06 07h montre `mining_com` **toujours ❌ HTTP 403**. **Diagnostic confirmé** (pas ré-enquêté) : blocage **Cloudflare PERSISTANT sur la plage d'IP des runners GitHub Actions** — le feed répond 200 ailleurs, jamais depuis CI. Le retry ne peut rien faire si TOUTE la plage d'IP est bloquée (≠ 403 intermittent par requête, hypothèse du 05/06 invalidée). **Décision (avec Thomas) : retirer la source** (poids faible ~1.1, redondante avec `investing_commodities`/`investing_metals` poids 0.9 + `oilprice`).
+
+### Retrait (@fullstack)
+- **`v3/scripts/config.py`** : ligne `("mining_com", …)` retirée de `EARLY_SIGNAL_FEEDS` + poids `"mining_com": 1.1` retiré de `SOURCE_WEIGHTS`. Commentaire de retrait documenté in-place (pourquoi). Le **total de flux n'est PAS figé** (`source_monitor.summary()` = `len(self.by_name)` dynamique) → il se décrémente seul, plus de faux « partiel ». Plus aucun appel `mining_com` → plus de ❌ 403 dans `source-health.md`.
+- **Aucun critère cassé** : les news sont poolées + matchées par mots-clés. Les critères `mining_strikes_*`/`demande_pv_mining_strikes` (cuivre/argent) matchent sur le **pool global** de news, sans dépendance au flux `mining_com` (vérifié : zéro mapping nommé vers le flux). Le retrait enlève quelques items, ne touche ni scoring ni mesure.
+- **Mécanisme retry 403 conservé** pour les autres RSS scrapables (`RETRY_STATUS_WITH_403` reste utile si un flux a un 403 *réellement* intermittent) — commentaires généralisés (plus de dépendance à mining.com comme exemple).
+- **Pas de remplacement câblé** : aucun flux métaux/mining RSS gratuit n'a de certitude de marcher depuis les runners CI (c'est le piège exact qui a tué mining_com). Candidats à TESTER avant câblage : `kitco.com` RSS, `investing.com/rss/commodities_Industrial_Metals.rss`. Retrait net = objectif minimal atteint.
+- **Tests** : références flux→config remplacées (`investing_metals` / nom générique) ; assertions `mining_com not in feeds/polled` ajoutées. Suites ingestion+http_retry+source_monitor **61 verts**. Suite `v3/` complète : **878 passed** (1 échec **pré-existant** `test_audit_veille_liste_conviction_normale_vrai`, date-dépendant samedi, sans lien). `v3/data/` restauré après pytest (pas de pollution des runs réels).
+
 ## 2026-06-05 (Session 4) — Corrections audit trio bulletins live (A1/A2 flag-only) + recos Lot 4b/ticket C
 
 **Contexte** : audit trio des bulletins live 04-05/06 (Analyst/News Trader/Spéculateur). Verdict unanime **AJUSTER**. Corrections appliquées = **flag-only, zéro impact conclusion/mesure**. Tout ce qui touchait une DÉCISION (Lot 4b contre-momentum, ticket C calibration) → **reco À VALIDER THOMAS**, pas appliqué (garde-fous fondateur). 870 → 873 → **879 tests** (+6 : 2 micro-bugs run live 18h04, voir bas de section), 0 régression. Doc clé : `v3/audit/reco-corrections-2026-06-05.md`.

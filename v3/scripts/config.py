@@ -33,19 +33,21 @@ DEDUP_CACHE_SIZE = 500
 
 # User-Agent réaliste de navigateur. Un UA "bot" (ancien
 # "TradingApp-v3-news-collector/1.0") était bloqué en 403 par certains flux RSS
-# (ex : mining.com filtre les UA non-navigateur). Un UA Chrome desktop standard
-# passe ces filtres anti-scraping basiques sans rien forcer d'autre. Si un flux
-# reste 403 malgré ça, source_monitor le signale muet (pas d'acharnement).
+# qui filtrent les UA non-navigateur. Un UA Chrome desktop standard passe ces
+# filtres anti-scraping basiques sans rien forcer d'autre. Si un flux reste 403
+# malgré ça, source_monitor le signale en échec (pas d'acharnement) — c'est ce
+# qui a conduit au retrait de mining_com le 06/06 (403 Cloudflare CI persistant).
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
 # Headers d'un vrai navigateur (au-delà du seul User-Agent). Certains WAF
-# (Cloudflare sur mining.com, réapparu en 403 le 05/06 malgré l'UA Chrome)
-# inspectent aussi Accept / Accept-Language : un client qui n'envoie QUE le UA
-# ressemble encore à un bot. Ces en-têtes sont gratuits et standards — aucun
-# scraping, aucun contournement. Utilisés sur les flux RSS (fetch type page).
+# (type Cloudflare) inspectent aussi Accept / Accept-Language : un client qui
+# n'envoie QUE le UA ressemble encore à un bot. Ces en-têtes sont gratuits et
+# standards — aucun scraping, aucun contournement. Utilisés sur les flux RSS
+# (fetch type page). NB : ces headers n'ont PAS suffi pour mining.com (blocage
+# WAF par IP runner, pas par signature de requête) → flux retiré le 06/06.
 BROWSER_HEADERS = {
     "User-Agent": USER_AGENT,
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -92,7 +94,11 @@ EARLY_SIGNAL_FEEDS = [
     ("eia_press_releases",     "https://www.eia.gov/rss/press_rss.xml",                      1800),
     ("oilprice",               "https://oilprice.com/rss/main",                              1800),
     # Métaux / commodités
-    ("mining_com",             "https://www.mining.com/feed/",                               1800),
+    # mining_com RETIRÉ 06/06 : 403 Cloudflare PERSISTANT sur les IP des runners
+    # GitHub Actions (le feed répond 200 ailleurs, mais jamais depuis CI). Le retry
+    # 403 borné posé le 05/06 (RETRY_STATUS_WITH_403) n'a rien changé — toute la
+    # plage d'IP runner est bloquée par le WAF. Poids faible (1.1) et redondant avec
+    # investing_commodities/metals + oilprice. Retiré net (décision Thomas).
     ("investing_commodities",  "https://www.investing.com/rss/commodities.rss",              1800),
     ("investing_metals",       "https://www.investing.com/rss/commodities_Metals.rss",       1800),
     # Banques centrales — communiqués
@@ -175,7 +181,7 @@ SOURCE_WEIGHTS = {
     # Early-signal — flux testés fonctionnels (30/05)
     "eia_today_in_energy": 1.5, "eia_press_releases": 1.4,
     "oilprice": 1.0,
-    "mining_com": 1.1, "investing_commodities": 0.9, "investing_metals": 0.9,
+    "investing_commodities": 0.9, "investing_metals": 0.9,
     "fed_press_all": 1.5, "fed_monetary": 1.5,
     "ecb_press": 1.5, "boe_news": 1.3, "boj_news": 1.3,
     "investing_economy": 0.9,

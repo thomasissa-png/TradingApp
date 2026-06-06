@@ -420,16 +420,17 @@ def _fetch_rss(name: str, url: str, monitor: "SourceMonitor | None" = None) -> l
     persistés dans le monitor (HTTP status, type d'erreur, items_fetched bruts).
     """
     # Headers d'un vrai navigateur (UA + Accept + Accept-Language), pas seulement
-    # l'UA : certains WAF (Cloudflare/mining.com) inspectent aussi Accept* et
-    # 403 un client UA-only. Gratuit, standard, aucun scraping.
+    # l'UA : certains WAF (type Cloudflare) inspectent aussi Accept* et 403 un
+    # client UA-only. Gratuit, standard, aucun scraping.
     headers = dict(BROWSER_HEADERS)
     # Fetch résilient : retry backoff sur 429/5xx + Retry-After (helper partagé).
-    # On INCLUT 403 dans les statuts retriables POUR LES RSS uniquement : le 403
-    # mining.com (revenu le 05/06 malgré l'UA Chrome) est un challenge WAF
-    # INTERMITTENT — le feed répond 200 la plupart du temps depuis une autre IP /
-    # tentative — donc un 403 ponctuel est récupérable au retry suivant (contraire
-    # d'un 403 d'API à clé invalide). Si le 403 PERSISTE après tous les retries,
-    # source_monitor signale le flux muet → dégradation propre, zéro acharnement.
+    # On INCLUT 403 dans les statuts retriables POUR LES RSS uniquement : un 403 de
+    # WAF peut être un challenge INTERMITTENT — le feed répond 200 la plupart du
+    # temps — donc un 403 ponctuel est récupérable au retry suivant (contraire d'un
+    # 403 d'API à clé invalide). Si le 403 PERSISTE après tous les retries,
+    # source_monitor signale le flux en échec → dégradation propre, zéro
+    # acharnement. (mining_com a été RETIRÉ le 06/06 : son 403 Cloudflare était
+    # permanent par IP runner, donc non récupérable au retry — cf. config.py.)
     status_out: dict = {}
     response = http_get_retry(
         url, headers=headers, timeout=HTTP_TIMEOUT, bucket="rss",

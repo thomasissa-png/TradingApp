@@ -117,14 +117,14 @@ def test_exhaustion_records_last_status(_no_sleep):
 
 
 # ---------------------------------------------------------------------------
-# Statuts non-retriables — pas d'acharnement (403 mining_com, 404)
+# Statuts non-retriables — pas d'acharnement (403 par défaut, 404)
 # ---------------------------------------------------------------------------
 
 def test_403_no_retry_returns_none(_no_sleep):
     status_out: dict = {}
     with patch("requests.get", return_value=_resp(403)) as g:
         out = hr.http_get_retry("https://x", min_interval=0.0, max_retries=3,
-                                status_out=status_out, label="mining_com")
+                                status_out=status_out, label="rss_feed")
     assert out is None
     assert g.call_count == 1  # AUCUN retry sur 403
     assert _no_sleep == []     # aucun backoff
@@ -146,7 +146,9 @@ def test_401_no_retry(_no_sleep):
 
 
 # ---------------------------------------------------------------------------
-# retry_status=RETRY_STATUS_WITH_403 — WAF 403 intermittent (mining.com 05/06)
+# retry_status=RETRY_STATUS_WITH_403 — WAF 403 intermittent sur flux RSS scrapables
+# (mécanisme conservé pour les flux RSS restants ; mining_com retiré 06/06 car son
+#  403 Cloudflare était PERMANENT par IP runner, pas intermittent → retry inutile)
 # ---------------------------------------------------------------------------
 
 def test_403_retried_when_retry_status_includes_403(_no_sleep):
@@ -155,7 +157,7 @@ def test_403_retried_when_retry_status_includes_403(_no_sleep):
     with patch("requests.get", return_value=_resp(403)) as g:
         out = hr.http_get_retry(
             "https://x", min_interval=0.0, max_retries=3,
-            status_out=status_out, label="rss:mining_com",
+            status_out=status_out, label="rss:feed",
             retry_status=hr.RETRY_STATUS_WITH_403,
         )
     assert out is None  # 403 persistant après retries → échec (dégradation propre)
@@ -169,7 +171,7 @@ def test_403_then_200_recovers_with_403_retry(_no_sleep):
     with patch("requests.get", side_effect=seq) as g:
         out = hr.http_get_retry(
             "https://x", min_interval=0.0, max_retries=3,
-            label="rss:mining_com", retry_status=hr.RETRY_STATUS_WITH_403,
+            label="rss:feed", retry_status=hr.RETRY_STATUS_WITH_403,
         )
     assert out is not None
     assert out.status_code == 200

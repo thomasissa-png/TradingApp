@@ -88,7 +88,8 @@ def test_early_signal_feeds_declared():
     # Échantillon : energie, banques centrales, métaux, actifs sous-couverts (gnews)
     names = {n for n, _, _ in config.EARLY_SIGNAL_FEEDS}
     assert "eia_today_in_energy" in names
-    assert "mining_com" in names
+    assert "investing_metals" in names  # mining_com retiré 06/06 (403 Cloudflare CI)
+    assert "mining_com" not in names    # ne doit plus jamais être appelé
     assert "fed_press_all" in names
     assert "ecb_press" in names
     assert "gnews_coffee" in names
@@ -216,18 +217,20 @@ def test_newsapi_status_error_returns_empty():
 
 
 # ============================================================
-# Fetch RSS — headers navigateur + 403 WAF intermittent (mining.com 05/06)
+# Fetch RSS — headers navigateur + 403 WAF intermittent
+# (mécanisme générique RSS : mining_com retiré 06/06, mais le retry 403 borné
+#  + les headers navigateur restent en place pour les autres flux RSS scrapables)
 # ============================================================
 
 def test_fetch_rss_sends_browser_headers():
     """Le fetch RSS envoie des en-têtes navigateur complets (UA + Accept +
     Accept-Language), pas seulement l'User-Agent — pour passer les WAF qui
-    inspectent Accept* (mining.com)."""
+    inspectent Accept*."""
     resp = MagicMock()
     resp.status_code = 200
     resp.content = b"<rss/>"
     with patch.object(nc.requests, "get", return_value=resp) as mock_get:
-        nc._fetch_rss("mining_com", "https://www.mining.com/feed/")
+        nc._fetch_rss("investing_metals", "https://www.investing.com/rss/commodities_Metals.rss")
     _, kwargs = mock_get.call_args
     headers = kwargs.get("headers", {})
     assert headers.get("User-Agent", "").startswith("Mozilla/5.0")
@@ -241,7 +244,7 @@ def test_fetch_rss_retries_on_403_then_recovers():
     resp403 = MagicMock(); resp403.status_code = 403; resp403.content = b""
     resp200 = MagicMock(); resp200.status_code = 200; resp200.content = b"<rss/>"
     with patch.object(nc.requests, "get", side_effect=[resp403, resp200]) as mock_get:
-        nc._fetch_rss("mining_com", "https://www.mining.com/feed/")
+        nc._fetch_rss("investing_metals", "https://www.investing.com/rss/commodities_Metals.rss")
     assert mock_get.call_count == 2  # 403 retenté → 200
 
 
@@ -359,9 +362,10 @@ def test_collect_all_polls_early_signal_feeds(monkeypatch):
     # Early-signal pollés
     assert "eia_today_in_energy" in polled_names
     assert "fed_press_all" in polled_names
-    assert "mining_com" in polled_names
+    assert "investing_metals" in polled_names
+    assert "mining_com" not in polled_names  # retiré 06/06 (403 Cloudflare CI)
 
-    # Total : mainstream actifs (10) + early-signal (16) = 26 feeds RSS pollés
+    # Total dynamique : mainstream actifs + early-signal (compté sur la config)
     n_mainstream = len([f for f in config.RSS_FEEDS if not f[0].startswith("reuters_")])
     n_early = len(config.EARLY_SIGNAL_FEEDS)
     assert len(polled_urls) == n_mainstream + n_early

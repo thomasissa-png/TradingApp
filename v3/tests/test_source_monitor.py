@@ -385,10 +385,10 @@ def test_panne_reelle_reste_dans_problemes_pas_dans_muets(tmp_path):
     """Une vraie panne ❌ (échec total) reste dans 'Flux à problème' et n'est
     PAS reléguée dans 'Flux muets'."""
     m = SourceMonitor()
-    m.record_call("mining_com", ok=False, http_status="403",
+    m.record_call("rss_dead", ok=False, http_status="403",
                   items_fetched=0, reason="HTTP 403")
     m.record_call("eia_feed", ok=True, http_status="200", items_fetched=30)
-    m.set_items_kept({"mining_com": 0, "eia_feed": 0})  # mining=panne, eia=muet
+    m.set_items_kept({"rss_dead": 0, "eia_feed": 0})  # rss_dead=panne, eia=muet
 
     out = tmp_path / "source-health.md"
     write_source_health(m, out)
@@ -396,9 +396,9 @@ def test_panne_reelle_reste_dans_problemes_pas_dans_muets(tmp_path):
 
     problem_block = _section(block, "**Flux à problème :**")
     mute_block = _section(block, "**Flux muets**")
-    assert "mining_com" in problem_block
+    assert "rss_dead" in problem_block
     assert "HTTP 403" in problem_block
-    assert "mining_com" not in mute_block
+    assert "rss_dead" not in mute_block
     assert "eia_feed" in mute_block
 
 

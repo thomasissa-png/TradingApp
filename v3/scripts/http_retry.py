@@ -37,10 +37,13 @@ RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 
 # Set étendu pour les flux protégés par un WAF (ex Cloudflare) qui renvoie un
 # 403 INTERMITTENT (challenge transitoire selon l'IP/géo de l'appelant) plutôt
-# qu'un refus permanent. Sur ces flux précis (RSS scrapables type mining.com),
-# un 403 est souvent récupérable au retry suivant — contrairement à un 403 d'API
-# (clé invalide). À n'utiliser QUE via le paramètre retry_status d'un appel ciblé,
-# jamais en défaut global (FRED/GNews/NewsAPI gardent RETRY_STATUS).
+# qu'un refus permanent. Sur ces flux précis (RSS scrapables), un 403 est parfois
+# récupérable au retry suivant — contrairement à un 403 d'API (clé invalide). À
+# n'utiliser QUE via le paramètre retry_status d'un appel ciblé, jamais en défaut
+# global (FRED/GNews/NewsAPI gardent RETRY_STATUS).
+# NB (06/06) : ce retry ne sauve PAS un 403 PERMANENT par plage d'IP — c'est ce
+# qui a fait retirer mining_com (Cloudflare bloquait toutes les IP runner GitHub,
+# le retry ne pouvait rien y faire). Le mécanisme reste utile aux autres RSS.
 RETRY_STATUS_WITH_403 = frozenset({403, 429, 500, 502, 503, 504})
 
 # Paramètres par défaut (env-configurables). Le préfixe HTTP_RETRY_* évite toute
@@ -131,9 +134,9 @@ def http_get_retry(
             réseau éventuelle (clé "error"). Permet au monitoring de garder la
             visibilité du code (ex 403/404/429) même quand le helper renvoie None.
         retry_status : set de statuts HTTP à retenter (défaut RETRY_STATUS =
-            {429,5xx}). Passer RETRY_STATUS_WITH_403 pour les flux derrière un WAF
-            qui renvoie des 403 intermittents (ex RSS mining.com). N'élargit le
-            retry QUE pour cet appel — pas de changement global.
+            {429,5xx}). Passer RETRY_STATUS_WITH_403 pour les flux RSS derrière un
+            WAF qui renvoie des 403 intermittents. N'élargit le retry QUE pour cet
+            appel — pas de changement global.
 
     Returns:
         La `requests.Response` en cas de succès HTTP < 400.

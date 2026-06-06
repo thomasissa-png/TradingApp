@@ -1,6 +1,6 @@
 # Performance A/B — ±1 (baseline) vs pondéré (secondaire)
 
-- Généré : 2026-06-05T18:06:33.264982+02:00
+- Généré : 2026-06-06T07:06:52.489566+02:00
 - Fenêtre KPI : 30 dernières conclusions terminées par cellule
 - Cible : 70% (Bourse.md)
 
@@ -33,8 +33,8 @@ pas dans le dénominateur pondéré (colonne N_pond < N_pm1 normal au démarrage
 | Pétrole (Brent) | 7j | 0 | — | — | 0 | — | — |
 | S&P 500 | 24h | 15 | 6.7% | 0.4527 | 2 | 0.0% | 0.3577 |
 | S&P 500 | 7j | 0 | — | — | 0 | — | — |
-| VIX | 24h | 2 | 100.0% | 0.1179 | 0 | — | — |
+| VIX | 24h | 13 | 76.9% | 0.1522 | 2 | 50.0% | 0.1869 |
 | VIX | 7j | 0 | — | — | 0 | — | — |
 
 ## Synthèse globale (cellules avec ≥1 mesure pondérée)
-- Delta taux moyen (pondéré − ±1) : **-3.78 pts** sur 10 cellules
+- Delta taux moyen (pondéré − ±1) : **-5.88 pts** sur 11 cellules

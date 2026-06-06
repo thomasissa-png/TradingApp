@@ -1,6 +1,6 @@
 # Performance du bulletin — Journaliste
 
-- Généré : 2026-06-05T18:06:33.264982+02:00
+- Généré : 2026-06-06T07:06:52.489566+02:00
 - Journaliste version : v3.1.0
 - Fenêtre KPI : 30 dernières conclusions terminées par cellule
 - PROBA_SCALE : 15.0 (proba = 0.5 + clip(|score|/SCALE, 0, 0.5))
@@ -32,7 +32,7 @@
 | Pétrole (Brent) | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
 | S&P 500 | 24h | 15 | 6.7% | 5 | 20.0% | 0.036 | 0.4527 | 93/7% | shadow | warm-up non-chevauchant : 5/15 obs effectives; 15/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 93.3% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
 | S&P 500 | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
-| VIX | 24h | 15 | 100.0% | 1 | 100.0% | 0.206 | 0.1179 | 80/20% | shadow | warm-up non-chevauchant : 1/15 obs effectives; 15/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 80.0% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
+| VIX | 24h | 15 | 76.9% | 5 | 80.0% | 0.376 | 0.1522 | 80/20% | shadow | warm-up non-chevauchant : 5/15 obs effectives; 15/30 mesures terminées (fenêtre brute warm-up); biais distribution : LONG 80.0% (hors [30.0,70.0]%); 2 suivi(s) interrompu(s) sur la fenêtre observable |
 | VIX | 7j | 0 | — | 0 | — | — | — | — | shadow | aucune mesure terminée dans la fenêtre |
 
 ## Synthèse
@@ -61,32 +61,32 @@ Critère d'éligibilité renforcé : Wilson low > 50 % (borne basse IC 95 % sur 
 | Or | 24h | 1 | 100.0% | 14 | 100.0% |
 | Pétrole (Brent) | 24h | 2 | 50.0% | 11 | 9.1% |
 | S&P 500 | 24h | 3 | 33.3% | 12 | 0.0% |
-| VIX | 24h | 0 | — | 2 | 100.0% |
+| VIX | 24h | 5 | 40.0% | 8 | 100.0% |
 
-- **Taux global flips** : 42.9% (N=14 mesures avec is_flip=True)
-- **Taux global continuations** : 53.3% (N=122 mesures avec is_flip=False)
+- **Taux global flips** : 42.1% (N=19 mesures avec is_flip=True)
+- **Taux global continuations** : 55.5% (N=128 mesures avec is_flip=False)
 
 ## Dernières mesures (max 20)
 
 | Émission | Échéance | Actif | Horizon | Concl. | Prix émis. | Prix actuel | Delta % | Seuil % | Outcome | Note |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 2026-05-29 | 2026-06-05 | Argent | 7j | LONG | — | 68.7853 | — | 2.0% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-06-05 | Blé | 7j | SHORT | — | 580.7744 | — | 2.5% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-06-06 | Argent | 7j | LONG | — | 67.8795 | — | 2.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-06-06 | Blé | 7j | LONG | — | 580.2381 | — | 2.5% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-06-06 | CAC 40 | 7j | LONG | — | 8218.2402 | — | 1.2% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-06-06 | Cacao | 7j | LONG | — | 3763.0977 | — | 4.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-06-06 | Café (Arabica) | 7j | SHORT | — | 246.5634 | — | 3.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-06-06 | Cuivre | 7j | SHORT | — | 6.2629 | — | 2.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-06-06 | EUR/USD | 7j | LONG | — | 1.1521 | — | 0.7% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-06-06 | Nasdaq | 7j | SHORT | — | 705.2100 | — | 1.5% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-06-06 | Or | 7j | LONG | — | 4330.1290 | — | 1.3% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-06-06 | Pétrole (Brent) | 7j | LONG | — | 93.0708 | — | 2.5% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-06-06 | S&P 500 | 7j | SHORT | — | 737.4000 | — | 1.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-30 | 2026-06-06 | VIX | 7j | LONG | — | 24.3200 | — | 10.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | Argent | 7j | LONG | — | 67.8795 | — | 2.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | Blé | 7j | SHORT | — | 580.2381 | — | 2.5% | suivi-interrompu | prix d'émission indisponible |
 | 2026-05-29 | 2026-06-05 | CAC 40 | 7j | LONG | — | 8218.2402 | — | 1.2% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-06-05 | Cacao | 7j | LONG | — | 3755.1762 | — | 4.0% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-06-05 | Café (Arabica) | 7j | SHORT | — | 247.6113 | — | 3.0% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-06-05 | Cuivre | 7j | SHORT | — | 6.2641 | — | 2.0% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-06-05 | EUR/USD | 7j | LONG | — | 1.1529 | — | 0.7% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-06-05 | Nasdaq | 7j | SHORT | — | 719.3400 | — | 1.5% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-06-05 | Or | 7j | LONG | — | 4332.1925 | — | 1.3% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-06-05 | Pétrole (Brent) | 7j | LONG | — | 93.5446 | — | 2.5% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-06-05 | S&P 500 | 7j | LONG | — | 745.5300 | — | 1.0% | suivi-interrompu | prix d'émission indisponible |
-| 2026-05-29 | 2026-06-05 | VIX | 7j | SHORT | — | 23.8200 | — | 10.0% | suivi-interrompu | prix d'émission indisponible |
-| 2026-06-04 | 2026-06-05 | Argent | 24h | SHORT | 73.6323 | 68.7853 | -6.583% | 0.8% | VRAI | delta=-6.583% vs seuil=0.8% |
-| 2026-06-04 | 2026-06-05 | Blé | 24h | LONG | 583.2138 | 580.7744 | -0.418% | 0.8% | non-conclusive | |delta|=0.418% ≤ seuil=0.8% |
-| 2026-06-04 | 2026-06-05 | CAC 40 | 24h | SHORT | 8150.4199 | 8218.2402 | +0.832% | 0.5% | FAUSSE | delta=+0.832% vs seuil=0.5% |
-| 2026-06-04 | 2026-06-05 | Cacao | 24h | LONG | 4073.7314 | 3755.1762 | -7.820% | 1.0% | FAUSSE | delta=-7.820% vs seuil=1.0% |
-| 2026-06-04 | 2026-06-05 | Café (Arabica) | 24h | SHORT | 253.0483 | 247.6113 | -2.149% | 1.0% | VRAI | delta=-2.149% vs seuil=1.0% |
-| 2026-06-04 | 2026-06-05 | Cuivre | 24h | LONG | 6.4376 | 6.2641 | -2.695% | 0.8% | FAUSSE | delta=-2.695% vs seuil=0.8% |
-| 2026-06-04 | 2026-06-05 | EUR/USD | 24h | SHORT | 1.1610 | 1.1529 | -0.691% | 0.25% | VRAI | delta=-0.691% vs seuil=0.25% |
-| 2026-06-04 | 2026-06-05 | Nasdaq | 24h | SHORT | 744.2300 | 719.3400 | -3.344% | 0.7% | VRAI | delta=-3.344% vs seuil=0.7% |
+| 2026-05-29 | 2026-06-05 | Cacao | 7j | LONG | — | 3763.0977 | — | 4.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | Café (Arabica) | 7j | SHORT | — | 246.5634 | — | 3.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | Cuivre | 7j | SHORT | — | 6.2629 | — | 2.0% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | EUR/USD | 7j | LONG | — | 1.1521 | — | 0.7% | suivi-interrompu | prix d'émission indisponible |
+| 2026-05-29 | 2026-06-05 | Nasdaq | 7j | SHORT | — | 705.2100 | — | 1.5% | suivi-interrompu | prix d'émission indisponible |

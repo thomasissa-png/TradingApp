@@ -60,6 +60,11 @@ jobs:
           #   dispatch (force)       férié/we       true  → OUI    échappatoire humaine (bypass)
           #   push RUN-CYCLE.txt     férié/we        —    → OUI    échappatoire humaine (bypass)
           #
+          # « jour férié » = calculé AUTO par la lib `holidays` (NYSE XNYS +
+          # Euronext XECB) pour l'année courante via is_trading_day → couvre
+          # 2026/2027/2028… sans maintenance. La logique de la table est
+          # inchangée ; seule la SOURCE des fériés devient automatique.
+          #
           # Principe : la coupure s'applique à TOUS les déclencheurs AUTOMATIQUES
           # (schedule ET workflow_dispatch sans force = le cas du VPS) dès que la
           # bourse est FERMÉE (week-end OU férié de marché). Ces jours-là les
@@ -69,10 +74,16 @@ jobs:
           #
           # « Jour de bourse ouvert » = is_trading_day(d) de v3/scripts/journaliste.py
           # (SOURCE DE VÉRITÉ UNIQUE : not week-end and not _is_market_holiday).
-          # On appelle ce code Python (stdlib + MARKET_HOLIDAYS statique : aucune
-          # dépendance réseau ni pip requise à ce stade — python3 est présent sur
-          # les runners ubuntu avant le setup deps). ZÉRO liste de fériés dupliquée
-          # dans ce YAML : la divergence est ainsi structurellement impossible.
+          # FÉRIÉS AUTO : _is_market_holiday calcule les fériés via la lib
+          # `holidays` (NYSE XNYS + Euronext XECB) pour l'année testée → valable
+          # 2026/2027/2028… sans maintenance manuelle. On installe donc la lib
+          # (pure-python, ~2s) AVANT l'appel ci-dessous, car la garde tourne AVANT
+          # le setup des deps. ROBUSTESSE : si ce pip échoue (réseau down),
+          # _is_market_holiday retombe sur le socle statique MARKET_HOLIDAYS sans
+          # jamais planter — la garde reste déterministe et ne bloque JAMAIS un
+          # jour ouvré normal (un crash = NO-OP permanent, interdit). ZÉRO liste
+          # de fériés dupliquée dans ce YAML : divergence structurellement
+          # impossible.
           # ===================================================================
 
           # --- 1. Forçage explicite = échappatoire humaine → run, bypass tout (week-end + fériés inclus)
@@ -90,6 +101,13 @@ jobs:
           #     verdict « jour de bourse ouvert » à is_trading_day (calendrier
           #     unique NYSE ∪ Euronext de journaliste.py — aucune date recopiée ici).
           today_paris=$(TZ='Europe/Paris' date +%Y-%m-%d)  # AAAA-MM-JJ heure de Paris
+          # Fériés AUTO : la lib `holidays` est la source primaire de
+          # _is_market_holiday (XNYS + XECB, toute année). On l'installe ici (la
+          # garde tourne AVANT le setup des deps). `|| true` : si le pip échoue
+          # (réseau), on N'INTERROMPT PAS — _is_market_holiday retombe sur le
+          # socle statique MARKET_HOLIDAYS (try/except import), la garde reste
+          # robuste et ne bloque jamais un jour ouvré normal.
+          pip install -q holidays || echo "pip install holidays a échoué → fallback socle statique MARKET_HOLIDAYS."
           # On passe le code via `-c` (pas de heredoc indenté : l'indentation YAML
           # casserait l'indentation Python). `is_trading_day` = SOURCE DE VÉRITÉ
           # UNIQUE (réutilise _is_market_holiday). exit 0 = bourse ouverte (on

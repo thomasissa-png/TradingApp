@@ -2,6 +2,19 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-06 (Session 4) — Fériés de marché AUTO via lib `holidays` (NYSE XNYS + Euronext XECB) — fin de la maintenance annuelle manuelle
+
+**Demande fondateur** : que la mise à jour des jours fériés de marché soit **automatique chaque année, zéro maintenance manuelle**. Avant : `MARKET_HOLIDAYS` était une liste statique « à étendre chaque année » → dette de maintenance + risque d'oubli (un férié non recopié = run sur prix figés).
+
+### Correctif (@infrastructure)
+- **`v3/scripts/journaliste.py`** — `_is_market_holiday` refondu : **source PRIMAIRE = lib `holidays`**, calendrier **XNYS** (NYSE) **∪ XECB** (TARGET/ECB = exactement les fermetures Euronext : 1 Jan, Vendredi saint, Lundi de Pâques, 1 Mai, 25 Déc, 26 Déc), **calculé pour l'année de la date testée** → valable 2026/2027/2028… **automatiquement**, plus de liste à étendre. `_is_market_holiday(d) = d ∈ (XNYS(d.year) ∪ XECB(d.year)) ∪ MARKET_HOLIDAYS`.
+- **`MARKET_HOLIDAYS` (statique)** → devient (1) **fallback déterministe** anti-crash si la lib est absente/échoue, (2) **filet d'override manuel** pour fermetures ad-hoc hors lib (deuil national, etc.). Commentaire « à étendre chaque année » remplacé par « la lib couvre l'auto ; ce set = overrides exceptionnels + fallback ». Couverture 2026 conservée pour le fallback.
+- **ROBUSTESSE (garde-fou critique)** : tout échec (ImportError, code financier absent de la version, API différente) → `_is_market_holiday` retombe **proprement** sur le socle statique, **JAMAIS de crash** (un crash dans la garde = NO-OP permanent du pipeline). Pattern try/except import préservé et durci.
+- **`.github/workflows/cycle.yml`** — étape Guard : `pip install -q holidays || echo …` ajouté **juste avant** l'appel `python3 -c is_trading_day` (la garde tourne AVANT le setup des deps). Si ce pip échoue (réseau), `|| true` n'interrompt rien → fallback statique. Table de vérité + commentaires mis à jour (source des fériés devient auto ; logique conceptuelle inchangée). YAML revalidé (`yaml.safe_load`).
+- **`v3/requirements.txt`** : `holidays==0.98` ajouté (pure-python) pour le pipeline de mesure.
+- **Tests `v3/tests/test_is_trading_day.py`** (7 → **12 cas verts**) : **PREUVE de l'automatisme** — fériés **2027** (Noël 24/12, Thanksgiving 25/11, Lundi de Pâques 29/03) et **2028** (Vendredi saint 14/04, Thanksgiving 23/11, 1 Mai) calculés par la lib, **absents du statique** → `is_trading_day=False` ; **cohérence croisée** lib (XNYS ∪ XECB) vs statique **2026** (identiques, zéro divergence) ; **fallback ImportError** via monkeypatch → pas de crash, jour ouvré non bloqué. Simulation du chemin CI exact (`python3 -c`) : Noël 2026/2027, Thanksgiving 2027, Vendredi saint 2028 → NO-OP ; mardis ordinaires 2026/2028 → run. **Aucune régression** (174 tests journaliste/mesure verts). `v3/data/` non pollué.
+- **Garde-fous** : zéro invention, mode shadow, logique de compute non touchée (calendrier de garde uniquement), aucun jour ouvré normal bloqué, fallback anti-crash testé. **Aucun run déclenché.** `test_scoring.py` non touché (autre agent en parallèle).
+
 ## 2026-06-06 (Session 4) — Test audit-veille rendu déterministe (date figée jour ouvré) — fin du faux rouge week-end
 
 **Bug du test (pas du code)** : `test_audit_veille_liste_conviction_normale_vrai` et `test_audit_veille_exclut_faible_carry_news` (`v3/tests/test_scoring.py`) ancraient `now = datetime.now()` puis `bdate = now - 1 jour`. Le **samedi**, `bdate` = vendredi et la logique d'échéance 24h jour-ouvré/fériés (ajoutée en S3) reporte au lundi → la cellule n'est « pas encore » mesurable → l'assertion `assert "Pas encore" not in txt` casse. Le test échouait donc **uniquement selon le jour réel d'exécution** (rouge le samedi 06/06, vert en semaine).

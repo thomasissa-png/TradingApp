@@ -33,6 +33,12 @@ structlog==24.1.0
 # (SHA exact seul) — le code ne crash pas.
 rapidfuzz==3.9.6
 
+# Fériés de marché AUTO (NYSE XNYS + Euronext XECB), calculés pour toute année
+# → fin de la maintenance annuelle manuelle de MARKET_HOLIDAYS. Pure-python,
+# zéro dépendance binaire. Si absent à l'exécution, `_is_market_holiday`
+# retombe proprement sur le socle statique MARKET_HOLIDAYS (jamais de crash).
+holidays==0.98
+
 # NB: Drive API supprimé (remplacé par git-as-storage)
 # NB: schedule supprimé (remplacé par GitHub Actions cron)
 # NB: sqlite intégré à la stdlib Python — pas besoin de sqlite-utils en prod

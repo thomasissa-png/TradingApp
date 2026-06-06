@@ -150,23 +150,24 @@ ENTRY_LOCK_PRICE_EPS = 1e-9
 
 
 # ---------------------------------------------------------------------------
-# Jours fériés de marché (NYSE + Euronext) — BEST-EFFORT, À ÉTENDRE CHAQUE ANNÉE
+# Jours fériés de marché (NYSE + Euronext)
 # ---------------------------------------------------------------------------
-# Liste statique des principaux fériés marché où actions/indices US et Europe
-# sont fermés (prix figés à la clôture précédente). Utilisée par
-# `_next_business_day` pour reporter l'échéance 24h au prochain VRAI jour de
-# marché. C'est volontairement une liste statique versionnée (zéro dépendance
-# réseau, déterministe, auditable, zéro look-ahead).
+# SOURCE PRIMAIRE = la bibliothèque `holidays` (calendriers boursiers officiels
+# XNYS pour le NYSE + XECB/TARGET pour Euronext), calculée pour l'année de la
+# date testée → valable 2026, 2027, 2028… AUTOMATIQUEMENT, zéro maintenance
+# annuelle. Voir `_is_market_holiday` ci-dessous.
 #
-# Best-effort : couverture des fériés « fixes » + ceux calculables 2026. Cette
-# constante DOIT être étendue manuellement chaque début d'année (ajouter le set
-# de l'année N+1). Si un férié manque, le filet de la Partie 3 (garde
-# anti-mesure dégénérée : prix courant == prix émission → INTERROMPU) évite de
-# polluer les stats avec un « +0.0% » comparant un prix de clôture à lui-même.
+# Ce set statique n'est PLUS la liste à étendre chaque année : la lib couvre
+# l'auto. Il sert désormais de DEUX choses :
+#   1. FALLBACK déterministe garanti si la lib `holidays` est absente/échoue
+#      (ImportError, pip raté en CI réseau down) → la garde de run ne plante
+#      jamais et retombe sur ce socle (couverture 2026 complète ci-dessous).
+#   2. FILET D'OVERRIDE MANUEL pour des fermetures ad-hoc que la lib ne connaît
+#      pas (jour de deuil national, fermeture exceptionnelle annoncée) : ajouter
+#      la date ici l'inclut immédiatement, en union avec la lib.
 #
-# Si la lib `holidays` est installée, on l'utilise en COMPLÉMENT (union) de
-# cette liste statique — jamais en remplacement (la statique reste le socle
-# déterministe garanti).
+# Couverture 2026 (NYSE + Euronext) maintenue pour le fallback : validée par
+# test de cohérence croisée avec la lib (test_is_trading_day.py).
 MARKET_HOLIDAYS: frozenset = frozenset({
     # ---- 2026 — NYSE (US) ----
     date(2026, 1, 1),    # New Year's Day
@@ -187,24 +188,47 @@ MARKET_HOLIDAYS: frozenset = frozenset({
 
 
 def _is_market_holiday(d: date) -> bool:
-    """True si `d` est un férié de marché (statique MARKET_HOLIDAYS ∪ lib holidays).
+    """True si `d` est un férié de marché. SOURCE PRIMAIRE = lib `holidays`.
 
-    Best-effort. Socle déterministe = MARKET_HOLIDAYS (toujours consulté). Si la
-    lib optionnelle `holidays` est disponible, on l'interroge EN PLUS (NYSE)
-    pour combler des trous, mais une indisponibilité/erreur retombe proprement
-    sur la liste statique (jamais de crash, zéro dépendance dure).
+    Calendrier = union, calculée pour l'ANNÉE de `d` (donc automatique tout
+    millésime, zéro liste à étendre à la main) :
+
+        XNYS (NYSE, US)  ∪  XECB (TARGET/ECB = fermetures Euronext)  ∪  MARKET_HOLIDAYS
+
+    - XNYS : fériés boursiers NYSE (New Year, MLK, Presidents', Good Friday,
+      Memorial, Juneteenth, Independence, Labor, Thanksgiving, Christmas…).
+    - XECB : calendrier TARGET/ECB = EXACTEMENT les fermetures Euronext (1 Jan,
+      Vendredi saint, Lundi de Pâques, 1 Mai, 25 Déc, 26 Déc).
+    - MARKET_HOLIDAYS : override manuel (fermetures ad-hoc hors lib) + fallback.
+
+    ROBUSTESSE (garde-fou critique de la garde de run cycle.yml) : si la lib
+    `holidays` est absente ou son API diffère (ImportError, pip raté en CI),
+    on retombe PROPREMENT sur le socle statique MARKET_HOLIDAYS sans JAMAIS
+    planter. Un crash ici = NO-OP permanent de la garde → interdit. Le socle
+    statique couvre 2026 entièrement (cohérence validée par test) ; pour les
+    années suivantes sans lib, le filet anti-mesure dégénérée (Partie 3 :
+    prix courant == prix émission → INTERROMPU) reste actif.
     """
+    # 1. Override manuel + socle statique : toujours consulté en premier (rapide,
+    #    déterministe, zéro dépendance). Couvre aussi le fallback total.
     if d in MARKET_HOLIDAYS:
         return True
+    # 2. Source PRIMAIRE : lib `holidays` (XNYS ∪ XECB) pour l'année de `d`.
+    #    Tout échec (lib absente, code financier indisponible dans la version
+    #    installée, API différente) → on retombe sur le socle statique (return
+    #    False ici, MARKET_HOLIDAYS ayant déjà été consulté). JAMAIS de crash.
     try:
         import holidays as _holidays_lib  # type: ignore  # noqa: PLC0415
-        # Calendrier NYSE si dispo (financial), sinon fériés fédéraux US.
-        try:
-            cal = _holidays_lib.financial_holidays("NYSE", years=d.year)
-        except Exception:  # noqa: BLE001
-            cal = _holidays_lib.country_holidays("US", years=d.year)
-        return d in cal
-    except Exception:  # noqa: BLE001 — lib absente ou API différente : socle statique
+
+        for _code in ("XNYS", "XECB"):
+            try:
+                cal = _holidays_lib.financial_holidays(_code, years=d.year)
+            except Exception:  # noqa: BLE001 — code absent de cette version : on tente le suivant
+                continue
+            if d in cal:
+                return True
+        return False
+    except Exception:  # noqa: BLE001 — lib absente / API incompatible : socle statique seul
         return False
 
 

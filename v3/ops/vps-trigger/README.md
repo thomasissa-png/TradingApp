@@ -18,6 +18,8 @@ Le `schedule` natif de GitHub (`cron: "12,27,42 5,10,16 * * *"` dans `cycle.yml`
 
 > ⚠️ `workflow_dispatch` **contourne** le garde-fou anti-doublon du workflow → **un seul tir par créneau** côté cron VPS (pas de redondance ×3).
 
+> ⚠️ **Garde week-end (session 4)** : le script `trigger-cycle.sh` **ne dispatche pas** samedi/dimanche (heure de Paris, `TZ=Europe/Paris date +%u` ≥ 6 → `exit 0`). Marchés actions fermés le week-end → prix figés à la clôture de vendredi. En **défense en profondeur**, `cycle.yml` applique sa propre garde week-end à TOUS les déclencheurs automatiques (`schedule` **ET** `workflow_dispatch` sans `force`) : même si le dispatch VPS partait un week-end, le workflow ferait NO-OP. **Échappatoire** : `workflow_dispatch` avec input `force=true` (ou push `v3/RUN-CYCLE.txt`) bypass la garde week-end côté GitHub ; `TRADINGAPP_FORCE=1` bypass côté script VPS.
+
 ## Pourquoi le VPS plutôt que cron-job.org
 
 Le VPS `82.165.168.92` (IONOS) est déjà la machine 24/7 la plus surveillée de Thomas (Anya, n8n, opencode, Beeper) et a déjà un système de cron éprouvé. Coût marginal = quelques lignes. Meilleure hygiène de secret (PAT sur serveur durci ufw/fail2ban vs formulaire web tiers), zéro nouveau service à surveiller.

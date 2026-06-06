@@ -2,6 +2,16 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-06 (Session 4) — Garde week-end étendue à `workflow_dispatch` (VPS) + input `force` + garde jour-ouvré VPS
+
+**Bug** : un briefing a été produit **samedi 06/06 07h** alors que le week-end doit être coupé. **Cause racine** (diagnostiquée, non ré-enquêtée) : la garde week-end de `cycle.yml` ne s'appliquait qu'aux événements `schedule`. Or le **driver réel** est le **pinger VPS**, qui déclenche en **`workflow_dispatch`**. L'early-exit en tête de garde (`if event != schedule → run=true; exit`) traitait `workflow_dispatch` comme un forçage manuel → le NO-OP week-end (plus bas) n'était jamais atteint pour le VPS. Résultat : run samedi sur prix figés (clôture vendredi) → mesures 24h dégénérées polluant le shadow.
+
+### Correctif (@infrastructure)
+- **`.github/workflows/cycle.yml`** : input booléen **`force`** (défaut `false`) ajouté à `workflow_dispatch`. Garde **restructurée** (table de vérité en commentaire) : (1) **forçage explicite** = `inputs.force=='true'` **OU** push `RUN-CYCLE.txt` → `run=true`, bypass tout (week-end inclus) = échappatoire humaine ; (2) **sinon** (schedule OU dispatch-VPS sans force) → **garde week-end** (sam/dim Europe/Paris → `run=false`) ; (3) jour ouvré → **anti-doublon ×3 pour le schedule uniquement** (VPS = 1 tir/créneau, toujours passé, comportement préservé). **Aucun run de semaine affecté.**
+- **`v3/ops/vps-trigger/trigger-cycle.sh`** : **garde jour-ouvré** ajoutée (`TZ=Europe/Paris date +%u ≥ 6 → exit 0`) → le pinger ne dispatche même pas le week-end (économise un no-op, cohérence). `TRADINGAPP_FORCE=1` bypass aussi. Garde week-end côté `cycle.yml` conservée en **défense en profondeur**.
+- **`v3/ops/vps-trigger/test-guard-logic.sh`** : nouveau script de test (miroir exact de la décision YAML) — **10 cas verts** dont les 6 clés de la table de vérité. README VPS documenté.
+- **Garde-fous respectés** : aucun run déclenché (logique seule), compute du pipeline non touché (garde de déclenchement uniquement), mode shadow préservé.
+
 ## 2026-06-06 (Session 4) — `mining_com` retiré (403 Cloudflare persistant CI, retry inefficace)
 
 **Contexte** : le retry 403 borné posé le 05/06 (`RETRY_STATUS_WITH_403`, cf. Bug 2 plus bas) **n'a PAS résolu** le problème. Le run live frais du 06/06 07h montre `mining_com` **toujours ❌ HTTP 403**. **Diagnostic confirmé** (pas ré-enquêté) : blocage **Cloudflare PERSISTANT sur la plage d'IP des runners GitHub Actions** — le feed répond 200 ailleurs, jamais depuis CI. Le retry ne peut rien faire si TOUTE la plage d'IP est bloquée (≠ 403 intermittent par requête, hypothèse du 05/06 invalidée). **Décision (avec Thomas) : retirer la source** (poids faible ~1.1, redondante avec `investing_commodities`/`investing_metals` poids 0.9 + `oilprice`).

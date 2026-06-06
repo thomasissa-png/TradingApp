@@ -13,7 +13,12 @@ name: cycle-decision
 on:
   schedule:
     - cron: "12,27,42 5,10,16 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Forcer le run même le week-end (échappatoire manuelle). Le VPS ne passe JAMAIS force=true → garde week-end appliquée."
+        type: boolean
+        default: false
   # Répétition manuelle sans bouton (mobile) : pousser v3/RUN-CYCLE.txt déclenche un cycle.
   push:
     paths:
@@ -36,36 +41,67 @@ jobs:
         with:
           fetch-depth: 50
 
-      - name: Guard — skip redundant intra-slot schedule attempts
+      - name: Guard — week-end NO-OP + redondance intra-créneau
         id: guard
+        env:
+          # Input booléen exposé seulement sur workflow_dispatch (vide sinon).
+          FORCE_INPUT: ${{ github.event.inputs.force }}
         run: |
-          # Redondance cron (3 tentatives/créneau). On ne lance le pipeline que si AUCUN
-          # snapshot n'a été produit dans les 2 dernières heures (= même créneau déjà traité).
-          # Les déclenchements manuels (push RUN-CYCLE.txt / workflow_dispatch) passent toujours.
-          if [ "${GITHUB_EVENT_NAME}" != "schedule" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"; echo "Déclenchement manuel → run."; exit 0
+          # ===================================================================
+          # TABLE DE VÉRITÉ  (déclencheur × jour × force → run ?)
+          # -------------------------------------------------------------------
+          #   déclencheur            jour      force   → run ?   pourquoi
+          #   schedule               lun-ven    —      → OUI*    jour ouvré (*sauf doublon ×3)
+          #   schedule               sam/dim    —      → NON     week-end : marchés fermés
+          #   dispatch (VPS)         lun-ven   false   → OUI     jour ouvré (driver réel)
+          #   dispatch (VPS)         sam/dim   false   → NON     week-end : marchés fermés  ← FIX
+          #   dispatch (force)       sam/dim   true    → OUI     échappatoire humaine (bypass)
+          #   push RUN-CYCLE.txt     sam/dim    —      → OUI     échappatoire humaine (bypass)
+          #
+          # Principe : la coupure week-end s'applique à TOUS les déclencheurs
+          # AUTOMATIQUES (schedule ET workflow_dispatch sans force = le cas du
+          # VPS), car le week-end les prix sont figés à la clôture de vendredi
+          # → bulletin sur prix morts + mesures 24h dégénérées (« +0.0% »),
+          # qui polluent le shadow. Seul un FORÇAGE EXPLICITE bypass la garde.
+          # ===================================================================
+
+          # --- 1. Forçage explicite = échappatoire humaine → run, bypass tout (week-end inclus)
+          #     a) workflow_dispatch avec input force=true   b) push RUN-CYCLE.txt
+          if [ "${FORCE_INPUT}" = "true" ] || [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Forçage explicite (force=${FORCE_INPUT:-n/a} / event=${GITHUB_EVENT_NAME}) → run, bypass garde week-end."
+            exit 0
           fi
-          # Garde JOURS OUVRÉS (schedule uniquement). Les marchés actions sont fermés
-          # le week-end → prix figés à la clôture de vendredi. Un run samedi/dimanche
-          # produirait un bulletin sur prix morts et des mesures 24h dégénérées
-          # (prix de vendredi comparé à lui-même → « +0.0% »), polluant les stats.
-          # On NO-OP donc les runs schedule du samedi/dimanche (heure Europe/Paris).
-          # workflow_dispatch et push RUN-CYCLE.txt restent toujours actifs (gérés
-          # par le early-exit manuel ci-dessus) → tests/forçage week-end possibles.
+
+          # --- 2. Déclencheurs automatiques (schedule OU dispatch-VPS sans force) : garde WEEK-END
+          #     Marchés actions fermés sam/dim → prix figés à la clôture de vendredi.
+          #     Un run produirait un bulletin sur prix morts et des mesures 24h
+          #     dégénérées (vendredi comparé à lui-même), polluant les stats.
           dow=$(TZ='Europe/Paris' date +%u)  # 1=lundi … 6=samedi, 7=dimanche
           if [ "$dow" -ge 6 ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Week-end (jour=$dow, Europe/Paris) + déclenchement schedule → marchés fermés, NO-OP."
+            echo "Week-end (jour=$dow, Europe/Paris) + déclenchement automatique (${GITHUB_EVENT_NAME}) → marchés fermés, NO-OP."
+            exit 0
+          fi
+
+          # --- 3. Jour ouvré : anti-doublon ×3 pour le SCHEDULE uniquement.
+          #     Le schedule tire 3×/créneau (:12/:27/:42) → on no-op les tentatives
+          #     2 et 3 si un snapshot a déjà été produit dans les 2h. Le VPS, lui,
+          #     tire 1×/créneau (workflow_dispatch sans redondance) → on le laisse
+          #     toujours passer (comportement actuel préservé, pas d'anti-doublon).
+          if [ "${GITHUB_EVENT_NAME}" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Jour ouvré + déclenchement ${GITHUB_EVENT_NAME} (VPS, 1 tir/créneau) → run."
             exit 0
           fi
           last=$(git log -1 --format=%ct --grep="decision snapshot" 2>/dev/null || echo 0)
           now=$(date +%s)
           if [ "${last:-0}" -gt 0 ] && [ $((now - last)) -lt 7200 ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Snapshot il y a $(((now-last)/60)) min → tentative redondante, SKIP."
+            echo "Snapshot il y a $(((now-last)/60)) min → tentative schedule redondante, SKIP."
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Pas de snapshot récent → run."
+            echo "Jour ouvré + schedule, pas de snapshot récent → run."
           fi
 
       - name: Setup Python

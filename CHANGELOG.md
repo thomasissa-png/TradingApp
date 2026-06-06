@@ -2,6 +2,14 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-06 (Session 4) — Test audit-veille rendu déterministe (date figée jour ouvré) — fin du faux rouge week-end
+
+**Bug du test (pas du code)** : `test_audit_veille_liste_conviction_normale_vrai` et `test_audit_veille_exclut_faible_carry_news` (`v3/tests/test_scoring.py`) ancraient `now = datetime.now()` puis `bdate = now - 1 jour`. Le **samedi**, `bdate` = vendredi et la logique d'échéance 24h jour-ouvré/fériés (ajoutée en S3) reporte au lundi → la cellule n'est « pas encore » mesurable → l'assertion `assert "Pas encore" not in txt` casse. Le test échouait donc **uniquement selon le jour réel d'exécution** (rouge le samedi 06/06, vert en semaine).
+
+### Correctif (@fullstack)
+- **`v3/tests/test_scoring.py`** : `now` figé sur **`datetime(2026, 6, 9, 12, 0)`** (mardi) → `bdate` = **lundi 2026-06-08** (jour ouvré, NI week-end NI férié de marché) → échéance 24h mûre quel que soit le jour réel. **2 tests corrigés**. Assertions métier intactes (✅, VRAI, +5.00%, exclusion faible/carry/news). `test_audit_veille_warmup_message` laissé tel quel (indépendant du jour : vérifie le message warm-up sans cellule à mesurer).
+- **Gate** : `python3 -m pytest v3/tests/test_scoring.py -q` → **33 passed, 100% vert** (dont les 3 `test_audit_veille_*`). `v3/data/` non pollué (`git checkout` post-run).
+
 ## 2026-06-06 (Session 4) — Garde de run étendue aux jours fériés de marché (réutilise `MARKET_HOLIDAYS`)
 
 **Demande fondateur (« point final »)** : des rapports **uniquement les jours où la bourse est OUVERTE**. Le week-end était déjà coupé ; il manquait les **jours fériés de marché** — un lundi férié (NYSE/Euronext fermés) produisait encore un bulletin sur **prix figés à la clôture précédente** + mesures 24h dégénérées (« +0.0% ») qui polluent le shadow.

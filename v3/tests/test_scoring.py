@@ -536,7 +536,11 @@ def test_audit_veille_warmup_message(tmp_path):
 def test_audit_veille_liste_conviction_normale_vrai(tmp_path, monkeypatch):
     """Une cellule 24h conviction normale, mesurée VRAI, est listée avec son %."""
     import journaliste as j
-    now = datetime.now()
+    # `now` figé sur un mardi (jour ouvré, non férié de marché) : bdate = lundi
+    # 2026-06-08 (jour ouvré), donc l'échéance 24h est mûre quel que soit le jour
+    # réel d'exécution. Évite le faux rouge du week-end (bdate=vendredi → échéance
+    # reportée au lundi → cellule « pas encore » mesurable).
+    now = datetime(2026, 6, 9, 12, 0)
     bdate = (now - timedelta(days=1)).date()
     bulletins = tmp_path / "bulletins"
     log_dir = tmp_path / "decision-log"
@@ -570,7 +574,9 @@ def test_audit_veille_liste_conviction_normale_vrai(tmp_path, monkeypatch):
 def test_audit_veille_exclut_faible_carry_news(tmp_path, monkeypatch):
     """Les convictions dégradées (faible/carry/news) sont exclues de l'audit."""
     import journaliste as j
-    now = datetime.now()
+    # `now` figé sur un mardi (jour ouvré, non férié) : bdate = lundi 2026-06-08
+    # (jour ouvré) → échéance 24h mûre quel que soit le jour réel d'exécution.
+    now = datetime(2026, 6, 9, 12, 0)
     bdate = (now - timedelta(days=1)).date()
     prix_dir = tmp_path / "prix-emission"
     prix_dir.mkdir()

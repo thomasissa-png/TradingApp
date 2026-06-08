@@ -2,6 +2,27 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-08 (Session 5) — Câblage cron/workflows des 5 rapports + stamps d'ouverture (@infrastructure)
+
+**Routage des créneaux → bons runners + stamps d'ouverture aux VRAIES ouvertures** (spec §5 + CA-I*). Aucun run déclenché, mode shadow préservé, branche `claude/elegant-ramanujan-OIKms` (pas de PR).
+
+### Routage par heure de Paris (cycle.yml — un seul workflow, runner selon l'heure réelle, DST-safe)
+- **Nouveau step `Route`** : après la garde, calcule l'heure de Paris réelle et choisit le runner (`slot`) : **07h→`run_bulletin.py`** (R1 complet, stampe déjà les continus) · **08h05/09h05/15h35→`run_stamp.py`** (stamps d'ouverture prix-only) · **12h→`run_suivi.py 12h`** (R2 léger, PAS le bulletin, Q9) · **18h→`run_suivi.py 18h`** (R3) · **22h15 Paris→`run_bilan.py`** (R4, note les 24h). Les plages horaires absorbent l'écart été/hiver ; **jamais d'offset UTC en dur** (22h15 Paris = 20h15 UTC été / 21h15 UTC hiver — un `20h UTC` fixe noterait avant la clôture NYSE 5 mois/an).
+- **Cron étendu** : créneaux historiques 7h/12h/18h **inchangés** (UTC fixe `5,10,16`, ne pas churner). Nouveaux créneaux (stamps + bilan) = **cron horaire `12,27,42 6,7,8,13,14,20,21`** + garde heure-Paris dans le step Route. Anti-doublon ×3 étendu (grep stamp/suivi/bilan). Steps conditionnés au `slot` (bulletin = ingest→bulletin→mesure→html ; stamp/suivi12/suivi18/bilan = runner unique). Garde `is_trading_day` (jours de bourse + fériés) + `force` **inchangée** pour tous les créneaux cycle.yml.
+- **`v3/scripts/run_stamp.py`** (nouveau) : runner léger prix-only qui appelle `mesure_ouverture.stamp_prix_ouverture(now=...)` — AUCUN scoring/DeepSeek, idempotent + entry-lock (re-déclencher est sans effet). `stamp_prix_ouverture` ne stampe que les marchés ouverts à `now` → à 08h05 EU/US skippés, à 15h35 continus/EU déjà verrouillés. Aucune liste d'actifs codée (filtre par groupe de marché).
+
+### Bilan semaine dimanche (workflow SÉPARÉ — choix Q7)
+- **`.github/workflows/weekly-summary.yml`** (nouveau) : `schedule "12,27,42 16 * * 0"` (dim 16h UTC = 18h Paris) + `workflow_dispatch`(input `force`) + push `v3/RUN-WEEKLY.txt`. **Garde INVERSÉE vs cycle.yml** : bypass `is_trading_day`, ne tourne QUE le dimanche (`weekday()==6`/`%u==7`), `force=true` bypass (CA-W1.c). Anti-doublon ×3. Step `run_weekly.py`. **Garde-fou CA-W4 au commit** : refuse si `git diff v3/config/` non vide (le Manager n'applique rien).
+
+### VPS Anya (horloge — routage autoritaire côté workflow)
+- **`trigger-cycle.sh`** : créneaux Paris étendus à `07/08/09/12/15/18/22` (jours ouvrés → cycle.yml) + **dimanche 18h → weekly-summary.yml** (workflow cible choisi dans le script). Samedi muet. Flag **`--check`** (sortie parseable des créneaux, CA-I3). **`crontab.tradingapp`** : minute `0`→**`15`** (`15 * * * *`) pour que le tir 22h tombe à 22h15 Paris (≥ garde routage) — jamais un UTC fixe.
+
+### Table de vérité (`test-guard-logic.sh`) — tous verts
+- Ajout `route_slot` (miroir du step Route) + `weekly_decision` (garde workflow dimanche). Nouveaux cas : 7 créneaux de routage (été+hiver), bilan 22h15 vs 22h00→none, 8 cas weekly (dimanche/lundi/samedi/force/push). **ALL PASS.**
+
+### CA-I* couverts / restants
+Couverts : **CA-I1** (22h → R4 seul, pas de re-scoring) · **CA-I2** (dimanche → R5 seul, bypass bourse, weekday()==6) · **CA-I3** (VPS `--check` parseable : `22h15-paris-jours-bourse` + `18h-dimanche`) · **CA-I4** (anti-doublon ×3 sur 22h). **Restants @fullstack** (logique de MESURE, hors périmètre infra — touchent `bilan_jour.py`/`journaliste.py`, et CA-B2 dépend de Q5 non validé en shadow) : **CA-M7** (compteur `jours_bourse_exclus` dans performance.md) · **CA-B2** (close CAC officiel 17h30 dans le bilan). **Gates** : `pytest v3/ -q` 957 verts · `test-guard-logic.sh` ALL PASS · cycle.yml + weekly-summary.yml YAML valides · trigger `bash -n` OK. **Aucun run déclenché.**
+
 ## 2026-06-08 (Session 5) — Phase 3 refonte 5 rapports : bilan de la semaine dimanche 18h + le Manager (@fullstack)
 
 Implémentation de la **Phase 3** (dernière) de `v3/docs/reco/spec-refonte-5-rapports.md` (v2, §4 + CA-W*) : le **bilan de la semaine (R5)** produit dimanche 18h + **le Manager**, 4e agent historique du système (Veilleur / Analyste / Journaliste / **Manager**), enfin implémenté. Le Manager est la couche apprentissage/pilotage : il LIT les résultats de la semaine et **PROPOSE des ajustements de config — Thomas VALIDE à la main, jamais d'application silencieuse**. **WIN RATE ONLY, mode shadow, zéro modif silencieuse, zéro invention.**

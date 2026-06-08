@@ -1,18 +1,44 @@
 name: cycle-decision
 
-# Objectif : 3 snapshots décisionnels complets par jour (~7h, ~12h, ~18h Paris).
-# Un cycle atomique enchaîne : ingest news → calcul critères + bulletin + briefing → mesure perf,
-# puis commit unique. Pas de polling continu (inutile pour un horizon 1-30 j, et préserve les
-# quotas GNews/NewsAPI : 3 runs/j × 6 requêtes = 18/j, sous le free tier 100/j).
+# Objectif : les rapports de la journée de bourse (refonte « 5 rapports » — spec
+# v3/docs/reco/spec-refonte-5-rapports.md §5). Un seul workflow, le RUNNER lancé
+# dépend de l'HEURE DE PARIS réelle (routage robuste DST, jamais d'offset en dur) :
 #
-# Cron UTC (pas de DST auto) : 05h/10h/16h UTC = 07h/12h/18h Paris été (CEST) / 06h/11h/17h hiver (CET).
-# REDONDANCE : 3 tentatives par créneau (:12, :27, :42) pour contrer l'abandon silencieux
-# des schedules GitHub sous charge (incident 2026-06-01 : le run de 7h posté à :00 n'a jamais
-# déclenché). Un garde-fou (step "Skip redundant") fait no-op les tentatives 2 et 3 si un
-# snapshot a déjà été produit dans les 2h → 1 seul run réel par créneau.
+#   Heure Paris   Runner             Rôle                                  Noté ?
+#   07h           run_bulletin.py    R1 Briefing COMPLET (+ stamp continus) OUI (seul)
+#   08h05         run_stamp.py       Stamp ouverture CONTINUS (prix-only)   non
+#   09h05         run_stamp.py       Stamp ouverture EU/CAC (prix-only)     non
+#   12h           run_suivi.py 12h   R2 Suivi léger (PAS le bulletin, Q9)   non
+#   15h35         run_stamp.py       Stamp ouverture US (prix-only)         non
+#   18h           run_suivi.py 18h   R3 Suivi léger                         non
+#   22h15         run_bilan.py       R4 Bilan du jour (note les 24h)        note J
+#
+# Stamps d'ouverture (Q1 tranchée : capturer à la VRAIE ouverture) : 3 runs prix-only
+# légers (un fetch Twelve par actif dont le marché vient d'ouvrir). stamp_prix_ouverture
+# est idempotent + entry-lock → re-déclencher est sans effet. Le 7h stampe déjà les
+# continus ; le 08h05 garantit la capture même si le 7h a raté ; 09h05/15h35 capturent
+# EU/US à leur vraie ouverture (sinon le 12h/18h les prendrait avec 3h de retard).
+#
+# Cron UTC (pas de DST auto). Deux familles :
+#   - créneaux RAPPORTS historiques 7h/12h/18h : UTC FIXE 05/10/16h (inchangé — ne
+#     PAS churner ce cron, cf. project-context : re-registration fait sauter une
+#     occurrence). 05/10/16h UTC = 07/12/18h Paris été / 06/11/17h hiver.
+#   - créneaux NOUVEAUX (stamps + bilan 22h15) : CRON HORAIRE `12,27,42 * * * *` +
+#     GARDE HEURE-PARIS dans le step de routage. Robuste été/hiver : on ne parie
+#     JAMAIS sur un offset UTC figé (22h15 Paris = 20h15 UTC été MAIS 21h15 UTC
+#     hiver ; un `20h UTC` fixe noterait avant la clôture NYSE 5 mois/an). Le cron
+#     horaire tire chaque heure, la garde heure-Paris ne déclenche qu'aux bons
+#     créneaux. Coût négligeable (no-op des heures sans créneau, avant tout setup).
+# REDONDANCE : 3 tentatives par créneau (:12, :27, :42) pour contrer l'abandon
+# silencieux des schedules GitHub. Anti-doublon (snapshot < 2h) → 1 run réel/créneau.
 on:
   schedule:
+    # Rapports historiques (UTC fixe, inchangé) : 7h/12h/18h Paris.
     - cron: "12,27,42 5,10,16 * * *"
+    # Stamps + bilan 22h15 (cron horaire + garde heure-Paris dans le step routage).
+    # Plage 6-21h UTC : couvre 08h05/09h05 (06-07h UTC été, 07-08h hiver),
+    # 15h35 (13h UTC été, 14h hiver) et 22h15 Paris (20h UTC été, 21h UTC hiver).
+    - cron: "12,27,42 6,7,8,13,14,20,21 * * *"
   workflow_dispatch:
     inputs:
       force:
@@ -136,7 +162,7 @@ jobs:
             echo "Jour ouvré + déclenchement ${GITHUB_EVENT_NAME} (VPS, 1 tir/créneau) → run."
             exit 0
           fi
-          last=$(git log -1 --format=%ct --grep="decision snapshot" 2>/dev/null || echo 0)
+          last=$(git log -1 --format=%ct --grep="decision snapshot\|decision suivi\|decision bilan\|stamp ouverture" 2>/dev/null || echo 0)
           now=$(date +%s)
           if [ "${last:-0}" -gt 0 ] && [ $((now - last)) -lt 7200 ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -146,8 +172,51 @@ jobs:
             echo "Jour ouvré + schedule, pas de snapshot récent → run."
           fi
 
-      - name: Setup Python
+      - name: Route — slot selon l'heure de Paris réelle (DST-safe)
+        id: route
         if: steps.guard.outputs.run == 'true'
+        run: |
+          # ===================================================================
+          # ROUTAGE PAR HEURE DE PARIS (jamais d'offset UTC en dur — DST-safe).
+          # La garde a déjà validé « run autorisé ce jour ». Ici on choisit QUEL
+          # runner lancer selon l'heure de Paris réelle au moment du tir :
+          #
+          #   créneau Paris   slot       runner lancé
+          #   07h (06-08h)    bulletin   run_bulletin.py (R1 complet, + stamp continus)
+          #   08h (08-09h)    stamp      run_stamp.py  (ouverture continus)
+          #   09h (09-10h)    stamp      run_stamp.py  (ouverture EU/CAC)
+          #   12h (11-13h)    suivi12    run_suivi.py 12h (R2 léger)
+          #   15h (15-16h)    stamp      run_stamp.py  (ouverture US)
+          #   18h (17-19h)    suivi18    run_suivi.py 18h (R3 léger)
+          #   22h ≥22h15      bilan      run_bilan.py  (R4 — note les 24h)
+          #   (autre heure)   none       NO-OP (cron horaire qui ne tombe sur aucun créneau)
+          #
+          # Les plages horaires absorbent l'écart été/hiver (le cron UTC fixe 5/10/16h
+          # tombe à 6h/11h/17h Paris en hiver, 7h/12h/18h en été) ET le retard
+          # schedule GitHub de 1-3h n'est PAS absorbé ici — c'est le rôle de l'heure
+          # de tir du VPS (à l'heure pile) ; le schedule retardé tombera dans la
+          # plage du créneau suivant le plus proche, ou en `none` si trop décalé.
+          # ===================================================================
+          ph=$(TZ='Europe/Paris' date +%H)
+          pm=$(TZ='Europe/Paris' date +%M)
+          ph=$((10#$ph)); pm=$((10#$pm))
+          slot="none"
+          if   [ "$ph" -ge 6 ]  && [ "$ph" -le 7 ];  then slot="bulletin"
+          elif [ "$ph" -eq 8 ];                       then slot="stamp"
+          elif [ "$ph" -eq 9 ];                       then slot="stamp"
+          elif [ "$ph" -ge 11 ] && [ "$ph" -le 12 ]; then slot="suivi12"
+          elif [ "$ph" -eq 15 ];                      then slot="stamp"
+          elif [ "$ph" -ge 17 ] && [ "$ph" -le 18 ]; then slot="suivi18"
+          elif [ "$ph" -eq 22 ] && [ "$pm" -ge 15 ]; then slot="bilan"
+          fi
+          echo "slot=$slot" >> "$GITHUB_OUTPUT"
+          echo "Heure Paris ${ph}h${pm} → slot=${slot}."
+          if [ "$slot" = "none" ]; then
+            echo "Aucun créneau à cette heure (cron horaire hors créneau) → NO-OP."
+          fi
+
+      - name: Setup Python
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot != 'none'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -155,13 +224,14 @@ jobs:
           cache-dependency-path: v3/requirements.txt
 
       - name: Install dependencies
-        if: steps.guard.outputs.run == 'true'
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot != 'none'
         run: |
           python -m pip install --upgrade pip
           pip install -r v3/requirements.txt
 
+      # ----- Slot BULLETIN (07h) : R1 Briefing COMPLET = ingest → bulletin → mesure -----
       - name: 1. Ingest news (RSS + early-signal + GNews/NewsAPI + extraction DeepSeek)
-        if: steps.guard.outputs.run == 'true'
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'bulletin'
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
@@ -171,8 +241,8 @@ jobs:
           LOG_LEVEL: INFO
         run: python v3/scripts/agent_news.py
 
-      - name: 2. Bulletin (critères + scoring + briefing)
-        if: steps.guard.outputs.run == 'true'
+      - name: 2. Bulletin (critères + scoring + briefing — stampe aussi l'ouverture des continus)
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'bulletin'
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
@@ -185,27 +255,70 @@ jobs:
         run: python v3/scripts/run_bulletin.py
 
       - name: 3. Mesure perf (Journaliste — conclusions échues + prix d'émission)
-        if: steps.guard.outputs.run == 'true'
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'bulletin'
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           LOG_LEVEL: INFO
         run: python v3/scripts/run_journaliste.py
 
       - name: Build HTML (page autonome de lecture des bulletins)
-        if: steps.guard.outputs.run == 'true'
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'bulletin'
         run: python v3/scripts/build_html.py
 
+      # ----- Slot STAMP (08h05 continus / 09h05 EU / 15h35 US) : prix-only, léger -----
+      - name: Stamp ouverture (prix-only — capture la VRAIE ouverture, idempotent)
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'stamp'
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          LOG_LEVEL: INFO
+        run: python v3/scripts/run_stamp.py
+
+      # ----- Slot SUIVI 12h (R2 léger — PAS le bulletin complet, Q9) -----
+      - name: Suivi 12h (R2 — statut vs ouverture, dynamique, suggestions de sortie)
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'suivi12'
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          LOG_LEVEL: INFO
+        run: python v3/scripts/run_suivi.py 12h
+
+      # ----- Slot SUIVI 18h (R3 léger) -----
+      - name: Suivi 18h (R3 — statut vs ouverture + dynamique intraday US)
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'suivi18'
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          LOG_LEVEL: INFO
+        run: python v3/scripts/run_suivi.py 18h
+
+      # ----- Slot BILAN 22h15 Paris (R4 — note les 24h, win rate du jour) -----
+      - name: Bilan du jour 22h15 (R4 — note les calls 7h ouverture→clôture)
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'bilan'
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          LOG_LEVEL: INFO
+        run: python v3/scripts/run_bilan.py
+
       - name: Commit and push snapshot
-        if: steps.guard.outputs.run == 'true'
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot != 'none'
+        env:
+          SLOT: ${{ steps.route.outputs.slot }}
         run: |
           git config user.name  "tradingapp-bot"
           git config user.email "tradingapp-bot@users.noreply.github.com"
+          # Message de commit traçant le slot (utilisé par l'anti-doublon ×3 du Guard).
+          case "$SLOT" in
+            bulletin) msg="chore(cycle): decision snapshot [skip ci]" ;;
+            stamp)    msg="chore(cycle): stamp ouverture [skip ci]" ;;
+            suivi12)  msg="chore(cycle): decision suivi 12h [skip ci]" ;;
+            suivi18)  msg="chore(cycle): decision suivi 18h [skip ci]" ;;
+            bilan)    msg="chore(cycle): decision bilan 22h [skip ci]" ;;
+            *)        msg="chore(cycle): snapshot [skip ci]" ;;
+          esac
           git add v3/data/
           if git diff --cached --quiet; then
             echo "No data changes to commit."
             exit 0
           fi
-          git commit -m "chore(cycle): decision snapshot [skip ci]"
+          git commit -m "$msg"
           for i in 1 2 3; do
             git pull --rebase origin "${GITHUB_REF_NAME}" || true
             if git push origin HEAD:"${GITHUB_REF_NAME}"; then

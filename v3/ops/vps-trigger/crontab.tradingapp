@@ -1,15 +1,26 @@
 # ---------------------------------------------------------------------------
-# /etc/cron.d/tradingapp — déclenche le cycle 3×/jour (7h / 12h / 18h Paris).
-# Déployé en prod sur le VPS Anya (run as root).
+# /etc/cron.d/tradingapp — déclenche les rapports de la journée (refonte « 5
+# rapports », spec §5.4). Déployé en prod sur le VPS Anya (run as root).
+#
+# CRÉNEAUX (heure de Paris, self-gate dans le script) :
+#   jours de bourse → cycle.yml :
+#     07h Briefing  · 08h stamp continus · 09h stamp EU · 12h Suivi
+#     15h stamp US  · 18h Suivi          · 22h15 Bilan du jour
+#   dimanche 18h    → weekly-summary.yml : Bilan semaine (Manager, bypass bourse)
+#
+# ⚠️ MINUTE 15 (et plus `0`) : le bilan du jour se déclenche à 22h15 Paris (le
+# routage cycle.yml exige ≥22h15 — JAMAIS un UTC fixe 20h, faux en hiver). Les
+# stamps tolèrent h15 (le marché est ouvert depuis ≥5 min à 08h15/09h15/15h15).
+# Les créneaux 07/12/18 ne dépendent pas de la minute (routage par plage horaire).
 #
 # ⚠️ PAS de CRON_TZ : le cron Debian/Ubuntu (Vixie) ne l'honore PAS (incident
-# 02/06 — le créneau de midi n'est pas parti). On fire TOUTES LES HEURES et le
-# script self-gate sur l'heure de Paris (7/12/18) → robuste DST + indépendant
-# du fuseau système. Tirs réels : 3/jour (les 21 autres = no-op instantané).
+# 02/06). On fire TOUTES LES HEURES et le script self-gate sur l'heure de Paris
+# → robuste DST + indépendant du fuseau système. Tirs réels : ~8/jour ouvré +
+# 1 le dimanche (les autres heures = no-op instantané).
 #
 # /etc/cron.d/ (et pas la crontab de `thomas`) car le déploiement auto d'Anya
 # réécrit la crontab de `thomas` → un fichier dédié survit aux redéploiements.
 # Format /etc/cron.d : champ utilisateur (root) AVANT la commande.
 # ---------------------------------------------------------------------------
 
-0 * * * * root /opt/tradingapp/trigger-cycle.sh
+15 * * * * root /opt/tradingapp/trigger-cycle.sh

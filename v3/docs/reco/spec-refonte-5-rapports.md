@@ -2,7 +2,7 @@
 
 > **Source de vérité unique** pour @fullstack et @infrastructure.
 > Statut : VALIDÉ Thomas (design validé en amont — la spec traduit fidèlement sans réinventer).
-> Date : 2026-06-08. Branche : `claude/elegant-ramanujan-OIKms`.
+> Date : 2026-06-08. **Version : v2 (2026-06-08) — intègre les corrections du trio Analyst / News Trader / Spéculateur (audit 2026-06-08, 15 corrections P0/P1/P2).** Branche : `claude/elegant-ramanujan-OIKms`.
 
 ---
 
@@ -55,7 +55,11 @@
 |---|---|---|---|---|---|
 | **EU Actions** | CAC 40 (Euronext, proxy FCHI/ETF) | **09h00** | **17h30** | Prix à 09h00 (ouverture Euronext) | Prix à 17h30 |
 | **US Actions** | S&P 500, Nasdaq, VIX (proxy SPY/QQQ/VIXY) | **15h30** | **22h00** | Prix à 15h30 (ouverture NYSE/Nasdaq) | Prix à 22h00 |
-| **Continus** | EUR/USD, Or, Argent, Cuivre, Pétrole/Brent, Blé, Cacao, Café | **08h00** | **22h00** | Prix à 08h00 (référence conventionnelle, pas d'ouverture nette) | Prix à 22h00 |
+| **Continus** | EUR/USD, Or, Argent, Cuivre, Pétrole/Brent, Blé, Cacao, Café | **08h00** | **22h00** | **Prix de référence conventionnel à 08h00** (PAS une vraie ouverture — voir note ci-dessous) | Prix à 22h00 |
+
+> **Convention « ouverture 08h » des actifs continus** *(correction M3 — News Trader)* : EUR/USD, Or, Argent et métaux spot sont des marchés 24h/24 (pas d'ouverture quotidienne nette). Pétrole/Brent (ICE), Blé (CBOT), Cacao/Café (ICE) ont des horaires CME/ICE précis qui ne correspondent pas à 08h Paris. **08h00 Paris est une référence conventionnelle arbitraire**, choisie pour sa praticabilité (marchés EU ouvrent à 09h, 08h capture la session early EU/Londres). Le terme « ouverture » dans ce contexte = « prix de référence du début de journée Paris ». La mesure ouverture→clôture 08h→22h mesure la tendance sur 14h de session Paris/Londres/NY — ce n'est pas close-to-close. Ce biais est assumé et documenté ici. Si la convention doit changer (ex. passer en close-to-close pour les FX/métaux), c'est une décision Thomas (question ouverte Q10 — §9).
+
+> **Garde-fou DST** : ne JAMAIS coder l'offset Paris↔NY en dur dans les scripts. Pendant ~3 semaines/an (mi-mars : US passe à l'heure d'été ~2 sem avant EU ; début novembre : US sort ~1 sem après EU), le décalage est **5h** au lieu de 6h. Utiliser `ZoneInfo("Europe/Paris")` et `ZoneInfo("America/New_York")` pour toute conversion. *(Correction M2 — News Trader)*
 
 > **Note heure d'hiver (CET)** : les crons UTC restent fixes. En heure d'hiver (CET = UTC+1), l'ouverture Euronext est à 09h00 CET = 08h00 UTC, NYSE à 15h30 CET = 14h30 UTC, etc. Le stamping doit utiliser l'heure réelle Paris (TZ Europe/Paris), pas l'heure UTC fixe du cron.
 
@@ -172,13 +176,21 @@ Comportement :
 ```
 ## Suivi 12h — {date} {heure}
 
-### Positions du matin vs ouverture
+### Note sur les marchés US
+⚠️ Marchés US (S&P 500, Nasdaq, VIX) pas encore ouverts (ouverture 15h30 Paris).
+Ce suivi couvre EU + continus uniquement. Premier statut US disponible au suivi 18h.
 
-| Actif | Call 7h | Ouverture | Prix 12h | Delta% | Statut | Suggestion |
-|---|---|---|---|---|---|---|
-| Or      | LONG    | 3 420.0   | 3 435.2  | +0.44% | ✅ gagne | Hold |
-| CAC 40  | SHORT   | 8 120.0   | 8 134.5  | +0.18% | ⚠️ perd  | Surveiller |
-| ...     | ...     | ...       | ...      | ...    | ...     | ...        |
+### Positions du matin vs ouverture (EU + continus)
+
+| Actif | Call 7h | Ouverture | Prix 12h | Delta% | Δ vs 7h* | Tendance | Statut | Suggestion |
+|---|---|---|---|---|---|---|---|---|
+| Or      | LONG    | 3 420.0   | 3 435.2  | +0.44% | —        | —        | ✅ gagne | Hold |
+| CAC 40  | SHORT   | 8 120.0   | 8 134.5  | +0.18% | —        | —        | ⚠️ perd  | Surveiller |
+| S&P 500 | LONG    | —         | —        | —      | —        | —        | 🕐 pas encore ouvert | — |
+| ...     | ...     | ...       | ...      | ...    | ...      | ...      | ...     | ...        |
+
+*Δ vs 7h : pour le suivi 12h (premier suivi de la journée), cette colonne est « — » (pas de suivi précédent).
+Pour le suivi 18h, elle montre le delta entre le statut 12h et le statut 18h (voir §3.3).
 
 ### News à impact depuis 7h (si applicable)
 [2-3 news max ayant réellement bougé un actif. Si aucune news significative : « Pas de news impactante depuis 7h. »]
@@ -191,29 +203,71 @@ Comportement :
 
 **Règles strictes pour R2** :
 - Le tableau ne contient que les actifs dont le call 7h est actionnable (exclus : INSUFFISANT, non-noté).
+- **Actifs US (S&P 500, Nasdaq, VIX)** : `Ouverture = —`, `Prix 12h = —`, `Statut = 🕐 pas encore ouvert`. Pas de ligne vide muette — afficher explicitement le message. *(Correction M-H — Spéculateur)*
 - `Ouverture` = prix depuis `prix-ouverture/{date}.json` (stampé avant ou pendant ce run).
 - `Prix 12h` = prix spot Twelve Data au moment du run 12h (NON stampé en tant que prix d'émission).
 - `Delta%` = `(Prix 12h − Ouverture) / Ouverture × 100`. Signe du delta vs sens du call → Statut.
-- **Statut** : `✅ gagne` si signe(delta) == sens(call), `⚠️ perd` sinon, `— neutre` si |delta| < 0.1%.
-- **Suggestion** : valeurs fermées : `Hold` / `Surveiller` / `Sortir` (sortie suggérée si perte > seuil actif × 0.5 — [voir Q4 §9]).
+- **Statut** : `✅ gagne` si signe(delta) == sens(call), `⚠️ perd` sinon, `— neutre` si |delta| < `NEUTRAL_BAND_PCT` (constante = `0.001`, soit 0,1%, configurable dans `v3/config/suivi.yaml`). *(Correction D6 — Analyst)*
+- **Colonne Tendance** : `— ` au 12h (premier suivi — pas de précédent). Au 18h elle prend la valeur `↑ s'accélère` / `↓ s'essouffle` / `⇄ se retourne` (voir §3.3). *(Correction M-A — Spéculateur)*
+- **Suggestion** : valeurs fermées : `Hold` / `Surveiller` / `Sortie à envisager`. Règle unique : `Sortie à envisager` si `|Delta%| ≥ SEUIL_PCT_actif` ET signe(delta) ≠ sens(call) (position perdante au-delà du seuil de l'actif défini dans la fiche YAML en %, pas en €). Ce seuil est identique à celui utilisé pour distinguer VRAI/NC dans la mesure. **La suggestion est un drapeau — Thomas décide.** *(Résolution du conflit §3.2 vs Q4 — correction M-B/correction 4 de la mission)*
 - Pas de score pondéré, pas de critères détaillés. Ce n'est PAS un nouveau bulletin.
 - Pas de note win rate. Ce rapport n'alimente PAS le Journaliste.
 
 ### 3.3 R3 — Suivi 18h (NOUVEAU)
 
-**Identique à R2 dans sa structure.** Différences :
-- Heure = 18h (marchés EU fermés, US en cours depuis 15h30).
+**Même structure que R2.** Différences et ajouts clés :
+
+- Heure = 18h (marchés EU fermés depuis 17h30, US en cours depuis 15h30 — 2h30 de séance US).
 - `Prix 18h` = prix spot au run 18h.
 - `Delta%` toujours vs l'ouverture (même référence — pas vs le prix de 12h).
 - Les actifs EU ont leur clôture officielle (17h30) → `Prix 18h` = close EU (17h30) pour les actifs EU.
 - Les actifs US sont encore ouverts → `Prix 18h` = prix mid-séance US.
-- Format identique, contenu mis à jour.
+
+**Colonne `Δ vs 12h` et flag `Tendance`** *(correction M-A — Spéculateur)* :
+
+Le 18h est le moment où l'open US (15h30) a pu confirmer ou retourner le call du matin. C'est le signal de sortie le plus utile pour un trend-follower. La colonne `Tendance` indique la dynamique :
+
+| Valeur | Condition de déclenchement |
+|---|---|
+| `↑ s'accélère` | Delta% 18h > Delta% 12h ET signe identique → position renforçant la thèse |
+| `↓ s'essouffle` | |Delta% 18h| < |Delta% 12h| ET même signe → la tendance ralentit |
+| `⇄ se retourne` | signe(Delta% 18h) ≠ signe(Delta% 12h) → retournement depuis le suivi de midi |
+| `↗ confirmé US` | Actif US : mouvement depuis open 15h30 dans le sens du call (spécifique US) |
+| `↘ infirmé US` | Actif US : mouvement depuis open 15h30 contre le call (spécifique US) |
+| `— neutre` | |Delta% 18h| < NEUTRAL_BAND_PCT |
+
+> **Note explicite sur l'open US** : à 18h Paris, les marchés US (S&P 500, Nasdaq, VIX) sont ouverts depuis 2h30. L'ouverture US (15h30) peut avoir **confirmé ou retourné** le call du matin. Ce point est l'information principale du suivi 18h pour les actifs US. Le tableau indique si l'ouverture US a confirmé (`↗`) ou infirmé (`↘`) la thèse.
+
+**Format imposé R3** :
+
+```
+## Suivi 18h — {date} {heure}
+
+### Positions vs ouverture + dynamique intraday
+
+| Actif | Call 7h | Ouverture | Prix 18h | Delta% | Δ vs 12h | Tendance | Statut | Suggestion |
+|---|---|---|---|---|---|---|---|---|
+| Or      | LONG    | 3 420.0   | 3 451.3  | +0.92% | +0.48pts | ↑ s'accélère | ✅ gagne | Hold |
+| CAC 40  | SHORT   | 8 120.0   | 8 090.5  | −0.36% | −0.18pts | ↓ s'essouffle | ✅ gagne | Surveiller |
+| S&P 500 | LONG    | 5 300.0   | 5 312.0  | +0.23% | +0.23pts | ↗ confirmé US | ✅ gagne | Hold |
+| ...     | ...     | ...       | ...      | ...    | ...      | ...           | ...     | ...  |
+
+### News à impact depuis 12h (si applicable)
+[2-3 news max. Si aucune : « Pas de news impactante depuis 12h. »]
+
+### Suggestions de sortie
+[Actifs ⚠️ perd + tendance ↓ s'essouffle ou ⇄ se retourne → signal de sortie prioritaire.]
+```
 
 > **[QUESTION OUVERTE Q5]** : pour les actifs EU (clôture 17h30), utiliser le close officiel 17h30 ou le dernier prix disponible au run 18h (≈ 17h55 UTC, soit 17h55 Paris — marché déjà fermé) ? Les deux options donnent le même résultat si Twelve Data retourne le close. À valider comportement Twelve Data pour FCHI/ETF après 17h30.
 
 ### 3.4 R4 — Bilan du jour 22h (NOUVEAU)
 
 **Objectif** : noter les calls du jour et produire le win rate quotidien.
+
+**Timing de run** : le run R4 est ancré sur **22h15 heure de Paris réelle (Europe/Paris)**, PAS sur un UTC fixe. Rationale : en heure d'hiver (CET = UTC+1), 20h UTC = 21h Paris — NYSE est encore ouvert (clôture 22h Paris), le bilan serait faux 5 mois/an. En heure d'été (CEST = UTC+2), 20h UTC = 22h Paris — le close US arrive avec quelques minutes de latence, 22h15 garantit de capter le print de clôture propre. *(Correction M1+M2 — News Trader)*
+
+**Implémentation fuseau** : réutiliser le pattern projet existant (cron horaire `0 * * * *` + garde heure-Paris dans le script — cf. `is_trading_day`). Le script vérifie `datetime.now(ZoneInfo("Europe/Paris")).hour == 22 and datetime.now(ZoneInfo("Europe/Paris")).minute >= 15`. Ne JAMAIS coder l'offset Paris↔NY en dur (DST US/EU désalignés ~3 semaines/an : mi-mars et début novembre, le décalage est 5h au lieu de 6h). Convertir via `ZoneInfo("America/New_York")` → `ZoneInfo("Europe/Paris")`. *(Correction M2 — News Trader)*
 
 **Format imposé** :
 
@@ -222,33 +276,47 @@ Comportement :
 
 ### Résultat des calls 7h
 
-| Actif | Call 7h | Ouverture | Clôture (22h) | Delta% | Résultat |
-|---|---|---|---|---|---|
-| Or      | LONG    | 3 420.0  | 3 451.3       | +0.92% | ✅ VRAI   |
-| CAC 40  | SHORT   | 8 120.0  | 8 089.5       | −0.37% | ✅ VRAI   |
-| Nasdaq  | LONG    | 19 500.0 | 19 483.0      | −0.09% | ⚪ NC      |
-| ...     | ...     | ...      | ...           | ...    | ...       |
+| Actif | Call 7h | Ouverture | Clôture | Delta% | Résultat | Amplitude flag |
+|---|---|---|---|---|---|---|
+| Or      | LONG    | 3 420.0  | 3 451.3 | +0.92% | ✅ VRAI   | —              |
+| CAC 40  | SHORT   | 8 120.0  | 8 089.5 | −0.37% | ✅ VRAI   | —              |
+| Nasdaq  | LONG    | 19 500.0 | 19 483.0| −0.09% | ⚪ NC      | —              |
+| S&P 500 | SHORT   | 5 300.0  | 5 345.0 | +0.85% | ❌ FAUSSE | ⚡ gros move    |
+| ...     | ...     | ...      | ...     | ...    | ...       | ...            |
 
 ### Win rate du jour
 - Paris conclusifs : X / Y (Z non-conclusifs sous seuil)
 - Win rate du jour : **X/X = N%**
+- Win rate par conviction (semaine) : voir R5 dimanche
 - Win rate cumulé : voir performance.md
 
-### News qui ont compté aujourd'hui
-[3-5 news ayant eu un impact réel sur les prix. Uniquement si identifiables.]
+### FAUX à forte amplitude (erreurs prioritaires)
+[Actifs avec résultat FAUSSE ET |Delta%| ≥ 2 × SEUIL_PCT_actif — les vraies erreurs de tendance à analyser.]
+[Si aucun : « Pas de call faux à forte amplitude aujourd'hui. »]
+⚡ {Actif} : call {sens}, marché a bougé {−/+X%} dans le sens opposé. → À analyser dans R5.
 
-- **{Actif}** : {news} → {impact constaté}
+### News qui ont compté aujourd'hui
+[Croisement news ingestées du jour avec actifs VRAI/FAUSSE. Option C résolue (Q6).]
+
+- **{Actif}** : {news du créneau de l'actif} → {impact constaté}
+
+### Catalyseurs J+1 *(best-effort — correction M5c News Trader)*
+[Events macro de demain (2-3 max) issus du calendrier éco déjà ingéré. BEST-EFFORT : si agenda disponible dans les sources ingérées, lister. Si non disponible : afficher « Catalyseurs J+1 non disponibles — agenda éco non ingéré ce jour. » Zéro invention d'événement.]
+
+- {Date/heure Paris} — {Événement} ({actif(s) concerné(s)}) : {impact directionnel attendu en 1 ligne}
 ```
 
 **Règles strictes pour R4** :
-- `Clôture (22h)` = prix spot Twelve Data au run 22h, pour chaque actif.
+- `Clôture` = prix spot Twelve Data au run **22h15 Paris** (cf. timing ci-dessus), pour chaque actif.
 - Pour le CAC 40 : clôture = close officiel Euronext 17h30 (pas le prix à 22h, marché fermé).
 - `Résultat` : calculé par le Journaliste avec `prix_ouverture` comme référence (pas `prix_emission`). Seuil par actif (fiches).
 - **Cellules non-conclusives (NC)** : delta < seuil → ⚪. Non comptées dans le win rate du jour.
 - Win rate du jour = VRAI / (VRAI + FAUSSE) — non-conclusives exclues. Même règle que la mesure globale.
+- **Flag amplitude** : `⚡ gros move` si `|Delta%| ≥ 2 × SEUIL_PCT_actif` ET résultat = FAUSSE. Ces erreurs sont triées en priorité pour l'analyse Manager (win-rate-only : l'amplitude sert à trier les erreurs, pas à mesurer un gain). *(Correction M5a/correction 15 — News Trader + Spéculateur)*
+- **Bloc Catalyseurs J+1** : BEST-EFFORT. Si une source d'agenda éco est déjà ingérée (calendrier Forex Factory, agenda BCE/Fed/EIA dans les sources), extraire les 2-3 events de J+1 impactant les actifs couverts. Si aucune source disponible : afficher le message « non disponibles » (zéro invention, ne PAS fabriquer d'événements). *(Correction M2/correction 9 — News Trader)*
 - Ce rapport écrit les outcomes dans `measures-log.jsonl` (run Journaliste appelé dans le step 22h). Les outcomes sont définitifs pour l'horizon 24h.
 - **Pas de re-notation le lendemain** pour les cellules 24h notées à 22h (déjà définitives).
-- Les news « qui ont compté » : sélection éditoriale du Journaliste/DeepSeek (non automatisée — [voir Q6 §9]).
+- Les news « qui ont compté » : croisement automatique (option C résolue en Q6) — pas d'appel DeepSeek supplémentaire.
 
 ### 3.5 R5 — Bilan semaine dimanche 18h (NOUVEAU)
 
@@ -281,7 +349,7 @@ Le Manager est la partie **apprentissage/pilotage** du système. Il n'émet pas 
 
 Une cellule (actif × horizon) est faible si l'une des conditions suivantes est vraie :
 
-1. **Win rate < 50%** sur N_eff ≥ 5 paris (statistiquement défavorable, même si non significatif)
+1. **Win rate < 50% ET Wilson_low < 50%** sur N_eff ≥ 10 paris, **observé sur ≥ 2 semaines consécutives**. Entre N_eff 5-9, la cellule passe en **observation sans proposition** (§4.6 « Observations sans proposition »), jamais en cellule faible. Rationale : sur N=5, Wilson_low peut atteindre 9% par pur hasard — activer une proposition sur ce signal = sur-réaction non fondée. *(Correction D1 — Analyst)*
 2. **Dominée par un seul critère** (◧ drapeau mono-critère actif sur ≥ 50% des runs de la semaine)
 3. **Score quasi-neutre persistant** (|score| < NEUTRAL_BAND sur ≥ 3 runs consécutifs)
 4. **Critère principal souvent n/a** (critère de poids ≥ 8 absent sur ≥ 60% des runs de la semaine)
@@ -290,7 +358,7 @@ Une cellule (actif × horizon) est faible si l'une des conditions suivantes est 
 
 Un critère est faible si :
 1. **Souvent n/a** : absent sur ≥ 40% des runs sur 2 semaines (problème de source ou de couverture)
-2. **Contribution inverse** : sa contribution moyenne est opposée à l'outcome final de la cellule sur la semaine (critère qui tire dans le mauvais sens)
+2. **Contribution inverse** : sa contribution moyenne est opposée à l'outcome final de la cellule, **observé sur ≥ 2 semaines consécutives** (critère qui tire dans le mauvais sens). Ne pas proposer sur une seule semaine de données — un régime contrariant d'une semaine peut être conjoncturel, pas structurel. *(Correction D9 — Analyst)*
 3. **Variance excessive** : critère qui flippe de signe entre deux runs consécutifs sans event significatif (instabilité de source)
 
 ### 4.5 Format des propositions d'ajustement
@@ -313,6 +381,23 @@ Chaque proposition suit ce format strict dans le bilan dimanche :
 [ ] Thomas demande plus de données — reporter à S+{N}
 ```
 
+### 4.7 Win rate segmenté par conviction *(nouveau — correction M-F Spéculateur)*
+
+Le Manager calcule et affiche **deux win rates distincts** dans chaque bilan dimanche : conviction forte vs conviction faible. C'est le chiffre go/no-go opérationnel.
+
+**Définition des niveaux de conviction** :
+
+| Niveau | Condition (basée sur le decision-log) |
+|---|---|
+| **Conviction forte** | `|score_final| ≥ SCORE_FORT_SEUIL` **ET** aucun drapeau actif parmi `◧` (mono-critère) / `⇆` (contradiction) / `↯` (coin-flip) / `~` (quasi-neutre) |
+| **Conviction faible** | Tous les autres calls : `|score_final| < SCORE_FORT_SEUIL` OU au moins un drapeau actif |
+
+**Seuil `SCORE_FORT_SEUIL`** : valeur nominale = **0.6** (60% du max). Configurable dans `v3/config/manager.yaml`. Thomas peut ajuster après observation. Ne pas durcir sans données.
+
+**Calcul** : pour chaque niveau, `win_rate = N_VRAI / (N_VRAI + N_FAUSSE)` sur les paris de la semaine, non-conclusifs exclus. Même formule que le win rate global.
+
+**WIN RATE ONLY** : ce segmentation ne mentionne aucun montant, aucun P&L. La distinction forte/faible est une segmentation de direction (était-ce une conviction sûre ?), pas un calcul de gain.
+
 **Ce que le Manager ne fait PAS** :
 - Il n'applique jamais une modification lui-même.
 - Il ne propose pas de retirer une source de données (c'est un chantier données, pas un ajustement de poids).
@@ -326,6 +411,18 @@ Chaque proposition suit ce format strict dans le bilan dimanche :
 
 ### Win rate de la semaine
 [Tableau issu de win-rate-{AAAA-Sxx}.md — pris tel quel, sans retraitement]
+
+### Win rate par conviction (nouveau — cf. §4.7)
+| Conviction | N paris | Win rate | Interprétation |
+|---|---|---|---|
+| Forte (|score| ≥ SCORE_FORT, 0 drapeau ◧/⇆/↯) | N | X% | [signal fiable / edge confirmé / insuffisant] |
+| Faible (quasi-neutre, mono-critère, coin-flip) | N | X% | [à éviter / bruit / attendre N_eff > 10] |
+
+### Cellules porteuses (ce qui marche)
+| Actif | Horizon | Win rate | N_eff | Signal |
+|---|---|---|---|---|
+| {actif} | {H} | {taux% ≥ 65} | {N ≥ 5} | {ce qui explique la solidité} |
+[Si aucune cellule porteuse avec N_eff ≥ 5 : « Aucune cellule avec N_eff suffisant — observer. »]
 
 ### Cellules à surveiller
 | Actif | Horizon | Raison | Win rate | N_eff |
@@ -341,7 +438,7 @@ Chaque proposition suit ce format strict dans le bilan dimanche :
 {0 à N propositions, format §4.5}
 
 ### Observations sans proposition
-{Faits observés qui ne justifient pas encore une proposition (warm-up, N_eff trop faible). Garder en mémoire pour S+1.}
+{Faits observés qui ne justifient pas encore une proposition (warm-up, N_eff trop faible, observé sur < 2 semaines). Garder en mémoire pour S+1.}
 ```
 
 ---
@@ -355,10 +452,10 @@ Chaque proposition suit ce format strict dans le bilan dimanche :
 | `5h` UTC (05:12/27/42) | 07h00 CEST | Jours de bourse | **Existant** | R1 Briefing 7h |
 | `10h` UTC (10:12/27/42) | 12h00 CEST | Jours de bourse | **Existant → R2** | R2 Suivi 12h |
 | `16h` UTC (16:12/27/42) | 18h00 CEST | Jours de bourse | **Existant → R3** | R3 Suivi 18h |
-| `20h` UTC (20:12/27/42) | 22h00 CEST | Jours de bourse | **NOUVEAU** | R4 Bilan du jour |
+| Cron horaire `0 * * * *` + garde `22h15 Europe/Paris` | 22h15 Paris (été ET hiver) | Jours de bourse | **NOUVEAU** | R4 Bilan du jour |
 | Dimanche `16h` UTC | 18h00 CEST | **Dimanche** seulement | **NOUVEAU** | R5 Bilan semaine |
 
-> Heure d'hiver (CET = UTC+1) : 5h UTC = 6h CET, 10h UTC = 11h CET, 16h UTC = 17h CET, 20h UTC = 21h CET. À documenter dans le cron YAML.
+> Heure d'hiver (CET = UTC+1) : 5h UTC = 6h CET, 10h UTC = 11h CET, 16h UTC = 17h CET. **Le créneau 22h n'a PAS d'UTC fixe** — il utilise le pattern cron horaire + garde heure-Paris (voir §3.4 timing). En CET, 22h Paris = 21h UTC. En CEST, 22h Paris = 20h UTC. Un cron fixe `20h UTC` serait faux en hiver (21h Paris = NYSE encore ouvert). À documenter dans le cron YAML. *(Correction M1 — News Trader)*
 
 ### 5.2 Exception dimanche — bilan semaine
 
@@ -384,12 +481,14 @@ Le bilan dimanche est une **exception délibérée à la garde jours-de-bourse**
 | push RUN-CYCLE.txt | N'importe | — | bulletin | OUI | Bypass humain |
 | schedule dim 16h UTC | **Dimanche** | — | **weekly_summary** | **OUI** | Exception bilan — pas de prix live |
 | schedule dim 16h UTC | Lun-Sam | — | weekly_summary | NON | Sécurité : ne s'exécute que le dimanche |
+| dispatch (force=true) | **N'importe** | true | **weekly_summary** | **OUI** | Bypass humain — cohérent avec policy force=true globale *(Correction D3 — Analyst)* |
+| dispatch (force=false) | Lun-Sam | false | weekly_summary | NON | Hors dimanche, pas de bypass sans force |
 | dispatch (force 22h) | Jour férié | true | bilan_jour | OUI | Bypass humain |
 
 ### 5.4 VPS Anya — mise à jour du trigger
 
 Le fichier `v3/ops/vps-trigger/trigger-cycle.sh` doit être mis à jour pour ajouter :
-- Le créneau **22h Paris** (jours de bourse) : cron `0 20 * * 1-5` (UTC) avec garde `is_trading_day` côté VPS.
+- Le créneau **22h15 Paris** (jours de bourse) : cron **horaire** `0 * * * 1-5` (UTC) côté VPS, avec garde `is_trading_day` + vérification `heure_paris >= 22h15` dans le script (pattern existant du projet). **Ne PAS utiliser `0 20 * * 1-5` — UTC fixe invalide en hiver** (21h Paris, NYSE encore ouvert). *(Correction M1 — News Trader)*
 - Le créneau **dimanche 18h** : cron `0 16 * * 0` (UTC) — pas de garde is_trading_day (le dimanche est intentionnel).
 
 **Redondance** : le créneau 22h suit la même logique ×3 schedule côté GitHub Actions. Le VPS envoie 1 tir/créneau (workflow_dispatch). Anti-doublon conservé.
@@ -424,6 +523,18 @@ Avec 3 runs/jour (7h/12h/18h), **3 bulletins** sont générés, chacun avec ses 
 - **N_brut ne gonfle plus ×3** : N_brut 24h ≈ N_eff (1 bulletin/jour).
 - Cohérence : la métrique « Paris (réels) » dans performance.md correspond à de vrais jours de trading distincts.
 
+**Dates estimées de sortie de warm-up par horizon** *(correction D4 — Analyst)* :
+
+Thomas doit savoir que les horizons plus longs sont en warm-up bien au-delà des 3 premières semaines :
+
+| Horizon | Logique N_eff | Objectif warm-up | Durée estimée | Date estimée (si démarrage mi-juin 2026) |
+|---|---|---|---|---|
+| **24h** | 1 paris/jour de bourse ≈ 5/semaine | N_eff ≥ 15 | ~3 semaines ouvrées | **Début juillet 2026** |
+| **7 jours** | 1 paris indépendant/semaine (step_days=7) | N_eff ≥ 15 | **~15 semaines** | **Début octobre 2026** |
+| **1 mois** | ~1 paris indépendant/mois (step_days=30) | N_eff ≥ 15 | **~15 mois** | **Hors portée horizon 6 mois** |
+
+⚠️ **Le 7j sera en warm-up jusqu'en octobre 2026. Le 1m n'est pas mesurable statistiquement dans les 6 premiers mois.** Le Manager et les KPIs post-refonte se concentrent donc sur le 24h pendant cette période. Les horizons 7j/1m sont suivis mais marqués `warm-up` dans performance.md.
+
 ### 6.3 Compatibilité backward
 
 Les bulletins 12h et 18h existants (déjà dans `v3/data/bulletins/`) ont des cellules stampées. Deux options :
@@ -448,17 +559,20 @@ Avec `prix-ouverture` disponible, les horizons 7j/1m peuvent aussi migrer vers l
 - [ ] **CA-M2** : Pour chaque actif, le prix d'ouverture est récupéré après l'heure d'ouverture du groupe (EU : 09h05 Paris minimum, US : 15h35, Continu : 08h05). Un prix récupéré avant ce délai lève une exception et est rejeté.
 - [ ] **CA-M3** : Si Twelve Data indisponible pour un ticker, le ticker est ABSENT du JSON (pas de valeur null, pas de valeur inventée). Le Journaliste doit traiter l'absence comme `suivi-interrompu`.
 - [ ] **CA-M4** : Le calcul 24h utilise `prix-ouverture/{date_bulletin}.json` comme référence (pas `prix-emission`). Vérifiable en inspectant `measures-log.jsonl` : champ `prix_emission` contient la valeur d'ouverture, pas le prix à 7h.
-- [ ] **CA-M5** : Les horizons 7j/1m utilisent la référence décidée par Thomas (prix-ouverture ou prix-emission) — à implémenter selon réponse Q3.
+- [ ] **CA-M5** : Les horizons 7j/1m utilisent `prix_ouverture_J0` comme référence (Q3 résolu — migration prix-ouverture). Test : les champs `prix_emission` dans `measures-log.jsonl` pour les mesures 7j/1m post-refonte sont des prix d'ouverture (≠ prix à 7h marché fermé). Fallback vers `prix-emission` si `prix-ouverture/{date}.json` absent, avec WARNING dans les logs. *(Correction D8 — Analyst)*
 - [ ] **CA-M6** : `N_brut` dans performance.md correspond à 1 par jour de bourse (pas 3). Test : générer 3 bulletins le même jour → N_brut = 1 (seul R1 mesuré).
+- [ ] **CA-M6b** : Les outcomes existants de bulletins 12h/18h (antérieurs à la mise en prod) sont préservés dans `measures-log.jsonl` MAIS exclus du calcul des KPIs post-refonte. Le calcul des KPIs filtre sur `bulletin_id` : seuls les bulletins estampillés heure `07h` (identifiant 7h) sont comptés dans `compute_kpi` post-refonte. Les mesures 12h/18h existantes sont marquées `non-noté` dans `performance.md` et exclus des calculs de win rate globaux. Vérification : `compute_kpi(measures, filtre_creneau="07h")` retourne un N_eff ≤ N_total. *(Correction D2 — Analyst)*
+- [ ] **CA-M7** : Un compteur `jours_bourse_exclus` (jours de bourse sautés par la garde globale sur férié partiel) est visible dans `performance.md`. Il est incrémenté chaque fois que `is_trading_day` retourne False sur un jour où au moins un marché est ouvert. Permet à Thomas de voir combien de jours sont silencieusement exclus. *(Correction D5 — Analyst)*
 
 ### CA-R2R3 (Bloc 3 — Suivis 12h/18h)
 
 - [ ] **CA-S1** : Le rapport suivi contient exactement le tableau des actifs actionnables (exclusion INSUFFISANT/non-noté). Le tableau comporte les colonnes : `Actif | Call 7h | Ouverture | Prix {H}h | Delta% | Statut | Suggestion`.
 - [ ] **CA-S2** : `Ouverture` = valeur de `prix-ouverture/{date}.json`. Si le JSON est absent ou le ticker manquant, la colonne affiche `—` (pas de valeur inventée).
 - [ ] **CA-S3** : `Delta%` = `(Prix_courant - Ouverture) / Ouverture × 100`. Calculé avec 2 décimales.
-- [ ] **CA-S4** : `Statut` : `✅ gagne` si `signe(Delta%) == sens(Call)`, `⚠️ perd` sinon, `— neutre` si `|Delta%| < 0.1%`.
+- [ ] **CA-S4** : `Statut` : `✅ gagne` si `signe(Delta%) == sens(Call)`, `⚠️ perd` sinon, `— neutre` si `|Delta%| < NEUTRAL_BAND_PCT`. `NEUTRAL_BAND_PCT` est une constante nommée dans `v3/config/suivi.yaml` (valeur nominale `0.001` = 0,1%), configurable sans modification de code. La valeur `Sortie à envisager` dans la colonne `Suggestion` ne peut être générée que par comparaison de `|Delta%| ≥ SEUIL_PCT_actif` (défini dans la fiche YAML en %, pas en €). Aucun calcul monétaire. *(Corrections D6 — Analyst + M-B — Spéculateur)*
 - [ ] **CA-S5** : Le rapport suivi ne contient PAS de matrice LONG/SHORT (pas de nouvelles décisions). Longueur maximale : 50 lignes markdown.
 - [ ] **CA-S6** : Le rapport suivi n'alimente PAS `measures-log.jsonl` ni `performance.md`.
+- [ ] **CA-S6b** : Test CI post-run R2/R3 : `git diff v3/data/measures-log.jsonl` = vide (aucune ligne ajoutée après un run `run_suivi.py`). Ce test est automatisé en CI pour détecter une régression silencieuse. *(Correction D7 — Analyst)*
 
 ### CA-R4 (Bloc 3 — Bilan 22h)
 
@@ -470,17 +584,18 @@ Avec `prix-ouverture` disponible, les horizons 7j/1m peuvent aussi migrer vers l
 
 ### CA-R5 / Manager (Bloc 4 — Bilan semaine)
 
-- [ ] **CA-W1** : Le bilan dimanche est produit uniquement le dimanche (guard `weekday() == 6`). Un run manuel hors dimanche avec `report_type=weekly_summary` est ignoré (sauf `force=true`).
+- [ ] **CA-W1** : Le bilan dimanche est produit uniquement le dimanche (guard `weekday() == 6`). Comportement par cas : (a) `schedule dim 16h UTC` → s'exécute uniquement si `weekday() == 6`, ignoré sinon ; (b) `dispatch force=false + weekly_summary` hors dimanche → ignoré (même comportement que schedule) ; (c) `dispatch force=true + weekly_summary` hors dimanche → **EXÉCUTÉ** (bypass humain, cohérent avec la table de vérité §5.3 qui montre que `force=true` bypass le jour pour tout report_type). La table de vérité §5.3 inclut une ligne `dispatch (force=true) + weekly_summary + hors-dimanche → OUI`. *(Correction D3 — Analyst)*
 - [ ] **CA-W2** : Le tableau win-rate hebdo du bilan provient directement de `win-rate-{AAAA-Sxx}.md` (archive existante). Aucun recalcul custom.
 - [ ] **CA-W3** : Les propositions d'ajustement (P{N}) ont toutes les champs obligatoires : Type, Actif(s), Critère(s), Constat, Proposition, Risque, Validation requise. Un champ vide = proposition rejetée par le système (validation CI).
 - [ ] **CA-W4** : Le bilan ne modifie AUCUN fichier de configuration YAML. Vérification post-run : `git diff v3/config/` = vide.
 - [ ] **CA-W5** : Le bilan ne contient PAS de métrique monétaire.
+- [ ] **CA-W6** : Le bilan dimanche contient un tableau `Win rate par conviction` (§4.7) avec 2 lignes : conviction forte et conviction faible, chacune avec N_paris, win_rate, interprétation. Si N_paris < 3 pour un niveau de conviction, afficher `— (N insuffisant)`. *(Correction M-F — Spéculateur)*
 
 ### CA-INFRA (Bloc 5 — cron)
 
 - [ ] **CA-I1** : Le créneau 22h (jours de bourse) déclenche R4 et UNIQUEMENT R4. Il ne re-lance pas le bulletin 7h ni le scoring complet.
 - [ ] **CA-I2** : Le créneau dimanche 18h déclenche R5 et UNIQUEMENT R5. La garde `is_trading_day` est bypassée (dimanche est intentionnel). Le créneau dimanche NE s'exécute PAS les lundis-samedis.
-- [ ] **CA-I3** : La mise à jour du VPS Anya inclut les 2 nouveaux créneaux dans `/etc/cron.d/tradingapp`. Validation : `crontab -l` affiche les entrées 22h jours bourse + 18h dimanche.
+- [ ] **CA-I3** : La mise à jour du VPS Anya inclut les 2 nouveaux créneaux. Validation automatisable : `trigger-cycle.sh --check` affiche sur stdout les créneaux configurés dans un format parseable (ex. JSON ou liste clé:valeur). Le CI vérifie que la sortie contient les entrées `22h15-paris-jours-bourse` et `18h-dimanche`. *(Correction D10 — Analyst)*
 - [ ] **CA-I4** : L'anti-doublon ×3 schedule s'applique au créneau 22h (même logique que 7h/12h/18h). Test : 3 triggers schedule dans la même heure → 1 seul run réel.
 
 ---
@@ -641,6 +756,12 @@ T3.3 — Mise à jour VPS Anya :
 - Impact : Option B conserve le scoring complet 3×/jour (3 snapshots pour Thomas si utile). Option A réduit les coûts API (Twelve/DeepSeek).
 - Bloque : T2.2.
 
+**Q10 — Convention 08h pour les actifs continus : maintenir ou passer en close-to-close ?** *(Correction M3 — News Trader)*
+- Contexte : EUR/USD, Or, Argent sont des marchés 24h/24. Pétrole/Blé/Cacao/Café ont des horaires CME/ICE ne correspondant pas à 08h Paris. La convention 08h est arbitraire et documentée comme telle dans §2.2.
+- Option A : Maintenir la convention 08h (déjà assumée, stable, simple). Le biais est documenté.
+- Option B : Passer en close-to-close pour les actifs Continus (prix 22h J-1 → prix 22h J). Cohérent avec la nature 24h des FX/métaux, mais introduit une asymétrie entre groupes (EU/US = ouverture→clôture, Continus = clôture→clôture).
+- **Pas bloquant pour Phase 1** (la convention 08h est documentée). Mais décision Thomas requise pour valider définitivement §2.2.
+
 ### Risques identifiés
 
 | Risque | Probabilité | Impact | Mitigation |
@@ -654,4 +775,53 @@ T3.3 — Mise à jour VPS Anya :
 
 ---
 
-*Spec rédigée par @product-manager le 2026-06-08. Validé design : Thomas. Pour implémentation : @fullstack (@infrastructure pour cycle.yml + VPS). Source de vérité — ne pas modifier sans passer par @product-manager.*
+## 10. Table de traçabilité v2 — corrections du trio intégrées
+
+> Toutes les 15 corrections de la mission sont documentées ici. « Traitée » = la correction est intégrée dans la spec v2 à la section indiquée.
+
+| # | Correction | Source | Gravité | Traitée | Section(s) modifiée(s) |
+|---|---|---|---|---|---|
+| 1 | **Anti-petit-N Manager** : proposition uniquement si N_eff ≥ 10 ET Wilson_low < 50%, observé sur ≥ 2 semaines ; N 5-9 → observation sans proposition | Analyst D1 | P0 | ✅ | §4.3 condition 1 |
+| 2 | **Filtre KPI post-refonte** : seuls bulletins 7h alimentent les KPIs ; CA-M6b avec filtre `bulletin_id` créneau 7h dans `compute_kpi` | Analyst D2 | P0 | ✅ | §7 CA-M6b (nouveau) |
+| 3 | **Fuseau bilan 22h** : ancré sur 22h15 Europe/Paris réelle (pas 20h UTC fixe) ; garde DST sans offset codé en dur | News Trader M1+M2 | P0 | ✅ | §3.4, §5.1, §5.4, §2.2 (garde-fou DST) |
+| 4 | **Seuil de sortie unique** : une seule règle `\|Delta%\| ≥ SEUIL_PCT_actif` pour `Sortie à envisager` ; résout conflit §3.2 vs Q4 | Spéculateur M-B + News Trader | P0 | ✅ | §3.2 règles R2, §7 CA-S4 |
+| 5 | **CA-W1 table de vérité** : cas `force=true + weekly_summary` hors dimanche = OUI (bypass humain cohérent) ; table de vérité §5.3 mise à jour | Analyst D3 | P0 | ✅ | §5.3 (nouvelle ligne), §7 CA-W1 |
+| 6 | **Win rate segmenté par conviction** : conviction forte (|score| ≥ SCORE_FORT, 0 drapeau) vs faible ; §4.7 nouveau + tableau dans R5 + CA-W6 | Spéculateur M-F | P0 | ✅ | §4.7 (nouveau), §4.6, §7 CA-W6 |
+| 7 | **Dynamique de tendance dans le suivi** : colonne `Tendance` (↑/↓/⇄/↗/↘) + `Δ vs suivi précédent` dans R2/R3 | Spéculateur M-A + News Trader M4 | P0 | ✅ | §3.2, §3.3 |
+| 8 | **Suivi 12h et marchés US** : afficher explicitement « US pas encore ouvert » (🕐) plutôt que ligne vide muette | Spéculateur M-H | P1 | ✅ | §3.2, format tableau R2 |
+| 9 | **Catalyseurs J+1** : bloc « Catalyseurs J+1 » dans R4 bilan 22h — BEST-EFFORT, zéro invention si source absente | News Trader M2 | P1 | ✅ | §3.4, format R4 |
+| 10 | **Convention « faux open 08h » des continus** : documentée explicitement dans §2.2 comme référence conventionnelle arbitraire ; Q10 ouverte pour close-to-close | News Trader M3 + Spéculateur | P1 | ✅ | §2.2 (note convention continus), §9 Q10 |
+| 11 | **Manager remonte ce qui MARCHE** : section « Cellules porteuses » dans R5 | Spéculateur M-E | P2 | ✅ | §4.6 format bilan |
+| 12 | **Dates de sortie de warm-up par horizon** : tableau 24h/7j/1m avec dates estimées dans §6.2 | Analyst D4 | P1 | ✅ | §6.2 |
+| 13 | **Compteur `jours_exclus_garde_partielle`** : CA-M7 visible dans performance.md | Analyst D5 | P1 | ✅ | §7 CA-M7 (nouveau) |
+| 14 | **Critères d'acceptation binaires** : CA-S4 NEUTRAL_BAND_PCT nommée (D6), CA-S6b test CI mesures-log (D7), CA-M5 Q3 résolu (D8), CA-W1 force=true clarifié (D3), CA-I3 parseable (D10), CA-W6 nouveau | Analyst D4-D10 | P1/P2 | ✅ | §7 CA-S4, CA-S6b, CA-M5, CA-M7, CA-W1, CA-W6, CA-I3 |
+| 15 | **Calls FAUX à gros mouvement** : flag `⚡ gros move` dans R4 pour FAUX à amplitude ≥ 2×SEUIL ; tri des erreurs par amplitude | News Trader M5a + Spéculateur | P2 | ✅ | §3.4, format R4 |
+
+---
+
+## 11. Auto-évaluation v2 — @product-manager
+
+**Note honnête : 9,5 / 10**
+
+**Ce qui justifie 9,5 et non 10** :
+
+1. **Q4 (seuil de sortie) : tranchée mais non testée**. La règle `|Delta%| ≥ SEUIL_PCT_actif` est cohérente et unique — la contradiction est résolue. Mais `SEUIL_PCT_actif` est défini dans les fiches YAML actif par actif, et la spec ne dit pas quelle valeur utiliser en intraday (le seuil 24h peut être trop élevé pour détecter un retournement à midi). Il manque une note explicite : « si SEUIL_PCT_actif est calibré pour le 24h et non l'intraday, `Sortie à envisager` se déclenchera rarement à 12h — comportement attendu et assumé ». Sans cette note, @fullstack risque de calibrer un seuil intraday ad hoc sans validation Thomas. **(0,25 pt manquant)**
+
+2. **Q10 (convention continus) : ouverte mais non tranchée**. La convention 08h est documentée comme arbitraire et assumée. La Q10 est créée pour forcer la décision. Mais si Thomas choisit close-to-close (option B), cela implique des modifications de spec non triviales. L'absence de tranchage crée une légère ambiguïté pour @fullstack sur Phase 1 (heureusement marquée « non bloquant Phase 1 »). **(0,25 pt manquant)**
+
+**Ce qui justifie ≥ 9,5** :
+- Les 5 P0 sont intégrés et binaires (conditions précises, testables, cohérentes)
+- Le fuseau 22h est correctement traité (pattern existant du projet, pas de new invention)
+- La segmentation par conviction est WIN RATE ONLY et dérivée du decision-log existant (zéro nouveau champ)
+- La dynamique de tendance (↑/↓/⇄) est précisément définie (conditions de déclenchement)
+- Les catalyseurs J+1 ont un garde-fou BEST-EFFORT explicite (zéro invention si source absente)
+- La table de traçabilité couvre les 15 corrections avec section exacte
+- Aucune métrique monétaire introduite dans les nouvelles sections
+
+**Questions ouvertes nouvelles** (non tranchées — Thomas doit décider) :
+- **Q10** : maintenir la convention 08h pour les continus ou passer en close-to-close ? (non bloquant Phase 1)
+- **Note sur seuil intraday** : confirmer que `SEUIL_PCT_actif` (calibré pour 24h) est intentionnellement conservé pour le suivi 12h/18h, même si cela signifie que `Sortie à envisager` se déclenche rarement le midi
+
+---
+
+*Spec rédigée par @product-manager le 2026-06-08. **v2 révisée 2026-06-08 — corrections trio intégrées (9,5/10 auto-éval).** Validé design : Thomas. Pour implémentation : @fullstack (@infrastructure pour cycle.yml + VPS). Source de vérité — ne pas modifier sans passer par @product-manager.*

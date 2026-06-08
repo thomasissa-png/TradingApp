@@ -480,9 +480,13 @@ def test_fmt_raw_garde_entiers_none_str():
 # ---------------------------------------------------------------------------
 
 def _ecrire_bulletin_veille(bulletins_dir: Path, bdate, conclusion: str = "LONG"):
-    """Écrit un bulletin minimal de la veille avec une cellule 24h Pétrole."""
+    """Écrit un bulletin minimal de la veille avec une cellule 24h Pétrole.
+
+    Créneau 07h : après la refonte 5 rapports (CA-M6b), SEUL le Briefing 7h est
+    mesuré pour le win rate. L'audit de la veille porte donc sur le bulletin 7h.
+    """
     bulletins_dir.mkdir(parents=True, exist_ok=True)
-    bid = f"{bdate.isoformat()}-16h"
+    bid = f"{bdate.isoformat()}-07h"
     p = bulletins_dir / f"bulletin-{bid}.md"
     p.write_text(
         f"# Bulletin Analyste — {bdate.isoformat()}\n\n"

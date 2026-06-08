@@ -1,0 +1,48 @@
+# Configuration des suivis intra-journée et de la mesure ouverture→clôture.
+# Source de vérité : v3/docs/reco/spec-refonte-5-rapports.md (Phase 1).
+# WIN RATE ONLY — aucune valeur en euros nulle part. Tous les seuils sont en %.
+# Zéro modification silencieuse : tout changement ici passe par un changelog.
+
+# Bande neutre (en proportion, PAS en %). 0.001 = 0,1 %.
+# Sous |delta| < NEUTRAL_BAND_PCT, le statut d'un suivi est « — neutre »
+# (mouvement négligeable, pas de signe directionnel fiable). CA-S4 / D6.
+# NB : c'est une PROPORTION (0.001), pas un pourcentage (0.1). Le delta affiché
+# est converti en % à l'affichage, mais la bande se compare au ratio brut.
+neutral_band_pct: 0.001
+
+# Délai (minutes) après l'heure d'ouverture d'un marché avant de stamper son
+# prix de référence du jour. Laisse le marché s'équilibrer (évite le tick
+# d'ouverture bruité). CA-M2.
+open_stamp_delay_min: 5
+
+# Heures d'ouverture / clôture par GROUPE de marché, en heure de Paris locale
+# (Europe/Paris — DST géré par ZoneInfo, JAMAIS d'offset codé en dur).
+# Référence : spec §2.2.
+#   - eu       : actions Euronext (CAC 40). Ouverture 09h00, clôture 17h30.
+#   - us       : actions US + VIX (S&P 500, Nasdaq, VIX). Ouverture 15h30, clôture 22h00.
+#   - continu  : FX / métaux / commodities (Or, Argent, Cuivre, Pétrole, Blé,
+#                Cacao, Café, EUR/USD). Référence CONVENTIONNELLE 08h00 (Q10 —
+#                décision Thomas « ouverture propre entre 8h-22h », PAS close-to-close).
+#                Clôture conventionnelle 22h00. Voir note convention §2.2.
+market_hours:
+  eu:
+    open: "09:00"
+    close: "17:30"
+  us:
+    open: "15:30"
+    close: "22:00"
+  continu:
+    open: "08:00"
+    close: "22:00"
+
+# Mapping actif → groupe, par FAMILLE de fiche (déterministe, robuste aux
+# renommages d'actif). Override par nom d'actif si une fiche dévie.
+# Familles connues (v3/config/fiches/*.yml) :
+#   indices       → CAC 40 (eu), S&P 500 / Nasdaq (us)  ← désambiguïsé par nom
+#   volatilité    → VIX (us)
+#   métaux-*, fx, agri*, énergie → continu
+group_overrides_by_actif:
+  "CAC 40": "eu"
+  "S&P 500": "us"
+  "Nasdaq": "us"
+  "VIX": "us"

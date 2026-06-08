@@ -1,0 +1,11 @@
+# Configuration du Manager (bilan dimanche R5) + win rate par conviction.
+# Source de vérité : v3/docs/reco/spec-refonte-5-rapports.md §4.7.
+# WIN RATE ONLY. Zéro modification silencieuse.
+
+# Seuil de conviction forte (en proportion du score max — voir §4.7).
+# Une cellule est « conviction forte » si |score_final| >= score_fort_seuil
+# ET aucun drapeau actif (mono-critère ◧ / contradiction ⇆ / coin-flip ↯ /
+# quasi-neutre ~). Sinon « conviction faible ».
+# Valeur nominale 0.6. Configurable. Ne PAS durcir sans données (mesurer avant
+# d'agir — préférence fondateur).
+score_fort_seuil: 0.6

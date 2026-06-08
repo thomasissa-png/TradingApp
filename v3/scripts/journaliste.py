@@ -454,6 +454,50 @@ def bulletin_id_from_path(path: Path) -> Optional[str]:
     return path.stem[len("bulletin-"):]
 
 
+# ---------------------------------------------------------------------------
+# Filtre « bulletin 7h » (refonte 5 rapports — CA-M6 / CA-M6b)
+# ---------------------------------------------------------------------------
+# Après refonte, UN SEUL bulletin de décision par jour est mesuré pour le win
+# rate : le Briefing 7h. Cela met fin au gonflement ×3 (les bulletins 12h/18h
+# ne génèrent plus de cellules mesurées).
+#
+# Créneaux reconnus comme « 7h Paris » :
+#   - "07h" : nommage Paris récent (bulletin-YYYY-MM-DD-07h.md).
+#   - "05h" : nommage UTC historique (cron 5h UTC = 07h CEST). Rétro-compat.
+#   - ""    : ancien nommage sans créneau (bulletin-YYYY-MM-DD.md). On le compte
+#             comme 7h par défaut (avant la refonte 3×/jour, il n'y avait qu'un
+#             bulletin/jour assimilable au briefing).
+# Les créneaux 10h/12h/16h/18h (suivis) ne sont PAS comptés.
+SEVEN_AM_CRENEAUX: frozenset = frozenset({"07h", "05h"})
+
+
+def creneau_from_bulletin_id(bulletin_id: str) -> Optional[str]:
+    """Extrait le créneau ("07h", "12h"...) d'une identité de bulletin.
+
+    "2026-06-08-07h" → "07h" ; "2026-06-08" (ancien nommage) → None.
+    """
+    if not bulletin_id:
+        return None
+    parts = bulletin_id.rsplit("-", 1)
+    tail = parts[-1] if parts else ""
+    if len(tail) == 3 and tail.endswith("h") and tail[:2].isdigit():
+        return tail
+    return None
+
+
+def is_seven_am_bulletin(bulletin_id: str) -> bool:
+    """True si l'identité de bulletin correspond au Briefing 7h (CA-M6b).
+
+    Reconnaît "07h" (Paris) et "05h" (UTC historique = 7h CEST). L'ancien
+    nommage sans créneau (créneau=None) est traité comme 7h (1 bulletin/jour
+    avant la refonte). Les suivis 10h/12h/16h/18h → False (non mesurés).
+    """
+    creneau = creneau_from_bulletin_id(bulletin_id)
+    if creneau is None:
+        return True  # ancien nommage sans créneau = bulletin unique/jour
+    return creneau in SEVEN_AM_CRENEAUX
+
+
 @dataclass
 class BulletinCell:
     bulletin_date: date
@@ -838,6 +882,12 @@ class Measure:
     # immédiatement précédent (même cellule). False = continuation. None = pas
     # de bulletin précédent → zéro invention, exclu des deux taux.
     is_flip: Optional[bool] = None
+    # Refonte 5 rapports (CA-M4/M5) — provenance du prix de référence utilisé
+    # comme prix_emission de cette mesure :
+    #   "ouverture" : prix d'ouverture du marché (prix-ouverture/{J0}.json) — cible.
+    #   "emission"  : fallback prix d'émission bulletin (ouverture absente) + WARNING.
+    #   None        : pas de référence (prix indisponible).
+    prix_reference_source: Optional[str] = None
 
 
 def measure_cell(
@@ -1391,22 +1441,68 @@ def _extract_price_dated(raw: Any) -> Tuple[Optional[float], Optional[date]]:
         return (None, None)
 
 
+def _resolve_prix_reference(
+    ticker: str,
+    bdate: date,
+    prix_emis: Dict[str, float],
+    prix_ouverture_dir: Path,
+) -> Tuple[Optional[float], Optional[str]]:
+    """Résout le prix de RÉFÉRENCE d'une cellule (refonte CA-M4/M5, Q3).
+
+    Priorité : prix d'OUVERTURE du jour de décision (`prix-ouverture/{bdate}.json`)
+    → cohérent ouverture→clôture pour 24h ET ouverture J0→ouverture J+N pour 7j/1m.
+    Fallback : prix d'ÉMISSION bulletin si l'ouverture est absente, avec WARNING
+    (transition + jours où Twelve KO à l'ouverture). Zéro invention : si ni l'un
+    ni l'autre → (None, None) → le Journaliste marquera suivi-interrompu.
+
+    Retourne (prix, source) avec source ∈ {"ouverture", "emission", None}.
+    """
+    from mesure_ouverture import load_prix_ouverture  # noqa: PLC0415
+
+    prix_ouv = load_prix_ouverture(bdate, prix_ouverture_dir)
+    p_ouv = prix_ouv.get(ticker)
+    if p_ouv is not None:
+        return (p_ouv, "ouverture")
+    p_emis = prix_emis.get(ticker)
+    if p_emis is not None:
+        logger.warning(
+            "prix d'ouverture absent pour %s @ %s — fallback prix d'émission "
+            "(référence dégradée, CA-M5)",
+            ticker, bdate.isoformat(),
+        )
+        return (p_emis, "emission")
+    return (None, None)
+
+
 def measure(
     today: Optional[date] = None,
     bulletins_dir: Path = BULLETINS_DIR,
     prix_emission_dir: Path = PRIX_EMISSION_DIR,
     fiches: Optional[Dict[str, dict]] = None,
     fetch_price: Optional[Any] = None,
+    prix_ouverture_dir: Optional[Path] = None,
+    only_seven_am: bool = True,
 ) -> Tuple[List[Measure], Dict[Tuple[str, str], CellKPI]]:
     """Mesure toutes les conclusions échues à la date `today`.
 
     Une conclusion d'horizon H émise au bulletin du jour J est échue dès que
-    today >= J + HORIZON_DAYS[H]. Pour chaque cellule, lit le prix d'émission
-    (fichier `prix-emission/J.json` → ticker → prix) et le prix courant via
+    today >= J + HORIZON_DAYS[H]. Pour chaque cellule, lit le prix de RÉFÉRENCE
+    (prix-ouverture du jour de décision en priorité, fallback prix-emission —
+    cf. _resolve_prix_reference, CA-M4/M5) et le prix courant via
     fetch_price(ticker). Si l'un manque → suivi-interrompu (retry au prochain run).
+
+    Refonte 5 rapports (CA-M6/M6b) : `only_seven_am=True` (défaut) → seules les
+    cellules des bulletins 7h sont mesurées (VRAI/FAUSSE/NC). Les bulletins
+    12h/18h (suivis) sont marqués `non-noté` et exclus des KPIs → fin du
+    gonflement ×3. `only_seven_am=False` restaure l'ancien comportement (mesure
+    tous les bulletins) pour rétro-compat / tests.
 
     Retourne (liste de mesures, dict KPI par (fiche_key, horizon)).
     """
+    from mesure_ouverture import PRIX_OUVERTURE_DIR as _PRIX_OUV_DIR  # noqa: PLC0415
+
+    if prix_ouverture_dir is None:
+        prix_ouverture_dir = _PRIX_OUV_DIR
     today = today or _today_paris()
     fiches = fiches if fiches is not None else load_fiches()
     if fetch_price is None:
@@ -1506,6 +1602,11 @@ def measure(
         # 3 bulletins/jour → 3 jeux de prix d'émission distincts. Chaque bulletin
         # est mesuré contre SES propres prix.
         bid = cells[0].bulletin_id
+        # Refonte CA-M6/M6b : seul le bulletin 7h alimente les KPIs. Les suivis
+        # 12h/18h ne génèrent plus de cellules mesurées (fin du gonflement ×3).
+        # On marque leurs cellules échues `non-noté` (tracées dans measures-log,
+        # exclues des KPIs via compute_kpi) plutôt que de les mesurer.
+        bulletin_mesurable = (not only_seven_am) or is_seven_am_bulletin(bid)
         prix_emis = load_prix_emission(bid, prix_emission_dir)
         # Lookup news-driven : best-effort. Si le decision-log de la date
         # d'émission est introuvable → news_map vide, les Measures gardent
@@ -1530,7 +1631,24 @@ def measure(
                 continue
             fiche_key, fiche = match
             ticker = fiche.get("ticker_principal", "")
-            p_emis = prix_emis.get(ticker)
+            # Refonte CA-M6b : un bulletin de suivi (12h/18h) ne produit pas de
+            # mesure win rate → cellule marquée `non-noté` (exclue des KPIs),
+            # tracée pour visibilité. Court-circuit avant tout fetch/mesure.
+            if not bulletin_mesurable:
+                echeance_nn = compute_echeance(cell.bulletin_date, cell.horizon)
+                m = Measure(
+                    cell=cell, fiche_key=fiche_key, ticker=ticker,
+                    horizon=cell.horizon, echeance=echeance_nn,
+                    prix_emission=None, prix_courant=None, seuil_pct=None,
+                    delta_pct=None, outcome=OUTCOME_NON_NOTE,
+                    note="bulletin non-7h (suivi) — exclu du win rate (CA-M6b)",
+                )
+                measures.append(m)
+                continue
+            # Référence = prix d'OUVERTURE du jour de décision (fallback émission).
+            p_ref, ref_source = _resolve_prix_reference(
+                ticker, cell.bulletin_date, prix_emis, prix_ouverture_dir,
+            )
             # C5 invariant #3 — on récupère prix ET date du tick courant pour
             # armer réellement le verrou look-ahead (date du tick < émission →
             # mesure refusée dans measure_cell). p_courant_date=None si le
@@ -1543,10 +1661,11 @@ def measure(
             # echeance>today, mais on transmet pour rendre les invariants
             # explicites, auditables et réellement actifs en prod.
             m = measure_cell(
-                cell, fiche_key, fiche, p_emis, p_courant,
+                cell, fiche_key, fiche, p_ref, p_courant,
                 prix_courant_date=p_courant_date,
                 today=today,
             )
+            m.prix_reference_source = ref_source
             # Tag news-driven (None si decision-log d'émission introuvable
             # pour cette cellule — zéro invention).
             nd = news_map.get((cell.actif_name, cell.horizon))
@@ -2349,6 +2468,10 @@ def measure_to_record(m: Measure) -> Dict[str, Any]:
         "realized_pct": m.delta_pct,
         "is_flip": m.is_flip,
         "echeance": m.echeance.isoformat(),
+        # Refonte CA-M4/M5 — provenance du prix de référence ("ouverture" cible,
+        # "emission" fallback, None si indispo). Permet de vérifier en audit que
+        # le 24h post-refonte utilise bien l'ouverture, pas le prix à 7h.
+        "prix_reference_source": m.prix_reference_source,
     }
 
 
@@ -2384,11 +2507,16 @@ def run(
     fiches: Optional[Dict[str, dict]] = None,
     fetch_price: Optional[Any] = None,
     stamp_today: bool = True,
+    prix_ouverture_dir: Optional[Path] = None,
 ) -> Tuple[Path, List[Measure], Dict[Tuple[str, str], CellKPI]]:
     """Run journaliste : stamp prix du jour (optionnel) + mesure échéances + écrit performance.md."""
+    from mesure_ouverture import PRIX_OUVERTURE_DIR as _PRIX_OUV_DIR  # noqa: PLC0415
+
     now = now or datetime.now(ZoneInfo("Europe/Paris"))
     today = today or now.date()
     fiches = fiches if fiches is not None else load_fiches()
+    if prix_ouverture_dir is None:
+        prix_ouverture_dir = _PRIX_OUV_DIR
 
     if stamp_today:
         try:
@@ -2408,12 +2536,30 @@ def run(
         except Exception as e:  # noqa: BLE001
             logger.warning("stamp_prix_emission KO : %s (on continue la mesure)", e)
 
+        # Refonte 5 rapports — stamp du PRIX D'OUVERTURE (référence 24h/7j/1m).
+        # Idempotent + entry-lock : ne stampe que les marchés déjà ouverts à
+        # `now` (Paris). Continus dès 08h05, EU dès 09h05, US dès 15h35. Un run
+        # 7h ne stampera donc que les continus ; les EU/US seront complétés aux
+        # runs 12h/18h/22h. Best-effort : un échec n'interrompt pas la mesure.
+        try:
+            from mesure_ouverture import stamp_prix_ouverture  # noqa: PLC0415
+            stamp_prix_ouverture(
+                date_j=today,
+                fiches=fiches,
+                fetch_price=fetch_price,
+                now=now,
+                base_dir=prix_ouverture_dir,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("stamp_prix_ouverture KO : %s (on continue la mesure)", e)
+
     measures, kpis = measure(
         today=today,
         bulletins_dir=bulletins_dir,
         prix_emission_dir=prix_emission_dir,
         fiches=fiches,
         fetch_price=fetch_price,
+        prix_ouverture_dir=prix_ouverture_dir,
     )
     content = render_performance(kpis, measures, now, fiches=fiches)
     out_path = write_performance(content, performance_path)

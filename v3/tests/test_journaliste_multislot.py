@@ -138,9 +138,11 @@ def test_prix_emission_retrocompat_date(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_deux_bulletins_meme_jour_mesures_independamment(tmp_path):
-    """Matin et soir le 2026-06-02, prix d'émission distincts → mesurés chacun
-    contre SES prix. Avec prix d'émission différents, un même prix courant donne
-    des deltas différents → les deux jeux de prédictions sont indépendants."""
+    """Refonte CA-M6 (fin du gonflement ×3) : un même jour, SEUL le bulletin 7h
+    (créneau 05h UTC = 7h CEST) est mesuré pour le win rate. Le bulletin de
+    suivi 16h est marqué `non-noté` (exclu des KPIs). Les jeux de prix d'émission
+    restent distincts par créneau (entry-lock intact) mais un seul créneau est
+    NOTÉ — c'est exactement la suppression du ×3."""
     bulletins_dir = tmp_path / "bulletins"
     prix_dir = tmp_path / "prix-emission"
     d = date(2026, 6, 2)
@@ -156,7 +158,8 @@ def test_deux_bulletins_meme_jour_mesures_independamment(tmp_path):
         [("Pétrole (Brent)", ("LONG", 0.4), ("SHORT", -1.0), ("LONG", 2.0))],
     )
 
-    # Prix d'émission DISTINCTS par créneau.
+    # Prix d'émission DISTINCTS par créneau (référence = émission car pas de
+    # prix-ouverture dans ce tmp_path → fallback CA-M5).
     prix_dir.mkdir(parents=True, exist_ok=True)
     (prix_dir / "2026-06-02-05h.json").write_text(
         json.dumps({"BZ=F": 100.0}), encoding="utf-8"
@@ -166,13 +169,14 @@ def test_deux_bulletins_meme_jour_mesures_independamment(tmp_path):
     )
 
     fiches = {"petrole": _fiche_petrole()}
-    # Prix courant unique pour le run.
+    # prix_ouverture_dir vide → fallback prix-emission (CA-M5).
     measures, _kpis = jr.measure(
         today=today,
         bulletins_dir=bulletins_dir,
         prix_emission_dir=prix_dir,
         fiches=fiches,
         fetch_price=lambda t: 102.0,  # prix courant
+        prix_ouverture_dir=tmp_path / "prix-ouverture",  # absent → fallback
     )
 
     # Mesures du créneau 24h pour chaque bulletin.
@@ -180,13 +184,12 @@ def test_deux_bulletins_meme_jour_mesures_independamment(tmp_path):
     by_id = {m.cell.bulletin_id: m for m in m24}
     assert "2026-06-02-05h" in by_id
     assert "2026-06-02-16h" in by_id
-    # NON fusionnés : 2 mesures distinctes, prix d'émission propres à chacun.
+    # 7h (05h) : NOTÉ. Référence = émission (fallback) 100 → 102 = +2 % (LONG) → VRAI.
     assert by_id["2026-06-02-05h"].prix_emission == 100.0
-    assert by_id["2026-06-02-16h"].prix_emission == 103.0
-    # Matin : 100 → 102 = +2 % (LONG, seuil 1 %) → VRAI.
     assert by_id["2026-06-02-05h"].outcome == jr.OUTCOME_VRAI
-    # Soir : 103 → 102 = -0.97 % (LONG, seuil 1 %) → non-conclusive (< seuil).
-    assert by_id["2026-06-02-16h"].outcome == jr.OUTCOME_NC
+    assert by_id["2026-06-02-05h"].prix_reference_source == "emission"
+    # 16h (suivi) : NON NOTÉ (CA-M6b) — pas de mesure win rate, exclu des KPIs.
+    assert by_id["2026-06-02-16h"].outcome == jr.OUTCOME_NON_NOTE
 
 
 def test_run_journaliste_stamp_creneau_le_plus_recent(tmp_path):
@@ -214,6 +217,7 @@ def test_run_journaliste_stamp_creneau_le_plus_recent(tmp_path):
         fiches={"petrole": _fiche_petrole()},
         fetch_price=lambda t: 100.0,
         stamp_today=True,
+        prix_ouverture_dir=tmp_path / "prix-ouverture",  # isole le stamp ouverture
     )
     # Stamp clé sur le créneau le plus récent du jour (soir), pas sur "2026-06-02".
     assert (prix_dir / "2026-06-02-16h.json").exists()

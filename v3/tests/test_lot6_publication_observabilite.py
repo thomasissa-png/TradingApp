@@ -545,7 +545,8 @@ def test_is_flip_none_quand_conclusion_insuffisant(tmp_path):
 # ===========================================================================
 
 def test_render_performance_contient_section_flip_continuation():
-    """La section 'Flip vs continuation' apparaît dans performance.md."""
+    """La section flip/continuation (win-rate-only) apparaît quand il y a des
+    données — agrégats globaux uniquement, pas de pavé par cellule."""
     ms = []
     base = date(2026, 1, 1)
     for i in range(3):
@@ -557,20 +558,20 @@ def test_render_performance_contient_section_flip_continuation():
     k = jr.compute_kpi(ms)
     kpis = {("petrole", "24h"): k}
     out = jr.render_performance(kpis, ms, datetime(2026, 6, 2, tzinfo=timezone.utc))
-    assert "## Flip vs continuation" in out
-    assert "Taux global flips" in out
-    assert "Taux global continuations" in out
+    assert "### Flip vs continuation" in out
+    assert "Win rate sur retournements" in out
+    assert "Win rate sur continuations" in out
 
 
-def test_render_performance_section_vide_si_pas_de_donnees():
-    """Aucune mesure avec is_flip → section explique le warm-up."""
+def test_render_performance_section_flip_absente_si_pas_de_donnees():
+    """Aucune mesure avec is_flip → la section flip/continuation est omise
+    (pas de bruit dans la vue propre)."""
     ms = [_make_measure(jr.OUTCOME_VRAI, is_flip=None,
                         echeance=date(2026, 1, 1))]
     k = jr.compute_kpi(ms)
     kpis = {("petrole", "24h"): k}
     out = jr.render_performance(kpis, ms, datetime(2026, 6, 2, tzinfo=timezone.utc))
-    assert "## Flip vs continuation" in out
-    assert "warm-up" in out.lower() or "pas encore" in out.lower()
+    assert "Flip vs continuation" not in out
 
 
 # ===========================================================================

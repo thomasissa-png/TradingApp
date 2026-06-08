@@ -536,7 +536,7 @@ def test_run_ecrit_performance_md(tmp_path, fiches_dict):
     assert out == perf
     assert perf.exists()
     content = perf.read_text(encoding="utf-8")
-    assert "Performance du bulletin" in content
+    assert "Win rate du bulletin" in content
     assert "Pétrole (Brent)" in content
     assert "Journaliste" in content
     # le run a aussi stampé le prix du jour

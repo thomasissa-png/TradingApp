@@ -2,6 +2,16 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-08 (Session 4) — `performance.md` refondu en tableau WIN RATE propre + archive hebdo figée
+
+Thomas trouvait `performance.md` illisible (colonne « Alertes » = pavé répété sur chaque ligne, Brier inutile, double colonne de taux, 1m absent). **Présentation + nouveau fichier hebdo uniquement — zéro changement de la logique de mesure** (entry-lock, look-ahead, N_eff, seuils VRAI/FAUX, decision-log inchangés).
+
+### Correctif (@fullstack)
+- **`v3/scripts/journaliste.py`** — `render_performance` réécrit en **tableau win-rate-only** : colonnes `Actif | Win rate | Paris (réels) | Non notés | Statut`, **groupé par horizon (24h → 7j → 1m), trié par win rate décroissant**, **36 cellules (12 actifs × 3 horizons) toujours visibles dont le 1m** (`⏳ en attente`). Win rate = `taux_eff` (N_eff indépendants, pas le N_brut gonflé ×3). Statuts win-rate-only sans aucune notion d'argent : `⏳ trop peu (N/15)` / `✅ objectif atteint` (N_eff ≥ 15 ET ≥ 70 % ET Wilson_low > 50 %) / `❌ sous l'objectif` / `⏳ en attente`. Ligne de synthèse en tête (`X / 36 cellules fiables`). **Retirés de l'affichage** : Brier, `Taux_brut`, colonne « Alertes » (pavé), `LONG/SHORT`, statut shadow répété, P&L (jamais présent) — **conservés dans `measures-log.jsonl`/decision-log pour le technique**. Section « Flip vs continuation » réduite à 2 lignes d'agrégats (omise si pas de données).
+- **Archive hebdomadaire figée** — nouvelle `render_weekly_winrate` + `write_weekly_winrate` : à chaque run, écrit le même tableau (win rate **cumulé** + colonne **« Nouveaux paris (semaine) »**) dans `v3/data/performance/weekly/win-rate-{AAAA-Sxx}.md` (semaine ISO Europe/Paris). Réécrit pendant la semaine, **figé** dès qu'elle est passée (plus aucun run ne le touche) → historique semaine par semaine. Helpers `iso_week_label` / `iso_week_bounds`. Dossier `v3/data/performance/weekly/` créé (`.gitkeep`).
+- **`build_html.py` inchangé** : la page ne rend PAS la matrice de `performance.md` (l'onglet Historique lit `measures-log.jsonl` + `performance-ab.md`, tous deux intacts) → aucune incohérence introduite.
+- **Tests** : `test_winrate_view_weekly.py` neuf (18 cas : colonnes, tri décroissant, 36 lignes dont 1m, statuts, synthèse, semaine ISO, archive au bon chemin, colonne nouveaux paris, run bout-en-bout). Tests asservis à l'ancien format mis à jour (`test_journaliste_v2.py`, `test_lot6_publication_observabilite.py`, `test_journaliste.py`). **913 tests verts**, `v3/data/` non pollué (`git checkout` post-run, dossier `weekly/` préservé). Shadow préservé, aucun run déclenché.
+
 ## 2026-06-08 (Session 4) — Détail par actif : synthèse directionnelle 24h/7j/1m placée avant le tableau de chaque actif
 
 Thomas voulait voir la **décision des 3 horizons d'abord**, puis le détail des critères qui la justifie. Avant : sous `### {nom}` on enchaînait directement le tableau, et la ligne « Scores » arrivait après. **Mise en page uniquement — zéro changement de chiffre, score, logique ou conclusion.**

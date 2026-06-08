@@ -99,6 +99,9 @@ BULLETINS_DIR = ROOT / "data" / "bulletins"
 PRIX_EMISSION_DIR = ROOT / "data" / "prix-emission"
 DECISION_LOG_DIR = ROOT / "data" / "decision-log"
 PERFORMANCE_FILE = ROOT / "data" / "performance.md"
+# Archive hebdomadaire figée : un fichier par semaine ISO (réécrit pendant la
+# semaine, figé dès qu'elle est passée car plus aucun run ne le touche).
+PERFORMANCE_WEEKLY_DIR = ROOT / "data" / "performance" / "weekly"
 PERFORMANCE_AB_FILE = ROOT / "data" / "performance-ab.md"
 MEASURES_LOG_FILE = ROOT / "data" / "measures-log.jsonl"
 CALIBRATION_FILE = ROOT / "data" / "calibration.md"
@@ -1734,155 +1737,281 @@ def write_calibration(content: str, path: Path = CALIBRATION_FILE) -> Path:
 # Rendu performance.md
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Tableau WIN RATE propre (win-rate-only — zéro P&L, zéro argent)
+# ---------------------------------------------------------------------------
+#
+# Décision fondateur (préférences Thomas) : la SEULE métrique qui compte est le
+# WIN RATE (la direction était-elle juste ? oui/non). On retire de la vue
+# humaine : Brier, Taux_brut (N gonflé ×3 par les 3 bulletins/jour), la colonne
+# « Alertes » (pavé répété), LONG/SHORT, le statut shadow répété. Ces données
+# RESTENT dans measures-log.jsonl / decision-log pour le technique — on ne les
+# efface QUE de l'affichage.
+#
+# Win rate = taux_eff (sur N_eff, paris INDÉPENDANTS non-chevauchants).
+# La logique de mesure (entry-lock, look-ahead, N_eff, seuils VRAI/FAUX) est
+# STRICTEMENT INCHANGÉE — ceci est de la présentation pure.
+
+# Libellés de statut win-rate-only (aucune notion d'argent).
+WINRATE_STATUS_EN_ATTENTE = "⏳ en attente"
+WINRATE_STATUS_TROP_PEU = "⏳ trop peu"
+WINRATE_STATUS_OBJECTIF_OK = "✅ objectif atteint"
+WINRATE_STATUS_SOUS_OBJECTIF = "❌ sous l'objectif"
+
+
+def iso_week_label(now: datetime) -> str:
+    """Étiquette de semaine ISO `AAAA-Sxx` (ex. `2026-S24`), heure Europe/Paris.
+
+    Le n° de semaine ISO peut appartenir à une année ISO différente de
+    l'année civile en fin/début d'année — on utilise l'année ISO (isocalendar)
+    pour rester cohérent avec le n° de semaine.
+    """
+    paris = now.astimezone(ZoneInfo("Europe/Paris"))
+    iso = paris.isocalendar()
+    return f"{iso.year}-S{iso.week:02d}"
+
+
+def iso_week_bounds(now: datetime) -> Tuple[date, date]:
+    """Lundi → dimanche de la semaine ISO de `now` (Europe/Paris)."""
+    paris = now.astimezone(ZoneInfo("Europe/Paris"))
+    d = paris.date()
+    monday = d - timedelta(days=d.weekday())  # weekday(): lundi=0
+    sunday = monday + timedelta(days=6)
+    return monday, sunday
+
+
+def _winrate_status(k: Optional[CellKPI]) -> str:
+    """Statut win-rate-only d'une cellule (AUCUNE notion d'argent).
+
+    - ⏳ en attente   : 0 mesure (cellule jamais notée — typiquement le 1m)
+    - ⏳ trop peu (N/15) : N_eff < 15 (warm-up)
+    - ✅ objectif atteint : N_eff ≥ 15 ET win rate ≥ 70 % ET Wilson_low > 50 %
+    - ❌ sous l'objectif : N_eff ≥ 15 mais sous le seuil
+    """
+    if k is None or (k.n_effective == 0 and k.taux_eff_pct is None):
+        return WINRATE_STATUS_EN_ATTENTE
+    if k.n_effective < N_EFFECTIVE_MIN:
+        return f"{WINRATE_STATUS_TROP_PEU} ({k.n_effective}/{N_EFFECTIVE_MIN})"
+    if (
+        k.taux_eff_pct is not None
+        and k.taux_eff_pct >= TARGET_TAUX
+        and k.wilson_low is not None
+        and k.wilson_low > WILSON_LOW_THRESHOLD
+    ):
+        return WINRATE_STATUS_OBJECTIF_OK
+    return WINRATE_STATUS_SOUS_OBJECTIF
+
+
+def _all_cells(fiches: Dict[str, dict]) -> List[Tuple[str, str, str]]:
+    """Liste exhaustive (fiche_key, nom_affiché, horizon) — 12 actifs × 3 horizons.
+
+    Garantit que TOUTES les cellules sont visibles (dont le 1m, souvent absent
+    des mesures car échéance lointaine), triées par nom d'actif puis horizon.
+    """
+    out: List[Tuple[str, str, str]] = []
+    for fk, fiche in fiches.items():
+        nom = (fiche.get("actif") or fk).strip()
+        for h in HORIZONS:
+            out.append((fk, nom, h))
+    return out
+
+
+def _winrate_rows(
+    kpis: Dict[Tuple[str, str], CellKPI],
+    fiches: Dict[str, dict],
+) -> List[Dict[str, Any]]:
+    """Construit les lignes du tableau win-rate (une par cellule actif×horizon).
+
+    Groupé par horizon (24h → 7j → 1m), trié par win rate décroissant dans
+    chaque groupe (les cellules sans win rate en bas du groupe).
+    """
+    horizon_order = {h: i for i, h in enumerate(HORIZONS)}
+    rows: List[Dict[str, Any]] = []
+    for fk, nom, h in _all_cells(fiches):
+        k = kpis.get((fk, h))
+        # « Non notés » = décisions sorties du win rate sur la fenêtre :
+        # non-conclusives + suivi-interrompu (déjà calculés par compute_kpi).
+        non_notes = 0 if k is None else (k.n_nc + k.interrompus_recents)
+        rows.append({
+            "nom": nom,
+            "horizon": h,
+            "horizon_rank": horizon_order.get(h, 99),
+            "win_rate": None if k is None else k.taux_eff_pct,
+            "n_eff": 0 if k is None else k.n_effective,
+            "non_notes": non_notes,
+            "statut": _winrate_status(k),
+        })
+    # Tri : horizon (ordre HORIZONS), puis win rate décroissant (None en bas),
+    # puis nom pour un ordre stable.
+    rows.sort(key=lambda r: (
+        r["horizon_rank"],
+        -(r["win_rate"] if r["win_rate"] is not None else -1.0),
+        r["nom"].lower(),
+    ))
+    return rows
+
+
+def _winrate_synthese_line(rows: List[Dict[str, Any]]) -> str:
+    """Ligne de synthèse : X / N cellules fiables (≥ 15 paris)."""
+    total = len(rows)
+    fiables = sum(1 for r in rows if r["n_eff"] >= N_EFFECTIVE_MIN)
+    base = f"**{fiables} / {total} cellules fiables** ({N_EFFECTIVE_MIN} paris requis/cellule)."
+    if fiables == 0:
+        base += " Tout est en chauffe — ces chiffres ne sont pas encore significatifs."
+    return base
+
+
+def _render_winrate_table(rows: List[Dict[str, Any]]) -> List[str]:
+    """Rend le tableau markdown win-rate, groupé par horizon, win-rate-only."""
+    lines: List[str] = []
+    horizon_labels = {"24h": "24 heures", "7j": "7 jours", "1m": "1 mois"}
+    for h in HORIZONS:
+        h_rows = [r for r in rows if r["horizon"] == h]
+        if not h_rows:
+            continue
+        lines.append("")
+        lines.append(f"### {horizon_labels.get(h, h)}")
+        lines.append("")
+        lines.append("| Actif | Win rate | Paris (réels) | Non notés | Statut |")
+        lines.append("|---|---|---|---|---|")
+        for r in h_rows:
+            wr = "—" if r["win_rate"] is None else f"{r['win_rate']:.1f}%"
+            lines.append(
+                f"| {r['nom']} | {wr} | {r['n_eff']} | {r['non_notes']} | {r['statut']} |"
+            )
+    return lines
+
+
 def render_performance(
     kpis: Dict[Tuple[str, str], CellKPI],
     measures: List[Measure],
     now: datetime,
+    fiches: Optional[Dict[str, dict]] = None,
 ) -> str:
+    """Vue humaine du win rate (win-rate-only, zéro P&L).
+
+    Tableau propre groupé par horizon (24h → 7j → 1m), trié par win rate
+    décroissant, avec les 12 actifs × 3 horizons (36 cellules) TOUJOURS
+    visibles. Brier / Taux_brut / Alertes / LONG-SHORT retirés de l'affichage
+    (conservés dans les logs). La logique de mesure est inchangée.
+    """
+    fiches = fiches if fiches is not None else load_fiches()
+    rows = _winrate_rows(kpis, fiches)
+
     lines: List[str] = []
-    lines.append(f"# Performance du bulletin — Journaliste")
+    lines.append("# Win rate du bulletin — Journaliste")
     lines.append("")
     lines.append(f"- Généré : {now.isoformat()}")
     lines.append(f"- Journaliste version : {JOURNALISTE_VERSION}")
-    lines.append(f"- Fenêtre KPI : {WINDOW} dernières conclusions terminées par cellule")
-    lines.append(f"- PROBA_SCALE : {PROBA_SCALE} (proba = 0.5 + clip(|score|/SCALE, 0, 0.5))")
-    lines.append(f"- Cible éligibilité : {TARGET_TAUX:.0f}% (Bourse.md)")
+    lines.append(f"- Win rate = taux de bonnes directions sur les paris indépendants (N_eff)")
+    lines.append(f"- Cible : ≥ {TARGET_TAUX:.0f}% sur ≥ {N_EFFECTIVE_MIN} paris (borne basse > 50 %)")
     lines.append("")
-    lines.append("## Matrice cellules (actif × horizon)")
-    lines.append("")
-    lines.append(
-        "| Actif | Horizon | N_total | Taux_brut | N_eff | Taux_eff | Wilson_low | Brier | LONG/SHORT | Statut | Alertes |"
-    )
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append(_winrate_synthese_line(rows))
+    lines.extend(_render_winrate_table(rows))
 
-    # tri par actif puis horizon
-    horizon_order = {h: i for i, h in enumerate(HORIZONS)}
-    sorted_keys = sorted(
-        kpis.keys(),
-        key=lambda k: (kpis[k].actif_name.lower(), horizon_order.get(k[1], 99)),
-    )
-    for key in sorted_keys:
-        k = kpis[key]
-        taux = "—" if k.taux_pct is None else f"{k.taux_pct:.1f}%"
-        taux_eff = "—" if k.taux_eff_pct is None else f"{k.taux_eff_pct:.1f}%"
-        w_low = "—" if k.wilson_low is None else f"{k.wilson_low:.3f}"
-        brier = "—" if k.brier is None else f"{k.brier:.4f}"
-        if k.distrib_long_pct is None:
-            distrib = "—"
-        else:
-            distrib = f"{k.distrib_long_pct:.0f}/{k.distrib_short_pct:.0f}%"
-        alertes = "; ".join(k.alertes) if k.alertes else "—"
-        lines.append(
-            f"| {k.actif_name} | {k.horizon} | {k.n_total} | {taux} | {k.n_effective} | "
-            f"{taux_eff} | {w_low} | {brier} | {distrib} | {k.statut} | {alertes} |"
-        )
-
-    # Synthèse
-    nb_eligibles = sum(1 for k in kpis.values() if k.statut == "éligible_actif")
-    nb_shadow = sum(1 for k in kpis.values() if k.statut == "shadow")
-    lines.append("")
-    lines.append("## Synthèse")
-    lines.append(f"- Cellules éligibles actif (Wilson low > {WILSON_LOW_THRESHOLD:.0%}, taux_eff ≥ {TARGET_TAUX:.0f}%) : **{nb_eligibles}** / {len(kpis)}")
-    lines.append(f"- Cellules shadow : {nb_shadow} / {len(kpis)}")
-    lines.append("")
-    lines.append("### Critère global (multiple testing — audit-data §2)")
-    lines.append("")
-    lines.append("Avec 36 cellules testées, ~1-2 faux positifs attendus par hasard à α=0,05.")
-    lines.append("Critère d'éligibilité renforcé : Wilson low > 50 % (borne basse IC 95 % sur N_eff).")
-    lines.append("")
-    # Calculer les métriques globales
-    cells_with_eff = [k for k in kpis.values() if k.n_effective >= N_EFFECTIVE_MIN and k.taux_eff_pct is not None]
-    if cells_with_eff:
-        taux_global = sum(k.taux_eff_pct for k in cells_with_eff) / len(cells_with_eff)  # type: ignore[arg-type]
-        cells_below_55 = [k for k in cells_with_eff if k.taux_eff_pct is not None and k.taux_eff_pct < GLOBAL_MIN_TAUX]
-        pct_below = len(cells_below_55) / len(cells_with_eff) * 100
-        lines.append(f"- Taux moyen global (N_eff ≥ {N_EFFECTIVE_MIN}) : **{taux_global:.1f}%** ({len(cells_with_eff)} cellules)")
-        lines.append(f"- Cellules < {GLOBAL_MIN_TAUX:.0f}% : {len(cells_below_55)}/{len(cells_with_eff)} ({pct_below:.0f}%)")
-        kill_trigger = taux_global < GLOBAL_MIN_TAUX
-        lines.append(f"- Taux global {'< ⚠️ KILL CRITERION DÉCLENCHÉ' if kill_trigger else '≥'} {GLOBAL_MIN_TAUX:.0f}% : {'KILL' if kill_trigger else 'OK'}")
-    else:
-        lines.append(f"- Critère global : warm-up (aucune cellule avec N_eff ≥ {N_EFFECTIVE_MIN})")
-
-    # --- C7 LOT 6 — Ventilation flip vs continuation ---------------------
-    # Section additive : le taux global n'est PAS modifié. On ventile pour
-    # répondre à la question « mes retournements gagnent-ils plus que mes
-    # continuations ? ». Cellules avec is_flip=None (pas de bulletin précédent)
-    # sont EXCLUES des deux taux (zéro invention).
-    lines.append("")
-    lines.append("## Flip vs continuation (additif — taux global inchangé)")
-    lines.append("")
-    cells_with_flip_data = [
-        k for k in kpis.values()
-        if k.n_flip > 0 or k.n_continuation > 0
-    ]
-    if not cells_with_flip_data:
-        lines.append(
-            "_Pas encore de cellule avec décision précédente comparable "
-            "(warm-up : besoin d'au moins 2 bulletins consécutifs)._"
-        )
-    else:
-        lines.append(
-            "| Actif | Horizon | N_flip | Taux_flip | N_continuation | Taux_continuation |"
-        )
-        lines.append("|---|---|---|---|---|---|")
-        sorted_keys_fc = sorted(
-            [k for k in kpis.keys() if kpis[k].n_flip > 0 or kpis[k].n_continuation > 0],
-            key=lambda k: (kpis[k].actif_name.lower(), horizon_order.get(k[1], 99)),
-        )
-        for key in sorted_keys_fc:
-            k = kpis[key]
-            tf = "—" if k.taux_flip is None else f"{k.taux_flip:.1f}%"
-            tc = "—" if k.taux_continuation is None else f"{k.taux_continuation:.1f}%"
-            lines.append(
-                f"| {k.actif_name} | {k.horizon} | {k.n_flip} | {tf} | "
-                f"{k.n_continuation} | {tc} |"
-            )
-        # Agrégats globaux
-        total_flip = sum(k.n_flip for k in kpis.values())
-        total_vrai_flip = sum(k.n_vrai_flip for k in kpis.values())
-        total_cont = sum(k.n_continuation for k in kpis.values())
-        total_vrai_cont = sum(k.n_vrai_continuation for k in kpis.values())
+    # Flip vs continuation — gardée SI elle tient en quelques lignes (agrégats
+    # globaux uniquement, win-rate-only). Pas de pavé par cellule.
+    total_flip = sum(k.n_flip for k in kpis.values())
+    total_vrai_flip = sum(k.n_vrai_flip for k in kpis.values())
+    total_cont = sum(k.n_continuation for k in kpis.values())
+    total_vrai_cont = sum(k.n_vrai_continuation for k in kpis.values())
+    if total_flip > 0 or total_cont > 0:
+        lines.append("")
+        lines.append("### Flip vs continuation")
         lines.append("")
         if total_flip > 0:
-            taux_f_glob = total_vrai_flip / total_flip * 100.0
             lines.append(
-                f"- **Taux global flips** : {taux_f_glob:.1f}% "
-                f"(N={total_flip} mesures avec is_flip=True)"
+                f"- Win rate sur retournements : **{total_vrai_flip / total_flip * 100.0:.1f}%** "
+                f"(N={total_flip})"
             )
-        else:
-            lines.append("- Taux global flips : — (aucune mesure avec flip détecté)")
         if total_cont > 0:
-            taux_c_glob = total_vrai_cont / total_cont * 100.0
             lines.append(
-                f"- **Taux global continuations** : {taux_c_glob:.1f}% "
-                f"(N={total_cont} mesures avec is_flip=False)"
+                f"- Win rate sur continuations : **{total_vrai_cont / total_cont * 100.0:.1f}%** "
+                f"(N={total_cont})"
             )
-        else:
-            lines.append("- Taux global continuations : — (aucune continuation mesurée)")
+    lines.append("")
+    return "\n".join(lines)
 
-    # Détail : 10 dernières mesures
+
+def render_weekly_winrate(
+    kpis: Dict[Tuple[str, str], CellKPI],
+    measures: List[Measure],
+    now: datetime,
+    fiches: Optional[Dict[str, dict]] = None,
+) -> str:
+    """Archive hebdomadaire figée : win rate CUMULÉ depuis le début + colonne
+    « nouveaux paris cette semaine ».
+
+    Réécrit à chaque run pendant la semaine ISO courante ; figé dès que la
+    semaine est passée (plus aucun run ne le touche). → historique semaine
+    par semaine.
+    """
+    fiches = fiches if fiches is not None else load_fiches()
+    rows = _winrate_rows(kpis, fiches)
+    iso = iso_week_label(now)
+    monday, sunday = iso_week_bounds(now)
+
+    # Nouveaux paris cette semaine : mesures TERMINÉES (VRAI/FAUSSE) dont
+    # l'échéance tombe dans la semaine ISO courante, comptées par cellule.
+    new_bets: Dict[Tuple[str, str], int] = {}
+    for m in measures:
+        if m.outcome not in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            continue
+        if monday <= m.echeance <= sunday:
+            new_bets[(m.fiche_key, m.horizon)] = new_bets.get((m.fiche_key, m.horizon), 0) + 1
+
+    # Index fiche_key par nom affiché pour retrouver la clé depuis les rows.
+    name_to_key: Dict[Tuple[str, str], str] = {}
+    for fk, fiche in fiches.items():
+        nom = (fiche.get("actif") or fk).strip()
+        for h in HORIZONS:
+            name_to_key[(nom, h)] = fk
+
+    lines: List[str] = []
+    lines.append(f"# Win rate — semaine {iso} ({monday.isoformat()} → {sunday.isoformat()})")
     lines.append("")
-    lines.append("## Dernières mesures (max 20)")
+    lines.append(f"- Généré : {now.isoformat()} (réécrit à chaque run ; figé en fin de semaine)")
+    lines.append(f"- Win rate CUMULÉ depuis le début (seul significatif en chauffe)")
     lines.append("")
-    lines.append("| Émission | Échéance | Actif | Horizon | Concl. | Prix émis. | Prix actuel | Delta % | Seuil % | Outcome | Note |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
-    recent = sorted(measures, key=lambda m: m.echeance, reverse=True)[:20]
-    for m in recent:
-        pe = "—" if m.prix_emission is None else f"{m.prix_emission:.4f}"
-        pc = "—" if m.prix_courant is None else f"{m.prix_courant:.4f}"
-        delta = "—" if m.delta_pct is None else f"{m.delta_pct:+.3f}%"
-        seuil = "—" if m.seuil_pct is None else f"{m.seuil_pct}%"
+    lines.append(_winrate_synthese_line(rows))
+
+    horizon_labels = {"24h": "24 heures", "7j": "7 jours", "1m": "1 mois"}
+    for h in HORIZONS:
+        h_rows = [r for r in rows if r["horizon"] == h]
+        if not h_rows:
+            continue
+        lines.append("")
+        lines.append(f"### {horizon_labels.get(h, h)}")
+        lines.append("")
         lines.append(
-            f"| {m.cell.bulletin_date.isoformat()} | {m.echeance.isoformat()} | {m.cell.actif_name} | "
-            f"{m.horizon} | {m.cell.conclusion} | {pe} | {pc} | {delta} | {seuil} | {m.outcome} | {m.note} |"
+            "| Actif | Win rate | Paris (réels) | Nouveaux paris (semaine) | Non notés | Statut |"
         )
+        lines.append("|---|---|---|---|---|---|")
+        for r in h_rows:
+            wr = "—" if r["win_rate"] is None else f"{r['win_rate']:.1f}%"
+            fk = name_to_key.get((r["nom"], r["horizon"]))
+            nb_new = new_bets.get((fk, r["horizon"]), 0) if fk else 0
+            lines.append(
+                f"| {r['nom']} | {wr} | {r['n_eff']} | {nb_new} | {r['non_notes']} | {r['statut']} |"
+            )
     lines.append("")
-
     return "\n".join(lines)
 
 
 def write_performance(content: str, path: Path = PERFORMANCE_FILE) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def write_weekly_winrate(
+    content: str,
+    now: datetime,
+    weekly_dir: Path = PERFORMANCE_WEEKLY_DIR,
+) -> Path:
+    """Écrit l'archive hebdo `win-rate-{ISO}.md` (un fichier par semaine ISO)."""
+    weekly_dir.mkdir(parents=True, exist_ok=True)
+    path = weekly_dir / f"win-rate-{iso_week_label(now)}.md"
     path.write_text(content, encoding="utf-8")
     return path
 
@@ -2286,9 +2415,19 @@ def run(
         fiches=fiches,
         fetch_price=fetch_price,
     )
-    content = render_performance(kpis, measures, now)
+    content = render_performance(kpis, measures, now, fiches=fiches)
     out_path = write_performance(content, performance_path)
     logger.info("performance.md écrit : %s (%d mesures, %d cellules)", out_path, len(measures), len(kpis))
+
+    # Archive hebdomadaire figée : même tableau cumulé + « nouveaux paris
+    # cette semaine », un fichier par semaine ISO (best-effort, non bloquant).
+    try:
+        weekly_dir = performance_path.parent / "performance" / "weekly"
+        weekly_content = render_weekly_winrate(kpis, measures, now, fiches=fiches)
+        weekly_path = write_weekly_winrate(weekly_content, now, weekly_dir=weekly_dir)
+        logger.info("archive hebdo win-rate écrite : %s", weekly_path)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("archive hebdo KO (non bloquant) : %s", e)
 
     # Persistance des mesures unitaires (historique par prédiction) — best-effort.
     # Réécriture complète depuis la sortie de measure() (re-scan exhaustif).

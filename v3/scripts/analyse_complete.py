@@ -56,18 +56,30 @@ def bilan_news() -> None:
 
 def mesure_forward() -> None:
     _section("3. MESURE FORWARD — taux de réussite réel (VRAI/FAUX)")
-    p = os.path.join(DATA, "performance.md")
+    # Source = measures-log.jsonl (technique, exhaustif) et NON performance.md :
+    # la vue humaine est désormais win-rate-only (Brier/Taux_brut/détail des
+    # mesures retirés de l'affichage). Le JSONL reste la source de vérité.
+    p = os.path.join(DATA, "measures-log.jsonl")
     if not os.path.exists(p):
-        print("  (performance.md absent)"); return
-    txt = open(p).read()
-    c = Counter(re.findall(r"\| (VRAI|FAUX|non-conclusive|suivi-interrompu) \|", txt))
-    concl = c["VRAI"] + c["FAUX"]
-    taux = f"{100*c['VRAI']//concl}%" if concl else "n/a"
-    print(f"  VRAI={c['VRAI']}  FAUX={c['FAUX']}  non-conclusive={c['non-conclusive']}  suivi-interrompu={c['suivi-interrompu']}")
-    print(f"  Taux de réussite (sur concluantes) : {taux}  [N concluantes={concl}]")
-    elig = re.search(r"éligibles[^:]*: \*\*(\d+)\*\* / (\d+)", txt)
-    if elig:
-        print(f"  Cellules éligibles : {elig.group(1)}/{elig.group(2)}  (warm-up si 0)")
+        print("  (measures-log.jsonl absent)"); return
+    outcomes = []
+    for line in open(p, encoding="utf-8"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            outcomes.append(json.loads(line).get("outcome", ""))
+        except json.JSONDecodeError:
+            continue
+    c = Counter(outcomes)
+    # Le module mesure : VRAI / FAUSSE / non-conclusive / suivi-interrompu / non-notee
+    n_vrai, n_faux = c["VRAI"], c["FAUSSE"]
+    concl = n_vrai + n_faux
+    taux = f"{100*n_vrai//concl}%" if concl else "n/a"
+    print(f"  VRAI={n_vrai}  FAUSSE={n_faux}  non-conclusive={c['non-conclusive']}  "
+          f"suivi-interrompu={c['suivi-interrompu']}  non-notee={c['non-notee']}")
+    print(f"  Taux de réussite (sur concluantes, N brut) : {taux}  [N concluantes={concl}]")
+    print("  (win rate par cellule sur N_eff indépendant : voir v3/data/performance.md)")
 
 
 def phase2_metrics() -> None:

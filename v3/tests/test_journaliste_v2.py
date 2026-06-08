@@ -376,35 +376,35 @@ class TestRenderCalibration:
 # Test critère global multiple-testing (synthèse render_performance)
 # ---------------------------------------------------------------------------
 
-class TestCritereGlobal:
-    def test_render_performance_contient_critere_global(self):
-        """render_performance doit inclure la section critère global."""
-        # Construire quelques KPIs minimaux
-        ms = _measures_seq([jr.OUTCOME_VRAI] * 10, horizon="24h", step=1, score=3.0)
-        kpis = {("petrole", "24h"): jr.compute_kpi(ms)}
-        now = datetime(2026, 5, 30, 12, 0, tzinfo=timezone.utc)
-        content = jr.render_performance(kpis, ms, now)
-        assert "multiple testing" in content.lower() or "critère global" in content.lower()
-        assert "N_eff" in content or "n_effective" in content.lower() or "N_total" in content
+class TestWinRateView:
+    """Vue win-rate-only (refonte Session 4) : tableau propre, zéro P&L,
+    Brier/Taux_brut/Alertes retirés de l'affichage."""
 
-    def test_render_performance_affiche_n_effective(self):
-        """La matrice performance doit avoir les colonnes N_eff et Taux_eff."""
+    def test_render_performance_synthese_cellules_fiables(self):
+        """La ligne de synthèse « X / N cellules fiables » est présente."""
         ms = _measures_seq([jr.OUTCOME_VRAI] * 10, horizon="24h", step=1, score=3.0)
         kpis = {("petrole", "24h"): jr.compute_kpi(ms)}
         now = datetime(2026, 5, 30, 12, 0, tzinfo=timezone.utc)
         content = jr.render_performance(kpis, ms, now)
-        assert "N_eff" in content
-        assert "Taux_eff" in content
-        assert "Wilson_low" in content
+        assert "cellules fiables" in content
+        assert "15 paris requis" in content
 
-    def test_render_performance_retro_compat_colonnes_existantes(self):
-        """Les colonnes N_total, Taux_brut, Brier, LONG/SHORT, Statut doivent toujours exister."""
+    def test_render_performance_colonnes_win_rate_only(self):
+        """Les colonnes de la vue humaine sont win-rate-only."""
         ms = _measures_seq([jr.OUTCOME_VRAI] * 10, horizon="24h", step=1, score=3.0)
         kpis = {("petrole", "24h"): jr.compute_kpi(ms)}
         now = datetime(2026, 5, 30, 12, 0, tzinfo=timezone.utc)
         content = jr.render_performance(kpis, ms, now)
-        for col in ["N_total", "Taux_brut", "Brier", "Statut"]:
-            assert col in content, f"Colonne manquante : {col}"
+        assert "| Actif | Win rate | Paris (réels) | Non notés | Statut |" in content
+
+    def test_render_performance_argent_et_jargon_absents(self):
+        """Zéro P&L et plus de colonnes Taux_brut/Brier/Alertes à l'affichage."""
+        ms = _measures_seq([jr.OUTCOME_VRAI] * 10, horizon="24h", step=1, score=3.0)
+        kpis = {("petrole", "24h"): jr.compute_kpi(ms)}
+        now = datetime(2026, 5, 30, 12, 0, tzinfo=timezone.utc)
+        content = jr.render_performance(kpis, ms, now)
+        for banned in ["Taux_brut", "Brier", "| Alertes", "P&L", "€", "$", "gain"]:
+            assert banned not in content, f"Terme interdit présent : {banned}"
 
 
 # ---------------------------------------------------------------------------

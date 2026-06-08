@@ -2,6 +2,25 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-08 (Session 6) — Finalisation refonte 5 rapports : CA-M7 + CA-B2 (@fullstack)
+
+**Les 2 restes de la refonte implémentés** (spec §7 CA-M7/CA-B2). Mode shadow, WIN RATE ONLY, zéro modification silencieuse de poids/seuils/scoring, branche `claude/elegant-ramanujan-OIKms` (pas de PR).
+
+### CA-M7 — Compteur de jours de bourse exclus (férié partiel) — `journaliste.py`
+- **`is_partial_holiday(d)`** (nouveau, pur) : True si `is_trading_day(d)` exclut le run (jour de semaine férié de marché) alors qu'AU MOINS UN marché (NYSE/XNYS OU Euronext/XECB) est ouvert. Distinction des deux calendriers via la lib `holidays` (vérifié : Memorial Day = NYSE fermé/Euronext ouvert ; 1er Mai = inverse ; Noël = les deux). Fallback sans lib → False (zéro invention : on ne prétend pas savoir qu'un marché était ouvert ; le compteur sous-estime plutôt que de sur-compter).
+- **`compter_jours_bourse_exclus(date_debut, date_fin)`** (nouveau) : compte les jours partiels sur la fenêtre inclusive.
+- **`render_performance`** : nouvelle ligne « Jours de bourse exclus (férié partiel, un marché ouvert) : **N** sur la fenêtre {min émission} → {aujourd'hui} ». Fenêtre = de la 1ère date d'émission mesurée à aujourd'hui ; rien d'affiché si aucune mesure (pas de fenêtre inventée).
+
+### CA-B2 — Clôture CAC officielle 17h30 (fallback robuste Q5) — `bilan_jour.py`
+- Pour les actifs **EU (CAC)**, la clôture de référence du 24h = **close officiel 17h30** (bougie `1day` du jour J via `fetch_twelve_series`), PAS le spot 22h. Groupe EU résolu par `mesure_ouverture.actif_group` (override « CAC 40 → eu », heures depuis suivi.yaml — **zéro heure codée en dur**).
+- **Fallback robuste (Q5 non validé en shadow)** : si Twelve ne renvoie pas de bougie datée du jour J (close 17h30 pas encore publié le soir même pour FCHI/ETF), on retombe sur le **dernier prix disponible + marqueur `[close approx]`** dans le tableau + note « À valider en live (Q5) ». **Zéro invention** : aucun close fabriqué.
+- `build_bilan_jour` : nouveau param `fetch_series` (injectable, Twelve Data par défaut) + champ `BilanJour.close_approx_tickers`. Enveloppe `fetch_price` ; tous les autres actifs (US/continus) inchangés (spot 22h).
+
+### Tests — `v3/tests/test_bilan_jour_cam7_cab2.py` (11 tests, verts)
+- CA-M7 : `is_partial_holiday` (Memorial Day, 1er Mai, Noël non partiel, week-end non partiel), `compter_jours_bourse_exclus` (2 partiels sur mai, fenêtre vide, bornes inversées), affichage dans performance.md.
+- CA-B2 : close officiel 17h30 utilisé si dispo (spot 22h ignoré), fallback `[close approx]` + note Q5 sinon, aucune mention monétaire.
+- Gate `python3 -m pytest v3/ -q` : **968 passed, 3 skipped** (pré-existants). `git checkout -- v3/data/` avant commit.
+
 ## 2026-06-08 (Session 5) — Câblage cron/workflows des 5 rapports + stamps d'ouverture (@infrastructure)
 
 **Routage des créneaux → bons runners + stamps d'ouverture aux VRAIES ouvertures** (spec §5 + CA-I*). Aucun run déclenché, mode shadow préservé, branche `claude/elegant-ramanujan-OIKms` (pas de PR).

@@ -261,6 +261,80 @@ def is_trading_day(d: date) -> bool:
     return d.weekday() < 5 and not _is_market_holiday(d)
 
 
+def _market_closed(d: date, code: str) -> bool:
+    """True si le marché `code` (XNYS = NYSE, XECB = Euronext/TARGET) est fermé le jour `d`.
+
+    Fermé = week-end OU férié de CE marché. Source : lib `holidays` pour le
+    calendrier spécifique du marché ; à défaut (lib absente/API différente), on
+    retombe sur le socle MARKET_HOLIDAYS (union NYSE+Euronext) — fallback
+    conservateur (peut sur-fermer, jamais inventer une fermeture spécifique).
+
+    Sert UNIQUEMENT à CA-M7 (détection férié partiel : un marché ouvert,
+    l'autre fermé). Ne change PAS la garde de run, qui reste `is_trading_day`.
+    """
+    if d.weekday() >= 5:
+        return True
+    try:
+        import holidays as _holidays_lib  # type: ignore  # noqa: PLC0415
+
+        cal = _holidays_lib.financial_holidays(code, years=d.year)
+        return d in cal
+    except Exception:  # noqa: BLE001 — lib absente / code indisponible : fallback socle
+        # Fallback : on ne sait pas distinguer les deux marchés → on retombe sur
+        # l'union statique. Un jour de l'union est compté fermé pour ce marché
+        # (conservateur : zéro invention d'une ouverture spécifique non vérifiée).
+        return d in MARKET_HOLIDAYS
+
+
+def is_partial_holiday(d: date) -> bool:
+    """True si `d` est un férié PARTIEL : la garde globale `is_trading_day`
+    exclut le run alors qu'AU MOINS UN marché (NYSE ou Euronext) est ouvert.
+
+    Définition exacte CA-M7 (correction D5) :
+      - jour de semaine (lun-ven : un week-end n'est jamais « partiel »),
+      - `is_trading_day(d)` == False (la garde globale saute le run),
+      - au moins un des deux marchés (XNYS, XECB) est ouvert ce jour-là.
+
+    Exemple : Memorial Day (NYSE fermé, Euronext ouvert) ou 1er Mai / Lundi de
+    Pâques (Euronext fermé, NYSE ouvert) → True. Noël (les deux fermés) → False.
+
+    Pur, déterministe, aucun accès réseau. Si la lib `holidays` est absente, le
+    fallback ne peut pas distinguer les deux marchés → retourne False (zéro
+    invention : on ne prétend pas savoir qu'un marché était ouvert). Le compteur
+    sous-estime alors plutôt que de sur-compter — comportement documenté.
+    """
+    if d.weekday() >= 5:
+        return False
+    if is_trading_day(d):
+        return False
+    # is_trading_day False ET jour de semaine ⇒ férié de marché (union).
+    # Partiel ⇔ au moins un des deux marchés ouvert ⇒ PAS fermé partout.
+    nyse_closed = _market_closed(d, "XNYS")
+    euronext_closed = _market_closed(d, "XECB")
+    return not (nyse_closed and euronext_closed)
+
+
+def compter_jours_bourse_exclus(date_debut: date, date_fin: date) -> int:
+    """Compte les jours de bourse EXCLUS par férié partiel sur [date_debut, date_fin].
+
+    CA-M7 : nombre de jours où la garde globale `is_trading_day` a sauté le run
+    alors qu'au moins un marché était ouvert (férié partiel). Permet à Thomas de
+    voir combien de jours sont silencieusement exclus (correction D5, Analyst).
+
+    Bornes inclusives. Si date_debut > date_fin → 0. WIN-RATE-ONLY : pur
+    comptage de jours, aucune valeur monétaire.
+    """
+    if date_debut > date_fin:
+        return 0
+    n = 0
+    d = date_debut
+    while d <= date_fin:
+        if is_partial_holiday(d):
+            n += 1
+        d = d + timedelta(days=1)
+    return n
+
+
 def _next_business_day(d: date) -> date:
     """Prochain jour ouvré ≥ d (saute samedi/dimanche ET fériés de marché).
 
@@ -2026,6 +2100,21 @@ def render_performance(
     lines.append(f"- Cible : ≥ {TARGET_TAUX:.0f}% sur ≥ {N_EFFECTIVE_MIN} paris (borne basse > 50 %)")
     lines.append("")
     lines.append(_winrate_synthese_line(rows))
+
+    # CA-M7 — Compteur de jours de bourse exclus (férié partiel : un marché
+    # ouvert, l'autre fermé → la garde globale is_trading_day saute le run).
+    # Fenêtre observée = de la 1ère date d'émission mesurée à aujourd'hui ; si
+    # aucune mesure, on n'affiche pas de fenêtre inventée. WIN-RATE-ONLY.
+    bulletin_dates = [m.cell.bulletin_date for m in measures if m.cell.bulletin_date]
+    if bulletin_dates:
+        date_debut = min(bulletin_dates)
+        date_fin = now.date()
+        n_exclus = compter_jours_bourse_exclus(date_debut, date_fin)
+        lines.append(
+            f"- Jours de bourse exclus (férié partiel, un marché ouvert) : "
+            f"**{n_exclus}** sur la fenêtre {date_debut.isoformat()} → "
+            f"{date_fin.isoformat()}"
+        )
     lines.extend(_render_winrate_table(rows))
 
     # Flip vs continuation — gardée SI elle tient en quelques lignes (agrégats

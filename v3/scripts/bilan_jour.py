@@ -46,6 +46,12 @@ PARIS_TZ = ZoneInfo("Europe/Paris")
 # chiffrer une perte.
 GROS_MOVE_FACTOR = 2.0
 
+# CA-B2 — Marqueur de clôture EU approximative (fallback Q5).
+# Apposé sur la clôture d'un actif EU (CAC) quand on n'a PAS pu obtenir le close
+# officiel 17h30 et qu'on retombe sur le dernier prix disponible (spot 22h).
+# Zéro invention : on ne fabrique jamais un close, on signale l'approximation.
+CLOSE_APPROX_MARKER = "[close approx]"
+
 # Seuil de conviction forte par défaut (overridé par manager.yaml).
 # NB : le score du decision-log (`score_pm1`) n'est PAS normalisé dans [0,1] —
 # il vit sur l'échelle ±5..±14. La valeur nominale 0.6 de la spec §4.7 est
@@ -207,6 +213,9 @@ class BilanJour:
     n_nc: int = 0
     win_rate_jour: Optional[float] = None
     conviction: WinRateConviction = field(default_factory=WinRateConviction)
+    # CA-B2 : tickers EU dont la clôture est un fallback approx (spot 22h faute
+    # de close officiel 17h30 — Q5 non validé). Sert au marqueur `[close approx]`.
+    close_approx_tickers: set = field(default_factory=set)
     markdown: str = ""
 
 
@@ -218,6 +227,105 @@ def _fmt_price(v: Optional[float]) -> str:
     return f"{v:.4g}" if isinstance(v, (int, float)) else "—"
 
 
+def _eu_official_close(
+    ticker: str,
+    date_j: date,
+    fetch_series: Optional[Any],
+) -> Optional[float]:
+    """Close officiel 17h30 (Euronext) pour un ticker EU le jour `date_j` (CA-B2).
+
+    Stratégie robuste, zéro invention :
+    - On lit la série journalière (`interval="1day"`) du ticker : la bougie du
+      jour `date_j` a pour `close` le close OFFICIEL de fin de séance Euronext
+      (17h30). C'est la seule source fiable d'un close officiel intraday-libre.
+    - Si la série est absente, ou ne contient pas de bougie datée `date_j` (Q5
+      non validé : Twelve peut ne pas exposer le close 17h30 le soir même pour
+      FCHI/ETF), on retourne None → l'appelant retombe sur le spot 22h marqué
+      `[close approx]`.
+
+    `fetch_series(ticker)` doit renvoyer une liste de tuples (datetime, close)
+    triée oldest→newest, ou None. Injecté (Twelve Data en prod, mock en test).
+    Ne lève jamais : toute erreur → None (fallback marqué, jamais d'invention).
+    """
+    if fetch_series is None:
+        return None
+    try:
+        series = fetch_series(ticker)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("CA-B2 close EU %s : série indisponible (%s) — fallback spot", ticker, e)
+        return None
+    if not series:
+        return None
+    # Cherche la bougie journalière datée du jour J (close officiel 17h30).
+    for ts, close in reversed(series):
+        try:
+            d = ts.date() if hasattr(ts, "date") else None
+        except Exception:  # noqa: BLE001
+            continue
+        if d == date_j:
+            try:
+                return float(close)
+            except (TypeError, ValueError):
+                return None
+    # Pas de bougie datée J → on n'invente pas (Q5 : close 17h30 pas encore
+    # publié par Twelve le soir même). Fallback spot marqué côté appelant.
+    return None
+
+
+def _wrap_fetch_eu_close(
+    fetch_price: Optional[Any],
+    fetch_series: Optional[Any],
+    eu_tickers: set,
+    date_j: date,
+    approx_tickers: set,
+) -> Any:
+    """Enveloppe `fetch_price` pour substituer le close officiel 17h30 des EU (CA-B2).
+
+    Pour un ticker EU (CAC) : tente le close officiel 17h30 via la série
+    journalière ; si indisponible → spot habituel + ajoute le ticker à
+    `approx_tickers` (pour le marqueur `[close approx]` dans le rendu).
+    Pour tout autre ticker : comportement inchangé (spot 22h).
+
+    `approx_tickers` est muté in-place (effet de bord assumé, set de sortie).
+    Zéro modification silencieuse : la substitution est tracée par le marqueur.
+    """
+    def _fetch(ticker: str):
+        if ticker in eu_tickers:
+            close = _eu_official_close(ticker, date_j, fetch_series)
+            if close is not None:
+                return close
+            # Fallback Q5 : close 17h30 indisponible → spot 22h, marqué approx.
+            approx_tickers.add(ticker)
+            logger.info(
+                "CA-B2 %s : close officiel 17h30 indisponible (Q5) — spot 22h marqué %s",
+                ticker, CLOSE_APPROX_MARKER,
+            )
+        if fetch_price is None:
+            return None
+        return fetch_price(ticker)
+
+    return _fetch
+
+
+def _eu_tickers_from_fiches(fiches: Dict[str, dict]) -> set:
+    """Tickers des actifs du groupe de marché EU (clôture 17h30) — CA-B2.
+
+    Réutilise `actif_group` de mesure_ouverture (source unique des heures de
+    marché, CAC = eu via override nom). Zéro heure codée en dur ici.
+    """
+    from mesure_ouverture import actif_group, load_suivi_config  # noqa: PLC0415
+
+    config = load_suivi_config()
+    out: set = set()
+    for fiche in fiches.values():
+        ticker = fiche.get("ticker_principal")
+        if not ticker:
+            continue
+        if actif_group(fiche, config) == "eu":
+            out.add(ticker)
+    return out
+
+
 def build_bilan_jour(
     now: Optional[datetime] = None,
     date_j: Optional[date] = None,
@@ -225,6 +333,7 @@ def build_bilan_jour(
     decision_log_dir: Path = DECISION_LOG_DIR,
     fiches: Optional[Dict[str, dict]] = None,
     fetch_price: Optional[Any] = None,
+    fetch_series: Optional[Any] = None,
     prix_ouverture_dir: Optional[Path] = None,
     prix_emission_dir: Optional[Path] = None,
 ) -> BilanJour:
@@ -254,6 +363,27 @@ def build_bilan_jour(
 
     bilan = BilanJour(date_j=date_j, now=now)
 
+    # CA-B2 — Clôture officielle 17h30 pour les actifs EU (CAC).
+    # On résout les fetchers par défaut (Twelve Data) ici pour pouvoir
+    # ENVELOPPER `fetch_price` : les tickers EU prennent le close officiel 17h30
+    # (bougie 1day du jour), fallback spot 22h marqué `[close approx]` (Q5 non
+    # validé en shadow — comportement Twelve à 18h pour FCHI/ETF à confirmer en live).
+    if fetch_price is None or fetch_series is None:
+        try:
+            import criteres_calculator as CC  # noqa: PLC0415
+            if fetch_price is None:
+                fetch_price = CC.fetch_twelve_price
+            if fetch_series is None:
+                fetch_series = CC.fetch_twelve_series
+        except Exception as e:  # noqa: BLE001 — pas de réseau/clé : fallback spot marqué
+            logger.warning("CA-B2 : fetchers Twelve indisponibles (%s) — close EU approx", e)
+
+    eu_tickers = _eu_tickers_from_fiches(fiches)
+    approx_tickers: set = set()
+    wrapped_fetch = _wrap_fetch_eu_close(
+        fetch_price, fetch_series, eu_tickers, date_j, approx_tickers,
+    )
+
     # Mesure : on appelle le Journaliste avec today = date_j de sorte que les
     # cellules 24h du jour soient échues (échéance 24h = prochain jour ouvré >
     # date_j ; pour clôturer le 24h LE SOIR MÊME on force l'échéance à aujourd'hui
@@ -264,7 +394,7 @@ def build_bilan_jour(
         bulletins_dir=bulletins_dir,
         prix_emission_dir=prix_emission_dir,
         fiches=fiches,
-        fetch_price=fetch_price,
+        fetch_price=wrapped_fetch,
         prix_ouverture_dir=prix_ouverture_dir,
         only_seven_am=True,
     )
@@ -290,6 +420,7 @@ def build_bilan_jour(
     conv_map = load_conviction_map(date_j, decision_log_dir)
     bilan.conviction = win_rate_par_conviction(measures_24h, conv_map)
 
+    bilan.close_approx_tickers = approx_tickers
     bilan.markdown = _render_markdown(bilan, fiches)
     return bilan
 
@@ -328,14 +459,28 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         ):
             flag = "⚡ gros move"
             faux_gros.append((m.cell.actif_name, abs(delta)))
+        # CA-B2 : marqueur [close approx] si la clôture EU est un fallback spot
+        # (close officiel 17h30 indisponible — Q5).
+        cloture_cell = _fmt_price(m.prix_courant)
+        if getattr(m, "ticker", None) in bilan.close_approx_tickers:
+            cloture_cell = f"{cloture_cell} {CLOSE_APPROX_MARKER}"
         L.append(
             f"| {m.cell.actif_name} | {m.cell.conclusion} | "
-            f"{_fmt_price(m.prix_emission)} | {_fmt_price(m.prix_courant)} | "
+            f"{_fmt_price(m.prix_emission)} | {cloture_cell} | "
             f"{_fmt_pct(delta)} | {res_label.get(m.outcome, m.outcome)} | {flag} |"
         )
     if not bilan.measures_24h:
         L.append("| _aucune cellule 24h mesurable du Briefing 7h_ | | | | | | |")
     L.append("")
+    # CA-B2 — note Q5 : si une clôture EU est approximée (spot 22h faute de
+    # close officiel 17h30), on le signale explicitement (zéro invention).
+    if bilan.close_approx_tickers:
+        L.append(
+            f"> {CLOSE_APPROX_MARKER} : clôture EU = dernier prix disponible "
+            f"(spot ~22h), faute de close officiel 17h30 récupérable. "
+            f"À valider en live (Q5 : comportement Twelve Data pour FCHI/ETF)."
+        )
+        L.append("")
 
     # Win rate du jour
     L.append("### Win rate du jour")
@@ -436,4 +581,5 @@ __all__ = [
     "build_bilan_jour",
     "write_bilan_jour",
     "GROS_MOVE_FACTOR",
+    "CLOSE_APPROX_MARKER",
 ]

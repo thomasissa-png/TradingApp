@@ -1,6 +1,6 @@
 # Win rate du bulletin — Journaliste
 
-- Généré : 2026-06-08T16:28:24.152030+02:00
+- Généré : 2026-06-08T18:07:34.538770+02:00
 - Journaliste version : v3.1.0
 - Win rate = taux de bonnes directions sur les paris indépendants (N_eff)
 - Cible : ≥ 70% sur ≥ 15 paris (borne basse > 50 %)
@@ -11,18 +11,18 @@
 
 | Actif | Win rate | Paris (réels) | Non notés | Statut |
 |---|---|---|---|---|
+| Blé | 100.0% | 6 | 11 | ⏳ trop peu (6/15) |
 | EUR/USD | 100.0% | 5 | 4 | ⏳ trop peu (5/15) |
 | Or | 100.0% | 6 | 4 | ⏳ trop peu (6/15) |
 | Argent | 83.3% | 6 | 3 | ⏳ trop peu (6/15) |
-| Blé | 80.0% | 5 | 15 | ⏳ trop peu (5/15) |
+| Pétrole (Brent) | 83.3% | 6 | 9 | ⏳ trop peu (6/15) |
 | Nasdaq | 66.7% | 6 | 3 | ⏳ trop peu (6/15) |
-| Pétrole (Brent) | 66.7% | 6 | 9 | ⏳ trop peu (6/15) |
-| Café (Arabica) | 50.0% | 6 | 9 | ⏳ trop peu (6/15) |
+| Café (Arabica) | 60.0% | 5 | 10 | ⏳ trop peu (5/15) |
 | VIX | 50.0% | 2 | 18 | ⏳ trop peu (2/15) |
-| CAC 40 | 33.3% | 3 | 17 | ⏳ trop peu (3/15) |
-| S&P 500 | 16.7% | 6 | 2 | ⏳ trop peu (6/15) |
+| CAC 40 | 33.3% | 3 | 13 | ⏳ trop peu (3/15) |
+| S&P 500 | 16.7% | 6 | 3 | ⏳ trop peu (6/15) |
 | Cacao | 0.0% | 6 | 3 | ⏳ trop peu (6/15) |
-| Cuivre | 0.0% | 4 | 6 | ⏳ trop peu (4/15) |
+| Cuivre | 0.0% | 4 | 5 | ⏳ trop peu (4/15) |
 
 ### 7 jours
 
@@ -61,4 +61,4 @@
 ### Flip vs continuation
 
 - Win rate sur retournements : **50.0%** (N=24)
-- Win rate sur continuations : **58.4%** (N=161)
+- Win rate sur continuations : **61.3%** (N=168)

@@ -2,6 +2,18 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-08 (Session 5) — Phase 2 refonte 5 rapports : suivis 12h/18h légers + runner bilan 22h (@fullstack)
+
+Implémentation de la **Phase 2** de `v3/docs/reco/spec-refonte-5-rapports.md` (v2, §3.2/§3.3) : les rapports de **SUIVI 12h (R2) et 18h (R3)**, courts (Thomas lit en 2 min), + le **runner CLI du bilan 22h** (R4). **WIN RATE ONLY, mode shadow, zéro modif silencieuse, zéro invention. Le suivi N'ÉCRIT PAS dans measures-log (pas de cellule mesurée, pas de re-scoring DeepSeek).** Phase 3 (Manager dimanche) NON faite.
+
+### Livrables (@fullstack)
+- **`v3/scripts/run_suivi.py`** (nouveau, R2/R3) — `build_suivi(report_type, now=...)` lit les positions 24h du **Briefing 7h du jour** (`load_briefing_cells`, exclut INSUFFISANT) et produit `v3/data/suivi/{date}-{12h|18h}.md`. Pour chaque actif : **statut vs SON ouverture** (`(prix − ouverture)/ouverture` % → ✅ gagne / ⚠️ perd / — neutre sous `neutral_band_pct`), **dynamique de tendance** (↑ s'accélère / ↓ s'essouffle / ⇄ se retourne vs le suivi précédent — snapshot 12h relu au 18h ; flags US ↗ confirmé / ↘ infirmé au 18h), **suggestion de sortie** (`Sortie à envisager` si `|Delta%| ≥ SEUIL_PCT_actif` CONTRE le call — **drapeau, jamais un ordre** ; sinon Hold/Surveiller), **news à impact** (court, best-effort depuis le decision-log 7h, zéro DeepSeek). **Marchés US à 12h** : affichés explicitement `🕐 pas encore ouvert` (ouverture 15h30) — pas de ligne trompeuse ; 1er statut US au 18h. Heures via `mesure_ouverture.actif_group`/`is_open_for_stamp` (ZoneInfo, **jamais d'offset en dur**). **Léger** : prix + news, PAS de matrice LONG/SHORT, PAS de scoring (Q9). CLI : `python3 run_suivi.py 12h|18h`.
+- **`v3/scripts/run_bilan.py`** (nouveau, runner R4) — appelle `bilan_jour.build_bilan_jour(now=...)` (Phase 1) + `write_bilan_jour`. CLI `--date`. Le **déclenchement 22h15 Paris = infra (séparé)**.
+- **Tests** — `test_run_suivi.py` (15 cas dérivés des CA-S* : briefing 24h actionnables, statut vs ouverture ✅/⚠️/neutre, dynamique ↑/↓/⇄ + Δ vs 12h au 18h, flag US confirmé/infirmé, drapeau sortie au seuil contre le call, US pas-ouvert à 12h (🕐) puis ouvert à 18h, **run_suivi n'écrit pas measures-log**, rapport court sans matrice, zéro mention monétaire, ouverture absente → —, runner bilan smoke). **943 tests verts** (+15), `v3/data/` non pollué (`git checkout` + dossier `suivi/` avec `.gitkeep`). Shadow préservé, aucun run déclenché.
+
+### CA-S* couverts / restants
+Couverts : **CA-S1, CA-S2, CA-S3, CA-S4, CA-S5, CA-S6, CA-S6b** + runner R4 (CA-B* déjà couverts en Phase 1). Restants (dépendent de l'infra — @infrastructure) : **CA-I1/I3/I4** (steps cycle 12h/18h/22h appellent run_suivi/run_bilan, anti-doublon, créneaux VPS), **Q9** (les créneaux 12h/18h lancent-ils encore run_bulletin complet ? — décision Thomas/infra).
+
 ## 2026-06-08 (Session 5) — Phase 1 refonte 5 rapports : mesure ouverture→clôture + bilan 22h (@fullstack)
 
 Implémentation de la **Phase 1** de `v3/docs/reco/spec-refonte-5-rapports.md` (v2) : le prix de référence du 24h passe de « prix au run 7h » (souvent marché fermé / prix de nuit) à l'**ouverture propre de chaque marché → clôture, jugée à 22h le jour même**. Corrige l'artefact signalé par Thomas (call jugé FAUX à cause du prix de nuit). **WIN RATE ONLY, mode shadow, zéro modif silencieuse, zéro invention.** Phases 2 (suivis 12h/18h) et 3 (Manager dimanche) NON faites.

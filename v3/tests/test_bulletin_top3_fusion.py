@@ -355,3 +355,29 @@ def test_detail_table_sens_inverse():
     b = sa.render_bulletin([r], {}, NOW, "h", "ok")
     detail = b.split("## Détail par actif")[1]
     assert "| inversé |" in detail
+
+
+def test_detail_synthese_avant_tableau():
+    """La synthèse directionnelle 24h/7j/1m est rendue EN TÊTE de chaque actif :
+    après « ### {nom} » et AVANT la 1ʳᵉ ligne de tableau. L'ancienne ligne
+    « - Scores : » placée après le tableau (redondante) a été retirée."""
+    r = sa.score_actif("a", _fiche_equilibree(), _vals2(1.0, 1.0))
+    r.nom = "ActifSynth"
+    b = sa.render_bulletin([r], {}, NOW, "h", "ok")
+    detail = b.split("## Détail par actif")[1]
+
+    # Ordre : ### nom  <  synthèse (24h : … · 7j : … · 1m : …)  <  en-tête tableau
+    idx_titre = detail.index("### ActifSynth")
+    idx_synth = detail.index("**24h : ", idx_titre)
+    idx_table = detail.index("| Critère | Comment c'est lu |", idx_titre)
+    assert idx_titre < idx_synth < idx_table, "synthèse doit être entre titre et tableau"
+
+    # La synthèse reprend les 3 horizons avec direction + note signée 2 décimales.
+    synth_line = next(l for l in detail.splitlines() if l.startswith("**24h : "))
+    for h in ("24h", "7j", "1m"):
+        assert f"{h} : " in synth_line
+        assert f"{r.scores[h]:+.2f}" in synth_line
+    assert " · " in synth_line  # séparateurs cohérents avec le style du bulletin
+
+    # Ancienne ligne « - Scores : » (après tableau) supprimée → plus de doublon.
+    assert "- Scores : 24h=" not in detail

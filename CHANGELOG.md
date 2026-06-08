@@ -2,6 +2,14 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-08 (Session 4) — Détail par actif : synthèse directionnelle 24h/7j/1m placée avant le tableau de chaque actif
+
+Thomas voulait voir la **décision des 3 horizons d'abord**, puis le détail des critères qui la justifie. Avant : sous `### {nom}` on enchaînait directement le tableau, et la ligne « Scores » arrivait après. **Mise en page uniquement — zéro changement de chiffre, score, logique ou conclusion.**
+
+### Correctif (@fullstack)
+- **`v3/scripts/scoring_analyste.py`** — ligne de synthèse directionnelle insérée juste après `### {nom}` et **avant** le tableau de critères : `**24h : LONG (+20.00) · 7j : SHORT (−8.16) · 1m : SHORT (−3.90)**` (direction `r.conclusions[h]` + note signée `r.scores[h]` à 2 décimales, séparateurs `·` cohérents avec le bulletin). L'ancienne ligne `- Scores : 24h=… · 7j=… · 1m=…` placée **après** le tableau (désormais redondante) a été **retirée** (pas de doublon).
+- **Tests** : `test_detail_synthese_avant_tableau` (neuf) vérifie l'ordre titre < synthèse < en-tête de tableau, les 3 horizons avec note signée 2 décimales, et l'absence de l'ancienne ligne « - Scores : ». **898 tests verts**, `v3/data/` non pollué (`git checkout` post-run). Mesure VRAI/FAUX et decision-log identiques. Shadow préservé, aucun run déclenché.
+
 ## 2026-06-06 (Session 4) — Noms des 100 critères reformulés en langage trader
 
 Thomas ne comprenait pas les noms de critères (« NOAA drought % Midwest+Plains D2+ », « USDA WASDE stocks-to-use mondial », « CFTC COT nets »…). Implémentation de la spec @copywriter `v3/audit/reco-wording-noms-criteres.md` — **champ `nom:` uniquement**, zéro modification de `cle_courante`, poids, signe, source, normalisation, seuils, logique, score ou conclusion.

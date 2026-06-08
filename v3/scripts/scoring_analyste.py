@@ -2041,6 +2041,14 @@ def render_bulletin(
     for r in results:
         lines.append(f"### {r.nom}")
         lines.append("")
+        # Synthèse directionnelle EN TÊTE : la décision des 3 horizons (direction
+        # + note signée) AVANT le tableau de critères qui la justifie. Remplace
+        # l'ancienne ligne « - Scores » placée après le tableau (redondante).
+        synth_h = " · ".join(
+            f"{h} : {r.conclusions.get(h, '—')} ({r.scores[h]:+.2f})" for h in HORIZONS
+        )
+        lines.append(f"**{synth_h}**")
+        lines.append("")
         lines.append("| Critère | Comment c'est lu | Valeur actuelle | Penchant | Importance | Sens | Effet 24h | Effet 7j | Effet 1m |")
         lines.append("|---|---|---|---|---|---|---|---|---|")
         for c in r.criteres:
@@ -2066,8 +2074,6 @@ def render_bulletin(
             lines.append("")
             for h, note in r.tie_break_notes.items():
                 lines.append(f"- [{h}] {note}")
-        lines.append("")
-        lines.append(f"- Scores : 24h={r.scores['24h']:+.3f} · 7j={r.scores['7j']:+.3f} · 1m={r.scores['1m']:+.3f}")
         lines.append("")
     # Glossaire en pied de section « Détail par actif » (une seule fois).
     lines.extend(DETAIL_TABLE_GLOSSARY_LINES)

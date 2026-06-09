@@ -2,6 +2,20 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-09 (Session 7) — Page index.html : affichage des 5 rapports (@fullstack)
+
+**Bug corrigé** : depuis la refonte « 5 rapports », `build_html.py` ne ramassait QUE les `bulletin-*.md` (briefing 7h). Les suivis 12h/18h, le bilan du jour 22h et le bilan de semaine étaient produits mais **invisibles** sur la page. Mode shadow, WIN RATE ONLY, zéro modification de poids/seuils/scoring, branche `claude/elegant-ramanujan-OIKms` (pas de PR).
+
+### `build_html.py` — collecte + rendu des nouveaux rapports
+- **`build_reports_payload`** (nouveau) : collecte `v3/data/suivi/*.md` (12h/18h) + `v3/data/bilan-jour/*.md` (22h), tri date+heure décroissants, limite aux 30 jours récents. Chaque entrée porte `kind` (suivi/bilan-jour), `date`, `slot`. Dossier absent/vide → liste vide (dégradation propre, zéro crash).
+- **`build_weekly_payload`** (nouveau) : renvoie le bilan de semaine le plus récent (`win-rate-YYYY-S##.md`, tri ISO année+semaine), ou `None`.
+- **Sérialisation JS** factorisée (`_entries_to_js`) ; `REPORTS` + `WEEKLY` embarqués comme `BULLETINS`.
+- **2 nouvelles vues** dans la sidebar : « 📅 Aujourd'hui » (briefing 7h + suivis + bilan du jour **regroupés par jour**, jour le plus récent ouvert par défaut, rendu MD paresseux par rapport) et « 🗓️ Bilan semaine ». Réutilisent le pipeline MD existant (marked.js + colorisation LONG/SHORT + tooltips + tables). Refacto : `showHistory`/`hideHistory` → `showAuxView`/`hideAuxViews` mutualisés (today/week/history).
+- Dégradation propre : pas de bulletin mais des suivis → ouvre « Aujourd'hui » ; `WEEKLY` absent → section vide ; routage hash `#vue=aujourdhui` / `#vue=semaine`.
+
+### Tests — `v3/tests/test_build_html_reports.py` (9 tests, verts)
+- Collecte suivis+bilan (tri bilan 22h avant suivis, slots 12h/18h/22h), tri multi-jours, dossiers absents, fichiers hors format ignorés ; weekly le plus récent / absent ; rendu HTML inclut les 3 types ; dégradation propre sans rapports (`const WEEKLY = null`) ; garde-fou win-rate-only sur fixtures. Suite complète `pytest v3/` : **977 passed, 3 skipped**. JS embarqué validé (parse Node OK).
+
 ## 2026-06-08 (Session 6) — Finalisation refonte 5 rapports : CA-M7 + CA-B2 (@fullstack)
 
 **Les 2 restes de la refonte implémentés** (spec §7 CA-M7/CA-B2). Mode shadow, WIN RATE ONLY, zéro modification silencieuse de poids/seuils/scoring, branche `claude/elegant-ramanujan-OIKms` (pas de PR).

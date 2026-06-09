@@ -27,10 +27,15 @@ from typing import Dict, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 BULLETINS_DIR = ROOT / "data" / "bulletins"
+SUIVI_DIR = ROOT / "data" / "suivi"
+BILAN_JOUR_DIR = ROOT / "data" / "bilan-jour"
+WEEKLY_DIR = ROOT / "data" / "performance" / "weekly"
 OUT_PATH = ROOT / "data" / "index.html"
 MEASURES_LOG_FILE = ROOT / "data" / "measures-log.jsonl"
 PERFORMANCE_AB_FILE = ROOT / "data" / "performance-ab.md"
 MAX_BULLETINS = 90
+# Combien de jours récents on embarque pour les suivis + bilans du jour.
+MAX_REPORT_DAYS = 30
 
 # Ligne de la Matrice A/B de performance-ab.md :
 # | Actif | Horizon | N_pm1 | Taux_pm1 | Brier_pm1 | N_pond | Taux_pond | Brier_pond |
@@ -47,6 +52,13 @@ RE_BULLETIN = re.compile(r"^bulletin-(\d{4}-\d{2}-\d{2})(?:-(\d{2})h)?\.md$")
 
 # Libellé lisible du créneau (heure UTC du run). Cron UTC 5/10/16.
 SLOT_LABELS = {"05": "matin", "10": "midi", "16": "soir"}
+
+# Suivis intra-journée : v3/data/suivi/YYYY-MM-DD-HHh.md (HH = heure Paris du run, 12h/18h).
+RE_SUIVI = re.compile(r"^(\d{4}-\d{2}-\d{2})-(\d{2})h\.md$")
+# Bilan du jour 22h : v3/data/bilan-jour/YYYY-MM-DD.md
+RE_BILAN_JOUR = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
+# Bilan de semaine : v3/data/performance/weekly/win-rate-YYYY-S##.md
+RE_WEEKLY = re.compile(r"^win-rate-(\d{4})-S(\d{2})\.md$")
 
 
 def slot_label(hour_utc: str) -> str:
@@ -117,6 +129,103 @@ def build_payload() -> List[Dict[str, str]]:
     return payload
 
 
+def _read_md(path: Path) -> str:
+    """Lit un fichier markdown ; renvoie un message lisible en cas d'erreur (jamais de crash)."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 — robustesse build, on ne plante jamais la page
+        return f"_Erreur lecture {path.name} : {exc}_"
+
+
+def build_reports_payload(
+    suivi_dir: Path = SUIVI_DIR,
+    bilan_jour_dir: Path = BILAN_JOUR_DIR,
+    max_days: int = MAX_REPORT_DAYS,
+) -> List[Dict[str, str]]:
+    """Collecte suivis (12h/18h) + bilans du jour (22h), du plus récent au plus ancien.
+
+    Chaque entrée : {id, kind, date, slot, label, filename, markdown}.
+    - kind = "suivi" | "bilan-jour"
+    - slot = "12h"/"18h" pour un suivi, "22h" pour un bilan du jour (heure Paris).
+    Dossier absent ou vide → simplement aucune entrée (dégradation propre, zéro erreur).
+    On limite aux `max_days` jours les plus récents (par date) pour ne pas gonfler la page.
+    """
+    items: List[Tuple[str, str, str, str, Path]] = []  # (date, sort_hour, kind, slot, path)
+
+    if suivi_dir.exists():
+        for p in suivi_dir.glob("*.md"):
+            m = RE_SUIVI.match(p.name)
+            if not m:
+                continue
+            items.append((m.group(1), m.group(2), "suivi", f"{m.group(2)}h", p))
+
+    if bilan_jour_dir.exists():
+        for p in bilan_jour_dir.glob("*.md"):
+            m = RE_BILAN_JOUR.match(p.name)
+            if not m:
+                continue
+            # Le bilan du jour clôt la journée (22h) → trié après les suivis du même jour.
+            items.append((m.group(1), "22", "bilan-jour", "22h", p))
+
+    # Tri date puis heure décroissants (le plus récent en tête).
+    items.sort(key=lambda it: (it[0], it[1]), reverse=True)
+
+    # Limite aux N jours les plus récents (par date distincte).
+    if max_days > 0:
+        kept_dates: List[str] = []
+        seen = set()
+        for date_iso, *_ in items:
+            if date_iso not in seen:
+                seen.add(date_iso)
+                kept_dates.append(date_iso)
+            if len(kept_dates) >= max_days:
+                break
+        allowed = set(kept_dates)
+        items = [it for it in items if it[0] in allowed]
+
+    payload: List[Dict[str, str]] = []
+    for date_iso, _sort_hour, kind, slot, path in items:
+        label = "Bilan du jour" if kind == "bilan-jour" else f"Suivi {slot}"
+        payload.append({
+            "id": f"{kind}-{path.stem}",
+            "kind": kind,
+            "date": date_iso,
+            "slot": slot,
+            "label": label,
+            "filename": path.name,
+            "markdown": _read_md(path),
+        })
+    return payload
+
+
+def build_weekly_payload(weekly_dir: Path = WEEKLY_DIR) -> Optional[Dict[str, str]]:
+    """Renvoie le bilan de semaine le plus récent, ou None si aucun.
+
+    Tri par (année, numéro de semaine ISO) décroissant. Dossier absent/vide → None
+    (la section « Bilan semaine » sera alors masquée — dégradation propre).
+    """
+    if not weekly_dir.exists():
+        return None
+    best: Optional[Tuple[Tuple[int, int], Path, str]] = None
+    for p in weekly_dir.glob("win-rate-*.md"):
+        m = RE_WEEKLY.match(p.name)
+        if not m:
+            continue
+        key = (int(m.group(1)), int(m.group(2)))
+        label = f"Semaine {m.group(1)}-S{m.group(2)}"
+        if best is None or key > best[0]:
+            best = (key, p, label)
+    if best is None:
+        return None
+    _key, path, label = best
+    return {
+        "id": f"weekly-{path.stem}",
+        "label": label,
+        "filename": path.name,
+        "markdown": _read_md(path),
+    }
+
+
 def load_measures(path: Path = MEASURES_LOG_FILE) -> List[Dict]:
     """Charge measures-log.jsonl (1 mesure JSON par ligne).
 
@@ -176,31 +285,44 @@ def parse_perf_ab_summary(path: Path = PERFORMANCE_AB_FILE) -> Dict[str, Dict[st
     return summary
 
 
+def _entries_to_js(entries: List[Dict[str, str]], meta_keys: List[str]) -> str:
+    """Sérialise une liste d'entrées {meta..., markdown} en tableau JS.
+
+    Les `meta_keys` sont sérialisés en JSON ; `markdown` est inséré dans un
+    template literal JS échappé (robuste guillemets/backslashes/Unicode).
+    """
+    js_entries: List[str] = []
+    for e in entries:
+        meta = json.dumps({k: e.get(k, "") for k in meta_keys}, ensure_ascii=False)
+        md_escaped = escape_for_js_template_literal(e["markdown"])
+        js_entries.append(f"{{...{meta}, markdown: `{md_escaped}`}}")
+    return "[\n" + ",\n".join(js_entries) + "\n]"
+
+
 def render_html(
     payload: List[Dict[str, str]],
     total_count: int,
     measures: Optional[List[Dict]] = None,
     perf_ab: Optional[Dict[str, Dict[str, str]]] = None,
+    reports: Optional[List[Dict[str, str]]] = None,
+    weekly: Optional[Dict[str, str]] = None,
 ) -> str:
     """Génère le HTML autonome."""
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     # On sérialise séparément id/label/filename en JSON (simple), et le markdown
     # est inséré dans des template literals JS échappés (plus robuste pour
     # les guillemets, backslashes, et caractères Unicode).
-    js_entries: List[str] = []
-    for b in payload:
-        meta = json.dumps(
-            {
-                "id": b["id"],
-                "label": b["label"],
-                "slot": b.get("slot", ""),
-                "filename": b["filename"],
-            },
-            ensure_ascii=False,
-        )
-        md_escaped = escape_for_js_template_literal(b["markdown"])
-        js_entries.append(f"{{...{meta}, markdown: `{md_escaped}`}}")
-    bulletins_js = "[\n" + ",\n".join(js_entries) + "\n]"
+    bulletins_js = _entries_to_js(payload, ["id", "label", "slot", "filename"])
+
+    # Suivis 12h/18h + bilans du jour (section « Aujourd'hui »).
+    reports = reports or []
+    reports_js = _entries_to_js(reports, ["id", "kind", "date", "slot", "label", "filename"])
+
+    # Bilan de semaine le plus récent (peut être absent → null).
+    if weekly:
+        weekly_js = _entries_to_js([weekly], ["id", "label", "filename"]) + "[0]"
+    else:
+        weekly_js = "null"
 
     # Historique : mesures unitaires + résumé Taux/Brier par cellule (page
     # autonome → tout est sérialisé en JS, aucun fetch au runtime).
@@ -490,6 +612,45 @@ def render_html(
     padding: 8px 16px 4px 16px; font-size: 11px; text-transform: uppercase;
     letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;
   }}
+  /* Vues Aujourd'hui / Bilan semaine / Historique */
+  .history-intro {{ color: var(--text-muted); margin: 4px 0 18px 0; }}
+  /* Vue Aujourd'hui : un groupe replié par jour, chaque rapport en sous-bloc */
+  .today-day {{
+    border: 1px solid var(--border); border-radius: 8px; margin: 0 0 18px 0;
+    background: var(--bg-panel); overflow: hidden;
+  }}
+  .today-day > summary {{
+    cursor: pointer; padding: 12px 16px; font-weight: 600; font-size: 15px;
+    color: var(--text); list-style: none; user-select: none;
+    display: flex; align-items: center; gap: 10px;
+  }}
+  .today-day > summary::-webkit-details-marker {{ display: none; }}
+  .today-day > summary::before {{
+    content: "▸"; display: inline-block; transition: transform 0.15s ease;
+    color: var(--text-muted);
+  }}
+  .today-day[open] > summary::before {{ transform: rotate(90deg); }}
+  .today-day .day-count {{
+    margin-left: auto; font-size: 12px; font-weight: 500; color: var(--text-muted);
+  }}
+  .today-report {{ border-top: 1px solid var(--border); }}
+  .today-report > summary {{
+    cursor: pointer; padding: 10px 16px 10px 32px; font-weight: 600; font-size: 13.5px;
+    color: var(--accent); list-style: none; user-select: none;
+    display: flex; align-items: center; gap: 8px;
+  }}
+  .today-report > summary::-webkit-details-marker {{ display: none; }}
+  .today-report > summary::before {{
+    content: "▸"; display: inline-block; transition: transform 0.15s ease;
+    color: var(--text-muted);
+  }}
+  .today-report[open] > summary::before {{ transform: rotate(90deg); }}
+  .today-report .report-body {{ padding: 4px 18px 16px 32px; }}
+  .today-report .report-tag {{
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+    padding: 2px 7px; border-radius: 10px; background: var(--accent-bg); color: var(--accent);
+    flex-shrink: 0;
+  }}
   /* Vue Historique */
   #history-view .history-intro {{ color: var(--text-muted); margin: 4px 0 18px 0; }}
   .history-filters {{
@@ -598,6 +759,8 @@ def render_html(
 <div class="layout">
   <aside id="sidebar">
     <ul id="nav-views">
+      <li><a href="#vue=aujourdhui" id="nav-today" class="nav-view-link">📅 Aujourd'hui</a></li>
+      <li><a href="#vue=semaine" id="nav-week" class="nav-view-link">🗓️ Bilan semaine</a></li>
       <li><a href="#vue=historique" id="nav-history" class="nav-view-link">📊 Historique / Performance</a></li>
     </ul>
     <div class="nav-section-label">Bulletins</div>
@@ -648,6 +811,18 @@ def render_html(
       <div id="bulletin-content">
         <p>Chargement...</p>
       </div>
+      <section id="today-view" hidden aria-label="Rapports d'aujourd'hui">
+        <h1>📅 Aujourd'hui</h1>
+        <p class="history-intro">Le briefing du matin et les suivis de la journée, regroupés par jour. Le plus récent en premier.</p>
+        <div id="today-list"></div>
+        <p id="today-empty" hidden></p>
+      </section>
+      <section id="week-view" hidden aria-label="Bilan de la semaine">
+        <h1>🗓️ Bilan semaine</h1>
+        <p class="history-intro">Win rate cumulé de la semaine en cours (réécrit à chaque run, figé en fin de semaine).</p>
+        <div id="week-content"></div>
+        <p id="week-empty" hidden></p>
+      </section>
       <section id="history-view" hidden aria-label="Historique des décisions et performance">
         <h1>Historique / Performance</h1>
         <p class="history-intro">Toutes les décisions passées et leur résultat à l'échéance. La base de ce qui a été fait.</p>
@@ -686,6 +861,8 @@ def render_html(
 </div>
 <script>
 const BULLETINS = {bulletins_js};
+const REPORTS = {reports_js};   // suivis 12h/18h + bilans du jour (22h), plus récent d'abord
+const WEEKLY = {weekly_js};     // bilan de semaine le plus récent (ou null)
 const MEASURES = {measures_js};
 const PERF_AB = {perf_ab_js};
 
@@ -1033,6 +1210,64 @@ function renderHistoryTable() {{
   if (empty) empty.hidden = true;
   if (countEl) countEl.textContent = rows.length + ' / ' + MEASURES.length + ' décisions';
 }}
+// Liste des liens de nav de vue auxiliaire (pour gérer l'état .active).
+const AUX_NAV_IDS = ['nav-today', 'nav-week', 'nav-history'];
+function clearAuxNavActive() {{
+  AUX_NAV_IDS.forEach(id => {{
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('active');
+  }});
+}}
+
+// Bascule l'UI en mode « vue auxiliaire » (today/week/history) : masque le
+// bulletin + sa chrome (légende, sous-nav, aide) et n'affiche QUE la section
+// demandée. `sectionId` = id de la <section> à afficher.
+function showAuxView(sectionId, navId) {{
+  ['today-view', 'week-view', 'history-view'].forEach(s => {{
+    const el = document.getElementById(s);
+    if (el) el.hidden = (s !== sectionId);
+  }});
+  const bc = document.getElementById('bulletin-content');
+  const subnav = document.getElementById('subnav');
+  const legend = document.getElementById('legend-bar');
+  const help = document.querySelector('.help-box');
+  if (bc) bc.hidden = true;
+  if (subnav) subnav.style.display = 'none';
+  if (legend) legend.style.display = 'none';
+  if (help) help.style.display = 'none';
+  clearAuxNavActive();
+  const nav = document.getElementById(navId);
+  if (nav) nav.classList.add('active');
+  renderList(null);
+  const mainEl = document.getElementById('bulletin-main');
+  if (mainEl) mainEl.scrollTop = 0;
+}}
+
+// Quitte toute vue auxiliaire et restaure la vue bulletin (légende, aide…).
+function hideAuxViews() {{
+  ['today-view', 'week-view', 'history-view'].forEach(s => {{
+    const el = document.getElementById(s);
+    if (el) el.hidden = true;
+  }});
+  const bc = document.getElementById('bulletin-content');
+  const legend = document.getElementById('legend-bar');
+  const help = document.querySelector('.help-box');
+  if (bc) bc.hidden = false;
+  if (legend) legend.style.display = '';
+  if (help) help.style.display = '';
+  clearAuxNavActive();
+}}
+
+function showToday() {{
+  buildTodayView();
+  showAuxView('today-view', 'nav-today');
+  history.replaceState(null, '', '#vue=aujourdhui');
+}}
+function showWeek() {{
+  buildWeekView();
+  showAuxView('week-view', 'nav-week');
+  history.replaceState(null, '', '#vue=semaine');
+}}
 function showHistory() {{
   if (!HISTORY_BUILT) {{
     buildHistoryFilters();
@@ -1040,38 +1275,119 @@ function showHistory() {{
     HISTORY_BUILT = true;
   }}
   renderHistoryTable();
-  const hv = document.getElementById('history-view');
-  const bc = document.getElementById('bulletin-content');
-  const subnav = document.getElementById('subnav');
-  const legend = document.getElementById('legend-bar');
-  const help = document.querySelector('.help-box');
-  if (hv) hv.hidden = false;
-  if (bc) bc.hidden = true;
-  if (subnav) subnav.style.display = 'none';
-  if (legend) legend.style.display = 'none';
-  if (help) help.style.display = 'none';
-  const nav = document.getElementById('nav-history');
-  if (nav) nav.classList.add('active');
-  renderList(null);
+  showAuxView('history-view', 'nav-history');
   history.replaceState(null, '', '#vue=historique');
-  const mainEl = document.getElementById('bulletin-main');
-  if (mainEl) mainEl.scrollTop = 0;
 }}
-function hideHistory() {{
-  const hv = document.getElementById('history-view');
-  const bc = document.getElementById('bulletin-content');
-  const legend = document.getElementById('legend-bar');
-  const help = document.querySelector('.help-box');
-  if (hv) hv.hidden = true;
-  if (bc) bc.hidden = false;
-  if (legend) legend.style.display = '';
-  if (help) help.style.display = '';
-  const nav = document.getElementById('nav-history');
-  if (nav) nav.classList.remove('active');
+
+// --- Rendu markdown mutualisé (suivis, bilans, semaine) -------------------
+// Rend `md` dans `target` avec le même pipeline d'enrichissement que les
+// bulletins (colorisation LONG/SHORT, tooltips symboles, wrap tables). Fallback
+// <pre> si marked.js n'a pas chargé (offline). Réutilisé par toutes les vues.
+function renderMarkdownInto(target, md) {{
+  if (!target) return;
+  if (typeof marked !== 'undefined') {{
+    marked.setOptions({{gfm: true, breaks: false}});
+    target.innerHTML = marked.parse(md || '');
+    colorizeDirections(target);
+    addSymbolTooltips(target);
+    markDenseTables(target);
+    wrapTables(target);
+  }} else {{
+    const pre = document.createElement('pre');
+    pre.textContent = md || '';
+    target.innerHTML = '';
+    target.appendChild(pre);
+  }}
+}}
+
+// Construit la vue « Aujourd'hui » : pour chaque jour (récent d'abord), un
+// groupe repliable contenant le briefing 7h + les suivis 12h/18h + le bilan du
+// jour. Réutilise BULLETINS (briefings) + REPORTS (suivis/bilans).
+function buildTodayView() {{
+  const wrap = document.getElementById('today-list');
+  const empty = document.getElementById('today-empty');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  // Regroupe par date ISO (YYYY-MM-DD). Un briefing 7h = un bulletin dont l'id
+  // commence par la date ; on extrait juste les 10 premiers caractères.
+  const byDay = {{}};  // date -> groupe (briefings / suivis / bilan)
+  const ensure = (d) => (byDay[d] = byDay[d] || {{ briefings: [], suivis: [], bilan: null }});
+  BULLETINS.forEach(b => {{
+    const d = (b.id || '').slice(0, 10);
+    if (/^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(d)) ensure(d).briefings.push(b);
+  }});
+  REPORTS.forEach(r => {{
+    const d = r.date;
+    if (!d) return;
+    if (r.kind === 'bilan-jour') ensure(d).bilan = r;
+    else ensure(d).suivis.push(r);
+  }});
+
+  const days = Object.keys(byDay).sort().reverse();
+  if (days.length === 0) {{
+    if (empty) {{ empty.hidden = false; empty.textContent = "Aucun rapport pour l'instant — les briefings et suivis apparaîtront ici."; }}
+    return;
+  }}
+  if (empty) empty.hidden = true;
+
+  days.forEach((d, di) => {{
+    const grp = byDay[d];
+    const dt = formatBulletinDate(d);
+    const details = document.createElement('details');
+    details.className = 'today-day';
+    if (di === 0) details.open = true;  // le jour le plus récent ouvert par défaut
+    const summary = document.createElement('summary');
+    const n = grp.briefings.length + grp.suivis.length + (grp.bilan ? 1 : 0);
+    summary.innerHTML = '<span>' + dt.short + '</span>'
+      + '<span class="day-count">' + n + ' rapport' + (n > 1 ? 's' : '') + '</span>';
+    details.appendChild(summary);
+
+    // Ordre de lecture du jour : briefing 7h → suivi 12h → suivi 18h → bilan 22h.
+    const ordered = [];
+    grp.briefings.forEach(b => ordered.push({{ tag: 'Briefing', slot: b.slot || '7h', md: b.markdown, key: '07' }}));
+    grp.suivis
+      .slice()
+      .sort((a, b) => (a.slot || '').localeCompare(b.slot || ''))
+      .forEach(s => ordered.push({{ tag: 'Suivi', slot: s.slot, md: s.markdown, key: s.slot }}));
+    if (grp.bilan) ordered.push({{ tag: 'Bilan', slot: '22h', md: grp.bilan.markdown, key: '22' }});
+
+    ordered.forEach((item, ii) => {{
+      const rd = document.createElement('details');
+      rd.className = 'today-report';
+      if (di === 0 && ii === ordered.length - 1) rd.open = true;  // dernier rapport du jour le + récent ouvert
+      const rs = document.createElement('summary');
+      rs.innerHTML = '<span class="report-tag">' + item.tag + '</span><span>' + (item.slot || '') + '</span>';
+      rd.appendChild(rs);
+      const body = document.createElement('div');
+      body.className = 'report-body';
+      rd.appendChild(body);
+      // Rendu paresseux : on ne parse le markdown qu'à la première ouverture.
+      let rendered = false;
+      const doRender = () => {{ if (!rendered) {{ renderMarkdownInto(body, item.md); rendered = true; }} }};
+      rd.addEventListener('toggle', () => {{ if (rd.open) doRender(); }});
+      if (rd.open) doRender();
+      details.appendChild(rd);
+    }});
+    wrap.appendChild(details);
+  }});
+}}
+
+function buildWeekView() {{
+  const content = document.getElementById('week-content');
+  const empty = document.getElementById('week-empty');
+  if (!content) return;
+  if (!WEEKLY) {{
+    content.innerHTML = '';
+    if (empty) {{ empty.hidden = false; empty.textContent = 'Aucun bilan de semaine disponible pour le moment.'; }}
+    return;
+  }}
+  if (empty) empty.hidden = true;
+  renderMarkdownInto(content, WEEKLY.markdown);
 }}
 
 function selectBulletin(id) {{
-  hideHistory();
+  hideAuxViews();
   const b = BULLETINS.find(x => x.id === id);
   const content = document.getElementById('bulletin-content');
   const mainEl = document.getElementById('bulletin-main');
@@ -1131,24 +1447,30 @@ function closeSidebarMobile() {{
     if (e.key === 'Escape') closeSidebarMobile();
   }});
 
-  // Lien « Historique / Performance » de la sidebar.
-  const navHist = document.getElementById('nav-history');
-  if (navHist) navHist.addEventListener('click', (e) => {{
-    e.preventDefault();
-    showHistory();
-    closeSidebarMobile();
-  }});
+  // Liens de vues auxiliaires de la sidebar (Aujourd'hui / Bilan semaine / Historique).
+  const bindNav = (id, fn) => {{
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', (e) => {{ e.preventDefault(); fn(); closeSidebarMobile(); }});
+  }};
+  bindNav('nav-today', showToday);
+  bindNav('nav-week', showWeek);
+  bindNav('nav-history', showHistory);
 
   const rawHash = (location.hash || '').replace(/^#/, '');
+  // Routage des vues auxiliaires (avant la résolution d'un bulletin par id).
+  if (rawHash === 'vue=aujourdhui') {{ showToday(); return; }}
+  if (rawHash === 'vue=semaine') {{ showWeek(); return; }}
+  if (rawHash === 'vue=historique') {{ showHistory(); return; }}
 
   if (BULLETINS.length === 0) {{
-    if (rawHash === 'vue=historique') {{ showHistory(); return; }}
+    // Pas de bulletin mais peut-être des suivis/bilans → on ouvre « Aujourd'hui »
+    // si disponible, sinon un message neutre.
+    if (REPORTS.length > 0) {{ showToday(); return; }}
     document.getElementById('bulletin-content').innerHTML = '<p>Aucun bulletin disponible.</p>';
     const subnav = document.getElementById('subnav');
     if (subnav) subnav.style.display = 'none';
     return;
   }}
-  if (rawHash === 'vue=historique') {{ showHistory(); return; }}
   const hash = decodeURIComponent(rawHash);
   const found = BULLETINS.find(b => b.id === hash);
   selectBulletin(found ? found.id : BULLETINS[0].id);
@@ -1165,12 +1487,20 @@ def main() -> int:
     payload = build_payload()
     measures = load_measures()
     perf_ab = parse_perf_ab_summary()
-    html = render_html(payload, total, measures=measures, perf_ab=perf_ab)
+    reports = build_reports_payload()
+    weekly = build_weekly_payload()
+    html = render_html(
+        payload, total, measures=measures, perf_ab=perf_ab,
+        reports=reports, weekly=weekly,
+    )
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(html, encoding="utf-8")
+    n_suivi = sum(1 for r in reports if r["kind"] == "suivi")
+    n_bilan = sum(1 for r in reports if r["kind"] == "bilan-jour")
     print(
-        f"[build_html] {len(payload)}/{total} bulletins + {len(measures)} mesures embarqués "
-        f"→ {OUT_PATH} ({OUT_PATH.stat().st_size} octets)"
+        f"[build_html] {len(payload)}/{total} bulletins + {n_suivi} suivis + "
+        f"{n_bilan} bilans-jour + {'1' if weekly else '0'} bilan-semaine + "
+        f"{len(measures)} mesures embarqués → {OUT_PATH} ({OUT_PATH.stat().st_size} octets)"
     )
     return 0
 

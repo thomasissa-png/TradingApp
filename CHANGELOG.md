@@ -2,6 +2,18 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-09 (Session 7b) — Tableau win rate affiché sur la page (@fullstack)
+
+**Manque corrigé** : notre tableau win-rate-only propre (`v3/data/performance.md`, win rate par actif × horizon) n'était référencé **nulle part** dans `build_html.py` — Thomas ne voyait pas « le tableau avec les résultats d'orientation des actifs ». L'onglet Performance n'affichait que l'ancien A/B Taux/Brier (périmé). Mode shadow, WIN RATE ONLY, zéro modification de la logique de mesure, branche `claude/elegant-ramanujan-OIKms` (pas de PR).
+
+### `build_html.py` — collecte + vue win-rate
+- **`load_performance_md`** (nouveau) : lit `v3/data/performance.md` en markdown brut, ou `None` si absent (dégradation propre). Zéro transformation — réutilise tel quel le markdown du journaliste.
+- **Nouvelle vue sidebar « 📈 Résultats / Win rate »** : rend le tableau win-rate-only via le pipeline marked.js existant (colorisation, tooltips, tables). Routage hash `#vue=resultats`. Absent → message de dégradation propre.
+- **Onglet Historique modernisé** : le tableau win rate passe **en tête** (`#history-winrate`, résultats principaux) ; l'ancien bloc A/B Taux/Brier est **rétrogradé** dans un `<details>` replié « Détail technique par cellule » (masqué si `PERF_AB` vide). Les vues « Aujourd'hui »/« Bilan semaine » de la passe 1 et l'affichage des bulletins sont intacts.
+
+### Tests — `v3/tests/test_build_html_winrate.py` (8 tests, verts)
+- `load_performance_md` lit le MD / absent → `None` ; `render_html` embarque le tableau (`const WINRATE_MD`, grep de l'en-tête `| Actif | Win rate | …`) ; nav + section dédiées ; win rate en tête de l'onglet Historique + A/B rétrogradé ; dégradation propre (`WINRATE_MD = null`, pas de placeholder) ; garde-fou win-rate-only (aucun terme argent injecté par le builder). Suite complète `pytest v3/` : **984 passed, 3 skipped**. `git checkout -- v3/data/` avant commit (pytest régénère l'index).
+
 ## 2026-06-09 (Session 7) — Page index.html : affichage des 5 rapports (@fullstack)
 
 **Bug corrigé** : depuis la refonte « 5 rapports », `build_html.py` ne ramassait QUE les `bulletin-*.md` (briefing 7h). Les suivis 12h/18h, le bilan du jour 22h et le bilan de semaine étaient produits mais **invisibles** sur la page. Mode shadow, WIN RATE ONLY, zéro modification de poids/seuils/scoring, branche `claude/elegant-ramanujan-OIKms` (pas de PR).

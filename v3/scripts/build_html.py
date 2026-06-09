@@ -33,6 +33,10 @@ WEEKLY_DIR = ROOT / "data" / "performance" / "weekly"
 OUT_PATH = ROOT / "data" / "index.html"
 MEASURES_LOG_FILE = ROOT / "data" / "measures-log.jsonl"
 PERFORMANCE_AB_FILE = ROOT / "data" / "performance-ab.md"
+# Notre tableau win-rate-only propre (généré par journaliste.render_performance) :
+# c'est LA vue de résultats principale (win rate par actif × horizon). Win-rate-only,
+# zéro argent, zéro Brier. Affiché en tête de l'onglet « Résultats » + Historique.
+PERFORMANCE_MD_FILE = ROOT / "data" / "performance.md"
 MAX_BULLETINS = 90
 # Combien de jours récents on embarque pour les suivis + bilans du jour.
 MAX_REPORT_DAYS = 30
@@ -285,6 +289,20 @@ def parse_perf_ab_summary(path: Path = PERFORMANCE_AB_FILE) -> Dict[str, Dict[st
     return summary
 
 
+def load_performance_md(path: Path = PERFORMANCE_MD_FILE) -> Optional[str]:
+    """Lit notre tableau win-rate-only (performance.md) en markdown brut.
+
+    Renvoie le contenu markdown tel quel, ou None si le fichier est absent
+    (dégradation propre : la vue « Résultats » sera masquée et l'onglet
+    Historique retombera sur l'historique des mesures unitaires). Aucune
+    transformation : on réutilise tel quel le markdown produit par le
+    journaliste (zéro invention).
+    """
+    if not path.exists():
+        return None
+    return _read_md(path)
+
+
 def _entries_to_js(entries: List[Dict[str, str]], meta_keys: List[str]) -> str:
     """Sérialise une liste d'entrées {meta..., markdown} en tableau JS.
 
@@ -306,6 +324,7 @@ def render_html(
     perf_ab: Optional[Dict[str, Dict[str, str]]] = None,
     reports: Optional[List[Dict[str, str]]] = None,
     weekly: Optional[Dict[str, str]] = None,
+    performance_md: Optional[str] = None,
 ) -> str:
     """Génère le HTML autonome."""
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -330,6 +349,14 @@ def render_html(
     perf_ab = perf_ab or {}
     measures_js = json.dumps(measures, ensure_ascii=False)
     perf_ab_js = json.dumps(perf_ab, ensure_ascii=False)
+
+    # Notre tableau win-rate-only (performance.md) : markdown brut embarqué dans
+    # un template literal JS échappé, rendu via le même pipeline marked.js que
+    # les autres vues. Absent → null (la vue « Résultats » est masquée).
+    if performance_md:
+        winrate_js = "`" + escape_for_js_template_literal(performance_md) + "`"
+    else:
+        winrate_js = "null"
 
     embedded = len(payload)
     truncated_note = ""
@@ -760,6 +787,7 @@ def render_html(
   <aside id="sidebar">
     <ul id="nav-views">
       <li><a href="#vue=aujourdhui" id="nav-today" class="nav-view-link">📅 Aujourd'hui</a></li>
+      <li><a href="#vue=resultats" id="nav-winrate" class="nav-view-link">📈 Résultats / Win rate</a></li>
       <li><a href="#vue=semaine" id="nav-week" class="nav-view-link">🗓️ Bilan semaine</a></li>
       <li><a href="#vue=historique" id="nav-history" class="nav-view-link">📊 Historique / Performance</a></li>
     </ul>
@@ -811,6 +839,12 @@ def render_html(
       <div id="bulletin-content">
         <p>Chargement...</p>
       </div>
+      <section id="winrate-view" hidden aria-label="Résultats — win rate par actif">
+        <h1>📈 Résultats / Win rate</h1>
+        <p class="history-intro">Le taux de bonnes directions par actif et par horizon. La vue de résultats la plus à jour — réécrite à chaque run.</p>
+        <div id="winrate-content"></div>
+        <p id="winrate-empty" hidden></p>
+      </section>
       <section id="today-view" hidden aria-label="Rapports d'aujourd'hui">
         <h1>📅 Aujourd'hui</h1>
         <p class="history-intro">Le briefing du matin et les suivis de la journée, regroupés par jour. Le plus récent en premier.</p>
@@ -825,8 +859,14 @@ def render_html(
       </section>
       <section id="history-view" hidden aria-label="Historique des décisions et performance">
         <h1>Historique / Performance</h1>
-        <p class="history-intro">Toutes les décisions passées et leur résultat à l'échéance. La base de ce qui a été fait.</p>
-        <div id="history-summary"></div>
+        <p class="history-intro">Le win rate par actif en tête (résultats), puis le détail décision par décision.</p>
+        <div id="history-winrate"></div>
+        <details class="fold-section" id="history-ab-fold">
+          <summary>Détail technique par cellule (calibration ±1)</summary>
+          <p class="history-intro" style="margin-top:8px;">Taux et calibration internes par cellule — secondaire, conservé pour le suivi technique.</p>
+          <div id="history-summary"></div>
+        </details>
+        <h2>Décision par décision</h2>
         <div class="history-filters" role="group" aria-label="Filtres de l'historique">
           <label>Actif
             <select id="filter-actif" aria-label="Filtrer par actif"><option value="">Tous</option></select>
@@ -865,6 +905,7 @@ const REPORTS = {reports_js};   // suivis 12h/18h + bilans du jour (22h), plus r
 const WEEKLY = {weekly_js};     // bilan de semaine le plus récent (ou null)
 const MEASURES = {measures_js};
 const PERF_AB = {perf_ab_js};
+const WINRATE_MD = {winrate_js};   // tableau win-rate-only (performance.md) ou null
 
 // Colorisation idempotente des cellules de tableau :
 // - "LONG" / "SHORT" enveloppés dans <span class="dir-long|dir-short">
@@ -1147,7 +1188,13 @@ function buildHistorySummary() {{
   const wrap = document.getElementById('history-summary');
   if (!wrap) return;
   const keys = Object.keys(PERF_AB);
-  if (keys.length === 0) {{ wrap.innerHTML = ''; return; }}
+  const fold = document.getElementById('history-ab-fold');
+  if (keys.length === 0) {{
+    wrap.innerHTML = '';
+    if (fold) fold.hidden = true;  // pas de détail A/B → on masque tout le bloc
+    return;
+  }}
+  if (fold) fold.hidden = false;
   wrap.innerHTML = '';
   keys.forEach(k => {{
     const [actif, horizon] = k.split('|');
@@ -1211,7 +1258,7 @@ function renderHistoryTable() {{
   if (countEl) countEl.textContent = rows.length + ' / ' + MEASURES.length + ' décisions';
 }}
 // Liste des liens de nav de vue auxiliaire (pour gérer l'état .active).
-const AUX_NAV_IDS = ['nav-today', 'nav-week', 'nav-history'];
+const AUX_NAV_IDS = ['nav-today', 'nav-winrate', 'nav-week', 'nav-history'];
 function clearAuxNavActive() {{
   AUX_NAV_IDS.forEach(id => {{
     const el = document.getElementById(id);
@@ -1223,7 +1270,7 @@ function clearAuxNavActive() {{
 // bulletin + sa chrome (légende, sous-nav, aide) et n'affiche QUE la section
 // demandée. `sectionId` = id de la <section> à afficher.
 function showAuxView(sectionId, navId) {{
-  ['today-view', 'week-view', 'history-view'].forEach(s => {{
+  ['today-view', 'winrate-view', 'week-view', 'history-view'].forEach(s => {{
     const el = document.getElementById(s);
     if (el) el.hidden = (s !== sectionId);
   }});
@@ -1245,7 +1292,7 @@ function showAuxView(sectionId, navId) {{
 
 // Quitte toute vue auxiliaire et restaure la vue bulletin (légende, aide…).
 function hideAuxViews() {{
-  ['today-view', 'week-view', 'history-view'].forEach(s => {{
+  ['today-view', 'winrate-view', 'week-view', 'history-view'].forEach(s => {{
     const el = document.getElementById(s);
     if (el) el.hidden = true;
   }});
@@ -1263,6 +1310,11 @@ function showToday() {{
   showAuxView('today-view', 'nav-today');
   history.replaceState(null, '', '#vue=aujourdhui');
 }}
+function showWinrate() {{
+  buildWinrateView();
+  showAuxView('winrate-view', 'nav-winrate');
+  history.replaceState(null, '', '#vue=resultats');
+}}
 function showWeek() {{
   buildWeekView();
   showAuxView('week-view', 'nav-week');
@@ -1270,6 +1322,8 @@ function showWeek() {{
 }}
 function showHistory() {{
   if (!HISTORY_BUILT) {{
+    // Win rate en tête de l'onglet (résultats principaux), puis A/B replié.
+    renderWinrateInto(document.getElementById('history-winrate'));
     buildHistoryFilters();
     buildHistorySummary();
     HISTORY_BUILT = true;
@@ -1386,6 +1440,27 @@ function buildWeekView() {{
   renderMarkdownInto(content, WEEKLY.markdown);
 }}
 
+// Rend notre tableau win-rate-only (performance.md) dans `target`. Renvoie true
+// si du contenu a été rendu, false si WINRATE_MD est absent (dégradation propre).
+function renderWinrateInto(target) {{
+  if (!target) return false;
+  if (!WINRATE_MD) {{ target.innerHTML = ''; return false; }}
+  renderMarkdownInto(target, WINRATE_MD);
+  return true;
+}}
+
+function buildWinrateView() {{
+  const content = document.getElementById('winrate-content');
+  const empty = document.getElementById('winrate-empty');
+  if (!content) return;
+  if (renderWinrateInto(content)) {{
+    if (empty) empty.hidden = true;
+  }} else if (empty) {{
+    empty.hidden = false;
+    empty.textContent = 'Aucun résultat de win rate disponible pour le moment — les chiffres apparaîtront ici dès les premières mesures.';
+  }}
+}}
+
 function selectBulletin(id) {{
   hideAuxViews();
   const b = BULLETINS.find(x => x.id === id);
@@ -1453,12 +1528,14 @@ function closeSidebarMobile() {{
     if (el) el.addEventListener('click', (e) => {{ e.preventDefault(); fn(); closeSidebarMobile(); }});
   }};
   bindNav('nav-today', showToday);
+  bindNav('nav-winrate', showWinrate);
   bindNav('nav-week', showWeek);
   bindNav('nav-history', showHistory);
 
   const rawHash = (location.hash || '').replace(/^#/, '');
   // Routage des vues auxiliaires (avant la résolution d'un bulletin par id).
   if (rawHash === 'vue=aujourdhui') {{ showToday(); return; }}
+  if (rawHash === 'vue=resultats') {{ showWinrate(); return; }}
   if (rawHash === 'vue=semaine') {{ showWeek(); return; }}
   if (rawHash === 'vue=historique') {{ showHistory(); return; }}
 
@@ -1489,9 +1566,10 @@ def main() -> int:
     perf_ab = parse_perf_ab_summary()
     reports = build_reports_payload()
     weekly = build_weekly_payload()
+    performance_md = load_performance_md()
     html = render_html(
         payload, total, measures=measures, perf_ab=perf_ab,
-        reports=reports, weekly=weekly,
+        reports=reports, weekly=weekly, performance_md=performance_md,
     )
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(html, encoding="utf-8")
@@ -1500,6 +1578,7 @@ def main() -> int:
     print(
         f"[build_html] {len(payload)}/{total} bulletins + {n_suivi} suivis + "
         f"{n_bilan} bilans-jour + {'1' if weekly else '0'} bilan-semaine + "
+        f"{'1' if performance_md else '0'} win-rate + "
         f"{len(measures)} mesures embarqués → {OUT_PATH} ({OUT_PATH.stat().st_size} octets)"
     )
     return 0

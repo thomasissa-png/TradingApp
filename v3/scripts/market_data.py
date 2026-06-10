@@ -139,6 +139,10 @@ _TICKER_MAP: dict[str, tuple[str, dict]] = {
     # Alias raccourcis Yahoo "EUR=X" / "JPY=X" utilisés dans nos fiches
     "EUR=X": ("EUR/USD", {}),
     "JPY=X": ("USD/JPY", {}),
+    # USD/BRL (real brésilien) — câble le critère café `usd_brl` (poids 6, n/a
+    # depuis toujours car USDBRL=X retombait en fallback yfinance bloqué CI).
+    # Format Twelve /forex_pairs : "USD/BRL". Même schéma que EUR=X→EUR/USD.
+    "USDBRL=X": ("USD/BRL", {}),
     # Paris stocks (Euronext) — use mic_code=XPAR
     "TTE.PA": ("TTE", {"mic_code": "XPAR"}),
     "MC.PA": ("MC", {"mic_code": "XPAR"}),
@@ -730,6 +734,7 @@ _PRICE_RANGES: dict[str, tuple[float, float]] = {
     "GBPUSD=X": (0.9, 1.8), "USDCHF=X": (0.6, 1.4),
     "AUDUSD=X": (0.4, 1.1), "USDCNH=X": (5.0, 10.0),
     "EURJPY=X": (80, 250),
+    "USDBRL=X": (3.0, 9.0),   # real brésilien — range plausible historique large
     # Paris stocks
     "MC.PA": (200, 2000), "OR.PA": (100, 1000), "AI.PA": (50, 500),
     "SAN.PA": (30, 300), "BNP.PA": (20, 200), "TTE.PA": (20, 200),

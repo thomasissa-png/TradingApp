@@ -13,6 +13,8 @@ name: probe-futures-8h
 #   - AUCUN commit/push : le résultat sort en ARTIFACT + LOG uniquement
 #   - workflow_dispatch : à déclencher À LA MAIN entre 08h00 et 08h30 Paris
 #     (heure critique : seuls les futures Globex cotent ; SPY/QQQ/VIXY non)
+#   - + cron TEMPORAIRE 08h05 Paris jours ouvrés (S6) car le créneau manuel
+#     n'a jamais pu être tenu — garde heure-Paris, à retirer après verdict A/B
 #
 # DÉCLENCHEMENT :
 #   GitHub → Actions → "probe-futures-8h" → "Run workflow"
@@ -27,6 +29,14 @@ name: probe-futures-8h
 
 on:
   workflow_dispatch:
+  # TEMPORAIRE (S6, 2026-06-10) : la fenêtre 8h00-8h30 Paris exige un humain
+  # éveillé → le dispatch manuel n'a jamais eu lieu. Cron jours ouvrés
+  # 06:05 UTC (= 08h05 Paris en été/CEST) + garde heure-Paris dans le job
+  # (hors fenêtre → NO-OP propre, DST-safe). À RETIRER dès que le verdict
+  # A/B réf 8h est rendu (Lot 1). Ne s'active qu'une fois mergé sur main
+  # (les schedules GitHub ne tournent que depuis la branche par défaut).
+  schedule:
+    - cron: "5 6 * * 1-5"
 
 permissions:
   contents: read
@@ -36,12 +46,39 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # Garde fenêtre 8h Paris : un run schedule hors 08h00-08h30 Paris ne
+      # prouve rien sur la réf 8h → NO-OP vert (stdlib only, DST-safe via
+      # zoneinfo, jamais d'offset en dur). Le dispatch manuel bypasse la garde
+      # (l'humain qui clique est responsable de l'heure, comportement historique).
+      - name: Garde fenêtre 8h Paris (schedule only)
+        id: garde
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          if os.environ.get("GH_EVENT") != "schedule":
+              print("run_probe=true")
+          else:
+              now = datetime.now(ZoneInfo("Europe/Paris"))
+              ok = now.hour == 8 and now.minute <= 30
+              import sys
+              print(f"Heure Paris : {now:%Y-%m-%d %H:%M} -> "
+                    f"{'FENETRE OK' if ok else 'HORS FENETRE 8h00-8h30, NO-OP'}",
+                    file=sys.stderr)
+              print(f"run_probe={'true' if ok else 'false'}")
+          EOF
+        env:
+          GH_EVENT: ${{ github.event_name }}
+
       - name: Checkout
+        if: steps.garde.outputs.run_probe == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
       - name: Setup Python
+        if: steps.garde.outputs.run_probe == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -49,11 +86,13 @@ jobs:
           cache-dependency-path: v3/requirements.txt
 
       - name: Install dependencies
+        if: steps.garde.outputs.run_probe == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r v3/requirements.txt
 
       - name: Run sonde 8h (futures indices/VIX)
+        if: steps.garde.outputs.run_probe == 'true'
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           LOG_LEVEL: INFO
@@ -63,7 +102,7 @@ jobs:
           cat v3/audit/symbol-validation-8h-run.md
 
       - name: Upload report artifact
-        if: always()
+        if: always() && steps.garde.outputs.run_probe == 'true'
         uses: actions/upload-artifact@v4
         with:
           # symbol-validation-8h-run.md = output machine de la sonde (mesures).

@@ -82,13 +82,14 @@ def test_synthese_apparait_avant_le_briefing(tmp_path: Path):
 
 
 def test_top3_reste_en_premiere_position(tmp_path: Path):
-    """Le Top 3 reste tout en haut, avant la Synthèse ET avant le Briefing."""
+    """Le bloc « À jouer aujourd'hui (24h) » reste tout en haut, avant la
+    Synthèse ET avant le Briefing (remplace l'ancien « Top 3 convictions »)."""
     p = _write_bulletin(tmp_path)
     rb.insert_briefing_after_synthese(p, _BRIEFING_MD)
     b = p.read_text(encoding="utf-8")
-    i_top3 = b.index("## 🎯 Top 3 convictions du jour")
-    assert i_top3 < b.index("## Synthèse des décisions")
-    assert i_top3 < b.index("## Briefing du jour")
+    i_top = b.index("## 🎯 À jouer aujourd'hui (24h)")
+    assert i_top < b.index("## Synthèse des décisions")
+    assert i_top < b.index("## Briefing du jour")
 
 
 def test_briefing_avant_flips(tmp_path: Path):

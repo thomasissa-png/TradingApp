@@ -95,7 +95,9 @@ def test_matrice_news_flag_present_when_ratio_above_50pct():
     vals = _vals(quant_val=0.5, news_val=-1.0)  # quant=+5, news=-10 → ratio=2.0
     res = sa.score_actif("or", fiche, vals)
     bulletin = sa.render_bulletin([res], {}, datetime(2026, 6, 1, tzinfo=timezone.utc), "h", "ok")
-    matrice_line = next(l for l in bulletin.splitlines() if l.startswith("| TestActif"))
+    # Cible la table de Synthèse (le nouveau « À jouer » a aussi des lignes
+    # « | TestActif » mais ne porte pas le 📰 du ratio quant/news).
+    matrice_line = _detail_matrix_line(bulletin)
     assert "📰" in matrice_line, (
         f"Ratio abs/abs = 2.0 > 0.5 doit faire apparaître 📰. Ligne : {matrice_line!r}"
     )
@@ -109,7 +111,7 @@ def test_matrice_news_flag_opposite_signs_uses_abs():
     vals = _vals(quant_val=1.0, news_val=-1.0, mat="high", rel="confirmed")  # override → pas de cap
     res = sa.score_actif("test", fiche, vals)
     bulletin = sa.render_bulletin([res], {}, datetime(2026, 6, 1, tzinfo=timezone.utc), "h", "ok")
-    matrice_line = next(l for l in bulletin.splitlines() if l.startswith("| TestActif"))
+    matrice_line = _detail_matrix_line(bulletin)
     assert "📰" in matrice_line, (
         f"abs(-10)/abs(+6)=1.66>0.5 → 📰 attendu. Ligne : {matrice_line!r}"
     )

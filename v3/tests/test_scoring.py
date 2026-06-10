@@ -533,7 +533,7 @@ def test_audit_veille_warmup_message(tmp_path):
         decision_log_dir=tmp_path / "decision-log",
     )
     txt = "\n".join(lines)
-    assert "## Audit de la veille (24h — convictions fortes)" in txt
+    assert "## 🔎 Calls 24h jugés (fenêtre récente)" in txt
     assert "Pas encore de cellule 24h à forte conviction" in txt
 
 
@@ -573,6 +573,61 @@ def test_audit_veille_liste_conviction_normale_vrai(tmp_path, monkeypatch):
     assert "VRAI" in txt
     assert "+5.00%" in txt
     assert "Pas encore" not in txt
+
+
+def test_audit_veille_titre_et_synthese(tmp_path, monkeypatch):
+    """Bloc 2 : titre EXACT « 🔎 Calls 24h jugés (fenêtre récente) » + ligne de
+    synthèse « X ✅ / Y ❌ (… ) » en tête de la section."""
+    import journaliste as j
+    now = datetime(2026, 6, 9, 12, 0)
+    bdate = (now - timedelta(days=1)).date()
+    bulletins = tmp_path / "bulletins"
+    log_dir = tmp_path / "decision-log"
+    prix_dir = tmp_path / "prix-emission"
+    bid, _ = _ecrire_bulletin_veille(bulletins, bdate, conclusion="LONG")
+    _ecrire_decision_log(log_dir, bdate, confidence="normale", score_pm1=1.5)
+    prix_dir.mkdir()
+    (prix_dir / f"{bid}.json").write_text('{"BZ=F": 100.0}', encoding="utf-8")
+    monkeypatch.setattr(j, "PRIX_EMISSION_DIR", prix_dir)
+    monkeypatch.setattr(j, "DECISION_LOG_DIR", log_dir)
+    monkeypatch.setattr("criteres_calculator.fetch_twelve_price", lambda t: 105.0)
+
+    lines = sa.build_audit_veille_24h(
+        now=now, bulletins_dir=bulletins, decision_log_dir=log_dir,
+        prix_emission_dir=prix_dir,
+    )
+    txt = "\n".join(lines)
+    assert "## 🔎 Calls 24h jugés (fenêtre récente)" in txt
+    # Ligne de synthèse : 1 VRAI, 0 FAUX → « 1 ✅ / 0 ❌ ».
+    assert "**1 ✅ / 0 ❌**" in txt
+    assert "le 2026-06-08" in txt
+
+
+def test_audit_veille_etiquette_v1(tmp_path, monkeypatch):
+    """Bloc 2 : un call dont la référence n'est PAS l'ouverture (fallback prix
+    d'émission) porte l'étiquette « mesure v1 — réf. prix d'émission »."""
+    import journaliste as j
+    now = datetime(2026, 6, 9, 12, 0)
+    bdate = (now - timedelta(days=1)).date()
+    bulletins = tmp_path / "bulletins"
+    log_dir = tmp_path / "decision-log"
+    prix_dir = tmp_path / "prix-emission"
+    bid, _ = _ecrire_bulletin_veille(bulletins, bdate, conclusion="LONG")
+    _ecrire_decision_log(log_dir, bdate, confidence="normale", score_pm1=1.5)
+    prix_dir.mkdir()
+    # Pas de prix-ouverture → measure retombe sur le prix d'émission
+    # (prix_reference_source == "emission" ≠ "ouverture") → étiquette v1.
+    (prix_dir / f"{bid}.json").write_text('{"BZ=F": 100.0}', encoding="utf-8")
+    monkeypatch.setattr(j, "PRIX_EMISSION_DIR", prix_dir)
+    monkeypatch.setattr(j, "DECISION_LOG_DIR", log_dir)
+    monkeypatch.setattr("criteres_calculator.fetch_twelve_price", lambda t: 105.0)
+
+    lines = sa.build_audit_veille_24h(
+        now=now, bulletins_dir=bulletins, decision_log_dir=log_dir,
+        prix_emission_dir=prix_dir,
+    )
+    txt = "\n".join(lines)
+    assert "[mesure v1 — réf. prix d'émission, corrigée depuis]" in txt
 
 
 def test_audit_veille_exclut_faible_carry_news(tmp_path, monkeypatch):

@@ -101,11 +101,17 @@ def test_synthese_garde_sous_table_insuffisant_separee():
 # ===========================================================================
 
 def test_top3_present_en_tete():
-    """Le bloc Top 3 est présent et placé avant la table de synthèse."""
+    """Le bloc « À jouer aujourd'hui (24h) » + le mini « Top convictions
+    multi-horizons » sont présents et placés avant la table de synthèse
+    (remplacent l'ancien « Top 3 convictions du jour »)."""
     res = sa.score_actif("test", _fiche(quant_poids=10), _vals(1.0))
     b = sa.render_bulletin([res], {}, NOW, "h", "ok")
-    assert "## 🎯 Top 3 convictions du jour" in b
-    assert b.index("## 🎯 Top 3 convictions du jour") < b.index("## Synthèse des décisions")
+    assert "## 🎯 À jouer aujourd'hui (24h)" in b
+    assert "## 🎯 Top convictions multi-horizons" in b
+    assert b.index("## 🎯 À jouer aujourd'hui (24h)") < b.index("## Synthèse des décisions")
+    assert b.index("## 🎯 À jouer aujourd'hui (24h)") < b.index("## 🎯 Top convictions multi-horizons")
+    # L'ancien titre exact a disparu (absorbé).
+    assert "## 🎯 Top 3 convictions du jour" not in b
 
 
 def test_top3_ne_contient_que_des_cellules_normales():
@@ -381,3 +387,146 @@ def test_detail_synthese_avant_tableau():
 
     # Ancienne ligne « - Scores : » (après tableau) supprimée → plus de doublon.
     assert "- Scores : 24h=" not in detail
+
+
+# ===========================================================================
+# Bloc 1 — « 🎯 À jouer aujourd'hui (24h) » (audit UX 10/06)
+# ===========================================================================
+
+def _actif_24h(nom: str, score_24h: float, confidence: str = "normale") -> "sa.ActifResult":
+    """ActifResult minimal avec un score 24h imposé (présentation pure)."""
+    r = sa.score_actif(nom.lower(), _fiche(quant_poids=10), _vals(1.0))
+    r.nom = nom
+    r.scores = {"24h": score_24h, "7j": score_24h, "1m": score_24h}
+    direction = "LONG" if score_24h >= 0 else "SHORT"
+    r.conclusions = {h: direction for h in sa.HORIZONS}
+    r.confidence = {h: confidence for h in sa.HORIZONS}
+    return r
+
+
+def test_a_jouer_present_et_24h_seulement():
+    """Le bloc « À jouer aujourd'hui (24h) » est en tête, avant Top multi-horizons
+    et Synthèse, et porte les colonnes attendues."""
+    r = _actif_24h("Fort", 8.0)
+    b = sa.render_bulletin([r], {}, NOW, "h", "ok")
+    assert "## 🎯 À jouer aujourd'hui (24h)" in b
+    assert "| Actif | Direction | Note | Conviction | Drapeaux | Prix de réf. |" in b
+    assert "**Jouables**" in b and "**À éviter**" in b
+    assert b.index("## 🎯 À jouer aujourd'hui (24h)") < b.index("## 🎯 Top convictions multi-horizons")
+
+
+def test_a_jouer_tri_note_decroissante():
+    """Les cellules jouables sont triées par |note| décroissante."""
+    faible = _actif_24h("Faible", 1.0)
+    fort = _actif_24h("Fort", 9.0)
+    moyen = _actif_24h("Moyen", 4.0)
+    block = sa.build_a_jouer_block([faible, fort, moyen], NOW)
+    txt = "\n".join(block)
+    jouables = txt.split("**Jouables**")[1].split("**À éviter**")[0]
+    i_fort = jouables.index("| Fort |")
+    i_moyen = jouables.index("| Moyen |")
+    i_faible = jouables.index("| Faible |")
+    assert i_fort < i_moyen < i_faible
+
+
+def test_a_jouer_scinde_jouables_vs_a_eviter():
+    """⚪ (coin-flip <0.05), ≈ (quasi-neutre <0.30) et 🚫 (insuffisant) vont dans
+    « À éviter » ; une note franche reste dans « Jouables » même avec un ◧."""
+    jouable = _actif_24h("Franche", 8.0)
+    coinflip = _actif_24h("CoinFlip", 0.01)     # ⚪
+    neutre = _actif_24h("QuasiNeutre", 0.20)    # ≈
+    insuff = _actif_24h("Insuff", 0.0)
+    insuff.conclusions = {h: sa.CONCLUSION_INSUFFISANT for h in sa.HORIZONS}
+    block = sa.build_a_jouer_block([jouable, coinflip, neutre, insuff], NOW)
+    txt = "\n".join(block)
+    jouables = txt.split("**Jouables**")[1].split("**À éviter**")[0]
+    a_eviter = txt.split("**À éviter**")[1]
+    assert "| Franche |" in jouables
+    assert "| CoinFlip |" in a_eviter and "⚪" in a_eviter
+    assert "| QuasiNeutre |" in a_eviter and "≈" in a_eviter
+    assert "| Insuff |" in a_eviter
+
+
+def test_a_jouer_prix_absent_tiret():
+    """Sans prix de référence stampé → « — » (zéro invention)."""
+    r = _actif_24h("Fort", 8.0)
+    block = sa.build_a_jouer_block([r], NOW, prix_reference=None)
+    ligne = next(l for l in block if l.startswith("| Fort |"))
+    assert ligne.rstrip().endswith("| — |")
+
+
+def test_a_jouer_prix_present_affiche():
+    """Avec un prix stampé (clé = fiche_key) → la valeur s'affiche."""
+    r = _actif_24h("Fort", 8.0)
+    block = sa.build_a_jouer_block([r], NOW, prix_reference={r.fiche_key: 123.45})
+    ligne = next(l for l in block if l.startswith("| Fort |"))
+    assert "123.45" in ligne
+
+
+# ===========================================================================
+# Bloc 1b — Top convictions multi-horizons AVEC drapeaux
+# ===========================================================================
+
+def test_top_multi_horizons_affiche_drapeaux():
+    """Une cellule mono-critère dominante (◧) du top affiche son drapeau (le bug
+    EUR/USD 7j ◧ affiché sans avertissement — corrigé)."""
+    # Fiche 1 seul critère → mono-critère dominant garanti → ◧.
+    r = sa.score_actif("eurusd", _fiche(quant_poids=12), _vals(1.0))
+    r.nom = "EUR/USD"
+    r.scores = {"24h": 11.0, "7j": 20.0, "1m": 19.0}
+    r.confidence = {h: "normale" for h in sa.HORIZONS}
+    block = sa.build_top_multi_horizons_block([r])
+    txt = "\n".join(block)
+    assert "EUR/USD 7j" in txt
+    assert "drapeaux :" in txt and "◧" in txt
+
+
+def test_top_multi_horizons_ligne_driver_partage():
+    """Si ≥ 2 convictions du top partagent le même driver dominant → ligne ⚭."""
+    actifs = []
+    # 3 actifs distincts, tous portés par le MÊME critère (même cle_courante).
+    for nom in ("ActifA", "ActifB", "ActifC"):
+        r = sa.score_actif(nom.lower(), _fiche(quant_poids=10), _vals(1.0))
+        r.nom = nom
+        r.scores = {"24h": 8.0, "7j": 6.0, "1m": 4.0}
+        r.confidence = {h: "normale" for h in sa.HORIZONS}
+        actifs.append(r)
+    block = sa.build_top_multi_horizons_block(actifs, shared_summary=[{"x": 1}])
+    txt = "\n".join(block)
+    assert "⚭" in txt
+    assert "reposent sur le même driver" in txt
+
+
+# ===========================================================================
+# Bloc 3 — Flips de bruit drapeautés ⚪/≈
+# ===========================================================================
+
+def test_flips_bruit_drapeau():
+    """Un flip à note quasi-nulle est drapeauté ⚪ (coin-flip) ou ≈ (quasi-neutre)."""
+    r = sa.score_actif("test", _fiche(quant_poids=10), _vals(1.0))
+    r.nom = "TestActif"
+    r.scores = {"24h": 0.01, "7j": 0.01, "1m": 0.01}   # ⚪ quasi coin-flip
+    r.conclusions = {h: "LONG" for h in sa.HORIZONS}
+    veille = {"testactif": {"24h": "SHORT", "7j": "SHORT", "1m": "SHORT"}}
+    b = sa.render_bulletin([r], veille, NOW, "h", "ok")
+    flips = b.split("## Flips vs veille")[1].split("##")[0]
+    assert "SHORT → LONG" in flips
+    assert "⚪" in flips
+
+
+# ===========================================================================
+# Bloc 4 — métadonnées techniques déplacées en pied
+# ===========================================================================
+
+def test_metadata_en_pied_pas_en_tete():
+    """Version Analyste + hash en PIED (après ---), plus en tête ; Fraîcheur en tête."""
+    r = _actif_24h("Fort", 8.0)
+    b = sa.render_bulletin([r], {}, NOW, "abcd1234", "fraîcheur OK")
+    # En-tête : Généré + Fraîcheur, PAS de « Analyste version » / « Fiches hash ».
+    tete = b.split("## 🎯 À jouer aujourd'hui (24h)")[0]
+    assert "- Fraîcheur" in tete
+    assert "Analyste version" not in tete
+    assert "Fiches hash" not in tete
+    # Pied : section --- + métadonnées techniques.
+    assert "_Analyste version : v3.0.0 · Fiches hash : abcd1234_" in b
+    assert b.index("_Analyste version") > b.index("## 🎯 À jouer aujourd'hui (24h)")

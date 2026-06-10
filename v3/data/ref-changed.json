@@ -1,0 +1,35 @@
+{
+  "_doc": {
+    "but": "Registre de cutover v2 (reset PARTIEL). Les cellules listees ici voient leur compteur N et leur win rate (conclusif ET tradable) repartir de zero a la date 'ref_changed' : seules les observations dont bulletin_date >= ref_changed sont comptees. Les actifs ABSENTS de ce registre gardent tout leur historique v1 (aucun reset).",
+    "cle": "Cle = ticker_principal de la fiche (identifiant STABLE, robuste au renommage du nom d'affichage ou du fichier YAML — cf. lecon L023). PAS le nom d'affichage.",
+    "portee": "Cutover de MESURE/OBSERVABILITE uniquement (pas de scoring). is_news_regime / ratio_news decisionnel non modifies => aucun delta de signal hors ces 4 actifs.",
+    "format_entree": "ticker_principal -> { ref_changed: 'YYYY-MM-DD' (date Europe/Paris incluse), motif: str, fiche_key: str (indicatif), actif: str (indicatif) }",
+    "append_only": "Ne jamais reecrire une entree existante. Un nouveau cutover = nouvelle entree (ou ref_changed mis a jour avec justification CHANGELOG)."
+  },
+  "ref_changed": {
+    "CC=F": {
+      "ref_changed": "2026-06-10",
+      "fiche_key": "cacao",
+      "actif": "Cacao",
+      "motif": "Dedup Lot A 10/06 : retrait de cftc_cot_cocoa (deja dans le composite ICE+CFTC) — la reference de mesure de la cellule change."
+    },
+    "BZ=F": {
+      "ref_changed": "2026-06-10",
+      "fiche_key": "petrole",
+      "actif": "Petrole",
+      "motif": "Dedup Lot A 10/06 : retrait de api_weekly_surprise (pre-indicateur d'EIA) — la reference de mesure de la cellule change."
+    },
+    "^IXIC": {
+      "ref_changed": "2026-06-10",
+      "fiche_key": "nasdaq",
+      "actif": "Nasdaq",
+      "motif": "Dedup Lot A 10/06 : retrait de concentration_top7 (inverse de breadth) — la reference de mesure de la cellule change."
+    },
+    "SI=F": {
+      "ref_changed": "2026-06-10",
+      "fiche_key": "argent",
+      "actif": "Argent",
+      "motif": "Dedup Lot A 10/06 : retrait de alpha_argent_vs_or_5j (proche de ratio_gold_silver) — la reference de mesure de la cellule change."
+    }
+  }
+}

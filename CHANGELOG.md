@@ -2,6 +2,16 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-10 (Session 5) — Cutover v2 (reset PARTIEL 4 actifs) + propagation L023
+
+**Redémarrage shadow v2 — portée PARTIELLE.** Suite aux 4 fusions (Lot A), seuls les **4 actifs dédupliqués** (cacao, petrole, nasdaq, argent) voient leur signal changer → reset de leur compteur N / win-rate. Les **8 autres gardent leur historique v1** (`is_news_regime` non modifié → aucun delta de signal hors dédup). Exigence Thomas respectée : **v1 et v2 jamais mélangés dans un même compteur**, aucune cellule à cheval.
+
+- **`v3/scripts/system_version.py`** (créé) : `SYSTEM_VERSION="v2"` + `load_ref_changed()`/`ref_changed_for_ticker()`. **`v3/data/ref-changed.json`** (créé) : registre clé par **`ticker_principal`** (stable, L023), append-only, dégradation propre si absent (→ aucun reset).
+- **`journaliste.py`** : champ `Measure.system_version` stampé par mesure (v1 si `bulletin_date < ref_changed`, v2 sinon) ; `_apply_ref_changed_cutover()` filtre les mesures pré-cutover des seules cellules au registre **avant `compute_kpi`** → N, WR conclusif, WR tradable, n_regimes, Wilson repartent de 0 au 2026-06-10 sur les 4 actifs uniquement. `scoring_analyste.py` : champ `system_version` ajouté au decision-log.
+- **Addendums datés append-only** dans `SELECTION-RULE.md` + `KILL-CRITERION.md` (« Redémarrage v2 — 2026-06-10 ») : portée 4 actifs, motif, cutover court, **texte gravé des règles inchangé**. Les 4 actifs reset peuvent légitimement ne pas atteindre N≥15 à J+60 (08/08) — attendu.
+- **Propagation L023** : agrégation par critère déjà sûre (`cle_courante` partout dans le decision-log) ; mapping fragile par nom d'actif (`render_weekly_winrate`) **durci** (clé stable `fiche_key`, suppression du `name_to_key`). L023 → **propagé**. +15 tests (`test_cutover_v2.py`). Suite : **1037 passed / 3 skipped / 0 failed**.
+- *Note (signalée à Thomas)* : `measures-log.jsonl` est re-dérivé déterministe à chaque run depuis les bulletins (append-only, source de vérité) — pas une réécriture de données passées ; le `system_version` par ligne reflète le régime d'émission.
+
 ## 2026-06-10 (Session 5) — Dédup fiches v2 + compteur régimes + fix M7 (Lots A/C/D, audit Cowork 10/06)
 
 > ⚠️ **Contre-audit** : l'audit Cowork annonçait 9 doublons ; vérif YAML → **8/9 inexistants** (critères renommés 7-8/06, pas des doublons). Voir `v3/audit/fiches-v2-dedup.md` + leçon L023. **4 fusions réelles** seulement. Cutover v2 = **reset `ref_changed` PARTIEL sur ces 4 actifs** (les 8 autres gardent leur historique v1) — `is_news_regime` n'a PAS été modifié donc aucun delta de signal hors dédup.

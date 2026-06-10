@@ -30,6 +30,14 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+# Version systeme (cutover v2). Import robuste : ajoute le repertoire du script
+# au path si besoin (cohérent avec les imports paresseux deja en place ici).
+try:
+    from system_version import SYSTEM_VERSION
+except ImportError:  # pragma: no cover - chemin d'import alternatif
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from system_version import SYSTEM_VERSION
+
 logger = logging.getLogger("scoring_analyste")
 
 ANALYSTE_VERSION = "v3.0.0"
@@ -2406,6 +2414,10 @@ def build_decision_log_records(
             records.append({
                 "bulletin_date": bulletin_date,
                 "generated_at": generated_at,
+                # Cutover v2 : estampille la version sur les NOUVELLES entrees.
+                # Les entrees passees sans ce champ = implicitement v1 (jamais
+                # reecrites). Cf. system_version.py + v3/data/ref-changed.json.
+                "system_version": SYSTEM_VERSION,
                 "fiche_key": r.fiche_key,
                 "actif": r.nom,
                 "horizon": h,

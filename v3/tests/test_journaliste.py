@@ -503,6 +503,12 @@ def test_measure_vrai_long_apres_24h(tmp_path, fiches_dict):
         prix_emission_dir=prix,
         fiches=fiches_dict,
         fetch_price=lambda t: 105.0,  # +5 % > seuil 1 %
+        # Isolation du registre de cutover v2 réel : ce test vérifie la mesure
+        # de BASE (bulletin → mesure → KPI). Le pétrole (BZ=F) est dans le
+        # registre committé avec ref_changed=2026-06-10 ; sans ce {} explicite,
+        # une mesure datée du 28/05 (pré-cutover) serait légitimement filtrée.
+        # Le cutover lui-même est couvert par test_cutover_v2.py.
+        ref_registry={},
     )
     assert len(measures) == 1
     assert measures[0].outcome == jr.OUTCOME_VRAI

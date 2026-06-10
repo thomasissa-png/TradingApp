@@ -159,3 +159,38 @@ Toute modification de cette règle doit :
 3. Être datée et signée Thomas.
 
 Jamais d'édition silencieuse de ce fichier.
+
+---
+
+## Addendum — Redémarrage v2 (2026-06-10)
+
+> Append-only. **Ne modifie PAS le texte de la règle gravée ci-dessus** : précise
+> uniquement la portée d'application de `ref_changed` au cutover v2 réel du 10/06.
+
+**Portée du reset = 4 actifs seulement.** Les cellules de **cacao, pétrole,
+nasdaq, argent** ont leur **référence de mesure changée** au 2026-06-10 (dédup des
+fiches, audit Cowork 10/06 — Lot A) : un critère redondant a été retiré sur chacune,
+donc leur signal n'est plus strictement comparable à l'historique antérieur. Pour
+ces 4 actifs, **N et le WR tradable repartent de zéro au 2026-06-10** (au sens de la
+section « `ref_changed` » ci-dessus).
+
+**Les 8 autres actifs gardent leur historique v1.** or, sp500, eurusd, cac40, café,
+vix, blé, cuivre **ne sont PAS reset** : aucune fusion de critère ne les a touchés,
+leur signal est inchangé, leur compteur N continue depuis l'origine.
+
+**Pas de reset global.** Le mécanisme décisionnel `is_news_regime` / `ratio_news`
+**n'a pas été modifié** → aucun delta de signal hors ces 4 actifs → aucune raison de
+remettre à zéro l'ensemble du shadow. Le cutover est **court** (lot unique daté du
+même jour, pas un étalement progressif).
+
+**Registre source de vérité** : la liste des cellules reset et leur date
+`ref_changed` est tenue dans `v3/data/ref-changed.json`, **clée par
+`ticker_principal`** (identifiant stable, robuste à un renommage de l'actif — cf.
+leçon L023). C'est ce registre que le Journaliste applique pour l'enforcement
+anti-mélange v1/v2 (aucune cellule des 4 actifs ne compte une mesure pré-dédup
+avec une mesure post-dédup).
+
+**Impact sur J+60 (2026-08-08, inchangé)** : pour les 4 actifs reset, N compte
+depuis le 2026-06-10 ; ils peuvent ne pas atteindre N ≥ 15 à J+60 (issue valide).
+Les 8 autres conservent leur N depuis l'origine. La règle de sélection elle-même
+(WR tradable ≥ 70 % / N ≥ 15, 24h-only) est **inchangée**.

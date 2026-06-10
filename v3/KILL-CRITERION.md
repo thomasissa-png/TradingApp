@@ -94,3 +94,32 @@ options :
 
 Pas de troisième voie "on attend encore". Cette discipline est la seule défense
 contre l'illusion d'une remontée à venir.
+
+---
+
+## Addendum — Redémarrage v2 (2026-06-10)
+
+> Append-only. **Ne modifie PAS les seuils gravés ci-dessus** (55 %, 65 %, N ≥ 15,
+> J+60) : précise uniquement comment le cutover v2 réel du 10/06 affecte le
+> comptage des observations par cellule.
+
+**Portée du reset = 4 actifs seulement.** Les cellules de **cacao, pétrole,
+nasdaq, argent** ont leur **référence de mesure changée** au 2026-06-10 (dédup des
+fiches, audit Cowork 10/06 — Lot A : un critère redondant retiré sur chacune). Pour
+ces 4 actifs, **les observations antérieures au 2026-06-10 ne comptent plus** dans
+le calcul du kill criterion : N (chevauchant et non-chevauchant), le taux global et
+le top-cellule ne sont calculés que sur les observations dont la date d'émission est
+≥ `ref_changed`.
+
+**Les 8 autres actifs gardent leur historique v1.** or, sp500, eurusd, cac40, café,
+vix, blé, cuivre **ne sont PAS reset** : leur signal est inchangé, leur N continue
+depuis l'origine.
+
+**Pas de reset global.** `is_news_regime` / `ratio_news` décisionnel **non modifiés**
+→ aucun delta de signal hors ces 4 actifs → pas de remise à zéro de l'ensemble.
+Cutover **court** (lot unique daté du même jour).
+
+**Registre source de vérité** : `v3/data/ref-changed.json`, **clé par
+`ticker_principal`** (identifiant stable, robuste au renommage — cf. leçon L023).
+Le Journaliste applique ce registre : aucune cellule des 4 actifs ne mélange une
+observation pré-dédup (v1) et post-dédup (v2) dans un même compteur.

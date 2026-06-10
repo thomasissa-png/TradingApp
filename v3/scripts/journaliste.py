@@ -59,6 +59,21 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+# Cutover v2 — version systeme + registre de reset (ref_changed). Import robuste.
+try:
+    from system_version import (
+        SYSTEM_VERSION,
+        load_ref_changed,
+        ref_changed_for_ticker,
+    )
+except ImportError:  # pragma: no cover - chemin d'import alternatif
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from system_version import (
+        SYSTEM_VERSION,
+        load_ref_changed,
+        ref_changed_for_ticker,
+    )
+
 logger = logging.getLogger("journaliste")
 
 JOURNALISTE_VERSION = "v3.1.0"
@@ -962,6 +977,10 @@ class Measure:
     #   "emission"  : fallback prix d'émission bulletin (ouverture absente) + WARNING.
     #   None        : pas de référence (prix indisponible).
     prix_reference_source: Optional[str] = None
+    # Cutover v2 — version systeme estampillee sur les NOUVELLES mesures.
+    # Les mesures passees (measures-log) sans ce champ = implicitement v1
+    # (jamais reecrites — append-only). Cf. system_version.py.
+    system_version: Optional[str] = None
 
 
 def measure_cell(
@@ -1644,6 +1663,7 @@ def measure(
     fetch_price: Optional[Any] = None,
     prix_ouverture_dir: Optional[Path] = None,
     only_seven_am: bool = True,
+    ref_registry: Optional[Dict[str, date]] = None,
 ) -> Tuple[List[Measure], Dict[Tuple[str, str], CellKPI]]:
     """Mesure toutes les conclusions échues à la date `today`.
 
@@ -1837,6 +1857,27 @@ def measure(
             m.is_flip = _compute_is_flip(cell, bpath)
             measures.append(m)
 
+    # Cutover v2 — estampille la version systeme par MESURE selon le régime sous
+    # lequel le bulletin a été émis (le measures-log est re-dérivé des bulletins
+    # committés à chaque run, donc on ne « réécrit » pas des données : on rejoue
+    # une dérivation déterministe — mais une mesure d'un bulletin pré-cutover doit
+    # rester v1, jamais reclassée v2). Règle :
+    #   - cellule AU registre + bulletin_date >= ref_changed  -> "v2"
+    #   - cellule AU registre + bulletin_date <  ref_changed   -> "v1"
+    #   - cellule HORS registre                                -> SYSTEM_VERSION
+    #     (le système global tourne en v2 ; ces cellules gardent tout leur
+    #      historique, il n'y a pas de cutover qui les coupe en deux).
+    # ref_registry injectable (tests) ; sinon registre committé par défaut.
+    if ref_registry is None:
+        ref_registry = load_ref_changed()
+    for m in measures:
+        fiche_m = fiches.get(m.fiche_key) or {}
+        rc_m = ref_changed_for_ticker(fiche_m.get("ticker_principal"), ref_registry)
+        if rc_m is None:
+            m.system_version = SYSTEM_VERSION
+        else:
+            m.system_version = "v2" if m.cell.bulletin_date >= rc_m else "v1"
+
     # Agrégation par cellule
     by_cell: Dict[Tuple[str, str], List[Measure]] = {}
     for m in measures:
@@ -1844,11 +1885,46 @@ def measure(
     for key in by_cell:
         by_cell[key].sort(key=lambda m: m.echeance)
 
+    # Cutover v2 — ENFORCEMENT anti-mélange v1/v2 (reset PARTIEL).
+    # Pour les cellules dont la fiche est au registre ref-changed.json (clé par
+    # ticker_principal STABLE), on ne garde dans le calcul KPI que les
+    # observations datées >= ref_changed (= post-cutover). Les cellules ABSENTES
+    # du registre comptent tout (aucun reset). Aucune cellule des actifs reset ne
+    # mélange une mesure pré-dédup (v1) et post-dédup (v2) : l'historique antérieur
+    # est filtré en amont de compute_kpi (donc de N, du WR conclusif ET tradable,
+    # de n_regimes). Filtre sur la date d'ÉMISSION (cell.bulletin_date), pas
+    # l'échéance : la cellule appartient au régime sous lequel elle a été décidée.
+    # (ref_registry déjà chargé ci-dessus pour le stamping system_version.)
     kpis: Dict[Tuple[str, str], CellKPI] = {}
     for key, ms in by_cell.items():
-        kpis[key] = compute_kpi(ms)
+        ms_kpi = _apply_ref_changed_cutover(ms, fiches, ref_registry)
+        kpis[key] = compute_kpi(ms_kpi)
 
     return measures, kpis
+
+
+def _apply_ref_changed_cutover(
+    measures_for_cell: List[Measure],
+    fiches: Dict[str, dict],
+    ref_registry: Dict[str, date],
+) -> List[Measure]:
+    """Filtre les mesures d'une cellule selon le registre de reset v2.
+
+    Si la fiche de la cellule (résolue par ticker_principal STABLE) est au
+    registre, ne garde QUE les mesures dont la date d'émission (bulletin_date)
+    est >= ref_changed. Sinon (cellule absente du registre), renvoie la liste
+    intacte (aucun reset). Zéro invention : si la fiche/ticker est introuvable,
+    on ne filtre pas (comportement v1 conservateur).
+    """
+    if not measures_for_cell or not ref_registry:
+        return measures_for_cell
+    fiche_key = measures_for_cell[0].fiche_key
+    fiche = fiches.get(fiche_key) or {}
+    ticker = fiche.get("ticker_principal")
+    rc = ref_changed_for_ticker(ticker, ref_registry)
+    if rc is None:
+        return measures_for_cell
+    return [m for m in measures_for_cell if m.cell.bulletin_date >= rc]
 
 
 # ---------------------------------------------------------------------------
@@ -2114,6 +2190,11 @@ def _winrate_rows(
         # non-conclusives + suivi-interrompu (déjà calculés par compute_kpi).
         non_notes = 0 if k is None else (k.n_nc + k.interrompus_recents)
         rows.append({
+            # L023 — on porte la CLÉ STABLE (fiche_key) en plus du nom d'affichage
+            # pour que les consommateurs (archive hebdo, nouveaux paris) puissent
+            # ré-associer une cellule sans round-trip par le nom (robuste à un
+            # renommage d'actif). Le nom reste pour l'affichage uniquement.
+            "fiche_key": fk,
             "nom": nom,
             "horizon": h,
             "horizon_rank": horizon_order.get(h, 99),
@@ -2277,12 +2358,10 @@ def render_weekly_winrate(
         if monday <= m.echeance <= sunday:
             new_bets[(m.fiche_key, m.horizon)] = new_bets.get((m.fiche_key, m.horizon), 0) + 1
 
-    # Index fiche_key par nom affiché pour retrouver la clé depuis les rows.
-    name_to_key: Dict[Tuple[str, str], str] = {}
-    for fk, fiche in fiches.items():
-        nom = (fiche.get("actif") or fk).strip()
-        for h in HORIZONS:
-            name_to_key[(nom, h)] = fk
+    # L023 — on ré-associe via la CLÉ STABLE portée par chaque row (fiche_key),
+    # plus par round-trip via le nom d'affichage (qui casse si un actif est
+    # renommé). Plus de mapping name_to_key fragile : new_bets est déjà clé par
+    # (fiche_key, horizon), et chaque row porte sa fiche_key.
 
     lines: List[str] = []
     lines.append(f"# Win rate — semaine {iso} ({monday.isoformat()} → {sunday.isoformat()})")
@@ -2307,7 +2386,7 @@ def render_weekly_winrate(
         for r in h_rows:
             wr = "—" if r["win_rate"] is None else f"{r['win_rate']:.1f}%"
             wr_trad = "—" if r["wr_tradable"] is None else f"{r['wr_tradable']:.1f}%"
-            fk = name_to_key.get((r["nom"], r["horizon"]))
+            fk = r.get("fiche_key")  # L023 — clé stable, robuste au renommage
             nb_new = new_bets.get((fk, r["horizon"]), 0) if fk else 0
             # Lot C — indicateur « vrais paris » : N (régimes=Y) à côté de N.
             n_reg = r.get("n_regimes", 0)
@@ -2675,6 +2754,10 @@ def measure_to_record(m: Measure) -> Dict[str, Any]:
         # "emission" fallback, None si indispo). Permet de vérifier en audit que
         # le 24h post-refonte utilise bien l'ouverture, pas le prix à 7h.
         "prix_reference_source": m.prix_reference_source,
+        # Cutover v2 — version du régime sous lequel la mesure a été émise
+        # ("v1" avant ref_changed pour une cellule reset, "v2" après / hors
+        # registre). None possible (rétro-compat / mesure non stampée).
+        "system_version": m.system_version,
     }
 
 

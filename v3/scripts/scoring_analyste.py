@@ -1771,6 +1771,248 @@ def build_top3_block(results: List["ActifResult"]) -> List[str]:
     return lines
 
 
+# ---------------------------------------------------------------------------
+# « 🎯 À jouer aujourd'hui (24h) » — vue d'oiseau actionnable en tête (audit
+# UX 2026-06-10, casquette DÉCIDER). PRÉSENTATION PURE : aucun score, aucune
+# conclusion, aucune mesure ne change. Le tableau ne fait que RÉ-ORGANISER ce
+# que la matrice contient déjà, en se restreignant à l'horizon 24h (l'horizon
+# de trade préféré de Thomas) et en séparant ce qui est jouable de ce qui ne
+# l'est pas — selon des critères EXISTANTS (⚪ / ≈ / 🚫 / conviction bilan_jour).
+# ---------------------------------------------------------------------------
+
+
+def _conviction_cell(r: "ActifResult", h: str, seuil: float) -> str:
+    """Niveau de conviction (« forte » / « faible ») d'une cellule, calculé
+    avec EXACTEMENT la logique de `bilan_jour.conviction_level` (§4.7) mais à
+    partir de l'ActifResult au lieu du record decision-log (mêmes drapeaux,
+    même seuil — zéro nouveau seuil métier).
+
+    Forte = |score| >= seuil ET aucun drapeau parmi : mono-critère dominant (◧),
+    incohérence inter-horizons (⇆), divergence quant↔news (↯), quasi-neutre (≈
+    incluant coin-flip). Sinon « faible ». Un INSUFFISANT n'a pas de conviction
+    (« — »).
+    """
+    conc = r.conclusions.get(h, "")
+    if conc not in ("LONG", "SHORT"):
+        return "—"
+    score = abs(r.scores.get(h, 0.0))
+    mono_dom, _ = detect_mono_critere_dominant(r, h)
+    drapeaux = (
+        mono_dom
+        or r.incoherence_inter_horizons
+        or r.divergence_quant_news.get(h, False)
+        or (score < NEUTRAL_BAND)  # quasi_neutre (englobe coin-flip |score|<0.05)
+    )
+    if score >= seuil and not drapeaux:
+        return "forte"
+    return "faible"
+
+
+def _cell_a_eviter(r: "ActifResult", h: str) -> bool:
+    """Une cellule 24h est « à éviter » si elle porte un drapeau de NON-jouabilité
+    EXISTANT : 🚫 insuffisant OU ⚪ quasi coin-flip (|score|<0.05) OU ≈ quasi-neutre
+    (|note|<NEUTRAL_BAND). Les drapeaux de prudence (◧/⚠️/↯/⇄/⇆/⌛/⊘) ne SORTENT PAS
+    une cellule des « jouables » (prudence ≠ exclusion).
+    """
+    conc = r.conclusions.get(h, "")
+    if conc == CONCLUSION_INSUFFISANT:
+        return True
+    score = abs(r.scores.get(h, 0.0))
+    return score < NEUTRAL_BAND  # ⚪ (<0.05) et ≈ (<0.30) sont tous deux <NEUTRAL_BAND
+
+
+def build_a_jouer_block(
+    results: List["ActifResult"],
+    now: datetime,
+    prix_reference: Optional[Dict[str, float]] = None,
+    seuil_conviction: Optional[float] = None,
+) -> List[str]:
+    """Construit le bloc « ## 🎯 À jouer aujourd'hui (24h) ».
+
+    Tableau des 12 cellules 24h, trié par |note| décroissante, scindé en deux
+    groupes : « Jouables » et « À éviter » (cf. `_cell_a_eviter`). Colonnes :
+    Actif · Direction · Note · Conviction · Drapeaux · Prix de réf.
+
+    `prix_reference` : dict {fiche_key: prix} (prix d'émission stampé). Absent
+    → « — » (zéro invention, jamais de prix fabriqué).
+    `seuil_conviction` : seuil EXISTANT (bilan_jour) ; chargé si None.
+    """
+    if seuil_conviction is None:
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import bilan_jour as _bj  # import paresseux (isole d'un éventuel KO)
+            seuil_conviction = _bj._load_score_fort_seuil()
+        except Exception:  # noqa: BLE001 — défaut documenté si bilan_jour KO
+            seuil_conviction = 0.6
+    prix_reference = prix_reference or {}
+
+    H = "24h"
+    rows: List[Tuple[float, bool, str]] = []  # (|note|, a_eviter, ligne markdown)
+    for r in results:
+        conc = r.conclusions.get(H, "")
+        score = r.scores.get(H, 0.0)
+        flags = _compute_cell_risk_flags(r, H, now)
+        # ⚪ / ≈ ne sont PAS dans _compute_cell_risk_flags → on les ajoute pour
+        # rendre la non-jouabilité visible dans la colonne Drapeaux (cohérent
+        # avec la matrice : ⚪ |score|<0.05, ≈ |score|<NEUTRAL_BAND).
+        extra: List[str] = []
+        if conc in ("LONG", "SHORT"):
+            if abs(score) < 0.05:
+                extra.append("⚪")
+            elif abs(score) < NEUTRAL_BAND:
+                extra.append("≈")
+        flags_all = extra + flags
+        flags_str = " ".join(flags_all) if flags_all else "—"
+
+        direction = conc if conc in ("LONG", "SHORT") else conc
+        note_str = "—" if conc == CONCLUSION_INSUFFISANT else f"{score:+.2f}"
+        conv = _conviction_cell(r, H, seuil_conviction)
+        px = prix_reference.get(r.fiche_key)
+        px_str = f"{px:g}" if isinstance(px, (int, float)) else "—"
+
+        line = f"| {r.nom} | {direction} | {note_str} | {conv} | {flags_str} | {px_str} |"
+        rows.append((abs(score), _cell_a_eviter(r, H), line))
+
+    # Tri |note| décroissant, déterministe (la ligne markdown départage les ex æquo).
+    rows.sort(key=lambda t: (-t[0], t[2]))
+    jouables = [ln for _a, evit, ln in rows if not evit]
+    a_eviter = [ln for _a, evit, ln in rows if evit]
+
+    out: List[str] = ["## 🎯 À jouer aujourd'hui (24h)", ""]
+    out.append(
+        "_Les 12 cellules à 24h (horizon de trade), triées par force de note. "
+        "« À éviter » = quasi coin-flip (⚪), quasi-neutre (≈) ou données "
+        "insuffisantes (🚫). Les drapeaux de prudence (◧ ⚠️ ↯ …) restent dans "
+        "« Jouables » — prudence, pas exclusion. Prix de réf. = prix d'émission "
+        "stampé (— si pas encore disponible)._"
+    )
+    out.append("")
+    header = "| Actif | Direction | Note | Conviction | Drapeaux | Prix de réf. |"
+    sep = "|---|---|---|---|---|---|"
+    out.append("**Jouables**")
+    out.append("")
+    out.append(header)
+    out.append(sep)
+    if jouables:
+        out.extend(jouables)
+    else:
+        out.append("| _aucune_ | — | — | — | — | — |")
+    out.append("")
+    out.append("**À éviter** (⚪ coin-flip · ≈ quasi-neutre · 🚫 insuffisant)")
+    out.append("")
+    out.append(header)
+    out.append(sep)
+    if a_eviter:
+        out.extend(a_eviter)
+    else:
+        out.append("| _aucune_ | — | — | — | — | — |")
+    out.append("")
+    return out
+
+
+def build_top_multi_horizons_block(
+    results: List["ActifResult"],
+    shared_summary: Optional[List[Dict[str, Any]]] = None,
+) -> List[str]:
+    """Mini « Top convictions multi-horizons » (≤ 3 lignes), AVEC les drapeaux
+    de chaque cellule (audit UX 10/06 : la n°1 EUR/USD 7j ◧ affichée sans
+    avertissement — plus jamais). Réutilise la sélection de `build_top3_block`
+    (3 actifs distincts, meilleur horizon, confidence normale) mais expose les
+    drapeaux de risque de la cellule.
+
+    Si ≥ 2 cellules du top partagent le même driver dominant, ajoute une ligne
+    « ⚭ N de ces convictions reposent sur le même driver : <label> »
+    (réutilise shared_drivers — zéro nouveau calcul).
+    """
+    # Réutilise la sélection canonique du Top 3 (3 actifs distincts, normale).
+    raw = build_top3_block(results)
+    # raw contient le titre + lignes « - **Actif h — DIR (note)** — raison ».
+    # On retrouve les (actif, horizon) sélectionnés pour rattacher les drapeaux.
+    selected: List[Tuple["ActifResult", str]] = []
+    res_by_nom = {r.nom: r for r in results}
+    import re as _re
+    for ln in raw:
+        m = _re.match(r"- \*\*(.+) (24h|7j|1m) — ", ln)
+        if not m:
+            continue
+        nom, h = m.group(1), m.group(2)
+        r = res_by_nom.get(nom)
+        if r is not None:
+            selected.append((r, h))
+
+    out: List[str] = ["## 🎯 Top convictions multi-horizons", ""]
+    if not selected:
+        out.append("_Aucune conviction à couverture suffisante ce cycle._")
+        out.append("")
+        return out
+    out.append(
+        "_Les meilleures convictions tous horizons confondus, avec leurs "
+        "drapeaux : une note forte portée par 1 seul critère (◧) ou divergente "
+        "(↯) reste à lire avec prudence._"
+    )
+    out.append("")
+    now_for_flags = datetime.now(timezone.utc)
+    for r, h in selected:
+        conc = r.conclusions.get(h, "")
+        score = r.scores.get(h, 0.0)
+        raison = _critere_dominant(r, h)
+        flags = _compute_cell_risk_flags(r, h, now_for_flags)
+        if conc in ("LONG", "SHORT"):
+            if abs(score) < 0.05:
+                flags = ["⚪"] + flags
+            elif abs(score) < NEUTRAL_BAND:
+                flags = ["≈"] + flags
+        flags_str = (" — drapeaux : " + " ".join(flags)) if flags else ""
+        suffix = f" — {raison}" if raison else ""
+        out.append(f"- **{r.nom} {h} — {conc} ({score:+.2f})**{suffix}{flags_str}")
+
+    # ⚭ — si ≥ 2 cellules du top partagent le même driver dominant.
+    if shared_summary:
+        try:
+            import shared_drivers as _sd  # noqa: F401
+        except Exception:  # noqa: BLE001
+            _sd = None  # type: ignore
+        # Driver dominant de chaque cellule sélectionnée (par cle_courante).
+        from collections import Counter
+        dom_cles: List[Tuple[str, str]] = []  # (cle, label)
+        for r, h in selected:
+            best_cle = ""
+            best_label = ""
+            best_abs = 0.0
+            for c in r.criteres:
+                if c.is_gate or c.is_na:
+                    continue
+                ctr = c.contributions.get(h)
+                if ctr is None:
+                    continue
+                if abs(ctr) > best_abs:
+                    best_abs = abs(ctr)
+                    best_cle = getattr(c, "cle_courante", "") or ""
+                    best_label = c.nom
+            if best_cle:
+                lbl = best_label
+                if _sd is not None:
+                    lbl = _sd.driver_label(best_cle, best_label)
+                dom_cles.append((best_cle, lbl))
+        counts = Counter(cle for cle, _ in dom_cles)
+        for cle, n in counts.most_common(1):
+            if n >= 2:
+                label = next(lbl for c, lbl in dom_cles if c == cle)
+                out.append("")
+                out.append(
+                    f"- {SHARED_DRIVERS_SYMBOL_LOCAL} {n} de ces convictions "
+                    f"reposent sur le même driver : {label} — un retournement "
+                    f"de ce signal les fausserait ensemble."
+                )
+    out.append("")
+    return out
+
+
+# Symbole ⚭ (réf. shared_drivers) — copié localement pour éviter un import dur
+# au niveau module (cohérent avec le pattern d'imports paresseux du fichier).
+SHARED_DRIVERS_SYMBOL_LOCAL = "⚭"
+
+
 # Traduction des types de normalisation en libellé humain pour le tableau
 # « Détail par actif » (reco-wording-detail-bulletin.md §2). N'affecte QUE
 # l'affichage — la valeur brute `type_norm` reste dans le decision-log.
@@ -1829,15 +2071,19 @@ def render_bulletin(
     now: datetime,
     fiches_h: str,
     freshness_msg: str,
+    prix_reference: Optional[Dict[str, float]] = None,
 ) -> str:
     # Lot 5 C8a — import paresseux (cohérent avec build_decision_log_records).
     import triggers_classifier as _tc_classifier  # noqa: F401
     lines: List[str] = []
     lines.append(f"# Bulletin Analyste — {now:%Y-%m-%d} · {now:%Hh%M} (Paris)")
     lines.append("")
+    # En-tête allégé (audit UX 10/06, P1-D / bloc 4) : la ligne titre garde
+    # date/heure ; « Fraîcheur » reste en tête (info utile au scan). La version
+    # de l'Analyste + le hash des fiches (debug/suivi interne) sont déplacés EN
+    # PIED de bulletin (section --- finale discrète) pour ne plus polluer la vue
+    # de décision. La ligne « Généré » reste (utile pour dater le run).
     lines.append(f"- Généré : {now.isoformat()}")
-    lines.append(f"- Analyste version : {ANALYSTE_VERSION}")
-    lines.append(f"- Fiches hash : {fiches_h}")
     lines.append(f"- Fraîcheur : {freshness_msg}")
     # --- Régime extrême : annonce UNE fois (anti-bruit #5.1) ---------------
     # Si le gate est actif sur (quasi) tous les actifs, on l'annonce ici une
@@ -1892,7 +2138,20 @@ def render_bulletin(
         for h in HORIZONS:
             v = veille.get(h)
             if v and v != r.conclusions[h]:
-                flips.append(f"- {r.nom} [{h}] : {v} → {r.conclusions[h]} (score {r.scores[h]:+.2f})")
+                # Bloc 3 (audit UX 10/06) — drapeau ⚪/≈ sur les flips de BRUIT :
+                # un flip à +0.01 (CAC/Blé le 10/06) est un quasi-coin-flip, il
+                # doit le dire. Seuils EXISTANTS (⚪ |score|<0.05, ≈ <NEUTRAL_BAND).
+                sc = r.scores[h]
+                noise_flag = ""
+                if r.conclusions[h] in ("LONG", "SHORT"):
+                    if abs(sc) < 0.05:
+                        noise_flag = " ⚪"
+                    elif abs(sc) < NEUTRAL_BAND:
+                        noise_flag = " ≈"
+                flips.append(
+                    f"- {r.nom} [{h}] : {v} → {r.conclusions[h]} "
+                    f"(score {sc:+.2f}){noise_flag}"
+                )
     lines.append("## Flips vs veille")
     if flips:
         lines.extend(flips)
@@ -2102,7 +2361,15 @@ def render_bulletin(
     for i, ln in enumerate(lines):
         if ln.startswith("- Fraîcheur") or ln.startswith("- ⚠️ Régime extrême"):
             _meta_end = i + 1
-    lines = lines[:_meta_end] + [""] + build_top3_block(results) + synth_lines + lines[_meta_end:]
+    # Bloc 1 (audit UX 10/06) — « 🎯 À jouer aujourd'hui (24h) » remplace/absorbe
+    # l'ancien « Top 3 convictions du jour » (qui mélangeait les horizons et
+    # masquait les drapeaux). On garde un mini « Top convictions multi-horizons »
+    # APRÈS, avec les drapeaux de chaque cellule + la ligne ⚭ si convergence.
+    head_block = (
+        build_a_jouer_block(results, now, prix_reference=prix_reference)
+        + build_top_multi_horizons_block(results, _shared_summary)
+    )
+    lines = lines[:_meta_end] + [""] + head_block + synth_lines + lines[_meta_end:]
 
     lines.append("## Détail par actif")
     lines.append("")
@@ -2186,6 +2453,15 @@ def render_bulletin(
     # filtré sur les cellules quant à forte conviction. Zéro invention : si le
     # réalisé n'est pas mesurable (warm-up / suivi-interrompu), la ligne est omise.
     lines.extend(build_audit_veille_24h(now))
+
+    # ── Pied de bulletin (bloc 4) — métadonnées techniques déplacées ─────────
+    # Version Analyste + hash des fiches : debug/suivi interne, sortis de la
+    # tête de bulletin (audit UX 10/06, P1-D) vers une section --- discrète.
+    lines.append("---")
+    lines.append("")
+    lines.append(
+        f"_Analyste version : {ANALYSTE_VERSION} · Fiches hash : {fiches_h}_"
+    )
 
     return "\n".join(lines)
 
@@ -2656,7 +2932,9 @@ def build_audit_veille_24h(
     Zéro invention : si une mesure n'est pas conclusive (suivi-interrompu /
     delta indisponible) → ligne omise. Aucun chiffre fabriqué.
     """
-    lines: List[str] = ["## Audit de la veille (24h — convictions fortes)", ""]
+    # Titre EXACT (bloc 2, audit UX 10/06) : l'agent build_html replie la section
+    # par ce titre — NE PAS le modifier sans synchroniser build_html.py.
+    lines: List[str] = ["## 🔎 Calls 24h jugés (fenêtre récente)", ""]
     placeholder = (
         "_Pas encore de cellule 24h à forte conviction arrivée à échéance._"
     )
@@ -2734,15 +3012,45 @@ def build_audit_veille_24h(
         lines.append("")
         return lines
 
-    retained.sort(key=lambda t: t[0], reverse=True)
+    # Tri par DATE de prédiction décroissante (bloc 2, audit UX 10/06 : les calls
+    # les plus récents en tête). Départage déterministe : |note| desc, puis nom.
+    retained.sort(
+        key=lambda t: (t[1].cell.bulletin_date, t[0], t[1].cell.actif_name),
+        reverse=True,
+    )
+
+    # Ligne de synthèse EN TÊTE : « X ✅ / Y ❌ (du A au B) ».
+    n_vrai = sum(1 for _, m in retained if m.outcome == OUTCOME_VRAI)
+    n_faux = sum(1 for _, m in retained if m.outcome == OUTCOME_FAUSSE)
+    dates = [m.cell.bulletin_date for _, m in retained]
+    d_min, d_max = min(dates), max(dates)
+    periode = (
+        f"du {d_min.isoformat()} au {d_max.isoformat()}"
+        if d_min != d_max
+        else f"le {d_min.isoformat()}"
+    )
+    lines.append(f"**{n_vrai} ✅ / {n_faux} ❌** ({periode})")
+    lines.append("")
+
     for _, m in retained:
         ok = m.outcome == OUTCOME_VRAI
         icon = "✅" if ok else "❌"
         verdict = "VRAI" if ok else "FAUX"
+        # Étiquette « mesure v1 » sur les calls mesurés AVANT le cutover ouverture
+        # (prix_reference_source != "ouverture" → référence = prix d'émission,
+        # corrigée depuis). Rend identifiables les « Argent −16,6 % » d'avant-
+        # cutover. Champ EXISTANT du measures-log (zéro invention) ; absent → pas
+        # d'étiquette (on n'affirme rien sur une provenance inconnue).
+        src = getattr(m, "prix_reference_source", None)
+        v1_tag = (
+            " `[mesure v1 — réf. prix d'émission, corrigée depuis]`"
+            if (src is not None and src != "ouverture")
+            else ""
+        )
         lines.append(
             f"- {icon} **{m.cell.actif_name} 24h {m.cell.conclusion}** → "
             f"{verdict} (réel {m.delta_pct:+.2f}%) "
-            f"[prédit le {m.cell.bulletin_date.isoformat()}]"
+            f"[prédit le {m.cell.bulletin_date.isoformat()}]{v1_tag}"
         )
     lines.append("")
     return lines
@@ -2811,7 +3119,27 @@ def run(
         ))
 
     fhash = fiches_hash(fiches)
-    content = render_bulletin(results, veille_conclusions, now, fhash, fresh_msg)
+    # Prix de référence pour « 🎯 À jouer aujourd'hui (24h) » (bloc 1) : prix
+    # d'émission STAMPÉ du créneau courant, mappé par fiche_key. Best-effort —
+    # au run 7h, le stamp n'existe pas encore (il est posé APRÈS le bulletin par
+    # run_bulletin.stamp_prix_emission) → map vide → colonne « — » (zéro
+    # invention). Sur un re-render ultérieur (stamp présent), les prix s'affichent.
+    prix_reference: Dict[str, float] = {}
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import journaliste as _journ  # noqa: F401
+        bulletin_id = f"{now:%Y-%m-%d}-{now:%H}h"
+        stamped = _journ.load_prix_emission(bulletin_id)  # {ticker: prix}
+        for key, fiche in fiches.items():
+            ticker = fiche.get("ticker_principal")
+            if ticker and ticker in stamped:
+                prix_reference[key] = stamped[ticker]
+    except Exception as e:  # noqa: BLE001 — l'absence de prix ne casse pas le bulletin
+        logger.warning("prix de référence À jouer indisponible : %s", e)
+    content = render_bulletin(
+        results, veille_conclusions, now, fhash, fresh_msg,
+        prix_reference=prix_reference,
+    )
     # Un fichier distinct par créneau (3 runs/jour). Le créneau est l'HEURE DE
     # PARIS du run, zéro-paddée (ex. bulletin-2026-06-05-18h.md pour un run 18h04
     # Paris). On utilise `now` (Europe/Paris) — la MÊME source d'heure que le

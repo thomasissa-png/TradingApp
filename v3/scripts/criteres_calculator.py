@@ -174,7 +174,8 @@ def _bucket_for_url(url: str) -> str:
     return "http"
 
 
-def http_get_json(url: str, params: Optional[dict] = None, timeout: int = DEFAULT_TIMEOUT) -> Optional[Any]:
+def http_get_json(url: str, params: Optional[dict] = None, timeout: int = DEFAULT_TIMEOUT,
+                  *, status_out: Optional[dict] = None) -> Optional[Any]:
     """GET JSON résilient avec timeout. Retourne le JSON parsé, ou None si erreur.
 
     Wrapper mince autour de `http_retry.http_get_retry` (helper partagé) : route le
@@ -186,10 +187,15 @@ def http_get_json(url: str, params: Optional[dict] = None, timeout: int = DEFAUL
 
     Le bucket de throttle est déduit de l'URL (cftc/eia/openmeteo) pour que les
     sources ne se pénalisent pas mutuellement.
+
+    `status_out` (optionnel) : dict rempli par le helper avec le dernier code HTTP
+    observé (clé "status") + l'erreur réseau (clé "error"). Permet au caller (météo)
+    de PERSISTER la cause exacte du n/a (403/404/429/net_error) — « échec visible ».
     """
     bucket = _bucket_for_url(url)
     resp = _http_retry.http_get_retry(
         url, params=params, timeout=timeout, bucket=bucket, label=bucket,
+        status_out=status_out,
     )
     if resp is None:
         # Échec réseau / statut non-retriable / retries épuisés : déjà loggé par
@@ -199,6 +205,9 @@ def http_get_json(url: str, params: Optional[dict] = None, timeout: int = DEFAUL
         return resp.json()
     except ValueError as e:
         logger.warning("HTTP GET %s : JSON invalide (HTTP 200) : %s", url, e)
+        if status_out is not None:
+            status_out["status"] = "json_invalid"
+            status_out["error"] = str(e)
         return None
 
 
@@ -1180,6 +1189,12 @@ def fetch_cboe_history(index: str) -> Optional[List[Tuple[str, float]]]:
 
 OPEN_METEO_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 
+# Espacement (s) avant le retry global différé des critères météo n/a. Court :
+# objectif = laisser retomber un rate-limit transitoire CI sans rallonger le run.
+# Env-configurable (0 = pas d'attente, utile en test). Le throttle inter-requêtes
+# normal est déjà couvert par le bucket "openmeteo" de http_retry.
+METEO_RETRY_DELAY_S = float(os.environ.get("METEO_RETRY_DELAY_S", "2.0"))
+
 # Mapping cle_courante → (lat, lon, days_window)
 # Coordonnées validées contre brief P3 : Minas Gerais (-19.9/-43.9 — Belo Horizonte),
 # Vietnam Central Highlands (12.7/108.1 — Buon Ma Thuot), Côte d'Ivoire/Ghana barycentre
@@ -1192,6 +1207,20 @@ METEO_CRITERIA = {
     "meteo_bresil_minas_gerais":    (-19.9, -43.9, 60),  # Minas Gerais — café arabica
     "noaa_drought_midwest_plains":  (39.0, -98.0, 60),   # US Plains (KS) — blé HRW/SRW
 }
+
+
+def _meteo_get_json(params: dict, status_out: dict) -> Optional[Any]:
+    """Appel Open-Meteo qui capture le code HTTP via status_out.
+
+    Tolère un `http_get_json` mocké (tests) qui n'accepte pas le kwarg
+    `status_out` : on retombe alors sur l'appel positionnel historique sans
+    perdre le contrat. En prod, status_out est rempli (cause exacte du n/a).
+    """
+    try:
+        return http_get_json(OPEN_METEO_ARCHIVE, params=params, status_out=status_out)
+    except TypeError:
+        # Mock legacy sans status_out → appel historique (contrat préservé).
+        return http_get_json(OPEN_METEO_ARCHIVE, params=params)
 
 
 def fetch_open_meteo_anomaly(lat: float, lon: float, *, days: int = 90) -> Optional[float]:
@@ -1208,9 +1237,15 @@ def fetch_open_meteo_anomaly(lat: float, lon: float, *, days: int = 90) -> Optio
         "daily": "precipitation_sum",
         "timezone": "UTC",
     }
-    data = http_get_json(OPEN_METEO_ARCHIVE, params=params)
+    # status_out : on capture le code HTTP / erreur réseau du 1er appel pour
+    # PERSISTER la cause exacte du n/a (point 1 du brief — « échec visible »).
+    # Open-Meteo répond 200 hors CI mais peut renvoyer 429 (rate-limit partagé
+    # entre runners GitHub) ou net_error en CI — invisible jusqu'ici.
+    status: Dict[str, str] = {}
+    data = _meteo_get_json(params, status)
     if not isinstance(data, dict):
-        SKIP_COUNTER[f"meteo_dead:{lat},{lon}"] += 1
+        cause = status.get("status", "no_response")
+        SKIP_COUNTER[f"meteo_dead:{lat},{lon}:{cause}"] += 1
         return None
     daily = data.get("daily", {})
     series = daily.get("precipitation_sum") if isinstance(daily, dict) else None
@@ -1228,9 +1263,11 @@ def fetch_open_meteo_anomaly(lat: float, lon: float, *, days: int = 90) -> Optio
     params2 = dict(params)
     params2["start_date"] = clim_start.isoformat()
     params2["end_date"] = clim_end.isoformat()
-    data2 = http_get_json(OPEN_METEO_ARCHIVE, params=params2)
+    status2: Dict[str, str] = {}
+    data2 = _meteo_get_json(params2, status2)
     if not isinstance(data2, dict):
-        SKIP_COUNTER[f"meteo_clim_dead:{lat},{lon}"] += 1
+        cause = status2.get("status", "no_response")
+        SKIP_COUNTER[f"meteo_clim_dead:{lat},{lon}:{cause}"] += 1
         return None
     clim_series = data2.get("daily", {}).get("precipitation_sum") if isinstance(data2.get("daily"), dict) else None
     if not isinstance(clim_series, list) or len(clim_series) < 30:
@@ -2210,6 +2247,79 @@ def _handle_cboe(cle: str, crit: dict, ts: str, type_norm: str) -> Optional[dict
     return {"valeur": series[-1][1], "ts": ts}
 
 
+# ---------------------------------------------------------------------------
+# VIX — Écart volatilité réalisée − volatilité implicite (gap_rv_iv)
+# ---------------------------------------------------------------------------
+#
+# Critère vix.yml id=6 (cle_courante "gap_rv_iv", normalisation lineaire,
+# centre 0, echelle 5, poids 5). Calculable SANS nouvelle source :
+#   - vol RÉALISÉE = stdev des rendements quotidiens S&P (closes SPY déjà via
+#     Twelve), fenêtre 20 sessions, annualisée ×√252 ×100 (en points de % vol).
+#   - vol IMPLICITE = niveau VIX déjà ingéré via CBOE (chemin prioritaire
+#     existant `fetch_cboe_history("VIX")`, cohérent avec niveau_vix_absolu /
+#     term_structure). Le VIX EST déjà une vol annualisée en points → directement
+#     comparable à la RV annualisée.
+#   - spread = RV − IV (réalisée − implicite). La fiche déclare signe -1
+#     (IV>>RV +5pts => LONG VIX), appliqué en aval par le scoring.
+# RED LINE zéro invention : si une des DEUX jambes manque (SPY indispo OU CBOE
+# indispo) → None = n/a propre. La normalisation lineaire (centre/echelle) est
+# faite par le scoring fiche à partir de {"valeur": spread}.
+
+RV_WINDOW_SESSIONS = 20      # fenêtre de la vol réalisée (énoncé fiche : 20 jours)
+RV_ANNUALISATION = 252       # sessions de bourse par an (facteur √252)
+
+
+def _realized_vol_sp500(window: int = RV_WINDOW_SESSIONS) -> Optional[float]:
+    """Vol réalisée S&P annualisée en points de % (stdev rendements quotidiens
+    SPY ×√252 ×100). None si série SPY insuffisante (zéro invention)."""
+    # On demande window + marge pour avoir window rendements après le diff.
+    series = fetch_twelve_series("SPY", outputsize=window + 10)
+    if not series or len(series) < window + 1:
+        SKIP_COUNTER[f"gap_rv_iv_rv_thin:{len(series) if series else 0}"] += 1
+        return None
+    closes = [c for _, c in series][-(window + 1):]
+    rets = [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes))
+            if closes[i - 1] != 0]
+    if len(rets) < window:
+        SKIP_COUNTER[f"gap_rv_iv_rv_thin:{len(rets)}"] += 1
+        return None
+    try:
+        daily_std = statistics.pstdev(rets)
+    except statistics.StatisticsError:
+        return None
+    if not _is_finite_number(daily_std) or daily_std == 0:
+        SKIP_COUNTER["gap_rv_iv_rv_zero"] += 1
+        return None
+    return daily_std * math.sqrt(RV_ANNUALISATION) * 100.0
+
+
+def _implied_vol_vix() -> Optional[float]:
+    """Vol implicite = dernier niveau VIX (CBOE prioritaire, cohérent avec
+    niveau_vix_absolu). None si CBOE indisponible."""
+    series = fetch_cboe_history("VIX")
+    if not series:
+        return None
+    iv = series[-1][1]
+    if not _is_finite_number(iv) or iv <= 0:
+        return None
+    return float(iv)
+
+
+def _handle_gap_rv_iv(crit: dict, ts: str) -> Optional[dict]:
+    """Écart vol réalisée − vol implicite (20j). None si une jambe manque."""
+    rv = _realized_vol_sp500(int(crit.get("rv_window", RV_WINDOW_SESSIONS)))
+    if rv is None:
+        return None
+    iv = _implied_vol_vix()
+    if iv is None:
+        SKIP_COUNTER["gap_rv_iv_iv_missing"] += 1
+        return None
+    spread = rv - iv
+    logger.info("gap_rv_iv câblé : RV=%.2f − IV(VIX)=%.2f → spread=%.2f", rv, iv, spread)
+    # Sortie lineaire : le scoring fiche applique centre/echelle/signe.
+    return {"valeur": spread, "ts": ts}
+
+
 def _handle_meteo(cle: str, crit: dict, ts: str) -> Optional[dict]:
     spec = METEO_CRITERIA.get(cle)
     if not spec:
@@ -2563,6 +2673,10 @@ def build_critere_value(
         # invention : None si aucun nombre fiable → n/a propre.
         if cle == "caixin_pmi_manuf":
             return _handle_caixin_pmi(crit, events, now, ts)
+        # Écart vol réalisée − vol implicite (VIX id=6) : RV S&P (SPY) − niveau
+        # VIX (CBOE). Calculé sans nouvelle source. n/a propre si une jambe manque.
+        if cle == "gap_rv_iv":
+            return _handle_gap_rv_iv(crit, ts)
         # CBOE en priorité pour les critères vol (term structure, SKEW, VVIX, niveau VIX)
         if cle == "term_structure_vix_vix3m" or cle in CBOE_HISTORY_INDEX or "cboe" in source:
             res = _handle_cboe(cle, crit, ts, "lineaire")
@@ -2621,6 +2735,94 @@ def write_criteres(payload: dict, path: Path = CRITERES_OUT) -> Path:
     return path
 
 
+# ---------------------------------------------------------------------------
+# Santé des critères — « échec visible » (brief point 1)
+# ---------------------------------------------------------------------------
+
+CRITERES_HEALTH_OUT = ROOT / "data" / "criteres-health.md"
+
+# Traduction des préfixes SKIP_COUNTER en raison lisible (français). La cause
+# exacte (HTTP code, symbole, fenêtre…) est le suffixe après ':' déjà encodé
+# dans la clé — on l'affiche tel quel pour la traçabilité.
+SKIP_REASON_LABELS: Dict[str, str] = {
+    "meteo_dead": "Open-Meteo injoignable (récents)",
+    "meteo_clim_dead": "Open-Meteo injoignable (climato)",
+    "meteo_empty": "Open-Meteo : série vide/trop courte",
+    "twelve_no_key": "Pas de clé TWELVE_DATA_API_KEY ni yfinance",
+    "twelve_dead": "Twelve/market_data en échec",
+    "twelve_empty": "Twelve : série vide",
+    "twelve_parse": "Twelve : parse impossible",
+    "twelve_no_m2": "Pas de M2 distinct (term structure)",
+    "twelve_no_m3": "Pas de M3 distinct",
+    "cboe_dead": "CBOE CSV injoignable",
+    "cboe_parse": "CBOE CSV : parse impossible",
+    "cboe_unmapped": "CBOE non câblé (Put/Call sans CSV public)",
+    "zscore_unmapped": "Source z-score non programmatique",
+    "lineaire_unmapped": "Source linéaire non programmatique",
+    "triplet_no_cfg": "Aucun trigger classifié (triplet)",
+    "cftc_dead": "CFTC injoignable",
+    "cftc_parse": "CFTC : parse impossible",
+    "eia_no_key": "Pas de clé EIA",
+    "eia_dead": "EIA injoignable",
+    "eia_empty": "EIA : série vide",
+    "fred_no_key": "Pas de clé FRED",
+    "fred_dead": "FRED injoignable",
+    "fred_empty": "FRED : série vide",
+    "gap_rv_iv_rv_thin": "gap RV/IV : série SPY insuffisante (RV)",
+    "gap_rv_iv_iv_missing": "gap RV/IV : niveau VIX (CBOE) indisponible",
+    "gap_rv_iv_rv_zero": "gap RV/IV : volatilité réalisée nulle",
+    "exception": "Exception pendant le calcul",
+}
+
+
+def _skip_reason(key: str) -> str:
+    """Raison lisible d'une clé SKIP_COUNTER (préfixe avant le 1er ':')."""
+    prefix = key.split(":", 1)[0]
+    detail = key.split(":", 1)[1] if ":" in key else ""
+    label = SKIP_REASON_LABELS.get(prefix, prefix)
+    return f"{label} — {detail}" if detail else label
+
+
+def write_criteres_health(skips: Dict[str, int], now: datetime,
+                          path: Path = CRITERES_HEALTH_OUT) -> Path:
+    """Persiste la santé des critères : chaque SKIP/n/a → la RAISON exacte.
+
+    Format compact type source-health.md. Rend l'« échec invisible » VISIBLE :
+    SKIP_COUNTER n'était jamais persisté → la cause CI-only de la météo cacao
+    (HTTP 429/net_error capturé via status_out) apparaît ici au prochain run.
+    Zéro effet de bord sur le scoring (fichier informatif).
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ts = now.strftime("%Y-%m-%d %H:%M UTC")
+    lines = [
+        "# Santé des critères",
+        "",
+        f"_Cycle : {ts}_",
+        "",
+    ]
+    if not skips:
+        lines.append("**Aucun critère skippé ce cycle.** Tous les critères câblés ont été alimentés.")
+        lines.append("")
+        path.write_text("\n".join(lines), encoding="utf-8")
+        return path
+    total = sum(skips.values())
+    lines.append(
+        f"**Synthèse** : {len(skips)} motifs de skip distincts, {total} occurrence(s). "
+        "Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception)."
+    )
+    lines.append("")
+    lines.append("| Occurrences | Motif | Détail (cause exacte) |")
+    lines.append("|---:|---|---|")
+    for key in sorted(skips, key=lambda k: (-skips[k], k)):
+        prefix = key.split(":", 1)[0]
+        detail = key.split(":", 1)[1] if ":" in key else ""
+        label = SKIP_REASON_LABELS.get(prefix, prefix)
+        lines.append(f"| {skips[key]} | {label} | `{detail}` |")
+    lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
 def load_fiches(fiches_dir: Path = FICHES_DIR) -> Dict[str, dict]:
     fiches: Dict[str, dict] = {}
     for f in sorted(fiches_dir.glob("*.yml")):
@@ -2675,12 +2877,56 @@ def run(now: Optional[datetime] = None) -> Path:
         total_crit += len(fiche.get("criteres", []))
         total_filled += len(crits)
 
+    # Durcissement Open-Meteo (brief point 2) : 1 SEUL retry global différé des
+    # critères météo encore n/a en fin de calcul. Hypothèse CI : rate-limit
+    # partagé entre runners / transitoire → un essai différé peut passer. Zéro
+    # boucle infinie : on ne réessaie qu'une fois, puis n/a + raison persistée
+    # (point 1 dira la cause au prochain run). Le throttle inter-requêtes est
+    # déjà assuré par le bucket "openmeteo" de http_retry.
+    _retry_meteo_once(fiches, payload, now)
+    total_filled = sum(len(v) for k, v in payload.items() if k != "last_update")
+
     out = write_criteres(payload)
+    health = write_criteres_health(dict(SKIP_COUNTER), now)
     logger.info("Critères : %d/%d alimentés (%.0f%%)", total_filled, total_crit,
                 100.0 * total_filled / max(total_crit, 1))
+    logger.info("Santé critères persistée : %s", health)
     if SKIP_COUNTER:
         logger.info("Skips : %s", dict(SKIP_COUNTER))
     return out
+
+
+def _retry_meteo_once(fiches: Dict[str, dict], payload: Dict[str, Any],
+                      now: datetime) -> None:
+    """Réessaie UNE fois les critères météo encore absents du payload.
+
+    Modifie `payload` in place. Espacement léger (METEO_RETRY_DELAY_S) avant le
+    retry pour laisser passer un rate-limit transitoire. Un échec persistant
+    laisse le critère n/a (déjà loggé par SKIP_COUNTER + status_out → health).
+    """
+    pending: List[Tuple[str, dict]] = []
+    for key, fiche in fiches.items():
+        crits_out = payload.get(key, {})
+        for crit in fiche.get("criteres", []):
+            cle = crit.get("cle_courante")
+            if cle in METEO_CRITERIA and cle not in crits_out:
+                pending.append((key, crit))
+    if not pending:
+        return
+    logger.info("Open-Meteo : %d critère(s) météo n/a → 1 retry différé", len(pending))
+    if METEO_RETRY_DELAY_S > 0:
+        time.sleep(METEO_RETRY_DELAY_S)
+    ts = now.isoformat()
+    for key, crit in pending:
+        cle = crit["cle_courante"]
+        try:
+            res = _handle_meteo(cle, crit, ts)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Retry météo %s : exception %s", cle, e)
+            res = None
+        if res is not None:
+            payload.setdefault(key, {})[cle] = res
+            logger.info("Open-Meteo retry OK : %s récupéré", cle)
 
 
 def main(argv: Optional[List[str]] = None) -> int:

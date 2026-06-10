@@ -264,3 +264,12 @@ tradable ≥ 70 % / N ≥ 15, 24h-only) reste **inchangée**.
 zéro impact décisionnel) est ajoutée au Bilan du jour pour comparer avant/après momentum
 v3 le taux d'erreurs aux points de retournement. Elle n'altère NI le scoring, NI cette
 règle, NI le kill-criterion.
+
+
+---
+
+## Addendum — 2026-06-10 (soir) : lot autopilote « sources & critères » (S6)
+
+- **VIX rejoint le reset du 2026-06-11** (critère `gap_rv_iv` poids 5 ressuscité — calculable depuis SPY+CBOE déjà ingérés). **À compter du 11/06, les 12 actifs sont en ère v2** ; plus aucune cellule ne porte d'historique v1.
+- Critères ressuscités le même jour : café `usd_brl` (poids 6, Twelve), EUR/USD `balance_commerciale_ez` (poids 3, Eurostat) — actifs déjà reset au 11/06, même ère.
+- Conséquence N≥15 à J+60=2026-08-08 : inchangée (déjà documentée pour les 11 autres) — désormais valable pour les 12.

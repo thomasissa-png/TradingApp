@@ -72,6 +72,12 @@
       "fiche_key": "cac40",
       "actif": "CAC 40",
       "motif": "Ajout momentum_prix_20j v3 (variation 20j) — momentum_prix_20j_cac40 (^FCHI, poids 4, plafond indices A8, RSI poids 2 conserve) ; 1er bulletin avec le signal = 11/06 7h. La reference de mesure de la cellule change (justif CHANGELOG 11/06)."
+    },
+    "^VIX": {
+      "ref_changed": "2026-06-11",
+      "fiche_key": "vix",
+      "actif": "VIX",
+      "motif": "Critere gap_rv_iv (ecart vol realisee - implicite, poids 5) ressuscite le 11/06 (calculable depuis SPY+CBOE deja ingeres, lot sources 10/06) — la reference de mesure de la cellule change. Dernier actif v1 : a compter du 11/06, les 12 actifs sont en ere v2."
     }
   }
 }

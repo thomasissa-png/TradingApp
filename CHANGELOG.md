@@ -2,6 +2,15 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-10 (soir) — Lot autopilote « sources & critères » (S6)
+
+- **Santé des critères persistée** : `v3/data/criteres-health.md` à chaque run (motif + cause HTTP exacte par critère n/a) — fin de l'angle mort ; le run du 11/06 révélera la cause CI-only de `meteo_ci_ghana_precip_30j` (cacao, poids 11). Durcissement Open-Meteo (throttle + 1 retry différé).
+- **Critères ressuscités** (cutover : motifs au `ref-changed.json`) : café `usd_brl` (6, Twelve), VIX `gap_rv_iv` (5, calculé SPY+CBOE), EUR/USD `balance_commerciale_ez` (3, Eurostat EA21 sans clé). **VIX rejoint le reset 11/06 → 12/12 actifs en ère v2.**
+- **Calendrier éco statique** (`v3/config/calendrier-eco.yml` + `calendrier_eco.py`) : FOMC 2026 datés (officiel) + CPI/NFP/BCE/OPEC/WASDE/EIA/COT en règles « ~ » (zéro date inventée). Catalyseurs J+1 du Bilan alimentés ; **gate ⚑ raccordé en déterministe** (FOMC J-1/J0, flag hors score).
+- **Fallback prix Stooq (dormant)** : séries de critères uniquement si Twelve échoue, symbole mappé, 1day — JAMAIS les stamps de mesure ; tout-Twelve OU tout-Stooq, tracé `twelve_fallback_stooq:*`. 404 depuis le conteneur (anti-bot) → à re-valider en CI.
+- **Sources écartées (zéro invention)** : WASDE+Crop Progress (QuickStats 401 — secret `USDA_API_KEY` gratuit à créer, fort impact blé p.11+6), WGC or (pas de feed public), ICE arabica (PDF/JS), AAII (403 anti-bot) → option `v3/data/manual/` à trancher.
+- Tests : 1153 passed (+59 sur le lot), 22 failed env-only conteneur.
+
 ## 2026-06-11 (Session 6) — MOMENTUM v3 vague 2 : poids ≤6 (A3) + famille complète (A8/A9) + mesure (A5) + cutover
 
 > Suite de la vague 1 (moteur A1/A2/A6, déjà sur la branche). La concertation `v3/audit/momentum-family-verdict.md` (Analyst/News Trader/Spéculateur → GO-MODIFIÉ) avait établi que le momentum « déployé » le 10/06 était **fonctionnellement identique à la v1** (z-score du NIVEAU de close = laggard, bug cacao). Vague 1 a corrigé le moteur ; vague 2 finit fiches + mesure + cutover.

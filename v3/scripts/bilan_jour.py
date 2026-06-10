@@ -25,7 +25,7 @@ import glob
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -721,14 +721,63 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         L.append("Pas de news déterminante croisée avec un call conclusif aujourd'hui.")
     L.append("")
 
-    # Catalyseurs J+1 (best-effort).
+    # Catalyseurs J+1 (calendrier économique statique — zéro API, zéro invention).
     L.append("### Catalyseurs J+1")
-    L.append(
-        "Catalyseurs J+1 non disponibles — agenda éco non ingéré ce jour "
-        "(best-effort, zéro invention)."
-    )
+    L.extend(_catalyseurs_j1(bilan.now))
     L.append("")
     return "\n".join(L)
+
+
+# Libellés courts par type de catalyseur (langage trader).
+_CATALYSEUR_TYPE_LABEL = {
+    "FOMC": "Fed", "CPI": "Inflation US", "NFP": "Emploi US", "BCE": "BCE",
+    "OPEC": "OPEC+", "WASDE": "USDA", "EIA": "Stocks pétrole", "COT": "Positionnement",
+}
+
+
+def _catalyseurs_j1(now: Optional[datetime]) -> List[str]:
+    """Section « Catalyseurs J+1 » alimentée par le calendrier éco statique.
+
+    Horizon J+1, étendu à J+2 si J+1 tombe un week-end (agenda éco creux).
+    Entrées `precision: regle` préfixées « ~ » (honnêteté : date approximative).
+    Fallback propre si le YAML est absent (calendrier_eco renvoie une liste vide).
+    """
+    now = now or datetime.now(PARIS_TZ)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=PARIS_TZ)
+    demain = now.astimezone(PARIS_TZ).date() + timedelta(days=1)
+    # J+1 week-end (samedi/dimanche) → on regarde jusqu'à J+2 pour ne pas afficher
+    # un vide trompeur le vendredi soir.
+    horizon = 3 if demain.weekday() >= 5 else 1
+
+    try:
+        from calendrier_eco import evenements_a_venir  # noqa: PLC0415
+        evts = evenements_a_venir(now, horizon_jours=horizon)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("calendrier éco indisponible : %s — fallback", e)
+        evts = []
+
+    if not evts:
+        return [
+            "Aucun catalyseur majeur connu dans les prochains jours "
+            "(calendrier éco statique — zéro invention)."
+        ]
+
+    lignes: List[str] = []
+    for ev in evts:
+        prefixe = "~ " if ev.get("precision") == "regle" else ""
+        type_label = _CATALYSEUR_TYPE_LABEL.get(ev.get("type", ""), ev.get("type", ""))
+        impact_mark = "🔴" if ev.get("impact") == "high" else "🟡"
+        actifs = ", ".join(ev.get("actifs") or []) or "marché large"
+        lignes.append(
+            f"- {prefixe}**{ev['date']}** {impact_mark} {ev['nom']} "
+            f"({type_label}) — actifs : {actifs}"
+        )
+    lignes.append(
+        "> « ~ » = date approximative (règle de récurrence, pas une date "
+        "officielle confirmée). 🔴 impact fort · 🟡 impact moyen."
+    )
+    return lignes
 
 
 def _news_qui_ont_compte(bilan: BilanJour) -> List[str]:

@@ -8,52 +8,70 @@
   },
   "ref_changed": {
     "CC=F": {
-      "ref_changed": "2026-06-10",
+      "ref_changed": "2026-06-11",
       "fiche_key": "cacao",
       "actif": "Cacao",
-      "motif": "Dedup Lot A 10/06 : retrait de cftc_cot_cocoa (deja dans le composite ICE+CFTC) — la reference de mesure de la cellule change."
+      "motif": "Dedup Lot A 10/06 : retrait de cftc_cot_cocoa (deja dans le composite ICE+CFTC) — la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 9->6) — les cellules reset repartent a zero, ref_changed avance au 1er bulletin avec le signal v3 (11/06 7h)."
     },
     "BZ=F": {
-      "ref_changed": "2026-06-10",
+      "ref_changed": "2026-06-11",
       "fiche_key": "petrole",
       "actif": "Petrole",
-      "motif": "Dedup Lot A 10/06 : retrait de api_weekly_surprise (pre-indicateur d'EIA) — la reference de mesure de la cellule change."
+      "motif": "Dedup Lot A 10/06 : retrait de api_weekly_surprise (pre-indicateur d'EIA) — la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 7->6) — reset au 1er bulletin v3 (11/06 7h)."
     },
     "^IXIC": {
-      "ref_changed": "2026-06-10",
+      "ref_changed": "2026-06-11",
       "fiche_key": "nasdaq",
       "actif": "Nasdaq",
-      "motif": "Dedup Lot A 10/06 : retrait de concentration_top7 (inverse de breadth) — la reference de mesure de la cellule change."
+      "motif": "Dedup Lot A 10/06 : retrait de concentration_top7 (inverse de breadth) — la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3/A8) : atterrissage momentum v3 corrige + ajout momentum_prix_20j_nasdaq (proxy QQQ, poids 4, plafond indices A8) — reset au 1er bulletin v3 (11/06 7h)."
     },
     "SI=F": {
-      "ref_changed": "2026-06-10",
+      "ref_changed": "2026-06-11",
       "fiche_key": "argent",
       "actif": "Argent",
-      "motif": "Dedup Lot A 10/06 : retrait de alpha_argent_vs_or_5j (proche de ratio_gold_silver) — la reference de mesure de la cellule change."
+      "motif": "Dedup Lot A 10/06 : retrait de alpha_argent_vs_or_5j (proche de ratio_gold_silver) — la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 7->6) — reset au 1er bulletin v3 (11/06 7h)."
     },
     "KC=F": {
-      "ref_changed": "2026-06-10",
+      "ref_changed": "2026-06-11",
       "fiche_key": "cafe",
       "actif": "Cafe (Arabica)",
-      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_cafe, poids 8) — correctif famille trend-following, la reference de mesure de la cellule change."
+      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_cafe) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 8->6) — reset au 1er bulletin v3 (11/06 7h)."
     },
     "ZW=F": {
-      "ref_changed": "2026-06-10",
+      "ref_changed": "2026-06-11",
       "fiche_key": "ble",
       "actif": "Ble",
-      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_ble, poids 8) — correctif famille trend-following, la reference de mesure de la cellule change."
+      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_ble) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 8->6) — reset au 1er bulletin v3 (11/06 7h)."
     },
     "HG=F": {
-      "ref_changed": "2026-06-10",
+      "ref_changed": "2026-06-11",
       "fiche_key": "cuivre",
       "actif": "Cuivre",
-      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_cuivre, poids 8) — correctif famille trend-following, la reference de mesure de la cellule change."
+      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_cuivre) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 8->6) — reset au 1er bulletin v3 (11/06 7h)."
     },
     "GC=F": {
-      "ref_changed": "2026-06-10",
+      "ref_changed": "2026-06-11",
       "fiche_key": "or",
       "actif": "Or",
-      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_or, poids 7) — correctif famille trend-following, la reference de mesure de la cellule change."
+      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_or) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 7->6) — reset au 1er bulletin v3 (11/06 7h)."
+    },
+    "EUR=X": {
+      "ref_changed": "2026-06-11",
+      "fiche_key": "eurusd",
+      "actif": "EUR/USD",
+      "motif": "Ajout momentum_prix_20j v3 (variation 20j) — momentum_prix_20j_eurusd (proxy EUR=X, poids 5, famille A8) ; 1er bulletin avec le signal = 11/06 7h. La reference de mesure de la cellule change (justif CHANGELOG 11/06)."
+    },
+    "^GSPC": {
+      "ref_changed": "2026-06-11",
+      "fiche_key": "sp500",
+      "actif": "S&P 500",
+      "motif": "Ajout momentum_prix_20j v3 (variation 20j) — momentum_prix_20j_sp500 (proxy ETF SPY, poids 4, plafond indices A8, RSI poids 2 conserve) ; 1er bulletin avec le signal = 11/06 7h. La reference de mesure de la cellule change (justif CHANGELOG 11/06)."
+    },
+    "^FCHI": {
+      "ref_changed": "2026-06-11",
+      "fiche_key": "cac40",
+      "actif": "CAC 40",
+      "motif": "Ajout momentum_prix_20j v3 (variation 20j) — momentum_prix_20j_cac40 (^FCHI, poids 4, plafond indices A8, RSI poids 2 conserve) ; 1er bulletin avec le signal = 11/06 7h. La reference de mesure de la cellule change (justif CHANGELOG 11/06)."
     }
   }
 }

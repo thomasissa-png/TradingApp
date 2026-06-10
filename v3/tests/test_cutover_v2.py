@@ -102,27 +102,29 @@ def test_registre_date_invalide_ignoree(tmp_path):
 
 
 def test_registre_reel_contient_les_actifs_reset():
-    # Le registre committé doit contenir les actifs reset au 2026-06-10 :
-    #  - 4 actifs dédupliqués (Lot A audit Cowork 10/06) : cacao, petrole, nasdaq, argent
-    #  - 4 actifs requalifiés par l'ajout du momentum-prix (correctif famille
-    #    trend-following 10/06) : cafe, ble, cuivre, or (cacao/petrole/argent
-    #    étaient déjà reset par le Lot A, leur cutover du même jour couvre l'ajout).
+    # Cutover momentum v3 (2026-06-11) : la v3 corrigée (variation 20j + cap
+    # aveugle au momentum + poids ≤6) atterrit au bulletin 11/06 7h → ref_changed
+    # des 8 entrées existantes avancé 2026-06-10 → 2026-06-11 (justif CHANGELOG)
+    # + 3 nouvelles entrées (eurusd EUR=X, sp500 ^GSPC, cac40 ^FCHI) = 11 actifs
+    # reset au 2026-06-11. Seul vix garde l'historique v1.
     reg = sv.load_ref_changed()
-    # Lot A (dédup)
-    assert reg.get("CC=F") == date(2026, 6, 10)   # cacao
-    assert reg.get("BZ=F") == date(2026, 6, 10)   # petrole
-    assert reg.get("^IXIC") == date(2026, 6, 10)  # nasdaq
-    assert reg.get("SI=F") == date(2026, 6, 10)   # argent
-    # Correctif famille momentum-prix (10/06)
-    assert reg.get("KC=F") == date(2026, 6, 10)   # cafe
-    assert reg.get("ZW=F") == date(2026, 6, 10)   # ble
-    assert reg.get("HG=F") == date(2026, 6, 10)   # cuivre
-    assert reg.get("GC=F") == date(2026, 6, 10)   # or
-    # Les actifs NON touchés (indices restants + EUR/USD + vix) ne figurent PAS.
-    assert sv.ref_changed_for_ticker("^GSPC", reg) is None     # sp500
-    assert sv.ref_changed_for_ticker("^FCHI", reg) is None     # cac40
-    assert sv.ref_changed_for_ticker("EURUSD=X", reg) is None  # eurusd
-    assert sv.ref_changed_for_ticker("^VIX", reg) is None      # vix
+    # 8 entrées d'origine (Lot A + correctif famille), ref avancée au 11/06
+    assert reg.get("CC=F") == date(2026, 6, 11)   # cacao
+    assert reg.get("BZ=F") == date(2026, 6, 11)   # petrole
+    assert reg.get("^IXIC") == date(2026, 6, 11)  # nasdaq
+    assert reg.get("SI=F") == date(2026, 6, 11)   # argent
+    assert reg.get("KC=F") == date(2026, 6, 11)   # cafe
+    assert reg.get("ZW=F") == date(2026, 6, 11)   # ble
+    assert reg.get("HG=F") == date(2026, 6, 11)   # cuivre
+    assert reg.get("GC=F") == date(2026, 6, 11)   # or
+    # 3 nouvelles entrées (fin de la famille momentum, A8)
+    assert reg.get("EUR=X") == date(2026, 6, 11)  # eurusd (ticker_principal réel)
+    assert reg.get("^GSPC") == date(2026, 6, 11)  # sp500
+    assert reg.get("^FCHI") == date(2026, 6, 11)  # cac40
+    # Seul vix (A9, mean-reverting) garde l'historique v1 → absent du registre.
+    assert sv.ref_changed_for_ticker("^VIX", reg) is None       # vix
+    # Total : 11 actifs reset, vix exclu.
+    assert len(reg) == 11
 
 
 def test_ref_changed_for_ticker():

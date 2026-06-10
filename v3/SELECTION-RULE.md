@@ -226,3 +226,41 @@ sont **hors périmètre de ce tour**, traités plus tard / Ticket C).
 z-score déjà les closes d'un symbole, cf. `sox_trend_5j`), `weighting.yml` non touché,
 formules de normalisation et `seuils_reussite_pct` inchangés. La règle de sélection
 elle-même (WR tradable ≥ 70 % / N ≥ 15, 24h-only) reste **inchangée**.
+
+## Addendum — Cutover momentum v3 (2026-06-11)
+
+> Append-only. **Ne modifie PAS le texte gravé ni les addendums « Redémarrage v2 »
+> et « Correctif famille momentum-prix » du 10/06.** Acte le cutover réel du momentum
+> v3 corrigé (vague 1 + vague 2), qui atterrit au bulletin **11/06 7h**.
+
+**Le momentum-prix v3 « déployé » le 10/06 était fonctionnellement identique à la v1**
+(routé vers le z-score du NIVEAU de close, un laggard — constat bloquant A1 de la
+concertation `momentum-family-verdict.md`). Les corrections moteur + fiches atterrissent
+ce soir, premier signal effectif au **bulletin 11/06 7h** :
+- **A1 (moteur)** : `momentum_prix_20j_*` routé vers la VRAIE variation 20j
+  (`close[t]/close[t-20]-1`) puis z-score de la **série de rendements** (60j) — plus le
+  niveau. Voir `_twelve_variation_zscore`.
+- **A2 (moteur)** : cap anti-inversion **aveugle au momentum** (`cap = |quant − contrib_momentum|×0,8`) — le momentum décide la direction, jamais l'étouffement des news.
+- **A3 (fiches)** : poids momentum ramenés à **≤6 (prove-first)** : cacao 9→6, café/blé/cuivre 8→6, pétrole/or/argent 7→6.
+- **A6 (moteur)** : momentum exclu du calcul de couverture (préserve le filet news 📰).
+- **A8 (fiches)** : fin de la famille — EUR/USD (`EUR=X`, poids 5), S&P 500 (proxy SPY, poids 4), Nasdaq (proxy QQQ, poids 4), CAC 40 (`^FCHI`, poids 4). RSI indices poids 2 **conservé**.
+- **A9** : VIX **exclu** (mean-reverting) — seul actif sans reset.
+
+**Reset : 11 actifs au 2026-06-11.** Les 8 entrées existantes de `ref-changed.json`
+(cacao, pétrole, nasdaq, argent, café, blé, cuivre, or) voient leur `ref_changed`
+**avancé de 2026-06-10 → 2026-06-11** (justification gravée dans CHANGELOG.md, comme
+l'exige le `_doc` du registre) : le momentum corrigé change leur référence de mesure, les
+cellules reset repartent à zéro quand il atterrit (mémo S5). S'y ajoutent **3 nouvelles
+entrées** : EUR/USD (`EUR=X`), S&P 500 (`^GSPC`), CAC 40 (`^FCHI`). **Seul `vix`
+(`^VIX`) garde son historique v1.**
+
+**Conséquence sur N ≥ 15 à J+60 (= 2026-08-08).** Les 11 actifs reset comptabilisent
+leurs observations à partir du 2026-06-11 seulement : la fenêtre utile est **~58 jours
+ouvrés**, ils peuvent ne pas atteindre N ≥ 15 à J+60 (issue valide, pas un échec). Seul
+`vix` conserve un N pré-11/06 immédiatement comparable. La règle de sélection (WR
+tradable ≥ 70 % / N ≥ 15, 24h-only) reste **inchangée**.
+
+**Mesure (A5, shadow)** : une métrique « FAUSSES aux retournements » (distincte du WR,
+zéro impact décisionnel) est ajoutée au Bilan du jour pour comparer avant/après momentum
+v3 le taux d'erreurs aux points de retournement. Elle n'altère NI le scoring, NI cette
+règle, NI le kill-criterion.

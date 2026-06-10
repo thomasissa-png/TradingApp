@@ -146,3 +146,33 @@ cutover du même jour couvre aussi l'ajout du momentum (pas de double entrée).
 cuivre, or) ; **4 gardent l'historique v1** (sp500, eurusd, cac40, vix). Les seuils du
 kill criterion (55 %, 65 %, N ≥ 15, J+60) et le mécanisme de scoring sont
 **inchangés** (aucune nouvelle mécanique de calcul, `weighting.yml` non touché).
+
+## Addendum — Cutover momentum v3 (2026-06-11)
+
+> Append-only. **Ne modifie PAS les seuils gravés ni les addendums du 10/06.** Acte le
+> cutover réel du momentum v3 corrigé (vague 1 + vague 2), effectif au bulletin 11/06 7h.
+
+**Le momentum « déployé » le 10/06 était fonctionnellement identique à la v1** (z-score
+du NIVEAU de close = laggard, constat bloquant A1). Les corrections atterrissent ce soir,
+premier signal effectif au **bulletin 11/06 7h** : A1 (variation 20j + z-score de la
+série de rendements), A2 (cap anti-inversion **aveugle au momentum**), A3 (poids momentum
+**≤6 prove-first** : cacao 9→6, café/blé/cuivre 8→6, pétrole/or/argent 7→6), A6 (momentum
+exclu de la couverture), A8 (famille complétée : EUR/USD poids 5, S&P 500/Nasdaq/CAC 40
+poids 4, RSI indices poids 2 conservé), A9 (VIX exclu).
+
+**Reset : 11 actifs au 2026-06-11.** Les 8 entrées existantes voient leur `ref_changed`
+**avancé 2026-06-10 → 2026-06-11** (justif CHANGELOG.md, exigée par le `_doc` du registre)
+— le momentum corrigé change leur référence de mesure. S'y ajoutent **EUR/USD (`EUR=X`),
+S&P 500 (`^GSPC`), CAC 40 (`^FCHI`)**. **Seul `vix` (`^VIX`) garde son historique v1.**
+
+**Conséquence sur N ≥ 15 à J+60 (= 2026-08-08).** Les observations antérieures au
+2026-06-11 ne comptent plus pour les 11 actifs reset : fenêtre utile ~58 jours ouvrés,
+N ≥ 15 peut ne pas être atteint à J+60 (le kill criterion ne s'applique qu'à N ≥ 15 — en
+deçà, ni kill ni validation, on continue d'observer). Seul `vix` reste immédiatement
+évaluable. **Les seuils (55 %, 65 %, N ≥ 15, J+60) et le mécanisme de scoring sont
+inchangés.**
+
+**Mesure (A5, shadow)** : métrique « FAUSSES aux retournements » ajoutée au Bilan du jour
+(observabilité pure, DISTINCTE du WR) — **aucun impact sur ce kill criterion** : elle ne
+peut ni déclencher ni empêcher un kill, elle sert uniquement à documenter l'effet du
+momentum v3 aux points de retournement (forward-test J+60).

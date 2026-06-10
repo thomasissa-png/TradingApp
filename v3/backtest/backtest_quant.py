@@ -538,6 +538,13 @@ def permutation_pvalue(predictions: List[str], outcomes_signed: List[float],
 # Moteur de backtest principal
 # ---------------------------------------------------------------------------
 
+class BacktestNoDataError(RuntimeError):
+    """Levée quand 0 date n'a été testée sur AUCUNE cellule.
+
+    Garde-fou « échec visible » : un run qui ne teste aucune date (cache
+    introuvable, fenêtre vide) ne doit jamais finir en success."""
+
+
 @dataclass
 class TradeResult:
     ticker: str
@@ -558,6 +565,9 @@ class CellResults:
     horizon_label: str
     trades_is: List[TradeResult] = field(default_factory=list)
     trades_oos: List[TradeResult] = field(default_factory=list)
+    # Nb de dates effectivement itérées (IS+OOS), indépendant du fait qu'un trade
+    # ait été retenu. Sert au garde-fou « 0 date testée = échec visible ».
+    n_dates_tested: int = 0
 
 
 def classify_outcome(prediction: str, return_pct: float, seuil_pct: float) -> str:
@@ -608,6 +618,7 @@ def run_backtest_cell(
     ]:
         dates = non_overlapping_trading_dates(ticker, d_start, d_end, horizon_days=horizon_days)
         logger.info("Cell %s/%s [%s] : %d dates à tester", ticker, horizon_label, label, len(dates))
+        results.n_dates_tested += len(dates)
         for i, d in enumerate(dates):
             # 1. Construit les features AS OF d (no look-ahead)
             valeurs = build_valeurs_actif_asof(fiche, d)
@@ -826,6 +837,21 @@ def main():
             v = verdict(m_oos)
             print(f"  VERDICT cellule : {v}")
 
+    # ------------------------------------------------------------------
+    # Garde-fou « échec visible » contre le faux vert (règle projet).
+    # Si AUCUNE cellule n'a testé la moindre date (IS+OOS confondus), le run
+    # ne doit PAS finir en success : cache introuvable ou fenêtre vide, et
+    # surtout FRED/COT jamais exercés. Cf. run #1 backtest-v2-fred (0 dates
+    # partout, aucun fred__ généré → faux vert).
+    # ------------------------------------------------------------------
+    total_dates_tested = sum(c.n_dates_tested for c in all_cells.values())
+    if total_dates_tested == 0:
+        raise BacktestNoDataError(
+            "0 date testée sur toutes les cellules — cache introuvable ou "
+            "fenêtre vide, FRED non exercé. Vérifier v3/backtest/.cache/ "
+            "(fichiers prix présents ? plage couvrant la fenêtre demandée ?)."
+        )
+
     # Agrégat OOS détaillé
     print("\n" + "=" * 100)
     print("AGRÉGAT OOS — par cellule")
@@ -875,4 +901,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BacktestNoDataError as e:
+        logger.error("ÉCHEC BACKTEST : %s", e)
+        sys.exit(1)

@@ -73,17 +73,106 @@ TICKER_TO_FICHE = {
 # Fetcher yfinance
 # ---------------------------------------------------------------------------
 
+def _cache_prefix(ticker: str) -> str:
+    """Préfixe de fichier cache pour un ticker (ex: '^GSPC' → 'idx_GSPC')."""
+    return ticker.replace("=", "_").replace("^", "idx_")
+
+
+def _parse_cache_range(name: str, prefix: str) -> Optional[Tuple[str, str]]:
+    """Extrait (start, end) du nom de fichier cache `{prefix}__{start}__{end}.csv`.
+
+    Retourne None si le nom ne respecte pas le format attendu."""
+    if not name.endswith(".csv"):
+        return None
+    stem = name[: -len(".csv")]
+    head = f"{prefix}__"
+    if not stem.startswith(head):
+        return None
+    rest = stem[len(head):]
+    parts = rest.split("__")
+    if len(parts) != 2:
+        return None
+    return parts[0], parts[1]
+
+
+def _find_cache_by_glob(prefix: str, start: str, end: str):
+    """Cache-hit tolérant à la date de fin.
+
+    Le cache committé embarque une `end` figée (ex: ...__2026-06-06.csv). Tout run
+    un autre jour cherche un `end` différent → cache miss 100% → fallback yfinance
+    (bloqué en CI). Ici on glob `{prefix}__*.csv` et on réutilise un cache dont la
+    plage couvre la fenêtre demandée (ou la couvre partiellement jusqu'à sa fin),
+    puis on slice sur [start, end]. ZÉRO invention : on ne fabrique aucune donnée,
+    on réutilise et tronque le cache existant.
+
+    Sélection : parmi les candidats dont `cache_start <= requested_start`, on prend
+    celui dont `cache_end` est la plus grande (plage la plus large/récente). Si aucun
+    candidat ne couvre `requested_start`, retourne None (→ yfinance conservé).
+
+    N'importe PAS yfinance (chemin pur cache disque).
+    """
+    import pandas as pd  # lazy (pandas, PAS yfinance)
+
+    req_start = _to_date(start)
+    candidates: List[Tuple[date, date, Path]] = []
+    for f in CACHE_DIR.glob(f"{prefix}__*.csv"):
+        rng = _parse_cache_range(f.name, prefix)
+        if rng is None:
+            continue
+        try:
+            c_start = _to_date(rng[0])
+            c_end = _to_date(rng[1])
+        except Exception:  # noqa: BLE001
+            continue
+        # Le cache doit démarrer au plus tard à la date demandée (couvre le début)
+        if c_start <= req_start:
+            candidates.append((c_start, c_end, f))
+
+    if not candidates:
+        return None
+
+    # Plage la plus large/récente : end max, puis start min en départage
+    candidates.sort(key=lambda t: (t[1], -t[0].toordinal()), reverse=True)
+    _, _, best = candidates[0]
+
+    try:
+        df = pd.read_csv(best, parse_dates=["Date"], index_col="Date")
+    except Exception:  # noqa: BLE001
+        return None
+    if len(df) <= 10:
+        return None
+
+    # Slice sur [start, end] (end inclus). On ne fabrique rien : la couverture
+    # réelle peut s'arrêter avant `end` (ex: cache fini au 2026-06-06).
+    df.index = pd.to_datetime(df.index).normalize()
+    lo = pd.Timestamp(req_start)
+    hi = pd.Timestamp(_to_date(end))
+    df = df[(df.index >= lo) & (df.index <= hi)]
+    if len(df) <= 10:
+        return None
+    logger.info(
+        "cache-hit glob : %s réutilisé pour [%s, %s] (%d barres)",
+        best.name, start, end, len(df),
+    )
+    return df
+
+
 def _fetch_yfinance_full(ticker: str, start: str = "2020-01-01", end: Optional[str] = None):
     """Récupère TOUT l'historique disponible entre start et end. Cache disque CSV.
 
     Retourne un DataFrame pandas indexé par date (tz-naive, normalisé à minuit UTC),
     avec colonnes ['Open', 'High', 'Low', 'Close', 'Volume'].
+
+    Ordre : (1) cache exact, (2) cache-hit tolérant à la date de fin via glob,
+    (3) fallback yfinance (réseau). Les chemins (1) et (2) n'importent PAS yfinance.
     """
-    import pandas as pd  # lazy
-    import yfinance as yf  # lazy
+    import pandas as pd  # lazy (pandas seulement)
 
     end = end or (date.today() + timedelta(days=1)).isoformat()
-    cache_file = CACHE_DIR / f"{ticker.replace('=', '_').replace('^', 'idx_')}__{start}__{end}.csv"
+    prefix = _cache_prefix(ticker)
+    cache_file = CACHE_DIR / f"{prefix}__{start}__{end}.csv"
+
+    # (1) cache exact
     if cache_file.exists():
         try:
             df = pd.read_csv(cache_file, parse_dates=["Date"], index_col="Date")
@@ -91,6 +180,14 @@ def _fetch_yfinance_full(ticker: str, start: str = "2020-01-01", end: Optional[s
                 return df
         except Exception:  # noqa: BLE001
             pass
+
+    # (2) cache-hit tolérant à la date de fin (committé avec une end figée)
+    df_glob = _find_cache_by_glob(prefix, start, end)
+    if df_glob is not None:
+        return df_glob
+
+    # (3) fallback réseau yfinance (bloqué en CI — d'où (2))
+    import yfinance as yf  # lazy
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

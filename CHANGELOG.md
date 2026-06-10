@@ -2,6 +2,15 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-10 (Session 5) — Fix backtest cache (faux vert) + garde-fou (@fullstack)
+
+**Diagnostic d'un run `backtest-v2-fred` « success » mais CREUX.** Le run #1 (2026-06-10) a fini vert mais avec **0 date testée sur toutes les cellules** et **aucun `fred__` généré** → `+FRED` non clos. **Cause racine** (`historical_data.py`) : le nom du fichier cache embarque `end = aujourd'hui+1`. Le cache committé finit à `2026-06-06` → tout run un autre jour cherche `…__{autre_date}.csv` inexistant → cache miss 100% → fallback yfinance → bloqué en CI → DataFrame vide → 0 date → FRED jamais appelé. Le workflow ne marchait que le jour de (re)commit du cache.
+
+- **Fix (A) — cache tolérant à la date** (`historical_data.py`) : `_fetch_yfinance_full` suit (1) cache exact, (2) **cache-hit via glob** `{prefix}__*.csv` (réutilise le cache dont la plage couvre la fenêtre, slice sur `[start, end]`), (3) yfinance. L'import yfinance est déplacé APRÈS (2) → le chemin cache n'importe jamais yfinance. Zéro invention (on tronque, on ne fabrique pas). COT/FRED non concernés (cache sans date de fin variable).
+- **Fix (B) — garde-fou « échec visible »** (`backtest_quant.py`) : `BacktestNoDataError` + champ `n_dates_tested` ; si total dates testées = 0 → `raise` → `sys.exit(1)`. Plus de faux vert.
+- **Tests** : `test_backtest_cache_glob.py` (8 tests, exercés **sans yfinance** via fixture forçant l'ImportError). `pytest -k backtest` : **29 passed** (les tests historiques `test_backtest.py` passent désormais aussi via le cache-hit glob — bénéfice direct du fix A).
+- **Bénéfice** : le workflow `backtest-v2-fred` peut désormais tourner n'importe quel jour → relancé pour clore réellement l'arm `+FRED`.
+
 ## 2026-06-10 (Session 5) — Sonde futures 8h, PROVE-FIRST (Lot 1 étape 1, @infrastructure)
 
 **Audit mesure 10/06 — Lot 1, étape 1 SEULEMENT (prove-first).** Objectif : pouvoir noter S&P 500 / Nasdaq / VIX depuis une référence **8h Paris** (Thomas entre à 8h sur turbos répliquant les futures Globex), au lieu de l'ouverture cash US 15h30 actuelle. **AUCUNE fiche ni `suivi.yaml` touchée** — c'est une sonde de disponibilité, le mapping attend le verdict du run CI + validation Thomas. Gel scoring respecté. Branche `claude/tradingapp-s5-shadow-5rapports-lq5g9z`.

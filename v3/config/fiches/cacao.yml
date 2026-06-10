@@ -120,10 +120,11 @@ criteres:
 
   # Critère tendance-prix v3 — correctif famille trend-following (audit 10/06,
   # momentum-prix-sweep §5.1 + cacao-case-study §4). cle=momentum_prix_20j_cacao,
-  # source=Twelve Data CC=F, poids=9, motif : 8/12 fiches sans tendance-prix propre
+  # source=Twelve Data CC=F, poids initial 9 ramené à 6 (A3 prove-first, concertation 10/06), motif : 8/12 fiches sans tendance-prix propre
   # → incohérent avec la thèse trend-following. Signe +1 = on SUIT la tendance
-  # (momentum positif → LONG). Calculé par le chemin z-score-closes existant
-  # (cas par défaut du dispatcher Twelve, cf. sox_trend_5j) — zéro nouvelle mécanique.
+  # (momentum positif → LONG). Calculé par la branche dédiée
+  # `momentum_prix_20j_` du dispatcher (A1, 10/06) : VRAIE variation 20j puis
+  # z-score de la série de rendements — plus le z-score du niveau (laggard).
   - id: 11
     nom: "Tendance du cacao (20 jours)"
     source: "Twelve Data (CC=F)"
@@ -132,7 +133,7 @@ criteres:
     zscore_window: 60            # profondeur de la distribution de référence (cohérent sox_trend_5j/dxy_trend_20j) ; le "20j" du nom = horizon de tendance conceptuel
     zscore_div: 2
     cap: 1.0
-    signe: 1                     # +1 : prix au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
+    signe: 1                     # +1 : rendement 20j au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
     poids: 6                     # 9→6 : prove-first concertation 10/06, promotion 6→supérieur seulement sur preuve (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06 (A3). Jamais le plus gros poids de la fiche tant que non prouvé en shadow.
     pertinence: { "24h": 0.8, "7j": 1.0, "1m": 0.8 }
     effet_long: "Cacao en tendance haussière (z>+1)"

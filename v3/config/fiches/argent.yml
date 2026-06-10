@@ -124,11 +124,12 @@ criteres:
 
   # Critère tendance-prix v3 — correctif famille trend-following (audit 10/06,
   # momentum-prix-sweep §5.7). cle=momentum_prix_20j_argent, source=Twelve Data SI=F,
-  # poids=7, motif : la fiche n'avait aucun critère de tendance-prix PROPRE
+  # poids initial 7 ramené à 6 (A3 prove-first, concertation 10/06), motif : la fiche n'avait aucun critère de tendance-prix PROPRE
   # (mouvement_or_5j = prix de l'or, ratio_gold_silver = relatif) → incohérent avec
   # la thèse trend-following. Capte les mouvements idiosyncratiques de l'argent.
-  # Signe +1 = on SUIT la tendance. Calculé par le chemin z-score-closes existant
-  # (cas par défaut dispatcher Twelve, cf. sox_trend_5j) — zéro nouvelle mécanique.
+  # Signe +1 = on SUIT la tendance. Calculé par la branche dédiée
+  # `momentum_prix_20j_` du dispatcher (A1, 10/06) : VRAIE variation 20j puis
+  # z-score de la série de rendements — plus le z-score du niveau (laggard).
   # Pertinences = défaut famille {24h:0.6, 7j:1.0, 1m:0.8} (brief 10/06).
   - id: 11
     nom: "Tendance de l'argent (20 jours)"
@@ -138,7 +139,7 @@ criteres:
     zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel
     zscore_div: 2
     cap: 1.0
-    signe: 1                     # +1 : prix au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
+    signe: 1                     # +1 : rendement 20j au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
     poids: 6                     # 7→6 : prove-first concertation 10/06, promotion 6→supérieur seulement sur preuve (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06 (A3).
     pertinence: { "24h": 0.6, "7j": 1.0, "1m": 0.8 }
     effet_long: "Argent en tendance haussière (z>+1)"

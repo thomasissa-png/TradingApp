@@ -79,6 +79,11 @@ class CelluleObs:
     win_rate: Optional[float]
     n_eff: int
     wilson_low: Optional[float]
+    # WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif). Métrique SECONDAIRE
+    # affichée À CÔTÉ du win rate conclusif (toujours ≤ win_rate). Le kill
+    # criterion reste sur win_rate (conclusif) — coexistence, rien retiré.
+    wr_tradable: Optional[float] = None
+    n_tradable: int = 0
     # candidate faible cette semaine (N_eff>=10 ET Wilson_low<50%)
     candidate_faible: bool = False
     # faible CONFIRMÉE (candidate >= 2 semaines consécutives)
@@ -188,7 +193,8 @@ def collect_cellules(
         w_low = kpi.wilson_low * 100.0 if kpi.wilson_low is not None else None
 
         obs = CelluleObs(
-            actif=actif, horizon=horizon, win_rate=wr, n_eff=n_eff, wilson_low=w_low
+            actif=actif, horizon=horizon, win_rate=wr, n_eff=n_eff, wilson_low=w_low,
+            wr_tradable=kpi.tradable_eff_pct, n_tradable=kpi.n_tradable,
         )
         # Candidate faible cette semaine : N_eff>=10 ET Wilson_low<50%.
         if n_eff >= N_EFF_PROPOSE and w_low is not None and w_low < WILSON_FAIBLE:
@@ -416,6 +422,10 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     L.append("")
     L.append(f"- Généré : {bilan.now.isoformat()} (dimanche 18h Paris)")
     L.append("- WIN RATE ONLY — aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.")
+    L.append(
+        "- WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) — inclut les jours "
+        "sous seuil où une position aurait quand même été prise (toujours ≤ Win rate)."
+    )
     L.append("")
 
     # --- Win rate de la semaine (archive hebdo prise telle quelle, CA-W2) ---
@@ -456,11 +466,12 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
         reverse=True,
     )
     if porteuses:
-        L.append("| Actif | Horizon | Win rate | N_eff | Signal |")
-        L.append("|---|---|---|---|---|")
+        L.append("| Actif | Horizon | Win rate | WR tradable | N_eff | Signal |")
+        L.append("|---|---|---|---|---|---|")
         for c in porteuses:
             L.append(
-                f"| {c.actif} | {c.horizon} | {_fmt_pct(c.win_rate)} | {c.n_eff} | "
+                f"| {c.actif} | {c.horizon} | {_fmt_pct(c.win_rate)} | "
+                f"{_fmt_pct(c.wr_tradable)} | {c.n_eff} | "
                 f"solide (≥ {WINRATE_PORTEUSE:.0f}% sur N_eff ≥ {N_EFF_PORTEUSE}) |"
             )
     else:

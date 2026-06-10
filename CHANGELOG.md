@@ -2,6 +2,15 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-10 (Session 5) — WR tradable (Lot 2, @fullstack)
+
+**Audit mesure 10/06 — Lot 2.** Ajout d'une métrique **WR tradable** = `VRAI / (VRAI + FAUSSE + non-conclusif)` à côté du WR conclusif existant, dans le Journaliste et les bilans. Motif : ~43 % des paris résolus sont non-conclusifs et exclus du WR conclusif, alors qu'en réel Thomas serait quand même en position ces jours-là → le WR conclusif surestime le WR exécutable. Mode shadow, **WIN RATE ONLY** (aucun euro), **gel du scoring** (zéro modif `scoring_analyste.py`/`weighting.yml`/poids/seuils de fiche). Branche `claude/tradingapp-s5-shadow-5rapports-lq5g9z`.
+
+- **`journaliste.py`** : `select_non_overlapping_tradable` (fenêtre non-chevauchante VRAI/FAUSSE/NC), `CellKPI.tradable_eff_pct` + `n_tradable`, colonne « WR tradable » dans `render_performance` et l'archive hebdo. Invariant garanti par construction : `tradable_eff_pct <= taux_eff_pct` (même numérateur, dénominateur élargi).
+- **`bilan_jour.py`** : `wr_tradable_jour` dans le bilan du jour. **`run_weekly.py`** : WR tradable dans le bilan semaine / Manager (champs `wr_tradable`/`n_tradable`, colonne « Cellules porteuses »).
+- **Coexistence** : aucune métrique retirée, WR conclusif conservé pour le kill criterion v1 (gravé). `non-notee` et `suivi-interrompu` exclus des deux dénominateurs (constantes existantes réutilisées).
+- **Tests** : `test_wr_tradable.py` créé (12 tests : calcul jeu mixte, invariant `WR_tradable <= WR_conclusif` paramétré, exclusion non-notee/interrompu). En-têtes `test_journaliste_v2.py` / `test_winrate_view_weekly.py` recalés. Zone : **78 passed** (vérif directe). Suite complète : 988 passed / 3 skipped / 8 échecs **environnementaux hors périmètre** (6 × yfinance absent, 2 × `test_validate_symbols` mock — à traiter au Lot 1).
+
 ## 2026-06-10 (Session 5) — SELECTION-RULE pré-enregistrée (Lot 3, @data-analyst)
 
 **Audit mesure 10/06 — Lot 3.** Création de `v3/SELECTION-RULE.md` : règle de sélection des cellules à trader, **pré-enregistrée et gravée** (modèle `KILL-CRITERION.md`, statut VALIDÉ daté/signé Thomas, anti-post-hoc). Mode shadow, **WIN RATE ONLY**, **gel du scoring** (aucun poids/critère/seuil touché). Branche `claude/tradingapp-s5-shadow-5rapports-lq5g9z`.

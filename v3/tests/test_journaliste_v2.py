@@ -395,7 +395,8 @@ class TestWinRateView:
         kpis = {("petrole", "24h"): jr.compute_kpi(ms)}
         now = datetime(2026, 5, 30, 12, 0, tzinfo=timezone.utc)
         content = jr.render_performance(kpis, ms, now)
-        assert "| Actif | Win rate | Paris (réels) | Non notés | Statut |" in content
+        # WR tradable COEXISTE avec le WR conclusif (Lot 2 audit 10/06).
+        assert "| Actif | Win rate | WR tradable | Paris (réels) | Non notés | Statut |" in content
 
     def test_render_performance_argent_et_jargon_absents(self):
         """Zéro P&L et plus de colonnes Taux_brut/Brier/Alertes à l'affichage."""

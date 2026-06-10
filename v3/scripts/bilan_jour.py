@@ -212,6 +212,10 @@ class BilanJour:
     n_fausse: int = 0
     n_nc: int = 0
     win_rate_jour: Optional[float] = None
+    # WR tradable du jour = VRAI / (VRAI + FAUSSE + non-conclusif). Inclut les
+    # calls sous seuil (en réel, Thomas serait quand même en position ce jour-là).
+    # Métrique SECONDAIRE — coexiste avec le win rate conclusif (≤ celui-ci).
+    wr_tradable_jour: Optional[float] = None
     conviction: WinRateConviction = field(default_factory=WinRateConviction)
     # CA-B2 : tickers EU dont la clôture est un fallback approx (spot 22h faute
     # de close officiel 17h30 — Q5 non validé). Sert au marqueur `[close approx]`.
@@ -415,6 +419,11 @@ def build_bilan_jour(
     denom = bilan.n_vrai + bilan.n_fausse
     if denom > 0:
         bilan.win_rate_jour = round(bilan.n_vrai / denom * 100.0, 1)
+    # WR tradable : dénominateur élargi aux non-conclusifs (statuts non-notee /
+    # suivi-interrompu déjà exclus car non comptés dans n_vrai/n_fausse/n_nc).
+    denom_trad = bilan.n_vrai + bilan.n_fausse + bilan.n_nc
+    if denom_trad > 0:
+        bilan.wr_tradable_jour = round(bilan.n_vrai / denom_trad * 100.0, 1)
 
     # Win rate par conviction (CA-W6).
     conv_map = load_conviction_map(date_j, decision_log_dir)
@@ -495,6 +504,15 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         )
     else:
         L.append("- Win rate du jour : — (aucun call conclusif aujourd'hui)")
+    # WR tradable (secondaire) : inclut les non-conclusifs au dénominateur.
+    denom_trad = bilan.n_vrai + bilan.n_fausse + bilan.n_nc
+    if bilan.wr_tradable_jour is not None:
+        L.append(
+            f"- WR tradable du jour : **{bilan.n_vrai}/{denom_trad} = "
+            f"{bilan.wr_tradable_jour:.0f}%** (VRAI / VRAI+FAUSSE+non-conclusif)"
+        )
+    else:
+        L.append("- WR tradable du jour : — (aucun pari tradable aujourd'hui)")
     # Win rate par conviction (CA-W6)
     c = bilan.conviction
     tf = f"{c.taux_forte:.0f}%" if c.taux_forte is not None else "— (N insuffisant)"

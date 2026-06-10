@@ -1136,6 +1136,14 @@ class CellKPI:
     # --- Correction #2 : Wilson IC + critère global ---
     wilson_low: Optional[float] = None         # borne basse IC Wilson 95 % (sur n_effective)
     wilson_high: Optional[float] = None        # borne haute IC Wilson 95 %
+    # --- WR tradable (métrique SECONDAIRE d'affichage — kill criterion inchangé) ---
+    # VRAI / (VRAI + FAUSSE + non-conclusif), sur la fenêtre non-chevauchante.
+    # Inclut les non-conclusives (jours où Thomas serait quand même en position).
+    # Le WR conclusif (taux_eff_pct) garde son rôle décisionnel — coexistence.
+    # Invariant garanti : tradable_eff_pct <= taux_eff_pct (même nb VRAI, dénom ≥).
+    n_tradable: int = 0                        # VRAI + FAUSSE + NC non-chevauchants
+    n_nc_eff: int = 0                          # NC non-chevauchants
+    tradable_eff_pct: Optional[float] = None   # WR tradable non-chevauchant
     # --- C7 LOT 6 — Ventilation flip vs continuation ---
     # Calculée sur les mesures de la fenêtre (terminées hors NON_NOTE/INTERROMPU)
     # qui ont is_flip not None (= dont on connaît la décision précédente).
@@ -1190,6 +1198,35 @@ def select_non_overlapping(
     selected: List["Measure"] = []
     last_echeance: Optional[date] = None
     for m in terminées:
+        if last_echeance is None or (m.echeance - last_echeance).days >= step:
+            selected.append(m)
+            last_echeance = m.echeance
+    return selected
+
+
+def select_non_overlapping_tradable(
+    measures: List["Measure"],
+    horizon: str,
+    step_days: Optional[int] = None,
+) -> List["Measure"]:
+    """Comme select_non_overlapping, mais INCLUT les non-conclusives (NC).
+
+    Sert au calcul du « WR tradable » : en réel, Thomas serait quand même en
+    position les jours non-conclusifs (|delta| < seuil de fiche) → ces paris
+    doivent peser au dénominateur du win rate exécutable.
+
+    EXCLUS (mêmes que le WR conclusif) : suivi-interrompu (pas de prix mesurable)
+    et non-notee (pas une prédiction — gate suffisance / filtre 7h). Seuls
+    VRAI / FAUSSE / non-conclusive sont des paris réellement tradables.
+    """
+    step = step_days if step_days is not None else NON_OVERLAP_STEP.get(horizon, 1)
+    tradables = sorted(
+        [m for m in measures if m.outcome in (OUTCOME_VRAI, OUTCOME_FAUSSE, OUTCOME_NC)],
+        key=lambda m: m.echeance,
+    )
+    selected: List["Measure"] = []
+    last_echeance: Optional[date] = None
+    for m in tradables:
         if last_echeance is None or (m.echeance - last_echeance).days >= step:
             selected.append(m)
             last_echeance = m.echeance
@@ -1275,6 +1312,17 @@ def compute_kpi(measures_for_cell: List[Measure]) -> CellKPI:
     denom_eff = kpi.n_vrai_eff + kpi.n_fausse_eff  # == n_effective (VRAI+FAUSSE uniquement)
     if denom_eff > 0:
         kpi.taux_eff_pct = round(kpi.n_vrai_eff / denom_eff * 100.0, 2)
+
+    # --- WR tradable : VRAI / (VRAI + FAUSSE + NC) non-chevauchant ---------
+    # Inclut les jours non-conclusifs (en réel, Thomas serait en position).
+    # Métrique SECONDAIRE — n'altère ni taux_eff_pct ni le statut/kill criterion.
+    non_overlap_tradable = select_non_overlapping_tradable(window, horizon)
+    n_vrai_trad = sum(1 for m in non_overlap_tradable if m.outcome == OUTCOME_VRAI)
+    kpi.n_nc_eff = sum(1 for m in non_overlap_tradable if m.outcome == OUTCOME_NC)
+    kpi.n_tradable = len(non_overlap_tradable)
+    if kpi.n_tradable > 0:
+        # Numérateur = VRAI ; dénominateur élargi aux non-conclusifs.
+        kpi.tradable_eff_pct = round(n_vrai_trad / kpi.n_tradable * 100.0, 2)
 
     # --- Correction #2 : intervalle de Wilson sur n_effective ---
     if kpi.n_effective > 0:
@@ -2030,6 +2078,8 @@ def _winrate_rows(
             "horizon": h,
             "horizon_rank": horizon_order.get(h, 99),
             "win_rate": None if k is None else k.taux_eff_pct,
+            "wr_tradable": None if k is None else k.tradable_eff_pct,
+            "n_tradable": 0 if k is None else k.n_tradable,
             "n_eff": 0 if k is None else k.n_effective,
             "non_notes": non_notes,
             "statut": _winrate_status(k),
@@ -2065,12 +2115,16 @@ def _render_winrate_table(rows: List[Dict[str, Any]]) -> List[str]:
         lines.append("")
         lines.append(f"### {horizon_labels.get(h, h)}")
         lines.append("")
-        lines.append("| Actif | Win rate | Paris (réels) | Non notés | Statut |")
-        lines.append("|---|---|---|---|---|")
+        lines.append(
+            "| Actif | Win rate | WR tradable | Paris (réels) | Non notés | Statut |"
+        )
+        lines.append("|---|---|---|---|---|---|")
         for r in h_rows:
             wr = "—" if r["win_rate"] is None else f"{r['win_rate']:.1f}%"
+            wr_trad = "—" if r["wr_tradable"] is None else f"{r['wr_tradable']:.1f}%"
             lines.append(
-                f"| {r['nom']} | {wr} | {r['n_eff']} | {r['non_notes']} | {r['statut']} |"
+                f"| {r['nom']} | {wr} | {wr_trad} | {r['n_eff']} | "
+                f"{r['non_notes']} | {r['statut']} |"
             )
     return lines
 
@@ -2097,6 +2151,10 @@ def render_performance(
     lines.append(f"- Généré : {now.isoformat()}")
     lines.append(f"- Journaliste version : {JOURNALISTE_VERSION}")
     lines.append(f"- Win rate = taux de bonnes directions sur les paris indépendants (N_eff)")
+    lines.append(
+        "- WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) — inclut les jours "
+        "sous seuil où une position aurait quand même été prise (toujours ≤ Win rate)"
+    )
     lines.append(f"- Cible : ≥ {TARGET_TAUX:.0f}% sur ≥ {N_EFFECTIVE_MIN} paris (borne basse > 50 %)")
     lines.append("")
     lines.append(_winrate_synthese_line(rows))
@@ -2192,15 +2250,17 @@ def render_weekly_winrate(
         lines.append(f"### {horizon_labels.get(h, h)}")
         lines.append("")
         lines.append(
-            "| Actif | Win rate | Paris (réels) | Nouveaux paris (semaine) | Non notés | Statut |"
+            "| Actif | Win rate | WR tradable | Paris (réels) | Nouveaux paris (semaine) | Non notés | Statut |"
         )
-        lines.append("|---|---|---|---|---|---|")
+        lines.append("|---|---|---|---|---|---|---|")
         for r in h_rows:
             wr = "—" if r["win_rate"] is None else f"{r['win_rate']:.1f}%"
+            wr_trad = "—" if r["wr_tradable"] is None else f"{r['wr_tradable']:.1f}%"
             fk = name_to_key.get((r["nom"], r["horizon"]))
             nb_new = new_bets.get((fk, r["horizon"]), 0) if fk else 0
             lines.append(
-                f"| {r['nom']} | {wr} | {r['n_eff']} | {nb_new} | {r['non_notes']} | {r['statut']} |"
+                f"| {r['nom']} | {wr} | {wr_trad} | {r['n_eff']} | {nb_new} | "
+                f"{r['non_notes']} | {r['statut']} |"
             )
     lines.append("")
     return "\n".join(lines)

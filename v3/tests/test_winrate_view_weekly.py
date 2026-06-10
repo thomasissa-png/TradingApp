@@ -81,10 +81,14 @@ NOW = datetime(2026, 6, 8, 7, 5, tzinfo=ZoneInfo("Europe/Paris"))
 # ---------------------------------------------------------------------------
 
 def test_table_colonnes_win_rate_only():
-    """En-tête exact : Actif | Win rate | Paris (réels) | Non notés | Statut."""
+    """En-tête exact : Actif | Win rate | WR tradable | Paris (réels) | Non notés | Statut.
+
+    Le WR tradable COEXISTE avec le WR conclusif (Lot 2 audit 10/06) : la colonne
+    s'ajoute à côté, rien n'est retiré.
+    """
     ms = [_measure("petrole", "Pétrole (Brent)", jr.OUTCOME_VRAI, date(2026, 6, 1))]
     out = jr.render_performance(_kpis_from(ms), ms, NOW, fiches=FICHES)
-    assert "| Actif | Win rate | Paris (réels) | Non notés | Statut |" in out
+    assert "| Actif | Win rate | WR tradable | Paris (réels) | Non notés | Statut |" in out
 
 
 def test_table_zero_argent_et_jargon_retire():
@@ -218,8 +222,9 @@ def test_weekly_contenu_tableau_et_colonne_nouveaux_paris():
     # 2 mesures Or 24h échues dans la semaine → 2 nouveaux paris.
     bloc_24h = out.split("### 24 heures")[1].split("###")[0]
     ligne_or = next(l for l in bloc_24h.splitlines() if l.startswith("| Or "))
-    # Colonnes : Actif | Win rate | Paris | Nouveaux | Non notés | Statut
-    assert ligne_or.split("|")[4].strip() == "2"
+    # Colonnes : Actif | Win rate | WR tradable | Paris | Nouveaux | Non notés | Statut
+    # (WR tradable inséré en index 3 → « Nouveaux paris » passe de l'index 4 à 5).
+    assert ligne_or.split("|")[5].strip() == "2"
 
 
 def test_weekly_nouveaux_paris_zero_hors_semaine():
@@ -229,7 +234,8 @@ def test_weekly_nouveaux_paris_zero_hors_semaine():
     out = jr.render_weekly_winrate(_kpis_from(ms), ms, NOW, fiches=FICHES)
     bloc_24h = out.split("### 24 heures")[1].split("###")[0]
     ligne_or = next(l for l in bloc_24h.splitlines() if l.startswith("| Or "))
-    assert ligne_or.split("|")[4].strip() == "0"
+    # « Nouveaux paris » en index 5 (WR tradable inséré en index 3).
+    assert ligne_or.split("|")[5].strip() == "0"
 
 
 def test_weekly_zero_argent():

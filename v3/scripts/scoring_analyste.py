@@ -1583,6 +1583,7 @@ _LEGENDE_DEFS: List[Tuple[str, str]] = [
     ("⌛", "déjà coté (event hors fenêtre already-priced)"),
     ("⊘", "démenti / correction détecté sur l'event source"),
     ("◧", "mono-critère dominant (>50% du score sur 1 seul critère) — fragilité, à lire avec prudence"),
+    ("⚭", "driver macro partagé — plusieurs cellules de même direction portées par le MÊME signal macro (faux consensus, voir bloc dédié)"),
 ]
 
 
@@ -1858,6 +1859,18 @@ def render_bulletin(
     # agrégé → Flips → Matrice → Détail → Limites.
     lines.extend(build_surveillance_block(results, now))
 
+    # --- Reco A (audit corrélation cachée 05/06) — Drivers macro partagés ---
+    # FLAG-ONLY (affichage pur). Signale quand un MÊME driver macro (par
+    # cle_courante, jamais par nom — L023) porte ≥ 2 cellules de même direction
+    # au-delà du seuil de part : le « large consensus » est alors UN pari répété.
+    # Si aucun driver ne dépasse le seuil → pas de bloc (anti-bruit). Le symbole
+    # ⚭ n'est ajouté à la légende QUE si le bloc est émis (pattern « présents only »).
+    import shared_drivers as _shared_drivers  # noqa: F401 (lazy, cf. pattern existant)
+    _shared_summary = _shared_drivers.compute_shared_drivers_summary(results, HORIZONS)
+    _shared_block = _shared_drivers.build_shared_drivers_block(_shared_summary)
+    if _shared_block:
+        lines.extend(_shared_block)
+
     # Biais agrégé : ligne UNIQUE qui résume le compte de conclusions (LONG /
     # SHORT / INSUFFISANT). Le marqueur ⚠ INCOHÉRENCE n'apparaît que si le
     # compte re-calculé indépendamment diverge (bug d'agrégation).
@@ -1893,6 +1906,9 @@ def render_bulletin(
     # compact (direction + force) pour la "Synthèse des décisions" du haut.
     # `flags_present` accumule les symboles réellement utilisés → légende compacte.
     flags_present: set = set()
+    # ⚭ dans la légende SEULEMENT si le bloc « Drivers macro partagés » est émis.
+    if _shared_block:
+        flags_present.add(_shared_drivers.SHARED_DRIVERS_SYMBOL)
     detail_cells: Dict[str, List[str]] = {}      # nom → [cell24, cell7j, cell1m]
     actionnables: List[ActifResult] = []
     insuffisants: List[ActifResult] = []
@@ -2194,6 +2210,11 @@ def build_decision_log_records(
     # Lot 5 C8a — import paresseux de triggers_classifier (évite couplage dur,
     # cohérent avec le pattern d'import lazy déjà en place ailleurs).
     import triggers_classifier as tc  # noqa: F401  (utilisé plus bas)
+    # Reco A — drivers macro partagés (SHADOW, decision-log only). On calcule
+    # l'ensemble des cle_courante partagées (≥ 2 fiches) UNE fois par run, puis
+    # par cellule la liste des drivers partagés qui la portent (part ≥ seuil).
+    import shared_drivers as _shared_drivers  # noqa: F401 (lazy, cf. pattern existant)
+    _cles_partagees = _shared_drivers.compute_shared_cles(results, HORIZONS)
     records: List[Dict[str, Any]] = []
     bulletin_date = now.strftime("%Y-%m-%d")
     generated_at = now.isoformat()
@@ -2500,6 +2521,13 @@ def build_decision_log_records(
                 # K1 — mono-critère dominant (SHADOW, mesure du sur-poids).
                 "mono_critere_dominant": bool(mono_dominant),
                 "mono_critere_nom": mono_nom,
+                # Reco A — drivers macro partagés portant cette cellule (SHADOW,
+                # flag-only). Liste [{cle, part, signe}] des drivers présents dans
+                # ≥ 2 fiches ET portant ≥ 50% du |score| de la cellule. Vide sinon.
+                # Rend le faux consensus requêtable sans toucher score/conclusion.
+                "drivers_partages": _shared_drivers.compute_cell_shared_drivers(
+                    r, h, _cles_partagees
+                ),
                 # K2 — bande quasi-neutre (SHADOW) : True si 0.05 ≤ |note| < 0.30.
                 # Direction inchangée ; tracé pour mesurer les quasi-zéros actionnés.
                 "neutral_band": bool(EPSILON_CARRY <= abs(score_pm1_val) < NEUTRAL_BAND),

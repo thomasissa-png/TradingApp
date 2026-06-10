@@ -1384,11 +1384,13 @@ TWELVE_SYMBOLS = {
     "mouvement_or_5j":       "GC=F",
     # --- Momentum-prix 20j (tendance-prix propre v3 — correctif famille
     # trend-following, audit 10/06 momentum-prix-sweep). Symboles simples →
-    # cas PAR DÉFAUT du dispatcher zscore (z-score des closes sur zscore_window,
-    # exactement comme sox_trend_5j). AUCUNE nouvelle mécanique de calcul : on
-    # branche le ticker du sous-jacent lui-même, le moteur z-score les closes.
-    # Signe +1 appliqué en aval par le scoring (fiche : signe: 1 = suit la
-    # tendance). Donnée absente → None = n/a propre (zéro invention).
+    # branche dédiée `momentum_prix_20j_` du dispatcher zscore (A1, audit
+    # momentum-family 10/06) : VRAIE variation 20j (rendement glissant
+    # close[t]/close[t-20]-1) puis z-score de la SÉRIE DE RENDEMENTS sur 60j —
+    # PAS le z-score du niveau de close (laggard, bug cacao). Cf.
+    # `_twelve_variation_zscore`. Signe +1 appliqué en aval par le scoring
+    # (fiche : signe: 1 = suit la tendance). Donnée insuffisante → None = n/a
+    # propre (zéro invention).
     "momentum_prix_20j_cacao":   "CC=F",
     "momentum_prix_20j_cafe":    "KC=F",
     "momentum_prix_20j_ble":     "ZW=F",
@@ -1425,6 +1427,47 @@ def _twelve_perf_5j(symbol: str) -> Optional[float]:
     if ref == 0:
         return None
     return last / ref - 1.0
+
+
+# Fenêtre de variation pour le momentum-prix (A1, audit momentum-family 10/06).
+# Le momentum mesure la VARIATION sur 20 sessions (rendement glissant), PAS le
+# niveau de close. La spec analyst (`momentum-family-analyst.md` §1-2) tranche :
+# variation 20j, z-score normalisé sur 60 rendements glissants.
+MOMENTUM_PRIX_LAG = 20      # nombre de sessions du rendement (close[t]/close[t-20]-1)
+MOMENTUM_PRIX_WINDOW = 60   # fenêtre de normalisation z-score (nb de rendements)
+
+
+def _twelve_variation_zscore(symbol: str, lag: int, crit: dict) -> Optional[Tuple[float, float]]:
+    """Z-score de la VRAIE variation `lag` jours (A1, audit momentum-family).
+
+    Construit la série des rendements glissants `close[i]/close[i-lag] - 1` puis
+    z-score cette série de RENDEMENTS (pas le niveau de close). C'est l'estimateur
+    de premier ordre de la dérivée du prix — il bascule au retournement, contrairement
+    au z-score de niveau (laggard, bug cacao).
+
+    Donnée insuffisante (< lag + fenêtre minimale de rendements) → None = n/a propre,
+    zéro invention. Fenêtre de normalisation = `zscore_window` de la fiche si fournie,
+    sinon MOMENTUM_PRIX_WINDOW (60). Documenté : spec analyst §2.
+    """
+    window = int(crit.get("zscore_window", MOMENTUM_PRIX_WINDOW))
+    # Il faut `lag` closes pour le premier rendement + `window` rendements pour le
+    # z-score. On demande une marge de sécurité.
+    series = fetch_twelve_series(symbol, outputsize=lag + window + 10)
+    if not series or len(series) < lag + 1:
+        return None
+    closes = [c for _, c in series]
+    perfs = [
+        closes[i] / closes[i - lag] - 1.0
+        for i in range(lag, len(closes))
+        if closes[i - lag] != 0
+    ]
+    # Plancher de fiabilité : au moins window//4 rendements (cohérent avec les autres
+    # branches z-score du dispatcher). Sinon n/a propre.
+    if len(perfs) < max(10, window // 4):
+        return None
+    hist = perfs[-window:] if len(perfs) >= window else perfs
+    return zscore_from_series(hist, zscore_div=float(crit.get("zscore_div", 2.0)),
+                              cap=float(crit.get("cap", 1.0)))
 
 
 def _twelve_zscore_from_symbol(symbol: str, crit: dict) -> Optional[Tuple[float, float]]:
@@ -1771,6 +1814,14 @@ def _handle_twelve_zscore_dispatch(cle: str, crit: dict, ts: str) -> Optional[di
             return None
         res = zscore_from_series(perfs, zscore_div=float(crit.get("zscore_div", 2.0)),
                                  cap=float(crit.get("cap", 1.0)))
+        if res is None:
+            return None
+        return _emit_zscore(res[0], res[1], ts)
+    if cle.startswith("momentum_prix_20j_"):
+        # A1 (audit momentum-family 10/06) : VRAIE variation 20j (rendement glissant
+        # close[t]/close[t-20]-1) puis z-score de la série de rendements — PAS le
+        # z-score du niveau de close (laggard, bug cacao). spec analyst §1-2.
+        res = _twelve_variation_zscore(spec, MOMENTUM_PRIX_LAG, crit)
         if res is None:
             return None
         return _emit_zscore(res[0], res[1], ts)

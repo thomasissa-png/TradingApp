@@ -2,6 +2,15 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-10 (Session 5) — Dédup fiches v2 + compteur régimes + fix M7 (Lots A/C/D, audit Cowork 10/06)
+
+> ⚠️ **Contre-audit** : l'audit Cowork annonçait 9 doublons ; vérif YAML → **8/9 inexistants** (critères renommés 7-8/06, pas des doublons). Voir `v3/audit/fiches-v2-dedup.md` + leçon L023. **4 fusions réelles** seulement. Cutover v2 = **reset `ref_changed` PARTIEL sur ces 4 actifs** (les 8 autres gardent leur historique v1) — `is_news_regime` n'a PAS été modifié donc aucun delta de signal hors dédup.
+
+- **Lot A — dédup (4 fusions, poids gardé = MAX, jamais somme)** : `cacao.yml` retire `cftc_cot_cocoa` (déjà dans le composite ICE+CFTC) · `petrole.yml` retire `api_weekly_surprise` (= pré-indicateur mardi d'EIA, perte assumée du signal mardi soir) · `nasdaq.yml` retire `concentration_top7` (inverse de `breadth`) · `argent.yml` retire `alpha_argent_vs_or_5j` (≈ `ratio_gold_silver`). Chaque fusion commentée dans le YAML (critère absorbé, poids avant/après, donnée secondaire abandonnée — pas de fallback dans le schéma). `weighting.yml`, normalisations, `seuils_reussite_pct` **intacts**.
+- **Lot D — 2 mécanismes** : (1) `is_news_regime` diagnostiqué = **pas mort, juste rare** (4 déclenchements/51 logs, tous Cuivre 02-03/06 ; le « 0% » Cowork vaut post-06/06) — **modifie bien le score** (remplace INSUFFISANT par LONG/SHORT mesuré) → **conservé tel quel** + test synthétique prouvant déclenchement+impact conclusion. (2) `p2_M7_ratio_news` affichait jusqu'à 7269 % (réutilisait le ratio décisionnel non borné) → **borné [0,1]** = `|news|/(|news|+|quant|+ε)`. Le champ **décisionnel `ratio_news` est inchangé** (zéro impact scoring). Doc M7 mise à jour.
+- **Lot C — compteur régimes** : `count_regimes()` = 1 + nb changements de direction sur les paris notés non-chevauchants. Affiché `N (régimes=Y)` dans `performance.md` + bilan hebdo. **Indicateur, zéro changement aux règles** (SELECTION-RULE reste N≥15). NB : le brief annonçait `LLLLSSSL → 4` mais c'est **3 régimes** (2 changements) — code correct, test ajusté.
+- Tests : **1021 passed / 3 skipped** (l'unique « failed » = faux positif `test_aucune_ecriture_config`, disparaît une fois les fiches commitées). Pollution `v3/data/` (tests build_html/source_monitor préexistants) révoquée avant commit.
+
 ## 2026-06-10 (Session 5) — Fix backtest cache (faux vert) + garde-fou (@fullstack)
 
 **Diagnostic d'un run `backtest-v2-fred` « success » mais CREUX.** Le run #1 (2026-06-10) a fini vert mais avec **0 date testée sur toutes les cellules** et **aucun `fred__` généré** → `+FRED` non clos. **Cause racine** (`historical_data.py`) : le nom du fichier cache embarque `end = aujourd'hui+1`. Le cache committé finit à `2026-06-06` → tout run un autre jour cherche `…__{autre_date}.csv` inexistant → cache miss 100% → fallback yfinance → bloqué en CI → DataFrame vide → 0 date → FRED jamais appelé. Le workflow ne marchait que le jour de (re)commit du cache.

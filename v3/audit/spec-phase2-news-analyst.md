@@ -488,9 +488,17 @@ Comparer sur 30 runs :
 Si la Phase 2 réduit la dominance LONG sur Pétrole/Or → signal positif (le verbal géopolitique
 LONG pro-guerre était sur-représenté).
 
-**M7 — ratio_news (déjà loggué) par actif après Phase 2**
-Le `ratio_news` existant (`abs(news_total) / (abs(quant_total) + ε)`) doit baisser sur les actifs
-où les exclusions par nature sont élevées. C'est le meilleur proxy d'amélioration disponible.
+**M7 — part news bornée [0,1] par actif après Phase 2** *(corrigé 10/06 — bornage)*
+Définition (corrigée) : `M7 = |news_total| / (|news_total| + |quant_total| + ε)` = **part de la
+magnitude directionnelle portée par les news**, bornée dans **[0,1]** (×100 = %, JAMAIS > 100%).
+Doit baisser sur les actifs où les exclusions par nature sont élevées. C'est le meilleur proxy
+d'amélioration disponible.
+> **⚠️ Changement d'unité 10/06** : l'ancienne définition réutilisait le champ décisionnel
+> `ratio_news = |news|/|quant|` (NON borné — observé jusqu'à 72.7 ≈ 7269% quand la couverture
+> quant est faible, d'où les valeurs absurdes « 400-695% » signalées). La métrique d'OBSERVABILITÉ
+> M7 est désormais une **part bornée** lisible en %. Le champ DÉCISIONNEL `ratio_news` (brut,
+> comparé à `NEWS_DOMINANT_RATIO=0.5` par la gate régime news) est **inchangé** — aucun impact
+> sur le scoring. Clé `p2_M7_ratio_news` conservée (continuité du decision-log), valeur bornée.
 Objectif : `ratio_news < 0.5` sur >80 % des cellules (vs situation actuelle où Blé atteint 57).
 
 ### 5.2 Seuils d'alerte et interprétation

@@ -49,24 +49,10 @@ criteres:
     echelle: 12.0                # >85 / <60 autour de 75 → demi-span ~12 ; à calibrer
     cap: 1.0
     signe: -1                    # inversé : ratio>85 (argent sous-éval) => LONG
-    poids: 7
+    poids: 7                      # absorbe alpha_argent_vs_or_5j (id=4, poids 5) — dedup audit Cowork 10/06 : redondants sur la valeur relative argent/or (ratio↓ ⇔ alpha 5j↑), même base or comme référence. Poids avant 7 → après 7 (= max(7,5)). Donnée secondaire (momentum relatif 5j) abandonnée car le schéma fiche ne supporte pas de source fallback → ratio absolu primaire seul.
     pertinence: { "24h": 0.3, "7j": 0.7, "1m": 1.0 }
     effet_long: "Ratio>85 (argent sous-éval)"
     effet_short: "Ratio<60 (cher)"
-
-  - id: 4
-    nom: "Sur-performance de l'argent face à l'or (5 jours)"
-    source: "Twelve Data (calculé)"
-    cle_courante: "alpha_argent_vs_or_5j"
-    normalisation: "zscore"
-    zscore_window: 60
-    zscore_div: 2
-    cap: 1.0
-    signe: 1
-    poids: 5
-    pertinence: { "24h": 0.4, "7j": 0.8, "1m": 0.6 }
-    effet_long: "Argent out-perf >+2%"
-    effet_short: "Argent under-perf >-2%"
 
   - id: 5
     nom: "Activité industrielle Chine (indice PMI)"

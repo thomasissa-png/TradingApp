@@ -1144,6 +1144,13 @@ class CellKPI:
     n_tradable: int = 0                        # VRAI + FAUSSE + NC non-chevauchants
     n_nc_eff: int = 0                          # NC non-chevauchants
     tradable_eff_pct: Optional[float] = None   # WR tradable non-chevauchant
+    # --- Lot C — compteur « vrais paris » (régimes) — INDICATEUR de lucidité ---
+    # n_regimes = nombre de séries de calls identiques CONSÉCUTIFS (= 1 + nombre
+    # de changements de direction) sur la fenêtre des paris notés NON-CHEVAUCHANTS.
+    # Ex : LLLLSSSL → 4 régimes ; suite constante → 1 ; aucun pari → 0.
+    # N'ENTRE PAS dans les règles de décision (SELECTION-RULE reste N≥15
+    # non-chevauchants) — affiché À CÔTÉ de N : format « N=8 (régimes=2) ».
+    n_regimes: int = 0
     # --- C7 LOT 6 — Ventilation flip vs continuation ---
     # Calculée sur les mesures de la fenêtre (terminées hors NON_NOTE/INTERROMPU)
     # qui ont is_flip not None (= dont on connaît la décision précédente).
@@ -1233,6 +1240,36 @@ def select_non_overlapping_tradable(
     return selected
 
 
+def count_regimes(measures: List["Measure"]) -> int:
+    """Compte les « régimes » = séries de calls identiques CONSÉCUTIFS (Lot C).
+
+    n_regimes = 1 + nombre de changements de direction sur la séquence (ordonnée
+    par échéance) des conclusions LONG/SHORT. Indicateur de lucidité affiché à
+    côté de N : un N=8 porté par 1 seul régime (toujours le même call) reflète
+    moins de « vrais paris indépendants » qu'un N=8 réparti sur plusieurs régimes.
+
+    Entrée : la liste DÉJÀ filtrée (paris notés non-chevauchants — VRAI/FAUSSE).
+    On (re)trie par échéance pour garantir l'ordre temporel. Conclusions hors
+    LONG/SHORT (ex. INSUFFISANT) sont ignorées (ne sont pas des paris directionnels).
+
+    Exemples :
+      LLLLSSSL → 4 régimes  ·  LLLL → 1  ·  [] → 0  ·  L → 1.
+    N'a AUCUN effet sur les décisions (pur indicateur).
+    """
+    dirs = [
+        m.cell.conclusion
+        for m in sorted(measures, key=lambda m: m.echeance)
+        if m.cell.conclusion in ("LONG", "SHORT")
+    ]
+    if not dirs:
+        return 0
+    regimes = 1
+    for prev, cur in zip(dirs, dirs[1:]):
+        if cur != prev:
+            regimes += 1
+    return regimes
+
+
 def proba_from_score(score: float, conclusion: str, scale: float = PROBA_SCALE) -> float:
     """Dérive une proba ∈ [0, 1] que la conclusion soit VRAIE.
 
@@ -1309,6 +1346,9 @@ def compute_kpi(measures_for_cell: List[Measure]) -> CellKPI:
     kpi.n_effective = len(non_overlap)
     kpi.n_vrai_eff = sum(1 for m in non_overlap if m.outcome == OUTCOME_VRAI)
     kpi.n_fausse_eff = sum(1 for m in non_overlap if m.outcome == OUTCOME_FAUSSE)
+    # Lot C — indicateur « vrais paris » (régimes) sur les paris notés
+    # non-chevauchants. Pur indicateur (n'altère AUCUNE règle de décision).
+    kpi.n_regimes = count_regimes(non_overlap)
     denom_eff = kpi.n_vrai_eff + kpi.n_fausse_eff  # == n_effective (VRAI+FAUSSE uniquement)
     if denom_eff > 0:
         kpi.taux_eff_pct = round(kpi.n_vrai_eff / denom_eff * 100.0, 2)
@@ -2081,6 +2121,7 @@ def _winrate_rows(
             "wr_tradable": None if k is None else k.tradable_eff_pct,
             "n_tradable": 0 if k is None else k.n_tradable,
             "n_eff": 0 if k is None else k.n_effective,
+            "n_regimes": 0 if k is None else k.n_regimes,
             "non_notes": non_notes,
             "statut": _winrate_status(k),
         })
@@ -2122,8 +2163,13 @@ def _render_winrate_table(rows: List[Dict[str, Any]]) -> List[str]:
         for r in h_rows:
             wr = "—" if r["win_rate"] is None else f"{r['win_rate']:.1f}%"
             wr_trad = "—" if r["wr_tradable"] is None else f"{r['wr_tradable']:.1f}%"
+            # Lot C — indicateur « vrais paris » : N=X (régimes=Y) à côté de N.
+            # Affiché seulement s'il y a au moins un pari (régimes>0) — sinon "0".
+            n_eff = r["n_eff"]
+            n_reg = r.get("n_regimes", 0)
+            paris = f"{n_eff} (régimes={n_reg})" if n_reg else f"{n_eff}"
             lines.append(
-                f"| {r['nom']} | {wr} | {wr_trad} | {r['n_eff']} | "
+                f"| {r['nom']} | {wr} | {wr_trad} | {paris} | "
                 f"{r['non_notes']} | {r['statut']} |"
             )
     return lines
@@ -2156,6 +2202,11 @@ def render_performance(
         "sous seuil où une position aurait quand même été prise (toujours ≤ Win rate)"
     )
     lines.append(f"- Cible : ≥ {TARGET_TAUX:.0f}% sur ≥ {N_EFFECTIVE_MIN} paris (borne basse > 50 %)")
+    lines.append(
+        "- Paris (réels) = N (régimes=Y) : Y = nombre de séries de calls identiques "
+        "consécutifs (indicateur de lucidité — N élevé mais peu de régimes = peu de "
+        "vrais paris indépendants). N'entre PAS dans les règles de décision."
+    )
     lines.append("")
     lines.append(_winrate_synthese_line(rows))
 
@@ -2258,8 +2309,11 @@ def render_weekly_winrate(
             wr_trad = "—" if r["wr_tradable"] is None else f"{r['wr_tradable']:.1f}%"
             fk = name_to_key.get((r["nom"], r["horizon"]))
             nb_new = new_bets.get((fk, r["horizon"]), 0) if fk else 0
+            # Lot C — indicateur « vrais paris » : N (régimes=Y) à côté de N.
+            n_reg = r.get("n_regimes", 0)
+            paris = f"{r['n_eff']} (régimes={n_reg})" if n_reg else f"{r['n_eff']}"
             lines.append(
-                f"| {r['nom']} | {wr} | {wr_trad} | {r['n_eff']} | {nb_new} | "
+                f"| {r['nom']} | {wr} | {wr_trad} | {paris} | {nb_new} | "
                 f"{r['non_notes']} | {r['statut']} |"
             )
     lines.append("")

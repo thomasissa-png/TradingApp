@@ -245,6 +245,51 @@ def test_carry_prime_sur_regime_news(cuivre, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# (f) PREUVE QUE LA GATE PEUT SE DÉCLENCHER + qu'elle MODIFIE LA CONCLUSION
+#     (verdict Lot D 10/06 : is_news_regime n'est PAS flag-only — il remplace
+#      un INSUFFISANT par une vraie direction LONG/SHORT mesurée comme prédiction)
+# ---------------------------------------------------------------------------
+
+def test_regime_news_modifie_la_conclusion_pas_flag_only(cuivre, tmp_path):
+    """(f) Preuve factuelle : la gate régime news CHANGE la conclusion.
+
+    Setup minimal SANS aucune direction antérieure (carry impossible) →
+    on isole l'effet de la gate news. On compare :
+      - SANS biais news (valeurs neutres) → la cellule serait 🚫 INSUFFISANT,
+      - AVEC biais news net → la cellule porte LONG (conclusion ET conclusion_pond
+        changent, confidence passe à "faible", is_news_regime=True).
+
+    Conclusion : is_news_regime modifie le SCORE/la conclusion (impact sur le
+    win rate), ce n'est PAS de l'observabilité pure. Cette gate est VIVANTE
+    (prouvée déclenchable sur données synthétiques minimales).
+    """
+    # Référence : sans news net → INSUFFISANT (la gate ne s'active pas).
+    r_ref = sa.score_actif(
+        "cuivre", cuivre,
+        {"mining_strikes_chili_perou": _news_triplet(0),
+         "news_construction_infra": _news_triplet(0)},
+        now=NOW, log_dir=tmp_path, current_generated_at=NOW.isoformat(),
+    )
+    # Avec news net → la gate s'active et REMPLACE INSUFFISANT par LONG.
+    r_on = sa.score_actif(
+        "cuivre", cuivre,
+        {"mining_strikes_chili_perou": _news_triplet(1),
+         "news_construction_infra": _news_triplet(1)},
+        now=NOW, log_dir=tmp_path, current_generated_at=NOW.isoformat(),
+    )
+    for h in sa.HORIZONS:
+        # Sans news : INSUFFISANT (conclusion neutralisée).
+        assert r_ref.conclusions[h] == sa.CONCLUSION_INSUFFISANT
+        assert r_ref.is_news_regime[h] is False
+        # Avec news : la CONCLUSION est modifiée (≠ INSUFFISANT) → impact prouvé.
+        assert r_on.is_news_regime[h] is True
+        assert r_on.conclusions[h] == "LONG"
+        assert r_on.conclusions_pond[h] == "LONG"
+        assert r_on.conclusions[h] != r_ref.conclusions[h]  # la gate CHANGE la sortie
+        assert r_on.confidence[h] == "faible"
+
+
+# ---------------------------------------------------------------------------
 # (e) Parité du helper factorisé compute_news_bias vs calcul inline historique
 # ---------------------------------------------------------------------------
 

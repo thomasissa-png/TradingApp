@@ -47,24 +47,10 @@ criteres:
     normalisation: "composite"   # composite zscore put/call OI + zscore COT, signe INVERSÉ — valeur pré-normalisée fournie
     cap: 1.0
     signe: -1                    # inversé : OI puts>>calls + COT nets SHORT => LONG
-    poids: 7
+    poids: 7                      # absorbe cftc_cot_cocoa (id=4, poids 6) — dedup audit Cowork 10/06 : ce composite intègre déjà le COT CFTC (1 de ses 2 composantes), le standalone le comptait 2×. Poids avant 7 → après 7 (= max(7,6)). Donnée secondaire (COT standalone) abandonnée car le schéma fiche ne supporte pas de source fallback → composite primaire seul.
     pertinence: { "24h": 0.3, "7j": 0.8, "1m": 1.0 }
     effet_long: "OI puts>>calls + COT nets SHORT"
     effet_short: "OI calls>>puts + COT nets LONG"
-
-  - id: 4
-    nom: "Positionnement des gros spéculateurs (cacao)"
-    source: "CFTC (vendredi)"
-    cle_courante: "cftc_cot_cocoa"
-    normalisation: "zscore"
-    zscore_window: 252
-    zscore_div: 2
-    cap: 1.0
-    signe: -1                    # inversé : nets SHORT extreme => LONG (squeeze)
-    poids: 6
-    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 1.0 }
-    effet_long: "Nets SHORT extreme"
-    effet_short: "Nets LONG extreme"
 
   - id: 5
     nom: "Volume de broyage de cacao (demande trimestrielle)"

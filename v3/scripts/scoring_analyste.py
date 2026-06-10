@@ -2252,7 +2252,18 @@ def build_decision_log_records(
             #      OU vieux OU nature interdite ET le cap a été appliqué.
             # M5 — composition nature : compteurs par nature sur les critères news.
             # M6 — biais LONG/SHORT (signe du score).
-            # M7 — ratio_news (déjà calculé ci-dessus).
+            # M7 — PART news bornée [0,1] (fraction de la magnitude directionnelle
+            #      portée par les news) = |news| / (|news| + |quant|). UNITÉ : part
+            #      ∈ [0,1] (×100 = %), JAMAIS > 100%. Corrige le bug d'affichage :
+            #      l'ancien M7 réutilisait `ratio_news` = |news|/|quant| (NON borné,
+            #      observé jusqu'à 72.7 ≈ 7269%) — illisible en % quand la couverture
+            #      quant est faible (quant_total → 0 fait exploser le ratio). Le champ
+            #      DÉCISIONNEL `ratio_news` (brut, comparé à NEWS_DOMINANT_RATIO=0.5
+            #      par la gate régime news) reste INCHANGÉ ci-dessous — M7 est une
+            #      métrique d'OBSERVABILITÉ shadow distincte, sans impact sur le score.
+            _abs_n = abs(news_total)
+            _abs_q = abs(quant_total)
+            p2_m7_part_news = round(_abs_n / (_abs_n + _abs_q + 1e-9), 4)
             news_crits = [c for c in r.criteres
                           if (c.source_track.startswith("ia") or c.source_track == "keyword")
                           and not c.is_na and not c.is_gate]
@@ -2408,7 +2419,10 @@ def build_decision_log_records(
                 "p2_M4_gate_override_blocked": bool(override_potential_blocked),
                 "p2_M5_nature_composition": nature_composition,
                 "p2_M6_bias": bias_long_short,
-                "p2_M7_ratio_news": round(ratio_news, 4),
+                # Part news bornée [0,1] (×100 = %), JAMAIS > 100% — voir M7 ci-dessus.
+                # NB : renommé en sémantique « part », mais clé conservée pour la
+                # continuité du decision-log. La valeur est désormais bornée.
+                "p2_M7_ratio_news": p2_m7_part_news,
                 "p2_T1_faux_flips_evites": t1_faux_flips_evites,
                 "p2_T2_vrais_flips_qualifies": t2_vrais_flips_qualifies,
                 # A1 — shadow contribution agrégée (sur events deja_cote/stale/repost)

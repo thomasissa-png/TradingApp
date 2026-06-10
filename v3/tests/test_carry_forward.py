@@ -158,19 +158,20 @@ def _carry_log(tmp_path, conclusion="LONG", age_h=2):
 def test_maintien_nominal(petrole, tmp_path):
     """(a) 0.25 ≤ cov < 0.40 + direction antérieure cohérente récente → MAINTIEN.
 
-    Couverture : eia(10)+api(8) = 18/60 = 0.30. Valeurs ~neutres (score proche 0)
-    → pas de contradiction. Direction antérieure LONG, âge 2h → maintenu LONG.
+    Couverture : eia(10)+cot(7) = 17/52 ≈ 0.327 (api_weekly_surprise fusionné
+    dans eia le 10/06 → Σpoids 60→52). Valeurs ~neutres (score proche 0) → pas de
+    contradiction. Direction antérieure LONG, âge 2h → maintenu LONG.
     """
     _carry_log(tmp_path, "LONG", age_h=2)
     valeurs = _valeurs({
         "eia_crude_surprise": {"valeur_normalisee": 0.0},
-        "api_weekly_surprise": {"valeur_normalisee": 0.0},
+        "cftc_cot_crude_nets": {"valeur_normalisee": 0.0},
     })
     r = sa.score_actif(
         "petrole", petrole, valeurs, now=NOW, log_dir=tmp_path,
         current_generated_at=NOW.isoformat(),
     )
-    assert r.coverage == pytest.approx(0.30)
+    assert sa.COVERAGE_FLOOR <= r.coverage < sa.COVERAGE_MIN
     for h in sa.HORIZONS:
         assert r.is_carry[h] is True
         assert r.conclusions[h] == "LONG"
@@ -204,7 +205,8 @@ def test_insuffisant_si_contradiction(petrole, tmp_path):
     Direction antérieure LONG. On force un score courant nettement SHORT
     (|score| ≥ EPSILON_CARRY, signe opposé) via une valeur linéaire négative
     forte sur un critère couvert → contradiction → INSUFFISANT.
-    Couverture eia(10)+brent(5) = 15/60 = 0.25 (≥ FLOOR).
+    Couverture eia(10)+brent(5) = 15/52 ≈ 0.288 (≥ FLOOR ; Σpoids 60→52 après
+    fusion api→eia du 10/06).
     brent : signe par défaut, lineaire centre=0 echelle=1, valeur -1 → contrib < 0.
     """
     _carry_log(tmp_path, "LONG", age_h=2)
@@ -216,7 +218,7 @@ def test_insuffisant_si_contradiction(petrole, tmp_path):
         "petrole", petrole, valeurs, now=NOW, log_dir=tmp_path,
         current_generated_at=NOW.isoformat(),
     )
-    assert r.coverage == pytest.approx(0.25)
+    assert sa.COVERAGE_FLOOR <= r.coverage < sa.COVERAGE_MIN
     # Score courant doit être franchement négatif (SHORT) → contredit le LONG maintenu.
     for h in sa.HORIZONS:
         assert abs(r.scores[h]) >= sa.EPSILON_CARRY
@@ -228,10 +230,10 @@ def test_insuffisant_si_contradiction(petrole, tmp_path):
 def test_maintien_si_score_neutre_meme_signe_oppose_faible(petrole, tmp_path):
     """(c-bis) Signe opposé MAIS |score| < EPSILON_CARRY (neutre) → PAS contradiction → maintien."""
     _carry_log(tmp_path, "LONG", age_h=2)
-    # Couverture eia(10)+api(8) = 0.30. Petit score négatif < epsilon.
+    # Couverture eia(10)+cot(7) = 17/52 ≈ 0.327. Petit score négatif < epsilon.
     valeurs = _valeurs({
         "eia_crude_surprise": {"valeur_normalisee": -0.001},
-        "api_weekly_surprise": {"valeur_normalisee": 0.0},
+        "cftc_cot_crude_nets": {"valeur_normalisee": 0.0},
     })
     r = sa.score_actif(
         "petrole", petrole, valeurs, now=NOW, log_dir=tmp_path,
@@ -255,13 +257,13 @@ def test_insuffisant_si_perime(petrole, tmp_path):
     ])
     valeurs = _valeurs({
         "eia_crude_surprise": {"valeur_normalisee": 0.0},
-        "api_weekly_surprise": {"valeur_normalisee": 0.0},
+        "cftc_cot_crude_nets": {"valeur_normalisee": 0.0},
     })
     r = sa.score_actif(
         "petrole", petrole, valeurs, now=NOW, log_dir=tmp_path,
         current_generated_at=NOW.isoformat(),
     )
-    assert r.coverage == pytest.approx(0.30)
+    assert sa.COVERAGE_FLOOR <= r.coverage < sa.COVERAGE_MIN
     assert r.is_carry["24h"] is False
     assert r.conclusions["24h"] == sa.CONCLUSION_INSUFFISANT
     assert r.is_carry["1m"] is False
@@ -272,13 +274,13 @@ def test_insuffisant_si_aucune_direction_anterieure(petrole, tmp_path):
     """(e) Aucune direction antérieure (decision-log vide) → 🚫."""
     valeurs = _valeurs({
         "eia_crude_surprise": {"valeur_normalisee": 0.0},
-        "api_weekly_surprise": {"valeur_normalisee": 0.0},
+        "cftc_cot_crude_nets": {"valeur_normalisee": 0.0},
     })
     r = sa.score_actif(
         "petrole", petrole, valeurs, now=NOW, log_dir=tmp_path,
         current_generated_at=NOW.isoformat(),
     )
-    assert r.coverage == pytest.approx(0.30)
+    assert sa.COVERAGE_FLOOR <= r.coverage < sa.COVERAGE_MIN
     for h in sa.HORIZONS:
         assert r.is_carry[h] is False
         assert r.conclusions[h] == sa.CONCLUSION_INSUFFISANT
@@ -296,7 +298,7 @@ def test_horizon_aware_perime_1m_ok_7j(petrole, tmp_path):
     ])
     valeurs = _valeurs({
         "eia_crude_surprise": {"valeur_normalisee": 0.0},
-        "api_weekly_surprise": {"valeur_normalisee": 0.0},
+        "cftc_cot_crude_nets": {"valeur_normalisee": 0.0},
     })
     r = sa.score_actif(
         "petrole", petrole, valeurs, now=NOW, log_dir=tmp_path,

@@ -838,3 +838,82 @@ def test_run_injecte_bilan_news_warmup_si_aucune_news_driven(tmp_path, fiches_di
     content = today_bp.read_text(encoding="utf-8")
     assert "## Bilan des news (calls passés)" in content
     assert "Aucun call porté par les news" in content
+
+
+# ---------------------------------------------------------------------------
+# Lot C — compteur « vrais paris » (régimes). Indicateur, PAS un critère.
+# ---------------------------------------------------------------------------
+
+def _bet(conc: str, echeance: date) -> jr.Measure:
+    """Pari noté (VRAI) avec une direction donnée, pour tester count_regimes."""
+    return _make_measure(jr.OUTCOME_VRAI, conc=conc, echeance=echeance)
+
+
+def test_count_regimes_sequence_llllsssl():
+    """Séquence LLLLSSSL → séries {LLLL}{SSS}{L} = 3 régimes (= 1 + 2 changements).
+
+    NB : le brief annonçait « 4 » pour cette séquence, mais LLLLSSSL ne comporte
+    que 2 changements de direction (L→S puis S→L) → 1+2 = 3 régimes. On teste la
+    définition formelle (1 + nb changements). Une séquence à 4 régimes = 3
+    changements, ex. LLSSLLS (voir test dédié ci-dessous).
+    """
+    seq = ["LONG", "LONG", "LONG", "LONG", "SHORT", "SHORT", "SHORT", "LONG"]
+    ms = [_bet(c, date(2026, 1, 1) + timedelta(days=i)) for i, c in enumerate(seq)]
+    assert jr.count_regimes(ms) == 3
+
+
+def test_count_regimes_quatre_regimes():
+    """LLSSLLS → 4 séries {LL}{SS}{LL}{S} = 4 régimes (3 changements)."""
+    seq = ["LONG", "LONG", "SHORT", "SHORT", "LONG", "LONG", "SHORT"]
+    ms = [_bet(c, date(2026, 1, 1) + timedelta(days=i)) for i, c in enumerate(seq)]
+    assert jr.count_regimes(ms) == 4
+
+
+def test_count_regimes_constante_egale_1():
+    """Séquence constante (que des LONG) → 1 régime."""
+    ms = [_bet("LONG", date(2026, 1, 1) + timedelta(days=i)) for i in range(8)]
+    assert jr.count_regimes(ms) == 1
+
+
+def test_count_regimes_vide_egale_0():
+    """Aucun pari → 0 régime."""
+    assert jr.count_regimes([]) == 0
+
+
+def test_count_regimes_un_seul_pari_egale_1():
+    assert jr.count_regimes([_bet("SHORT", date(2026, 1, 1))]) == 1
+
+
+def test_count_regimes_ignore_non_directionnel():
+    """Conclusions hors LONG/SHORT (ex. INSUFFISANT) sont ignorées."""
+    ms = [
+        _bet("LONG", date(2026, 1, 1)),
+        _make_measure(jr.OUTCOME_VRAI, conc="INSUFFISANT", echeance=date(2026, 1, 2)),
+        _bet("LONG", date(2026, 1, 3)),
+    ]
+    # Les 2 LONG restent consécutifs après filtrage → 1 régime.
+    assert jr.count_regimes(ms) == 1
+
+
+def test_count_regimes_reordonne_par_echeance():
+    """count_regimes (re)trie par échéance — l'ordre d'entrée n'importe pas."""
+    ms = [
+        _bet("SHORT", date(2026, 1, 3)),
+        _bet("LONG", date(2026, 1, 1)),
+        _bet("SHORT", date(2026, 1, 2)),
+    ]
+    # Ordre temporel = L, S, S → 2 régimes.
+    assert jr.count_regimes(ms) == 2
+
+
+def test_kpi_expose_n_regimes_et_affichage():
+    """compute_kpi remplit n_regimes et render_performance affiche N (régimes=Y)."""
+    # 4 LONG puis 4 SHORT, échéances espacées (24h step=1 → non-chevauchant complet).
+    seq = ["LONG"] * 4 + ["SHORT"] * 4
+    ms = [_bet(c, date(2026, 1, 1) + timedelta(days=i)) for i, c in enumerate(seq)]
+    k = jr.compute_kpi(ms)
+    assert k.n_effective == 8
+    assert k.n_regimes == 2  # LLLL SSSS → 2 régimes
+    kpis = {("petrole", "24h"): k}
+    out = jr.render_performance(kpis, ms, datetime(2026, 2, 1, tzinfo=timezone.utc))
+    assert "(régimes=2)" in out

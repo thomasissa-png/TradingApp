@@ -66,24 +66,10 @@ criteres:
     zscore_div: 2
     cap: 1.0
     signe: 1                       # ratio EW/CW en hausse = participation large = haussier
-    poids: 6
+    poids: 6                       # absorbe concentration_top7 (id=5, poids 5) — dedup audit Cowork 10/06 : même phénomène (domination méga-caps vs breadth large), corrélés inverse (-1) — concentration↑ ⇔ ratio QQQE/QQQ↓. Poids avant 6 → après 6 (= max(6,5)). Donnée secondaire (concentration top7) abandonnée car le schéma fiche ne supporte pas de source fallback → breadth primaire seule.
     pertinence: { "24h": 0.9, "7j": 0.7, "1m": 0.4 }
     effet_long: "QQQE/QQQ en hausse (participation large)"
     effet_short: "QQQE/QQQ en baisse (rallye méga-caps)"
-
-  - id: 5
-    nom: "Concentration sur les 7 plus grosses valeurs"
-    source: "Twelve Data (calculé)"
-    cle_courante: "concentration_top7"
-    normalisation: "zscore"
-    zscore_window: 60
-    zscore_div: 2
-    cap: 1.0
-    signe: -1                    # inversé : concentration baisse (rotation) => LONG
-    poids: 5
-    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 0.9 }
-    effet_long: "Concentration baisse (rotation)"
-    effet_short: ">52% top 7 (overheated)"
 
   - id: 6
     nom: "Sentiment sur l'IA et les méga-caps tech"

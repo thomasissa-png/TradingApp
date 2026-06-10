@@ -473,6 +473,45 @@ def test_step5_p2_fields_in_decision_log():
                 assert "coef_nature" in c
 
 
+def test_p2_m7_part_news_bornee_0_1():
+    """M7 (p2_M7_ratio_news) est désormais une PART bornée [0,1] — JAMAIS > 100%.
+
+    Régression (bug 10/06) : l'ancien M7 réutilisait `ratio_news = |news|/|quant|`
+    NON borné (observé jusqu'à 72.7 ≈ 7269% en prod quand le quant est minuscule).
+    On reproduit le cas pathologique : un critère news fort + un critère quant
+    quasi nul → l'ancien ratio aurait explosé ; M7 borné reste dans [0,1].
+    Le champ DÉCISIONNEL `ratio_news` (brut), lui, reste non borné (inchangé).
+    """
+    import scoring_analyste as sa
+    crit_n = {
+        "id": "n", "nom": "N", "cle_courante": "n", "normalisation": "triplet",
+        "poids": 10.0, "signe": 1, "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0},
+    }
+    crit_q = {
+        "id": "q", "nom": "Q", "cle_courante": "q", "normalisation": "zscore",
+        "zscore_window": 60, "zscore_div": 2, "cap": 1.0,
+        "poids": 1.0, "signe": 1, "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0},
+    }
+    fiche = {"actif": "TEST", "criteres": [crit_n, crit_q]}
+    # news net (+1, poids 10) ; quant quasi nul (z≈0) → |quant| → 0.
+    valeurs = {
+        "n": {"valeur": 1, "source_track": "ia"},
+        "q": {"valeur_normalisee": 0.0001},
+    }
+    res = sa.score_actif("test", fiche, valeurs)
+    records = sa.build_decision_log_records([res], datetime.now(timezone.utc))
+    for rec in records:
+        m7 = rec["p2_M7_ratio_news"]
+        assert 0.0 <= m7 <= 1.0, f"M7 hors bornes [0,1] : {m7}"
+        # Le champ décisionnel brut peut, lui, dépasser 1.0 (non borné, inchangé) :
+        # c'est exactement la valeur que la gate compare à NEWS_DOMINANT_RATIO.
+        assert rec["ratio_news"] >= 0.0
+    # Borne haute atteignable : quant nul → part news = 1.0 (≈100%, pas 7000%).
+    assert any(
+        abs(rec["p2_M7_ratio_news"] - 1.0) < 0.01 for rec in records
+    ), "Avec quant≈0, M7 doit tendre vers 1.0 (100%), pas exploser"
+
+
 def test_step5_t1_t2_metrics_computed():
     """T1 (faux flips évités) et T2 (vrais flips qualifiés) sont calculables.
 

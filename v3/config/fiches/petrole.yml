@@ -21,24 +21,10 @@ criteres:
     zscore_div: 2
     cap: 1.0
     signe: 1
-    poids: 10
+    poids: 10                     # absorbe api_weekly_surprise (id=2, poids 8) — dedup audit Cowork 10/06 : même facteur (stocks hebdo US de brut), l'API n'est que le pré-indicateur du mardi de la publication EIA officielle (mercredi), r>0,80. Poids avant 10 → après 10 (= max(10,8)). Donnée secondaire (pré-indicateur API mardi) abandonnée car le schéma fiche ne supporte pas de source fallback → EIA primaire seule.
     pertinence: { "24h": 1.0, "7j": 0.8, "1m": 0.3 }
     effet_long: "Stocks tirage > 2σ vs consensus (bullish brut)"
     effet_short: "Stocks build > 2σ vs consensus"
-
-  - id: 2
-    nom: "Stocks de brut US : pré-indicateur du mardi"
-    source: "API publication (mardi 22h30 CET)"
-    cle_courante: "api_weekly_surprise"
-    normalisation: "zscore"
-    zscore_window: 52
-    zscore_div: 2
-    cap: 1.0
-    signe: 1
-    poids: 8
-    pertinence: { "24h": 0.9, "7j": 0.3, "1m": 0.1 }
-    effet_long: "API tirage > consensus (pré-indicateur EIA)"
-    effet_short: "API build > consensus"
 
   - id: 3
     nom: "Tension géopolitique au Moyen-Orient"

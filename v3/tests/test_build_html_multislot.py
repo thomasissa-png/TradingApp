@@ -173,6 +173,19 @@ def test_html_message_semaine_avec_date():
     assert "dimanche" in html
 
 
+def test_html_metadonnees_debug_repliees():
+    """P1-D : version/hash/Généré relocalisés dans un <details> de pied de page ;
+    P2-A : la date ISO est reformatée lisible côté JS."""
+    html = _render_sample_html()
+    assert "relocateDebugMeta" in html
+    assert "debug-meta" in html
+    assert "formatIsoHuman" in html
+    # le tri se fait sur les libellés version/hash/généré, pas sur « fraîcheur »
+    assert "fiches hash" in html.lower()        # présent dans le pattern DEBUG_META_RE
+    assert "analyste version" in html.lower()   # idem
+    assert "DEBUG_META_RE" in html
+
+
 def test_html_bien_forme_smoke():
     html = _render_sample_html()
     assert html.startswith("<!DOCTYPE html>")

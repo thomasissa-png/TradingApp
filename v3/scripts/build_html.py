@@ -583,6 +583,13 @@ def render_html(
   .dir-short {{ color: var(--dir-short-color); font-weight: 600; }}
   /* Badge de niveau par cellule (P1-C) — discret, dérivé des drapeaux existants. */
   .lvl-badge {{ font-size: 11px; cursor: help; }}
+  /* Métadonnées techniques (P1-D) — repliées en pied de bulletin, discrètes. */
+  .debug-meta {{
+    margin: 32px 0 0 0; border-top: 1px solid var(--border);
+    padding-top: 12px; font-size: 12px; color: var(--text-muted);
+  }}
+  .debug-meta > summary {{ cursor: pointer; user-select: none; }}
+  .debug-meta ul {{ margin: 8px 0 0 0; }}
   /* Encart "Comment lire les scores" (détaillé, replié par défaut) */
   .help-box {{
     background: var(--bg-panel);
@@ -967,6 +974,58 @@ function colorizeDirections(root) {{
     td.innerHTML = parts.join('');
     td.dataset.colorized = '1';
   }});
+}}
+
+// --- P2-A : formate une date ISO8601 en libellé FR lisible ------------------
+// "2026-06-10T07:19:06.037270+02:00" → "10 juin 2026 · 07h19 (Paris)".
+// Si la chaîne n'est pas une date ISO reconnue, renvoie la chaîne d'origine.
+const MONTHS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+                   'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+function formatIsoHuman(iso) {{
+  const m = (iso || '').match(/(\\d{{4}})-(\\d{{2}})-(\\d{{2}})T(\\d{{2}}):(\\d{{2}})/);
+  if (!m) return iso;
+  const d = parseInt(m[3], 10);
+  const mois = MONTHS_FR[parseInt(m[2], 10) - 1] || m[2];
+  return `${{d}} ${{mois}} ${{m[1]}} · ${{m[4]}}h${{m[5]}} (Paris)`;
+}}
+
+// --- P1-D : déplace les métadonnées de debug vers un pied de page replié -----
+// Les lignes « Généré / Analyste version / Fiches hash » en tête du bulletin
+// sont du suivi interne : on les sort du flux de décision vers un <details>
+// en bas. « Fraîcheur » reste en place (info de décision). La date « Généré »
+// est reformatée lisible (P2-A) au passage. HTML only, idempotent.
+const DEBUG_META_RE = /^\\s*(généré|analyste version|fiches hash)\\s*:/i;
+function relocateDebugMeta(root) {{
+  if (!root || root.dataset.metaRelocated === '1') return;
+  root.dataset.metaRelocated = '1';
+  // Premier <ul> du document (la liste de méta est juste sous le H1).
+  const ul = root.querySelector('ul');
+  if (!ul) return;
+  // Ne traite que si ce <ul> précède le premier <h2> (= bloc d'en-tête).
+  const firstH2 = root.querySelector('h2');
+  if (firstH2 && firstH2.compareDocumentPosition(ul) & Node.DOCUMENT_POSITION_FOLLOWING) return;
+  const moved = [];
+  Array.from(ul.querySelectorAll('li')).forEach(li => {{
+    const txt = li.textContent || '';
+    if (!DEBUG_META_RE.test(txt)) return;
+    if (/^\\s*généré\\s*:/i.test(txt)) {{
+      const iso = txt.replace(/^[^:]*:\\s*/, '').trim();
+      li.textContent = 'Généré : ' + formatIsoHuman(iso);
+    }}
+    moved.push(li);
+  }});
+  if (moved.length === 0) return;
+  const details = document.createElement('details');
+  details.className = 'debug-meta';
+  const summary = document.createElement('summary');
+  summary.textContent = 'Métadonnées techniques (génération, version, hash)';
+  details.appendChild(summary);
+  const list = document.createElement('ul');
+  moved.forEach(li => list.appendChild(li));
+  details.appendChild(list);
+  // Si le <ul> d'origine est désormais vide, on le retire.
+  if (!ul.querySelector('li')) ul.remove();
+  root.appendChild(details);
 }}
 
 // --- P1-A / P1-C : lecture rapide de la matrice (grisage + badge niveau) ----
@@ -1582,6 +1641,7 @@ function selectBulletin(id) {{
   if (typeof marked !== 'undefined') {{
     marked.setOptions({{gfm: true, breaks: false}});
     content.innerHTML = marked.parse(b.markdown);
+    relocateDebugMeta(content);
     addLevelBadges(content);
     dimWeakCells(content);
     colorizeDirections(content);

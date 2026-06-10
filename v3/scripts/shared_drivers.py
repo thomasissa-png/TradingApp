@@ -226,11 +226,14 @@ def build_shared_drivers_block(summary: List[Dict[str, Any]]) -> List[str]:
     )
     lines.append("")
     for d in summary:
-        actifs_str = " / ".join(d["actifs"])
+        actifs_str = ", ".join(d["actifs"])
+        # n_cellules compte actif × horizon ; le libellé explicite les deux
+        # pour ne pas laisser croire à N actifs distincts (lecture trader).
         lines.append(
             f"- {SHARED_DRIVERS_SYMBOL} {d['label']} : porte {d['n_cellules']} "
-            f"cellules {d['direction']} ({actifs_str}) — un retournement de ce "
-            f"driver les fausserait ensemble."
+            f"cellule(s) {d['direction']} sur {d['n_actifs']} actif(s) "
+            f"({actifs_str}) — un retournement de ce driver les fausserait "
+            f"ensemble."
         )
     lines.append("")
     return lines

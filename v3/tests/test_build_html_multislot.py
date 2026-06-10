@@ -122,11 +122,30 @@ def test_html_sticky_th_supprime():
     assert "background: var(--th-bg)" in html
 
 
-def test_html_repli_cellules_a_surveiller():
+def test_html_repli_sections_denses():
     html = _render_sample_html()
-    # repli en <details> de la section monitoring dense
-    assert "foldCellsToWatch" in html
+    # repli en <details> des sections denses (P1-E + Reco 1)
+    assert "foldSections" in html
     assert "fold-section" in html
+    # patterns ciblés : monitoring, limites, calls 24h jugés (nouveau titre) +
+    # audit de la veille (ancien titre, bulletins archivés), détail par actif
+    assert "cellules" in html.lower() and "surveiller" in html.lower()
+    assert "limites" in html.lower()
+    assert "calls" in html.lower()
+    assert "audit" in html.lower()
+    # un clic sous-nav vers une section repliée doit l'ouvrir
+    assert "openFoldedSectionFor" in html
+
+
+def test_html_grisage_et_badge_niveau():
+    """P1-A grisage + P1-C badge niveau, dérivés des drapeaux existants (zéro seuil inventé)."""
+    html = _render_sample_html()
+    assert "dimWeakCells" in html
+    assert "addLevelBadges" in html
+    assert "lvl-badge" in html
+    # niveaux dérivés des symboles déjà présents
+    assert "LEVEL_RED" in html
+    assert "LEVEL_YELLOW" in html
 
 
 def test_html_bandeau_contexte_present():

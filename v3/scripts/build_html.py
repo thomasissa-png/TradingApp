@@ -581,6 +581,8 @@ def render_html(
   /* Colorisation directionnelle LONG/SHORT et scores signés */
   .dir-long {{ color: var(--dir-long-color); font-weight: 600; }}
   .dir-short {{ color: var(--dir-short-color); font-weight: 600; }}
+  /* Badge de niveau par cellule (P1-C) — discret, dérivé des drapeaux existants. */
+  .lvl-badge {{ font-size: 11px; cursor: help; }}
   /* Encart "Comment lire les scores" (détaillé, replié par défaut) */
   .help-box {{
     background: var(--bg-panel);
@@ -967,6 +969,54 @@ function colorizeDirections(root) {{
   }});
 }}
 
+// --- P1-A / P1-C : lecture rapide de la matrice (grisage + badge niveau) ----
+// Drapeaux dérivés UNIQUEMENT des symboles déjà présents dans la cellule.
+// Aucun seuil inventé, aucun recalcul : on lit le texte rendu.
+// Rouge « ne pas jouer » : ⚪ (coin-flip) · ≈ (quasi-neutre) · 🚫 (données insuffisantes).
+const LEVEL_RED = ['⚪', '≈', '🚫'];
+// Jaune « prudence » : ◧ (semi-fiable) · ⚠️/⚠ (divergence/conf. faible) · ↯ (divergence quant↔news).
+const LEVEL_YELLOW = ['◧', '⚠️', '⚠', '↯'];
+
+// Vrai si une cellule de DIRECTION (1re ou 2e colonne hors actif) — on ne badge/grise
+// que les <td> contenant une direction LONG/SHORT ou un score signé, pas les libellés.
+function tdLooksLikeDecision(text) {{
+  return /\\b(LONG|SHORT)\\b/.test(text) || /[+-]\\d/.test(text) || /🚫/.test(text);
+}}
+
+// P1-A — grise les cellules faibles (⚪ ou ≈) de la matrice Synthèse. Aucune info
+// supprimée : opacité réduite + texte muted. Idempotent (data-dimmed).
+function dimWeakCells(root) {{
+  if (!root) return;
+  root.querySelectorAll('td').forEach(td => {{
+    if (td.dataset.dimmed === '1') return;
+    const text = td.textContent || '';
+    if (!tdLooksLikeDecision(text)) return;
+    if (text.includes('⚪') || text.includes('≈')) {{
+      td.style.opacity = '0.45';
+      td.dataset.dimmed = '1';
+    }}
+  }});
+}}
+
+// P1-C — préfixe un badge de niveau (🔴/🟡) en début de cellule de décision, dérivé
+// des drapeaux existants. 🔴 prime sur 🟡. Idempotent (data-badged). HTML only.
+function addLevelBadges(root) {{
+  if (!root) return;
+  root.querySelectorAll('td').forEach(td => {{
+    if (td.dataset.badged === '1') return;
+    const text = td.textContent || '';
+    if (!tdLooksLikeDecision(text)) {{ td.dataset.badged = '1'; return; }}
+    let badge = '';
+    if (LEVEL_RED.some(s => text.includes(s))) {{
+      badge = '<span class="lvl-badge lvl-red" title="Ne pas jouer (coin-flip / quasi-neutre / données insuffisantes)">🔴</span> ';
+    }} else if (LEVEL_YELLOW.some(s => text.includes(s))) {{
+      badge = '<span class="lvl-badge lvl-yellow" title="Prudence (semi-fiable / divergence / confiance faible)">🟡</span> ';
+    }}
+    if (badge) td.innerHTML = badge + td.innerHTML;
+    td.dataset.badged = '1';
+  }});
+}}
+
 // Formate une date lisible depuis l'ID du bulletin (ex "2026-06-01" ou "2026-06-01T18h00").
 // Retourne {{ short: "dim. 1 juin", time: "18h" | "" }}.
 function formatBulletinDate(id) {{
@@ -1097,18 +1147,19 @@ function addSymbolTooltips(root) {{
 // <details> fermé par défaut : reste accessible en un clic sans polluer la
 // lecture rapide. On cible le <h2> dont le texte contient « Cellules à surveiller »
 // et on enveloppe ce h2 + tous les noeuds suivants jusqu'au prochain <h2>.
-function foldCellsToWatch(root) {{
-  if (!root) return;
-  const h2s = Array.from(root.querySelectorAll('h2'));
-  const target = h2s.find(h => /cellules\\s+à\\s+surveiller/i.test(h.textContent || ''));
-  if (!target) return;
-  if (target.dataset.folded === '1') return;
+// Replie une section <h2> (et tous ses noeuds jusqu'au prochain <h2>) dans un
+// <details class="fold-section"> fermé. Conserve l'id du h2 d'origine sur le
+// <summary> pour que la sous-nav puisse cibler et ouvrir la section repliée.
+// Idempotent (data-folded). Renvoie l'élément <summary> créé (ou null).
+function foldOneSection(target) {{
+  if (!target || target.dataset.folded === '1') return null;
   const details = document.createElement('details');
   details.className = 'fold-section';
   const summary = document.createElement('summary');
-  summary.textContent = (target.textContent || 'Cellules à surveiller').trim();
+  summary.textContent = (target.textContent || '').trim();
+  // L'id (posé par buildSubnav) est repris sur le summary pour l'ancrage.
+  if (target.id) {{ summary.id = target.id; target.removeAttribute('id'); }}
   details.appendChild(summary);
-  // Déplace tout jusqu'au prochain h2 dans le <details>.
   const collected = [];
   let node = target.nextSibling;
   while (node && !(node.nodeType === 1 && node.tagName === 'H2')) {{
@@ -1118,7 +1169,40 @@ function foldCellsToWatch(root) {{
   target.parentNode.insertBefore(details, target);
   collected.forEach(n => details.appendChild(n));
   target.dataset.folded = '1';
+  details.dataset.foldedSection = '1';
   target.remove();
+  return summary;
+}}
+
+// Titres de h2 à replier par défaut (P1-E + Reco 1). On gère AUSSI l'ancien
+// titre « Audit de la veille » (bulletins archivés) en plus du nouveau
+// « Calls 24h jugés ». Comparaison insensible casse/accents/espaces.
+const FOLD_SECTION_PATTERNS = [
+  /cellules\\s+à\\s+surveiller/i,
+  /limites\\s+du\\s+jour/i,
+  /calls\\s+24h\\s+jug/i,        // « 🔎 Calls 24h jugés (fenêtre récente) » (nouveau titre)
+  /audit\\s+de\\s+la\\s+veille/i, // ancien titre (bulletins archivés)
+  /détail\\s+par\\s+actif/i,
+];
+
+function foldSections(root) {{
+  if (!root) return;
+  const h2s = Array.from(root.querySelectorAll('h2'));
+  h2s.forEach(h => {{
+    const txt = h.textContent || '';
+    if (FOLD_SECTION_PATTERNS.some(re => re.test(txt))) foldOneSection(h);
+  }});
+}}
+
+// Ouvre la <details class="fold-section"> contenant l'élément ciblé par `id`
+// (h2 replié → son summary porte cet id). Permet à un clic de sous-nav d'ouvrir
+// une section repliée avant de scroller dessus.
+function openFoldedSectionFor(id) {{
+  if (!id) return;
+  const el = document.getElementById(id);
+  if (!el) return;
+  const details = el.closest('details.fold-section');
+  if (details && !details.open) details.open = true;
 }}
 
 // Slugify simple pour ancres (cohérent avec le rendu marked par défaut, mais on
@@ -1155,6 +1239,8 @@ function buildSubnav(root) {{
     a.textContent = label;
     a.onclick = (e) => {{
       e.preventDefault();
+      // Si la section a été repliée (foldSections), l'ouvrir avant de scroller.
+      openFoldedSectionFor(id);
       const target = document.getElementById(id);
       if (target) target.scrollIntoView({{behavior: 'smooth', block: 'start'}});
     }};
@@ -1363,6 +1449,8 @@ function renderMarkdownInto(target, md) {{
   if (typeof marked !== 'undefined') {{
     marked.setOptions({{gfm: true, breaks: false}});
     target.innerHTML = marked.parse(md || '');
+    addLevelBadges(target);
+    dimWeakCells(target);
     colorizeDirections(target);
     addSymbolTooltips(target);
     markDenseTables(target);
@@ -1494,12 +1582,17 @@ function selectBulletin(id) {{
   if (typeof marked !== 'undefined') {{
     marked.setOptions({{gfm: true, breaks: false}});
     content.innerHTML = marked.parse(b.markdown);
+    addLevelBadges(content);
+    dimWeakCells(content);
     colorizeDirections(content);
     addSymbolTooltips(content);
     markDenseTables(content);
     wrapTables(content);
-    foldCellsToWatch(content);
+    // buildSubnav AVANT foldSections : il pose les ids sur tous les <h2> ;
+    // foldSections les reprend sur le <summary> pour garder l'ancrage. Un clic
+    // sous-nav vers une section repliée l'ouvre alors (openFoldedSectionFor).
     buildSubnav(content);
+    foldSections(content);
   }} else {{
     // Fallback : affichage brut si marked n'a pas chargé (offline)
     const pre = document.createElement('pre');

@@ -107,6 +107,30 @@ def test_structured_sources_declared():
         assert base_url.startswith("http"), f"Base URL invalide pour {name}"
 
 
+def test_gnews_riskoff_query_split_no_400():
+    """Fix HTTP 400 : la requête risk-off 9-termes unique est scindée en 2 courtes.
+
+    - L'ancienne requête longue (9 OR) est absente.
+    - Les 2 nouvelles requêtes ciblent symptômes marché / causes amont géopol.
+    - Chacune ≤ la longueur de la plus longue requête qui PASSE (les autres).
+    """
+    queries = config.STRUCTURED_QUERIES
+    old_long = ("stock market volatility OR VIX OR risk-off OR market selloff OR war "
+                "OR escalation OR sanctions OR bank failure OR sovereign default")
+    assert old_long not in queries, "l'ancienne requête longue (HTTP 400) doit être supprimée"
+
+    q_sympt = "stock market volatility OR VIX OR risk-off OR market selloff"
+    q_causes = "war escalation OR sanctions OR bank failure OR sovereign default"
+    assert q_sympt in queries
+    assert q_causes in queries
+
+    # Longueur max constatée sur les requêtes qui passent (toutes sauf les 2 nouvelles).
+    others = [q for q in queries if q not in (q_sympt, q_causes)]
+    max_ok = max(len(q) for q in others)
+    assert len(q_sympt) <= max_ok, f"requête symptômes trop longue ({len(q_sympt)} > {max_ok})"
+    assert len(q_causes) <= max_ok, f"requête causes trop longue ({len(q_causes)} > {max_ok})"
+
+
 def test_source_weights_coverage():
     """Toutes les sources pollées ont un poids explicite (sauf DEFAULT)."""
     for name, _, _ in config.RSS_FEEDS:

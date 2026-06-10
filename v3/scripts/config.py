@@ -153,8 +153,12 @@ STRUCTURED_QUERIES = [
     "copper prices OR LME copper OR Chile mine OR China copper demand",
     "CAC 40 OR SBF 120 OR LVMH OR TotalEnergies OR profit warning France OR résultats trimestriels OR France budget politics",  # + earnings mid-cap / profit warnings (dernier fix CAC, audit R3)
     "Nvidia OR semiconductor OR AI chips OR TSMC OR chip export controls OR earnings guidance OR data center capex",  # Nasdaq + pivot baissier
-    # VIX : causes AMONT (war/escalation/...) en plus des symptômes → capter la peur AVANT le spike
-    "stock market volatility OR VIX OR risk-off OR market selloff OR war OR escalation OR sanctions OR bank failure OR sovereign default",
+    # VIX : causes AMONT (war/escalation/...) en plus des symptômes → capter la peur AVANT le spike.
+    # Fix 10/06 (audit DeepSeek) : la requête unique 9-termes renvoyait HTTP 400 sur GNews
+    # (source-health : gnews 13/14, 1 requête en échec). Scindée en 2 requêtes courtes
+    # (symptômes marché / causes amont géopol) sous la longueur des requêtes qui passent.
+    "stock market volatility OR VIX OR risk-off OR market selloff",  # VIX symptômes marché
+    "war escalation OR sanctions OR bank failure OR sovereign default",  # VIX causes amont géopol/systémiques
 ]
 
 STRUCTURED_SOURCES = [

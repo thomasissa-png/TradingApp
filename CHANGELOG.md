@@ -2,6 +2,14 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-10 (Session 5) — SELECTION-RULE pré-enregistrée (Lot 3, @data-analyst)
+
+**Audit mesure 10/06 — Lot 3.** Création de `v3/SELECTION-RULE.md` : règle de sélection des cellules à trader, **pré-enregistrée et gravée** (modèle `KILL-CRITERION.md`, statut VALIDÉ daté/signé Thomas, anti-post-hoc). Mode shadow, **WIN RATE ONLY**, **gel du scoring** (aucun poids/critère/seuil touché). Branche `claude/tradingapp-s5-shadow-5rapports-lq5g9z`.
+
+- **Règle gravée** : à J+60 du shadow, ne trader QUE les cellules **24h** avec **WR tradable ≥ 70 % sur N ≥ 15 paris non-chevauchants** (N compté depuis `ref_changed` pour les cellules requalifiées). Aucune cellule éligible → pas de trading, revue J+90.
+- **Deux métriques distinguées** : WR conclusif `VRAI/(VRAI+FAUSSE)` (kill criterion, moteur vivant) vs **WR tradable** `VRAI/(VRAI+FAUSSE+NC)` (sélection, métrique de décision de trading — introduite par le Lot 2). Décision Thomas validée 2026-06-10.
+- **Limité au 24h** (7j/1m : autocorrélation → 15 sem/15 mois pour N indépendant, hors fenêtre J+60). `ref_changed` remet N à zéro dans les deux sens. Procédure J+60 écrite/signée, garde-fou anti-modification silencieuse (toute modif → `selection-rule-v2.md`).
+
 ## 2026-06-09 (Session 7b) — Tableau win rate affiché sur la page (@fullstack)
 
 **Manque corrigé** : notre tableau win-rate-only propre (`v3/data/performance.md`, win rate par actif × horizon) n'était référencé **nulle part** dans `build_html.py` — Thomas ne voyait pas « le tableau avec les résultats d'orientation des actifs ». L'onglet Performance n'affichait que l'ancien A/B Taux/Brier (périmé). Mode shadow, WIN RATE ONLY, zéro modification de la logique de mesure, branche `claude/elegant-ramanujan-OIKms` (pas de PR).

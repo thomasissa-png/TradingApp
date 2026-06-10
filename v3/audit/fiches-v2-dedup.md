@@ -7,6 +7,8 @@
 > Toutes les fusions proposées restent à l'état de recommandations jusqu'à validation explicite.
 > Sources : lecture directe des 12 fiches `v3/config/fiches/*.yml` + bulletin 2026-06-10 07h19 (run représentatif).
 
+> **⚠️ CONTRE-AUDIT (à lire avant de réutiliser ce document).** L'audit externe du 10/06 annonçait **9 doublons** ; la vérification YAML directe montre que **8 sur 9 n'existaient pas** dans les fiches v2 (un seul critère par facteur). **Cause racine : des critères ont été RENOMMÉS les 7-8 juin** — l'auteur de l'audit externe travaillait sur d'anciens libellés / contributions pondérées, pris à tort pour du double comptage. **Conséquence évitée de justesse : on a failli « dédupliquer » 9 fiches saines.** Seules **4 fusions réelles** subsistent (cacao, pétrole, nasdaq, argent). **Leçon (cf. `docs/lessons-learned.md` L023) : ne jamais auditer les critères par leur `nom` — toujours par leur `cle_courante` stable ; tout renommage doit passer par le CHANGELOG.** Si vous relisez ce fichier dans 2 mois : ne refaites pas l'erreur, partez des `cle_courante`.
+
 ---
 
 ## Sommaire

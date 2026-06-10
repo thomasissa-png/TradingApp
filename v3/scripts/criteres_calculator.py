@@ -274,8 +274,17 @@ def fetch_twelve_series(symbol: str, *, interval: str = "1day", outputsize: int 
     except Exception as e:  # noqa: BLE001
         SKIP_COUNTER[f"twelve_dead:{symbol}"] += 1
         logger.warning("market_data.fetch_history KO symbol=%s : %s", symbol, e)
-        return None
+        df = None
     if df is None or len(df) == 0:
+        # Fallback Stooq (résilience) — UNIQUEMENT pour les SÉRIES de critères, et
+        # seulement sur les intervalles journaliers (Stooq ne sert que du daily).
+        # Stamps de mesure exclus : ils passent par md.fetch_price, jamais par ici.
+        if interval == "1day":
+            fb = fetch_stooq_series(symbol, outputsize=outputsize)
+            if fb:
+                SKIP_COUNTER[f"twelve_fallback_stooq:{symbol}"] += 1
+                logger.info("Twelve KO symbol=%s → fallback Stooq (%d points)", symbol, len(fb))
+                return fb
         SKIP_COUNTER[f"twelve_empty:{symbol}"] += 1
         return None
     out: List[Tuple[datetime, float]] = []
@@ -316,6 +325,120 @@ def _yfinance_available() -> bool:
         return True
     except ImportError:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Fallback prix Stooq (CSV public, sans clé) — RÉSILIENCE des SÉRIES uniquement
+# ---------------------------------------------------------------------------
+# PÉRIMÈTRE STRICT (brief lot sources gratuites) :
+#   - Stooq sert UNIQUEMENT de filet quand `fetch_twelve_series` (market_data)
+#     retourne None/vide POUR UN SYMBOLE MAPPÉ. JAMAIS pour les stamps de mesure
+#     (prix d'émission/ouverture restent Twelve-only — intégrité de la boucle
+#     prédiction→mesure : run_stamp/mesure_ouverture appellent md.fetch_price,
+#     que ce module ne touche pas).
+#   - Une série ne mélange JAMAIS deux sources : c'est tout Twelve OU tout Stooq.
+#   - Traçabilité : SKIP_COUNTER["twelve_fallback_stooq:<symbole>"] quand il sert.
+#   - Zéro invention : 404 / non-CSV / parse douteux → None (n/a propre), jamais
+#     de valeur fabriquée.
+#
+# Mapping EXPLICITE Yahoo → symbole Stooq (uniquement des symboles dont le format
+# Stooq est connu et stable). Indices Stooq : ^spx, ^ndq, ^fchi ; ETF/actions US :
+# <ticker>.us ; FX : <paire> (ex. eurusd). Tout ticker hors mapping → pas de
+# fallback (n/a propre côté Twelve, exactement comme aujourd'hui).
+#
+# NOTE de validation (2026-06-10) : depuis ce conteneur, l'endpoint CSV Stooq
+# (/q/d/l/) répond 404 (anti-bot sur IP datacenter) → le fallback n'a PAS pu être
+# validé en live ici. Il reste DORMANT : il ne s'active que si Stooq renvoie un CSV
+# valide (cas CI/prod avec une autre IP). Le parser est calé sur le format Stooq
+# stable et documenté `Date,Open,High,Low,Close,Volume`. En l'absence de CSV
+# exploitable, le handler retourne None (n/a propre) — aucune régression.
+STOOQ_CSV_BASE = "https://stooq.com/q/d/l/"
+STOOQ_SYMBOL_MAP: Dict[str, str] = {
+    # Indices (séries de critères) — symboles Stooq vérifiés dans la doc Stooq.
+    "^GSPC": "^spx",
+    "^IXIC": "^ndq",
+    "^FCHI": "^fchi",
+    # ETF US utilisés comme proxys d'indice côté market_data.
+    "SPY": "spy.us",
+    "QQQ": "qqq.us",
+    # FX majeur.
+    "EURUSD=X": "eurusd",
+    "EUR=X": "eurusd",
+}
+
+
+def _parse_stooq_csv(text: str) -> Optional[List[Tuple[datetime, float]]]:
+    """Parse un CSV journalier Stooq → [(datetime_utc, close)], oldest→newest.
+
+    Format attendu (stable, documenté) : en-tête `Date,Open,High,Low,Close,Volume`
+    puis des lignes ISO. On localise les colonnes par NOM d'en-tête (robuste si
+    l'ordre change). Toute autre réponse (page HTML 404, en-tête absent, aucune
+    ligne numérique) → None (zéro invention). Les prix ≤0 / NaN sont écartés (GATE C2).
+    """
+    if not text:
+        return None
+    # Garde-fou anti-HTML : la page 404 Stooq renvoie du HTML, pas du CSV.
+    head = text.lstrip()[:200].lower()
+    if head.startswith("<") or "<html" in head or "<title" in head:
+        return None
+    import csv
+    import io
+    try:
+        rows = list(csv.reader(io.StringIO(text)))
+    except Exception:  # noqa: BLE001
+        return None
+    if len(rows) < 2:
+        return None
+    header = [h.strip().lower() for h in rows[0]]
+    try:
+        i_date = header.index("date")
+        i_close = header.index("close")
+    except ValueError:
+        return None
+    out: List[Tuple[datetime, float]] = []
+    for row in rows[1:]:
+        if len(row) <= max(i_date, i_close):
+            continue
+        d = (row[i_date] or "").strip()
+        c = (row[i_close] or "").strip()
+        if not d or c in ("", "N/A"):
+            continue
+        try:
+            dt = datetime.fromisoformat(d).replace(tzinfo=timezone.utc)
+            close = float(c)
+        except (TypeError, ValueError):
+            continue
+        if not _is_valid_price(close):
+            continue
+        out.append((dt, close))
+    if not out:
+        return None
+    out.sort(key=lambda t: t[0])
+    return out
+
+
+def fetch_stooq_series(symbol: str, *, outputsize: int = 60) -> Optional[List[Tuple[datetime, float]]]:
+    """Série journalière close depuis Stooq pour un ticker FORMAT YAHOO mappé.
+
+    Retourne [(datetime_utc, close)] oldest→newest (tronquée aux `outputsize`
+    derniers points), ou None si symbole hors mapping / CSV indisponible / parse KO.
+    Filtre les spikes comme la voie Twelve (cohérence GATE C2).
+    """
+    stooq_sym = STOOQ_SYMBOL_MAP.get(symbol)
+    if not stooq_sym:
+        return None  # hors mapping → pas de fallback (n/a propre côté Twelve)
+    url = f"{STOOQ_CSV_BASE}?{urlencode({'s': stooq_sym, 'i': 'd'})}"
+    text = http_get_text(url)
+    series = _parse_stooq_csv(text) if text else None
+    if not series:
+        SKIP_COUNTER[f"stooq_empty:{symbol}"] += 1
+        return None
+    if outputsize and len(series) > outputsize:
+        series = series[-outputsize:]
+    series = _filter_spikes(series, _spike_threshold_for_symbol(symbol), label=symbol)
+    if not series:
+        return None
+    return series
 
 
 def fetch_twelve_price(symbol: str) -> Optional[float]:
@@ -1018,6 +1141,85 @@ def fetch_ecb_yield(series_key: str) -> Optional[float]:
     if not series:
         return None
     return series[-1][1]
+
+
+# ---------------------------------------------------------------------------
+# Eurostat (API dissemination JSON-stat, sans clé) — balance commerciale euro
+# ---------------------------------------------------------------------------
+# Critère eurusd.yml id=8 : cle_courante "balance_commerciale_ez", zscore 12 mois,
+# signe +1 (surplus hausse => LONG EUR). Source VALIDÉE EN LIVE 2026-06-10 :
+#   dataset ei_etea_m (External trade — euro area, monthly).
+#   Série balance : stk_flow=BAL_RT, indic=ET-T (total), unit=MIO-EUR-NSA,
+#   geo=EA21 (agrégat zone euro courant — l'agrégat EA20/EA n'expose PAS de valeur
+#   pour ce dataset, seul EA21 est alimenté ; vérifié live). Observations mensuelles.
+# JSON-stat : value = {index_plat: valeur}, time index dans dimension.time.category.index.
+# Zéro invention : réseau KO / série vide / parse douteux → None (n/a VISIBLE).
+EUROSTAT_BASE = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data"
+EUROSTAT_TRADE_BALANCE_DATASET = "ei_etea_m"
+# Filtres figés de la série balance euro area (corrigeables ICI si Eurostat change
+# un code de dimension — vérifiable au 1er run réel via le log INFO « Eurostat câblé »).
+EUROSTAT_TRADE_BALANCE_PARAMS: Dict[str, str] = {
+    "format": "JSON",
+    "stk_flow": "BAL_RT",
+    "indic": "ET-T",
+    "unit": "MIO-EUR-NSA",
+    "geo": "EA21",
+}
+
+
+def _parse_eurostat_jsonstat(obj: Any) -> List[Tuple[str, float]]:
+    """Parse un JSON-stat Eurostat mono-série filtrée → [(periode, valeur)], oldest→newest.
+
+    La réponse filtrée sur toutes les dimensions sauf le temps a une seule série :
+    `value` = {index_plat(str): valeur} et `dimension.time.category.index` = {periode: idx}.
+    On inverse l'index temps pour mapper chaque valeur à sa période. Défensif : toute
+    structure inattendue / valeur non numérique → ignorée (zéro invention).
+    """
+    out: List[Tuple[str, float]] = []
+    if not isinstance(obj, dict):
+        return out
+    try:
+        time_index = obj["dimension"]["time"]["category"]["index"]
+        values = obj["value"]
+    except (KeyError, TypeError):
+        return out
+    if not isinstance(time_index, dict) or not isinstance(values, dict):
+        return out
+    inv = {int(idx): period for period, idx in time_index.items()}
+    for flat_idx, val in values.items():
+        try:
+            i = int(flat_idx)
+            v = float(val)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(v):
+            continue
+        period = inv.get(i)
+        if not period:
+            continue
+        out.append((str(period), v))
+    out.sort(key=lambda t: t[0])  # périodes ISO 'AAAA-MM' triables lexicographiquement
+    return out
+
+
+def fetch_eurostat_trade_balance(*, n: int = 24) -> Optional[List[float]]:
+    """Balance commerciale zone euro (MIO-EUR-NSA), N derniers mois, oldest→newest.
+
+    Source : Eurostat ei_etea_m (sans clé). None (n/a VISIBLE) si réseau KO / série
+    vide / parse douteux. Zéro invention : aucune valeur figée.
+    """
+    params: Dict[str, Any] = dict(EUROSTAT_TRADE_BALANCE_PARAMS)
+    params["lastTimePeriod"] = max(1, int(n))
+    url = f"{EUROSTAT_BASE}/{EUROSTAT_TRADE_BALANCE_DATASET}"
+    data = http_get_json(url, params=params)
+    if not isinstance(data, dict):
+        SKIP_COUNTER["eurostat_dead:balance_commerciale_ez"] += 1
+        return None
+    parsed = _parse_eurostat_jsonstat(data)
+    if not parsed:
+        SKIP_COUNTER["eurostat_empty:balance_commerciale_ez"] += 1
+        return None
+    return [v for _, v in parsed]
 
 
 # ---------------------------------------------------------------------------
@@ -1753,6 +1955,26 @@ _IA_TO_FICHE = {
 }
 
 
+def _fomc_imminent_deterministe(now: datetime) -> bool:
+    """True si un événement majeur DÉTERMINISTE (FOMC par défaut) tombe à J-1/J0.
+
+    Source : `calendrier_eco.evenement_majeur_imminent` (catalyseurs PUBLICS et
+    DATÉS À L'AVANCE — calendrier-eco.yml). C'est une source DÉTERMINISTE du gate
+    « événement de marché majeur imminent » (flag hors score), complémentaire du
+    best-effort news.
+
+    Import paresseux + tolérant : si le module est absent, illisible ou lève une
+    exception, on retombe sur False → comportement actuel strictement préservé
+    (le gate reste alimenté par les news). Zéro effet sur le score (gate = flag).
+    """
+    try:
+        import calendrier_eco as _cal  # noqa: PLC0415 — import paresseux/tolérant
+        return bool(_cal.evenement_majeur_imminent(now))
+    except Exception as e:  # noqa: BLE001 — module absent/illisible → flag news seul
+        logger.debug("calendrier_eco indisponible pour le gate FOMC (%s) — news seul", e)
+        return False
+
+
 def _resolve_gate(fiche_key: str, cle: str, now: datetime, events: List[dict]) -> bool:
     """GATE spécifique à l'actif = un événement EXTRÊME imminent le concernant.
 
@@ -1769,6 +1991,17 @@ def _resolve_gate(fiche_key: str, cle: str, now: datetime, events: List[dict]) -
             cet = now
         if cet.weekday() == 2 and 16 <= cet.hour <= 17:
             return True
+
+    # (a-bis) SOURCE DÉTERMINISTE du drapeau « événement de marché majeur
+    # imminent » : un FOMC daté à J-1/J0 (calendrier-eco.yml). Ce gate étant un
+    # FLAG hors score (cf. fiches « Drapeau régime/événement … imminent »,
+    # pertinence 1.0 sur 3 horizons mais traité comme drapeau par le scoring),
+    # l'OR-er ici n'ajoute aucun poids au score : il rend le drapeau déterministe
+    # même quand aucune news FOMC n'a été ingérée. S'applique à TOUS les actifs
+    # (un FOMC est un catalyseur de marché global). Import paresseux/tolérant :
+    # module absent ou erreur → comportement actuel (best-effort news seul).
+    if _fomc_imminent_deterministe(now):
+        return True
 
     kws = _GATE_KEYWORDS.get(fiche_key, ())
     cutoff = now - timedelta(hours=24)
@@ -2104,6 +2337,27 @@ def _handle_fred(cle: str, crit: dict, ts: str) -> Optional[dict]:
         return None
     if cle in ("dxy_trend_20j", "spread_oat_bund_10y"):
         logger.info("FRED câblé : %s → valeur=%.4f z=%.2f", cle, value, norm)
+    return _emit_zscore(value, norm, ts)
+
+
+def _handle_eurostat_trade_balance(cle: str, crit: dict, ts: str) -> Optional[dict]:
+    """Balance commerciale zone euro (EUR/USD id=8), z-scorée sur N mois.
+
+    Source : Eurostat ei_etea_m (sans clé, validée live). signe +1 (surplus hausse
+    => LONG EUR) appliqué en aval par le scoring. None (n/a propre) si série KO/courte.
+    """
+    window = int(crit.get("zscore_window", 12))
+    series = fetch_eurostat_trade_balance(n=max(window + 6, 24))
+    if not series or len(series) < 6:
+        SKIP_COUNTER["eurostat_thin:balance_commerciale_ez"] += 1
+        return None
+    value = series[-1]
+    hist = series[-window:] if len(series) >= window else series
+    norm = compute_zscore_normalisee(value, hist, zscore_div=float(crit.get("zscore_div", 2.0)),
+                                     cap=float(crit.get("cap", 1.0)), label=cle)
+    if norm is None:
+        return None
+    logger.info("Eurostat câblé : %s → valeur=%.1f z=%.2f", cle, value, norm)
     return _emit_zscore(value, norm, ts)
 
 
@@ -2655,6 +2909,13 @@ def build_critere_value(
             # Sinon : Put/Call sans CSV public fiable → skip propre
             SKIP_COUNTER[f"cboe_unmapped:{cle}"] += 1
             return None
+        # Eurostat — balance commerciale zone euro (sans clé, validée live).
+        # Intercepté par clé exacte AVANT le catch-all Twelve (source ≠ twelve).
+        if cle == "balance_commerciale_ez":
+            res = _handle_eurostat_trade_balance(cle, crit, ts)
+            if res is not None:
+                return res
+            return None
         # Open-Meteo
         if cle in METEO_CRITERIA:
             return _handle_meteo(cle, crit, ts)
@@ -2768,6 +3029,11 @@ SKIP_REASON_LABELS: Dict[str, str] = {
     "fred_no_key": "Pas de clé FRED",
     "fred_dead": "FRED injoignable",
     "fred_empty": "FRED : série vide",
+    "eurostat_dead": "Eurostat injoignable (balance commerciale EZ)",
+    "eurostat_empty": "Eurostat : série vide/illisible",
+    "eurostat_thin": "Eurostat : série trop courte pour z-score",
+    "stooq_empty": "Stooq : CSV indisponible/illisible (fallback)",
+    "twelve_fallback_stooq": "Fallback Stooq activé (Twelve KO)",
     "gap_rv_iv_rv_thin": "gap RV/IV : série SPY insuffisante (RV)",
     "gap_rv_iv_iv_missing": "gap RV/IV : niveau VIX (CBOE) indisponible",
     "gap_rv_iv_rv_zero": "gap RV/IV : volatilité réalisée nulle",

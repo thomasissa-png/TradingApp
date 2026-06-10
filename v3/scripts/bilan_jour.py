@@ -151,6 +151,148 @@ def load_conviction_map(
 
 
 # ---------------------------------------------------------------------------
+# A5 (audit momentum-family 10/06) — métrique « FAUSSES aux retournements »
+# ---------------------------------------------------------------------------
+# OBSERVABILITÉ PURE, mode shadow : DISTINCTE du win rate, AUCUN impact sur le
+# scoring, les conclusions ou un quelconque kill-criterion. WIN RATE ONLY (zéro
+# argent/PnL — on compte des conclusions, pas des gains).
+#
+# But : comparer AVANT/APRÈS momentum v3 le taux de conclusions FAUSSES sur les
+# seules cellules « en situation de retournement » — là où le bug cacao se joue
+# (le système restait LONG pendant que les news SHORT avaient raison). Le
+# momentum v3 (variation 20j) + le cap aveugle au momentum (A2) sont censés
+# RÉDUIRE ce taux. Forward-test : premier signal v3 = bulletin 11/06 7h,
+# fenêtre J+60 = 2026-08-08 (cf. SELECTION-RULE addendum cutover).
+#
+# Une cellule est « en situation de retournement » si, dans son record
+# decision-log d'émission :
+#   (R1) le cap anti-inversion s'est DÉCLENCHÉ (`news_cap_applied == True`) —
+#        les news poussaient assez fort dans le sens OPPOSÉ au quant pour être
+#        plafonnées ; OU
+#   (R2) le signe des news est OPPOSÉ au signe du quant HORS momentum
+#        (`cap_quant_ex_momentum`) — désaccord news/quant directionnel, que le
+#        cap ait mordu ou non. On utilise le quant EX-momentum (base du cap A2)
+#        pour rester cohérent : c'est le désaccord news vs reste-du-quant qui
+#        signe le retournement, pas la voix du momentum lui-même.
+# Zéro invention : champ absent/illisible → cellule NON taguée (ni retournement
+# ni non-retournement) et exclue de la métrique.
+
+def is_reversal_context(record: dict) -> Optional[bool]:
+    """Retourne True/False si la cellule est « en situation de retournement », ou
+    None si le record ne permet pas de trancher (champs absents → zéro invention).
+
+    R1 OU R2 (cf. bloc ci-dessus). News vs quant-ex-momentum.
+    """
+    if not isinstance(record, dict):
+        return None
+    cap_applied = record.get("news_cap_applied")
+    news_total = record.get("news_total")
+    quant_ex_mom = record.get("cap_quant_ex_momentum")
+    # R1 : le cap a mordu → retournement avéré (news opposées assez fortes).
+    if cap_applied is True:
+        return True
+    # R2 : désaccord directionnel news vs quant-ex-momentum.
+    if isinstance(news_total, (int, float)) and isinstance(quant_ex_mom, (int, float)):
+        if news_total > 0 > quant_ex_mom or news_total < 0 < quant_ex_mom:
+            return True
+        # Signes connus et concordants (ou l'un nul) → pas de retournement.
+        return False
+    # Ni R1 ni données R2 exploitables → indéterminé (exclu de la métrique).
+    if cap_applied is False:
+        return False
+    return None
+
+
+def load_reversal_context_map(
+    bulletin_date: date,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+) -> Dict[Tuple[str, str], bool]:
+    """Mappe (actif, horizon) -> est-en-situation-de-retournement (A5, shadow).
+
+    Lit les decision-log du jour (dernier record par cellule, comme conviction /
+    news-driven). Dict vide si rien. Les cellules indéterminées (is_reversal_context
+    renvoie None) sont ABSENTES du dict (zéro invention).
+    """
+    result: Dict[Tuple[str, str], bool] = {}
+    if not decision_log_dir.exists():
+        return result
+    prefix = bulletin_date.isoformat()
+    files = sorted(decision_log_dir.glob(f"{prefix}-*.jsonl"))
+    for fp in files:
+        try:
+            with fp.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(rec, dict):
+                        continue
+                    if rec.get("bulletin_date") != prefix:
+                        continue
+                    actif = rec.get("actif")
+                    horizon = rec.get("horizon")
+                    if not actif or not horizon:
+                        continue
+                    rev = is_reversal_context(rec)
+                    if rev is None:
+                        # Indéterminé : on n'écrase PAS un éventuel tag déjà posé
+                        # par un run antérieur du jour, et on n'invente rien.
+                        continue
+                    result[(str(actif), str(horizon))] = rev
+        except OSError as e:
+            logger.warning("decision-log illisible %s : %s", fp, e)
+            continue
+    return result
+
+
+@dataclass
+class FaussesAuxRetournements:
+    """Agrégat shadow A5 — comptage des conclusions sur cellules en retournement.
+
+    WIN RATE ONLY. n_retournement = cellules conclusives (VRAI/FAUSSE) en
+    situation de retournement ; n_fausse_retournement = celles FAUSSES.
+    """
+    n_retournement: int = 0
+    n_fausse_retournement: int = 0
+
+    @property
+    def taux_fausses(self) -> Optional[float]:
+        """% de FAUSSES parmi les cellules conclusives en retournement (None si N=0)."""
+        if self.n_retournement <= 0:
+            return None
+        return round(self.n_fausse_retournement / self.n_retournement * 100.0, 1)
+
+
+def fausses_aux_retournements(
+    measures: List[Any],
+    reversal_map: Dict[Tuple[str, str], bool],
+) -> FaussesAuxRetournements:
+    """Compte les conclusions FAUSSES sur les cellules en situation de retournement.
+
+    Ne compte QUE les cellules conclusives (VRAI/FAUSSE) ET taguées retournement
+    (présentes dans reversal_map avec valeur True). Zéro invention : une cellule
+    absente du map (indéterminée) n'entre PAS dans la métrique.
+    """
+    from journaliste import OUTCOME_VRAI, OUTCOME_FAUSSE  # noqa: PLC0415
+
+    agg = FaussesAuxRetournements()
+    for m in measures:
+        if m.outcome not in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            continue
+        key = (m.cell.actif_name, m.horizon)
+        if reversal_map.get(key) is not True:
+            continue
+        agg.n_retournement += 1
+        if m.outcome == OUTCOME_FAUSSE:
+            agg.n_fausse_retournement += 1
+    return agg
+
+
+# ---------------------------------------------------------------------------
 # Win rate par conviction (CA-W6) — sur une liste de mesures
 # ---------------------------------------------------------------------------
 
@@ -217,6 +359,12 @@ class BilanJour:
     # Métrique SECONDAIRE — coexiste avec le win rate conclusif (≤ celui-ci).
     wr_tradable_jour: Optional[float] = None
     conviction: WinRateConviction = field(default_factory=WinRateConviction)
+    # A5 (audit momentum-family 10/06) — métrique shadow « FAUSSES aux
+    # retournements ». OBSERVABILITÉ PURE : n'altère NI le win rate, NI les
+    # conclusions, NI aucun kill-criterion. WIN RATE ONLY.
+    fausses_retournement: FaussesAuxRetournements = field(
+        default_factory=FaussesAuxRetournements
+    )
     # CA-B2 : tickers EU dont la clôture est un fallback approx (spot 22h faute
     # de close officiel 17h30 — Q5 non validé). Sert au marqueur `[close approx]`.
     close_approx_tickers: set = field(default_factory=set)
@@ -429,6 +577,12 @@ def build_bilan_jour(
     conv_map = load_conviction_map(date_j, decision_log_dir)
     bilan.conviction = win_rate_par_conviction(measures_24h, conv_map)
 
+    # A5 — métrique shadow « FAUSSES aux retournements » (observabilité pure,
+    # zéro impact scoring/conclusions). Même source que la conviction : le
+    # decision-log d'émission du jour.
+    reversal_map = load_reversal_context_map(date_j, decision_log_dir)
+    bilan.fausses_retournement = fausses_aux_retournements(measures_24h, reversal_map)
+
     bilan.close_approx_tickers = approx_tickers
     bilan.markdown = _render_markdown(bilan, fiches)
     return bilan
@@ -520,6 +674,30 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     L.append(f"- Win rate conviction forte (jour) : {tf} (N={c.n_forte})")
     L.append(f"- Win rate conviction faible (jour) : {tw} (N={c.n_faible})")
     L.append("- Win rate cumulé : voir performance.md")
+    L.append("")
+    # A5 (audit momentum-family 10/06) — métrique shadow « FAUSSES aux
+    # retournements ». DISTINCTE du win rate ; sert UNIQUEMENT à comparer
+    # avant/après momentum v3 le taux d'erreurs aux points de retournement
+    # (forward-test J+60 = 2026-08-08). N'entre dans AUCUNE décision.
+    fr = bilan.fausses_retournement
+    L.append("### FAUSSES aux retournements (shadow A5)")
+    L.append(
+        "_Cellules conclusives en situation de retournement (cap anti-inversion "
+        "déclenché OU news opposées au quant hors-momentum). Métrique "
+        "d'observabilité momentum v3 — DISTINCTE du win rate, sans impact "
+        "décisionnel. WIN RATE ONLY._"
+    )
+    if fr.taux_fausses is not None:
+        L.append(
+            f"- FAUSSES aux retournements (jour) : "
+            f"**{fr.n_fausse_retournement}/{fr.n_retournement} = "
+            f"{fr.taux_fausses:.0f}%** (N={fr.n_retournement} cellules en retournement)"
+        )
+    else:
+        L.append(
+            "- FAUSSES aux retournements (jour) : — "
+            "(aucune cellule conclusive en situation de retournement aujourd'hui)"
+        )
     L.append("")
 
     # FAUX à forte amplitude (erreurs prioritaires) — tri par amplitude % desc.

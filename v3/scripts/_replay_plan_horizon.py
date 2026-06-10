@@ -49,6 +49,15 @@ def _override_active(criteres: List[Dict[str, Any]]) -> bool:
 
 
 def _apply_cap(news_total: float, quant_total: float, override: bool) -> Tuple[float, bool]:
+    # NOTE (A2, audit momentum-family 10/06) : ce rejeu reste VOLONTAIREMENT sur
+    # l'ANCIENNE formule (cap basé sur quant_total entier, sans soustraction du
+    # momentum). Raison : cet outil rejoue un decision-log FIGÉ du 2026-06-01
+    # (LOG_PATH), antérieur à l'introduction du critère momentum_prix_* — ce log
+    # ne contient AUCUNE contribution momentum, donc `contrib_momentum` y vaudrait
+    # 0 et la formule aveugle au momentum donnerait un résultat strictement
+    # identique. L'aligner n'aurait aucun effet et brouillerait l'intention de
+    # preuve datée (Points 2+3 du plan horizon de juin). Le cap aveugle au
+    # momentum vit dans scoring_analyste.score_actif (chemin de production).
     if override:
         return news_total, False
     if (news_total > 0 > quant_total) or (news_total < 0 < quant_total):

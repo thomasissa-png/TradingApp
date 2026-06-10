@@ -677,13 +677,27 @@ def compute_coverage(criteres: List[CritereResult]) -> float:
     sont exclus du numérateur ET du dénominateur (ils n'entrent pas dans le
     score). Retourne ∈ [0, 1].
 
+    A6 (audit momentum-family 10/06) — le momentum-prix (cle préfixe
+    "momentum_prix_") est EXCLU du calcul de couverture (numérateur ET
+    dénominateur). Raison : le momentum est toujours disponible via Twelve
+    (donnée prix), donc l'inclure gonfle mécaniquement la couverture pondérée →
+    fait repasser des cellules au-dessus du plancher COVERAGE_MIN → éteint le
+    filet `is_news_regime` (drapeau 📰) qui rendait la voix aux news quand le
+    quant manquait (exactement ce qui a sauvé le diagnostic cacao). Exclusion
+    GLOBALE (pas seulement les NEWS_DRIVEN_ASSETS) : conservateur, ne gonfle la
+    couverture d'AUCUN actif via un critère structurellement toujours présent.
+    Le filet 📰 ne s'active de toute façon que pour les NEWS_DRIVEN_ASSETS.
+
     Cas limites :
     - Aucun critère non-gate (fiche dégénérée) → coverage = 1.0 (par
       convention : "100% de rien est couvert", on ne pénalise pas une fiche
       vide ; le rôle du gate est de détecter les TROUS).
     - Tous les poids à 0 → coverage = 1.0 (idem).
     """
-    non_gate = [c for c in criteres if not c.is_gate]
+    non_gate = [
+        c for c in criteres
+        if not c.is_gate and not c.cle_courante.startswith("momentum_prix_")
+    ]
     if not non_gate:
         return 1.0
     total_poids = sum(abs(c.poids) for c in non_gate)
@@ -1041,6 +1055,30 @@ def score_actif(
                             if not c.source_track.startswith("ia") and not c.is_na and not c.is_gate]
         news_total_p = sum(news_contribs_p)
         quant_total_p = sum(quant_contribs_p)
+        # A2 (audit momentum-family 10/06) — contribution du momentum-prix.
+        # Le momentum (cle_courante préfixe "momentum_prix_") est un critère QUANT :
+        # il GARDE sa voix dans quant_total (donc dans le score), mais il ne doit
+        # JAMAIS participer au PLAFONNEMENT des news (cap). Sinon, en tendance
+        # finissante, un momentum encore haussier par inertie gonfle quant_total →
+        # le cap laissé aux news SHORT explose mécaniquement (~7×) pile au
+        # retournement où la news a raison (l'autre face du bug cacao).
+        # On identifie la contribution momentum de façon robuste par le préfixe de
+        # clé (documenté ; aligné sur TWELVE_SYMBOLS momentum_prix_20j_*).
+        contrib_momentum = sum(
+            c.contributions[h] for c in criteres_res
+            if c.cle_courante.startswith("momentum_prix_")
+            and not c.source_track.startswith("ia")
+            and not c.is_na and not c.is_gate
+        )
+        contrib_momentum_p = sum(
+            c.contributions_pond[h] for c in criteres_res
+            if c.cle_courante.startswith("momentum_prix_")
+            and not c.source_track.startswith("ia")
+            and not c.is_na and not c.is_gate
+        )
+        # Base du cap = quant SANS le momentum (cap aveugle au momentum).
+        quant_cap_base = quant_total - contrib_momentum
+        quant_cap_base_p = quant_total_p - contrib_momentum_p
         # Phase 2 — Gate override RAFFINÉ : remplace la règle high+confirmed seule.
         # La news ne peut renverser le quant (changement de tendance) que si :
         #   canonical_event_date ≤ 72h
@@ -1067,17 +1105,19 @@ def score_actif(
         news_total_capped = news_total
         news_total_capped_p = news_total_p
         if not override:
-            # PM1 : cap si signes opposés ET news > quant en valeur absolue (sinon
-            # news_total est déjà ≤ quant_total*α, pas besoin de capper).
-            if (news_total > 0 > quant_total) or (news_total < 0 < quant_total):
-                cap_abs = abs(quant_total) * ALPHA
+            # PM1 : cap AVEUGLE AU MOMENTUM (A2). Le plafond et son déclenchement
+            # sont calculés sur quant_cap_base = quant_total − contrib_momentum.
+            # Le momentum garde sa voix dans quant_total (et donc le score), mais
+            # ne sert jamais à étouffer une news qui le contredit.
+            if (news_total > 0 > quant_cap_base) or (news_total < 0 < quant_cap_base):
+                cap_abs = abs(quant_cap_base) * ALPHA
                 if abs(news_total) > cap_abs:
                     sign_n = 1.0 if news_total > 0 else -1.0
                     news_total_capped = cap_abs * sign_n
                     applied = True
-            # Pondéré : même logique en parallèle.
-            if (news_total_p > 0 > quant_total_p) or (news_total_p < 0 < quant_total_p):
-                cap_abs_p = abs(quant_total_p) * ALPHA
+            # Pondéré : même logique en parallèle, aveugle au momentum.
+            if (news_total_p > 0 > quant_cap_base_p) or (news_total_p < 0 < quant_cap_base_p):
+                cap_abs_p = abs(quant_cap_base_p) * ALPHA
                 if abs(news_total_p) > cap_abs_p:
                     sign_p = 1.0 if news_total_p > 0 else -1.0
                     news_total_capped_p = cap_abs_p * sign_p
@@ -1092,6 +1132,12 @@ def score_actif(
             "cap_applied": applied,
             "override_high_confirmed": override,
             "alpha": ALPHA,
+            # A2 — observabilité du cap aveugle au momentum : contribution momentum
+            # exclue de la base de plafonnement, et base effective du cap.
+            "contrib_momentum": round(contrib_momentum, 6),
+            "contrib_momentum_pond": round(contrib_momentum_p, 6),
+            "cap_quant_ex_momentum": round(quant_cap_base, 6),
+            "cap_quant_ex_momentum_pond": round(quant_cap_base_p, 6),
         }
         # --- Baseline ±1 (primaire, sortie de référence) ------------------
         scores[h] = round(quant_total + news_total_capped, 6)
@@ -2478,6 +2524,11 @@ def build_decision_log_records(
                 "news_dominant": news_dominant,
                 "news_cap_applied": bool(cap_info.get("cap_applied", False)),
                 "news_cap_override": bool(cap_info.get("override_high_confirmed", False)),
+                # A2 (audit momentum-family 10/06) — observabilité du cap aveugle
+                # au momentum : contribution momentum (exclue de la base du cap) et
+                # base de plafonnement effective (quant_total − contrib_momentum).
+                "contrib_momentum": round(float(cap_info.get("contrib_momentum", 0.0)), 6),
+                "cap_quant_ex_momentum": round(float(cap_info.get("cap_quant_ex_momentum", 0.0)), 6),
                 **directional_flags,
             })
     return records

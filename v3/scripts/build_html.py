@@ -436,6 +436,20 @@ def render_html(
   header .meta-note {{ margin-left: 8px; }}
   header .legend {{ font-size: 12px; color: var(--text-muted); margin-top: 6px; }}
   header .legend code {{ background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 11px; }}
+  /* Bandeau contexte permanent (casquette COMPRENDRE) — discret mais toujours là. */
+  .context-banner {{
+    background: var(--accent-bg);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 20px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }}
+  .context-inner {{
+    max-width: 900px; margin: 0 auto;
+    display: flex; flex-direction: column; gap: 2px;
+  }}
+  .context-inner strong {{ color: var(--text); font-weight: 600; }}
+  .context-inner .ctx-shadow strong {{ color: var(--dir-short-color); }}
   /* Hamburger (mobile uniquement) */
   .hamburger {{
     display: none;
@@ -776,12 +790,19 @@ def render_html(
   <div class="meta">Généré : {generated_at}{truncated_note}</div>
   <div class="legend">
     Légende symboles :
-    <code>⚑</code> flip ·
+    <code>⚑</code> gate régime ·
     <code>📰</code> news&gt;50% (abs/abs) ·
     <code>⚪</code> coin-flip (|score|&lt;0.05, non-actionnable) ·
     <code>⚠</code> divergence pm1/pondéré
   </div>
 </header>
+<div class="context-banner" role="note" aria-label="Contexte du système">
+  <div class="context-inner">
+    <span class="ctx-line">12 actifs × 3 horizons — une direction <strong>LONG</strong> ou <strong>SHORT</strong> par cellule · 5 rapports par jour de bourse.</span>
+    <span class="ctx-line ctx-shadow"><strong>MODE TEST (shadow)</strong> : aucune cellule n'est validée pour le réel — règle de sélection au 08/08 (WR tradable ≥&nbsp;70&nbsp;%, N&nbsp;≥&nbsp;15).</span>
+    <span class="ctx-line ctx-metric">Seule métrique suivie : le <strong>win rate</strong> (la direction était-elle juste&nbsp;?).</span>
+  </div>
+</div>
 <div class="sidebar-overlay" id="sidebar-overlay"></div>
 <div class="layout">
   <aside id="sidebar">
@@ -1433,7 +1454,7 @@ function buildWeekView() {{
   if (!content) return;
   if (!WEEKLY) {{
     content.innerHTML = '';
-    if (empty) {{ empty.hidden = false; empty.textContent = 'Aucun bilan de semaine disponible pour le moment.'; }}
+    if (empty) {{ empty.hidden = false; empty.textContent = 'Aucun bilan de semaine pour le moment — le premier est généré le dimanche suivant (18h), puis chaque dimanche.'; }}
     return;
   }}
   if (empty) empty.hidden = true;

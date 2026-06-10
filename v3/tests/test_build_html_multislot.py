@@ -129,6 +129,31 @@ def test_html_repli_cellules_a_surveiller():
     assert "fold-section" in html
 
 
+def test_html_bandeau_contexte_present():
+    """P0-B : bandeau contexte 3 lignes permanent (système, mode shadow, métrique)."""
+    html = _render_sample_html()
+    assert "context-banner" in html
+    assert "MODE TEST" in html
+    assert "shadow" in html.lower()
+    assert "win rate" in html.lower()
+    assert "12 actifs" in html
+
+
+def test_html_header_gate_pas_flip():
+    """P0-A : le header décrit ⚑ comme « gate régime » (cohérent avec le bulletin),
+    plus comme « flip »."""
+    html = _render_sample_html()
+    header = html.split("</header>", 1)[0]
+    assert "gate régime" in header
+    assert "flip ·" not in header
+
+
+def test_html_message_semaine_avec_date():
+    """P1-G : le message « bilan semaine » vide indique quand il sera disponible."""
+    html = _render_sample_html()
+    assert "dimanche" in html
+
+
 def test_html_bien_forme_smoke():
     html = _render_sample_html()
     assert html.startswith("<!DOCTYPE html>")

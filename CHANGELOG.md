@@ -2,6 +2,17 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-10 (Session 5) — Sonde futures 8h, PROVE-FIRST (Lot 1 étape 1, @infrastructure)
+
+**Audit mesure 10/06 — Lot 1, étape 1 SEULEMENT (prove-first).** Objectif : pouvoir noter S&P 500 / Nasdaq / VIX depuis une référence **8h Paris** (Thomas entre à 8h sur turbos répliquant les futures Globex), au lieu de l'ouverture cash US 15h30 actuelle. **AUCUNE fiche ni `suivi.yaml` touchée** — c'est une sonde de disponibilité, le mapping attend le verdict du run CI + validation Thomas. Gel scoring respecté. Branche `claude/tradingapp-s5-shadow-5rapports-lq5g9z`.
+
+- **Constat code (prouvé sans réseau)** : `_TICKER_MAP` ne contient **aucun future indice/VIX** (que des commodities) ; `ES=F`/`NQ=F`/`VX=F` non mappés → `_map_ticker` renvoie `None` → **fallback yfinance** → **n/a sur GitHub Actions** (Yahoo bloque les IP datacenter). En l'état, ces 3 symboles sortent n/a en CI.
+- **Sonde** (`validate_symbols.py`, CLI `--freshness-8h`) : teste des **variantes pures Twelve** (ES/ES1!/NQ/NQ1!/VX/VX1!) hors `_TICKER_MAP`, deux critères — (a) répond (close>0), (b) **frais à 8h** (timestamp daté du jour, pas un close veille). Output → `v3/audit/symbol-validation-8h-run.md` (séparé du verdict d'analyse).
+- **Workflow CI** `.github/workflows/probe-futures-8h.yml` : `workflow_dispatch` only, `permissions: contents: read`, **aucun commit**, artifact + log. À lancer **entre 08h00 et 08h30 Paris**. Shadow préservé (zéro schedule).
+- **Verdict** (`v3/audit/symbol-validation-8h.md`) : **non concluable sans run CI réel à 8h**. Hypothèse probable (à confirmer) : ES/NQ/VX absents de Twelve free/Grow → pas de réf 8h gratuite → S&P/Nasdaq/VIX **restent 15h30, shadow-only**.
+- **2 tests `test_validate_symbols.py` en échec corrigés** : ce n'était pas un `KeyError` mais une `AssertionError` (mock sans clé API franchissant un garde-fou légitime de `criteres_calculator`). Fix = `setenv` dans les tests, **code prod intouché**. +8 tests de fraîcheur. `pytest v3/tests/test_validate_symbols.py` : **25 passed** (avant : 2 failed/15 passed).
+- ⚠️ **Secret à confirmer** : le brief dit `TWELVE_API_KEY`, le code/workflows utilisent `TWELVE_DATA_API_KEY`. Vérifier le nom réel côté repo avant le run (sinon « SKIP »).
+
 ## 2026-06-10 (Session 5) — WR tradable (Lot 2, @fullstack)
 
 **Audit mesure 10/06 — Lot 2.** Ajout d'une métrique **WR tradable** = `VRAI / (VRAI + FAUSSE + non-conclusif)` à côté du WR conclusif existant, dans le Journaliste et les bilans. Motif : ~43 % des paris résolus sont non-conclusifs et exclus du WR conclusif, alors qu'en réel Thomas serait quand même en position ces jours-là → le WR conclusif surestime le WR exécutable. Mode shadow, **WIN RATE ONLY** (aucun euro), **gel du scoring** (zéro modif `scoring_analyste.py`/`weighting.yml`/poids/seuils de fiche). Branche `claude/tradingapp-s5-shadow-5rapports-lq5g9z`.

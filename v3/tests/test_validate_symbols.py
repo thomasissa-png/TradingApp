@@ -188,6 +188,11 @@ class TestTickerMapMarketData:
     def test_fetch_twelve_price_delegates_to_market_data(self, monkeypatch):
         """fetch_twelve_price(yahoo_ticker) appelle md.fetch_price(yahoo_ticker)
         — qui fait la traduction en interne."""
+        # cc.fetch_twelve_price court-circuite (return None) si NI clé Twelve NI
+        # yfinance ne sont disponibles. En CI/local sans yfinance ni clé, ce
+        # garde-fou bloque avant la délégation → on pose une clé factice pour
+        # franchir le garde et tester réellement la délégation à md.fetch_price.
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "x")
         captured = {}
 
         def fake_fetch_price(ticker, **k):
@@ -211,6 +216,10 @@ class TestTickerMapMarketData:
             "or": {"actif": "Or", "ticker_principal": "GC=F",
                    "seuils_reussite_pct": {"24h": 0.8}},
         }
+        # cc.fetch_twelve_price court-circuite (return None) si NI clé Twelve NI
+        # yfinance ne sont dispo — d'où le faux "suivi-interrompu". On pose une
+        # clé factice pour franchir le garde-fou et atteindre md.fetch_price.
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "x")
         # Mock market_data.fetch_price : retourne un prix par ticker Yahoo
         fake_prices = {"BZ=F": 75.42, "GC=F": 2400.0}
 
@@ -280,3 +289,99 @@ class TestCompositesP4:
             "2026-05-31T00:00:00+00:00",
         )
         assert res is None  # skip propre
+
+
+# ---------------------------------------------------------------------------
+# Sonde 8h Paris — futures indices/VIX (ES=F / NQ=F / VX=F). 100% mocké.
+# PROVE-FIRST : on teste la LOGIQUE de fraîcheur, pas le réseau réel.
+# ---------------------------------------------------------------------------
+
+class TestFreshness8h:
+    NOW = datetime(2026, 6, 10, 6, 15, tzinfo=timezone.utc)  # ~08h15 Paris (CEST)
+
+    def test_no_key_returns_indetermine(self, monkeypatch):
+        monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
+        r = vs.probe_freshness("ES=F", now=self.NOW, sleep=0)
+        assert r["ok"] is False
+        assert r["fresh"] is None
+        assert "TWELVE_DATA_API_KEY" in (r["error"] or "")
+
+    def test_fresh_when_timestamp_recent(self, monkeypatch):
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "x")
+        # Prix daté de 2h avant "now" → frais (Globex cote la nuit).
+        ts = int((self.NOW - __import__("datetime").timedelta(hours=2)).timestamp())
+        monkeypatch.setattr(vs, "http_get_json",
+                            lambda *a, **k: {"close": "5400.5", "timestamp": str(ts)})
+        r = vs.probe_freshness("ES", now=self.NOW, sleep=0)
+        assert r["ok"] is True
+        assert r["fresh"] is True
+        assert r["age_h"] == pytest.approx(2.0, abs=0.1)
+
+    def test_stale_when_close_is_yesterday(self, monkeypatch):
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "x")
+        # Close de la veille (~20h avant) → périmé (> FRESHNESS_MAX_AGE_H=18h).
+        ts = int((self.NOW - __import__("datetime").timedelta(hours=20)).timestamp())
+        monkeypatch.setattr(vs, "http_get_json",
+                            lambda *a, **k: {"close": "5400.5", "timestamp": str(ts)})
+        r = vs.probe_freshness("VX=F", now=self.NOW, sleep=0)
+        assert r["ok"] is True
+        assert r["fresh"] is False
+
+    def test_indetermine_when_no_timestamp(self, monkeypatch):
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "x")
+        monkeypatch.setattr(vs, "http_get_json",
+                            lambda *a, **k: {"close": "5400.5"})  # pas d'horodatage
+        r = vs.probe_freshness("NQ=F", now=self.NOW, sleep=0)
+        assert r["ok"] is True
+        assert r["fresh"] is None  # zéro invention : on ne conclut pas
+
+    def test_symbol_not_found_ko(self, monkeypatch):
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "x")
+        monkeypatch.setattr(vs, "http_get_json",
+                            lambda *a, **k: {"status": "error", "message": "symbol not found"})
+        r = vs.probe_freshness("ES1!", now=self.NOW, sleep=0)
+        assert r["ok"] is False
+        assert r["fresh"] is None
+
+    def test_probe_futures_keeps_first_responder(self, monkeypatch):
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "x")
+        ts = int((self.NOW - __import__("datetime").timedelta(hours=1)).timestamp())
+        seq = [
+            {"status": "error", "message": "not found"},   # ES=F KO
+            {"close": "5400.5", "timestamp": str(ts)},      # ES OK + frais
+            {"close": "5400.5", "timestamp": str(ts)},      # ES1! (non atteint comme winner)
+        ]
+        calls = {"i": 0}
+
+        def fake_http(*a, **k):
+            r = seq[min(calls["i"], len(seq) - 1)]
+            calls["i"] += 1
+            return r
+
+        monkeypatch.setattr(vs, "http_get_json", fake_http)
+        cands = [("S&P 500 future", "ES=F", ["ES=F", "ES", "ES1!"])]
+        res = vs.probe_futures_8h(cands, now=self.NOW)
+        assert res[0]["winner"] == "ES"
+        assert res[0]["winner_fresh"] is True
+
+    def test_render_freshness_marks_no_winner(self):
+        results = [{
+            "label": "S&P 500 future", "yahoo": "ES=F",
+            "winner": None, "winner_fresh": None,
+            "tests": [
+                {"symbol": "ES=F", "ok": False, "value": None, "age_h": None,
+                 "fresh": None, "error": "symbol not found"},
+            ],
+        }]
+        out = vs.render_freshness_report(results, now=self.NOW)
+        assert "S&P 500 future" in out
+        assert "n/a (KO)" in out
+        assert "PROVE-FIRST" in out
+
+    def test_freshness_skip_when_no_key(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
+        monkeypatch.setattr(vs, "FRESHNESS_REPORT_OUT", tmp_path / "symbol-validation-8h.md")
+        path = vs.run_freshness_8h()
+        content = path.read_text(encoding="utf-8")
+        assert "SKIP" in content
+        assert "TWELVE_DATA_API_KEY" in content

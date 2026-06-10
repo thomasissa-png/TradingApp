@@ -1,0 +1,74 @@
+name: probe-futures-8h
+
+# Sonde 8h Paris — disponibilité des futures indices/VIX (ES=F / NQ=F / VX=F)
+# pour une référence "8h Paris" (turbos sur futures Globex) au lieu de
+# l'ouverture cash US 15h30.
+#
+# PROVE-FIRST (audit 10/06, Lot 1, étape 1) : cette sonde MESURE la
+# disponibilité et la FRAÎCHEUR à 8h. Elle ne touche NI aux fiches NI à
+# suivi.yaml. Le mapping ne se fera qu'APRÈS validation Thomas.
+#
+# CONTRAINTES (volontaires) :
+#   - read-only (permissions: contents: read) : aucun risque de mutation repo
+#   - AUCUN commit/push : le résultat sort en ARTIFACT + LOG uniquement
+#   - workflow_dispatch : à déclencher À LA MAIN entre 08h00 et 08h30 Paris
+#     (heure critique : seuls les futures Globex cotent ; SPY/QQQ/VIXY non)
+#
+# DÉCLENCHEMENT :
+#   GitHub → Actions → "probe-futures-8h" → "Run workflow"
+#   → choisir la branche → Run.
+#   IMPORTANT : lancer ENTRE 08h00 et 08h30 heure de Paris pour que le test de
+#   fraîcheur soit pertinent (un run à 15h ne prouve rien sur la réf 8h).
+#
+# RÉSULTAT :
+#   - Log du step "Run sonde 8h" : tableau par symbole (frais / périmé / KO)
+#   - Artifact "symbol-validation-8h" : v3/audit/symbol-validation-8h.md
+#     (téléchargeable depuis la page du run, NON commité dans le repo)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe-futures-8h:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: v3/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r v3/requirements.txt
+
+      - name: Run sonde 8h (futures indices/VIX)
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          LOG_LEVEL: INFO
+        run: |
+          python v3/scripts/validate_symbols.py --freshness-8h
+          echo "===== Rapport sonde 8h (mesures réelles) ====="
+          cat v3/audit/symbol-validation-8h-run.md
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # symbol-validation-8h-run.md = output machine de la sonde (mesures).
+          # Le VERDICT d'analyse (symbol-validation-8h.md) n'est PAS écrasé.
+          name: symbol-validation-8h
+          path: v3/audit/symbol-validation-8h-run.md
+          if-no-files-found: warn
+          retention-days: 14

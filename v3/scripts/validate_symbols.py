@@ -22,7 +22,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -30,6 +30,30 @@ logger = logging.getLogger("validate_symbols")
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORT_OUT = ROOT / "data" / "symbol-validation.md"
+
+# Sonde 8h Paris — rapport audit dédié (NE TOUCHE PAS aux fiches/suivi.yaml).
+# IMPORTANT : la sonde écrit dans `-run.md` (output machine, réécrit à chaque
+# run CI). Le VERDICT d'analyse humain vit dans `symbol-validation-8h.md` et
+# n'est JAMAIS écrasé par la sonde (sinon on perd l'analyse PROVE-FIRST).
+FRESHNESS_REPORT_OUT = ROOT / "audit" / "symbol-validation-8h-run.md"
+
+# Candidats futures pour la référence "8h Paris" (Globex cote, ETF SPY/QQQ/VIXY non).
+# But : permettre de noter S&P 500 / Nasdaq / VIX depuis une réf 8h Paris au lieu
+# de l'ouverture cash US 15h30. PROVE-FIRST : on mesure la dispo, on ne mappe rien.
+#   ES=F : E-mini S&P 500 future (CME Globex)
+#   NQ=F : E-mini Nasdaq 100 future (CME Globex)
+#   VX=F : VIX future (CFE)
+# Variantes testées : format Yahoo (=F) + symboles "purs" éventuels côté Twelve.
+FUTURES_8H_CANDIDATES: List[Tuple[str, str, List[str]]] = [
+    ("S&P 500 future",  "ES=F", ["ES=F", "ES", "ES1!", "ES1", "/ES"]),
+    ("Nasdaq 100 future", "NQ=F", ["NQ=F", "NQ", "NQ1!", "NQ1", "/NQ"]),
+    ("VIX future",      "VX=F", ["VX=F", "VX", "VX1!", "VX1", "/VX"]),
+]
+
+# Fenêtre de fraîcheur : à 8h00-8h30 Paris, un prix "frais" doit dater du jour
+# courant (Globex cote la nuit). Un close de la veille (datetime J-1) = PÉRIMÉ.
+# Seuil de tolérance : on accepte un timestamp < FRESHNESS_MAX_AGE_H heures.
+FRESHNESS_MAX_AGE_H = 18  # > nuit Globex, < close veille 22h (J-1) à 8h (J) ≈ 10h
 
 TWELVE_BASE = "https://api.twelvedata.com"
 DEFAULT_TIMEOUT = 15  # seconds
@@ -185,6 +209,183 @@ def validate_all(candidates: List[Tuple[str, str, List[str]]] = CANDIDATES) -> L
 
 
 # ---------------------------------------------------------------------------
+# Sonde de fraîcheur 8h Paris (futures Globex) — PROVE-FIRST
+# ---------------------------------------------------------------------------
+
+def _parse_quote_timestamp(data: dict) -> Optional[datetime]:
+    """Extrait l'horodatage du dernier prix d'une réponse Twelve /quote.
+
+    Twelve renvoie soit `timestamp` (epoch UNIX, UTC), soit `datetime`
+    (chaîne "YYYY-MM-DD HH:MM:SS" en heure d'exchange). On privilégie
+    `timestamp` (sans ambiguïté de fuseau). Retourne un datetime aware UTC
+    ou None si rien d'exploitable (zéro invention : pas d'heure fabriquée).
+    """
+    ts = data.get("timestamp")
+    if ts is not None:
+        try:
+            return datetime.fromtimestamp(int(ts), tz=timezone.utc)
+        except (TypeError, ValueError, OSError):
+            pass
+    dt = data.get("datetime")
+    if isinstance(dt, str) and dt.strip():
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                # Heure d'exchange, fuseau inconnu ici → on la traite comme UTC
+                # pour un calcul d'âge GROSSIER (suffit à distinguer J vs J-1).
+                return datetime.strptime(dt.strip(), fmt).replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+    return None
+
+
+def probe_freshness(symbol: str, *, now: Optional[datetime] = None,
+                    sleep: float = SLEEP_BETWEEN) -> Dict[str, Any]:
+    """Teste (a) le symbole RÉPOND et (b) son dernier prix est FRAIS.
+
+    Retourne {ok, value, ts (iso|None), age_h (float|None), fresh (bool|None), error}.
+      - ok       : Twelve renvoie un close numérique > 0 (le symbole existe).
+      - fresh    : le dernier prix date de moins de FRESHNESS_MAX_AGE_H heures.
+      - fresh=None : symbole OK mais Twelve ne fournit AUCUN horodatage
+                     exploitable → fraîcheur indéterminable (on NE conclut pas).
+    """
+    now = now or datetime.now(timezone.utc)
+    key = _twelve_key()
+    if not key:
+        return {"ok": False, "value": None, "ts": None, "age_h": None,
+                "fresh": None, "error": "TWELVE_DATA_API_KEY manquante"}
+    params = {"symbol": symbol, "apikey": key, "format": "JSON"}
+    data = http_get_json(f"{TWELVE_BASE}/quote", params=params)
+    if sleep > 0:
+        time.sleep(sleep)
+    if not isinstance(data, dict):
+        return {"ok": False, "value": None, "ts": None, "age_h": None,
+                "fresh": None, "error": "HTTP KO / réponse non-dict"}
+    if data.get("status") == "error":
+        return {"ok": False, "value": None, "ts": None, "age_h": None,
+                "fresh": None, "error": data.get("message") or "status=error"}
+    close = data.get("close")
+    try:
+        v = float(close) if close is not None else None
+    except (TypeError, ValueError):
+        v = None
+    if v is None or v <= 0:
+        return {"ok": False, "value": v, "ts": None, "age_h": None,
+                "fresh": None, "error": f"close absent/invalide ({close!r})"}
+
+    ts = _parse_quote_timestamp(data)
+    if ts is None:
+        # Symbole vivant mais sans horodatage → fraîcheur indéterminable.
+        return {"ok": True, "value": v, "ts": None, "age_h": None,
+                "fresh": None, "error": "horodatage absent (fraîcheur indéterminable)"}
+    age_h = (now - ts).total_seconds() / 3600.0
+    fresh = age_h < FRESHNESS_MAX_AGE_H
+    return {"ok": True, "value": v, "ts": ts.isoformat(),
+            "age_h": round(age_h, 2), "fresh": fresh, "error": None}
+
+
+def probe_futures_8h(candidates=FUTURES_8H_CANDIDATES, *,
+                     now: Optional[datetime] = None) -> List[dict]:
+    """Teste les candidats futures (ES/NQ/VX) : réponse + fraîcheur 8h.
+
+    Pour chaque actif, garde le 1er symbole qui répond ET (si possible) frais.
+    """
+    now = now or datetime.now(timezone.utc)
+    results: List[dict] = []
+    for label, yahoo, symbols in candidates:
+        per_symbol: List[dict] = []
+        winner: Optional[str] = None
+        winner_fresh: Optional[bool] = None
+        for sym in symbols:
+            r = probe_freshness(sym, now=now)
+            per_symbol.append({"symbol": sym, **r})
+            if r["ok"] and winner is None:
+                winner = sym
+                winner_fresh = r["fresh"]
+        results.append({
+            "label": label,
+            "yahoo": yahoo,
+            "winner": winner,
+            "winner_fresh": winner_fresh,
+            "tests": per_symbol,
+        })
+    return results
+
+
+def render_freshness_report(results: List[dict], *,
+                            now: Optional[datetime] = None) -> str:
+    now = now or datetime.now(timezone.utc)
+    paris_hint = (now + timedelta(hours=2)).strftime("%H:%M")  # CEST grossier
+    lines: List[str] = []
+    lines.append("# Sonde 8h Paris — futures indices/VIX (ES=F / NQ=F / VX=F)")
+    lines.append("")
+    lines.append(f"_Généré le {now.isoformat()} (~{paris_hint} Paris) par `validate_symbols.probe_futures_8h`._")
+    lines.append("")
+    lines.append("**But** : noter S&P 500 / Nasdaq / VIX depuis une référence **8h Paris** "
+                 "(turbos sur futures Globex) au lieu de l'ouverture cash US 15h30.")
+    lines.append("")
+    lines.append("**PROVE-FIRST** : cette sonde MESURE la disponibilité. Elle ne touche "
+                 "NI aux fiches NI à `suivi.yaml`. Le mapping ne se fera qu'APRÈS validation Thomas.")
+    lines.append("")
+    lines.append("Critères : (a) le symbole RÉPOND (close > 0) ; (b) le prix est **FRAIS** "
+                 f"(< {FRESHNESS_MAX_AGE_H}h → daté du jour, pas un close veille).")
+    lines.append("")
+    lines.append("| Actif | Yahoo | Winner Twelve | Frais 8h ? | Détail |")
+    lines.append("|---|---|---|---|---|")
+    for r in results:
+        winner = f"`{r['winner']}`" if r["winner"] else "_(aucun)_"
+        if r["winner"] is None:
+            fresh_cell = "n/a (KO)"
+        elif r["winner_fresh"] is True:
+            fresh_cell = "✅ frais"
+        elif r["winner_fresh"] is False:
+            fresh_cell = "❌ périmé (close veille)"
+        else:
+            fresh_cell = "❓ indéterminable (pas d'horodatage)"
+        details = []
+        for t in r["tests"]:
+            if t["ok"]:
+                age = f"{t['age_h']}h" if t.get("age_h") is not None else "âge?"
+                details.append(f"`{t['symbol']}` OK ({t['value']}, {age})")
+            else:
+                err = (t["error"] or "")[:50]
+                details.append(f"`{t['symbol']}` KO ({err})")
+        lines.append(f"| {r['label']} | `{r['yahoo']}` | {winner} | {fresh_cell} | {' ; '.join(details)} |")
+    lines.append("")
+    lines.append("## Lecture")
+    lines.append("")
+    lines.append("- **Winner + frais ✅** → mapping 8h envisageable (à valider Thomas).")
+    lines.append("- **Aucun winner** → Twelve free/Grow n'expose pas ce future → fallback yfinance "
+                 "→ **n/a sur GitHub Actions** (Yahoo bloque les IP datacenter) → **pas de réf 8h gratuite**.")
+    lines.append("- **Winner mais périmé ❌** → cote mais pas à 8h Paris → inutile pour la réf 8h.")
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def write_freshness_report(results: List[dict], path: Path = FRESHNESS_REPORT_OUT,
+                           now: Optional[datetime] = None) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render_freshness_report(results, now=now), encoding="utf-8")
+    return path
+
+
+def run_freshness_8h() -> Path:
+    """CLI dédié sonde 8h : à lancer sur GitHub Actions à 8h00-8h30 Paris."""
+    if not _twelve_key():
+        logger.warning("TWELVE_DATA_API_KEY manquante — sonde 8h 'skip'.")
+        now = datetime.now(timezone.utc)
+        FRESHNESS_REPORT_OUT.parent.mkdir(parents=True, exist_ok=True)
+        FRESHNESS_REPORT_OUT.write_text(
+            "# Sonde 8h Paris — futures indices/VIX\n\n"
+            f"_Généré le {now.isoformat()} — **SKIP**._\n\n"
+            "`TWELVE_DATA_API_KEY` non disponible. Aucun symbole testé.\n",
+            encoding="utf-8",
+        )
+        return FRESHNESS_REPORT_OUT
+    results = probe_futures_8h()
+    return write_freshness_report(results)
+
+
+# ---------------------------------------------------------------------------
 # Rapport markdown
 # ---------------------------------------------------------------------------
 
@@ -274,6 +475,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         level=os.environ.get("LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
+    argv = sys.argv[1:] if argv is None else argv
+    if "--freshness-8h" in argv:
+        path = run_freshness_8h()
+        print(f"OK (sonde 8h) : {path}")
+        return 0
     path = run()
     print(f"OK : {path}")
     return 0

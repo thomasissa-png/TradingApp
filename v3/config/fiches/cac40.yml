@@ -112,6 +112,27 @@ criteres:
     effet_long: "RSI=30 oversold"
     effet_short: "RSI>75"
 
+  # Critère tendance-prix v3 — fin de la famille trend-following (audit
+  # momentum-family 10/06, A8 : indices plafonnés à 4-5, RSI poids 2 CONSERVÉ).
+  # cle=momentum_prix_20j_cac40, source=Twelve Data ^FCHI (cf. rsi_14j_fchi /
+  # alpha_cac_vs_sp_5j). poids=4 (plafond A8) : tendance prix directe, distincte
+  # de l'alpha CAC vs S&P 5j (id=3) et du RSI (id=7, conservé à 2). Signe +1 =
+  # on SUIT la tendance. VRAIE variation 20j puis z-score de la série de
+  # rendements (A1, dispatcher par préfixe `momentum_prix_20j_`).
+  - id: 9
+    nom: "Tendance du CAC 40 (20 jours)"
+    source: "Twelve Data (^FCHI)"
+    cle_courante: "momentum_prix_20j_cac40"
+    normalisation: "zscore"
+    zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # +1 : CAC 40 en tendance haussière (z>+1) = tendance suivie => LONG
+    poids: 4                     # plafond indices A8 (4-5) ; prove-first, RSI poids 2 conservé. Cf. CHANGELOG 11/06.
+    pertinence: { "24h": 0.6, "7j": 1.0, "1m": 0.8 }
+    effet_long: "CAC 40 en tendance haussière (z>+1)"
+    effet_short: "CAC 40 en tendance baissière (z<-1)"
+
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 8
     nom: "Drapeau : événement de marché majeur imminent"

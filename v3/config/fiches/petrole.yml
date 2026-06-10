@@ -150,7 +150,7 @@ criteres:
     zscore_div: 2
     cap: 1.0
     signe: 1                     # +1 : prix au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
-    poids: 7
+    poids: 6                     # 7→6 : prove-first concertation 10/06, promotion 6→supérieur seulement sur preuve (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06 (A3).
     pertinence: { "24h": 0.6, "7j": 1.0, "1m": 0.8 }
     effet_long: "Brent en tendance haussière (z>+1)"
     effet_short: "Brent en tendance baissière (z<-1)"

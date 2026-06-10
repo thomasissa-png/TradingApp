@@ -153,6 +153,27 @@ criteres:
     effet_long: "TIPS baisse (z<-1)"
     effet_short: "TIPS monte (z>+1)"
 
+  # Critère tendance-prix v3 — fin de la famille trend-following (audit
+  # momentum-family 10/06, A8 : indices plafonnés à 4-5, RSI poids 2 CONSERVÉ).
+  # cle=momentum_prix_20j_sp500, source=Twelve Data via proxy ETF SPY (cf.
+  # flux_etf_spy_ivv_5j). poids=4 (plafond A8) : signal de tendance prix direct,
+  # complémentaire du RSI (id=9, oversold/overbought) qui reste à 2. Signe +1 =
+  # on SUIT la tendance. VRAIE variation 20j puis z-score de la série de
+  # rendements (A1, dispatcher par préfixe `momentum_prix_20j_`).
+  - id: 12
+    nom: "Tendance du S&P 500 (20 jours)"
+    source: "Twelve Data (proxy ETF SPY)"
+    cle_courante: "momentum_prix_20j_sp500"
+    normalisation: "zscore"
+    zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # +1 : S&P 500 en tendance haussière (z>+1) = tendance suivie => LONG
+    poids: 4                     # plafond indices A8 (4-5) ; prove-first, RSI poids 2 conservé. Cf. CHANGELOG 11/06.
+    pertinence: { "24h": 0.6, "7j": 1.0, "1m": 0.8 }
+    effet_long: "S&P 500 en tendance haussière (z>+1)"
+    effet_short: "S&P 500 en tendance baissière (z<-1)"
+
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 11
     nom: "Drapeau : événement de marché majeur imminent"

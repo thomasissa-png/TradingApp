@@ -125,6 +125,27 @@ criteres:
     effet_long: "RSI=30"
     effet_short: "RSI>75"
 
+  # Critère tendance-prix v3 — fin de la famille trend-following (audit
+  # momentum-family 10/06, A8 : indices plafonnés à 4-5, RSI poids 2 CONSERVÉ).
+  # cle=momentum_prix_20j_nasdaq, source=Twelve Data via proxy ETF QQQ (cf.
+  # flux_etf_qqq_5j). poids=4 (plafond A8) : tendance prix directe, distincte du
+  # sox_trend_5j (semis 5j) et du RSI (id=9, conservé à 2). Signe +1 = on SUIT la
+  # tendance. VRAIE variation 20j puis z-score de la série de rendements (A1,
+  # dispatcher par préfixe `momentum_prix_20j_`).
+  - id: 11
+    nom: "Tendance du Nasdaq (20 jours)"
+    source: "Twelve Data (proxy ETF QQQ)"
+    cle_courante: "momentum_prix_20j_nasdaq"
+    normalisation: "zscore"
+    zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # +1 : Nasdaq en tendance haussière (z>+1) = tendance suivie => LONG
+    poids: 4                     # plafond indices A8 (4-5) ; prove-first, RSI poids 2 conservé. Cf. CHANGELOG 11/06.
+    pertinence: { "24h": 0.6, "7j": 1.0, "1m": 0.8 }
+    effet_long: "Nasdaq en tendance haussière (z>+1)"
+    effet_short: "Nasdaq en tendance baissière (z<-1)"
+
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 10
     nom: "Drapeau : événement de marché majeur imminent"

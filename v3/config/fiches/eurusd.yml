@@ -125,6 +125,28 @@ criteres:
     effet_long: "Surplus hausse (z>+1)"
     effet_short: "Baisse/déficit (z<-1)"
 
+  # Critère tendance-prix v3 — fin de la famille trend-following (audit
+  # momentum-family 10/06, A8). cle=momentum_prix_20j_eurusd, source=Twelve Data
+  # EUR=X (= ticker_principal de la fiche, format Yahoo). poids=5 : la fiche est
+  # déjà dotée d'un proxy tendance USD (dxy_trend_20j, poids 9, signe -1) ; le
+  # momentum prix DIRECT de la paire est complémentaire mais subordonné, plafonné
+  # prove-first ≤6 (A3). Signe +1 = on SUIT la tendance EUR/USD (momentum positif
+  # → LONG EUR). VRAIE variation 20j puis z-score de la série de rendements (A1,
+  # dispatcher par préfixe `momentum_prix_20j_`) — pas le z-score du niveau.
+  - id: 10
+    nom: "Tendance de l'EUR/USD (20 jours)"
+    source: "Twelve Data (EUR=X)"
+    cle_courante: "momentum_prix_20j_eurusd"
+    normalisation: "zscore"
+    zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # +1 : EUR/USD en tendance haussière (z>+1) = tendance suivie => LONG EUR
+    poids: 5                     # famille A8 ; prove-first ≤6, promotion sur preuve seulement (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06.
+    pertinence: { "24h": 0.6, "7j": 1.0, "1m": 0.8 }
+    effet_long: "EUR/USD en tendance haussière (z>+1)"
+    effet_short: "EUR/USD en tendance baissière (z<-1)"
+
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 9
     nom: "Drapeau : événement de marché majeur imminent"

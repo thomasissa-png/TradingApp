@@ -1398,6 +1398,17 @@ TWELVE_SYMBOLS = {
     "momentum_prix_20j_petrole": "BZ=F",
     "momentum_prix_20j_or":      "GC=F",
     "momentum_prix_20j_argent":  "SI=F",
+    # Vague 2 (audit momentum-family 10/06, A8/A9) — fin de la famille :
+    # EUR/USD (FX, format Yahoo EUR=X = ticker_principal de la fiche) + indices
+    # via leurs proxys ETF déjà utilisés ici (SPY/QQQ/FCHI). VIX EXCLU (A9 :
+    # mean-reverting, pas de momentum). Mapping ONLY — le dispatcher par préfixe
+    # `momentum_prix_20j_` (cf. `_twelve_variation_zscore`) fait le calcul
+    # (variation 20j puis z-score de la série de rendements). Donnée
+    # insuffisante → None = n/a propre.
+    "momentum_prix_20j_eurusd":  "EUR=X",
+    "momentum_prix_20j_sp500":   "SPY",    # proxy ETF S&P 500 (cf. flux_etf_spy_ivv_5j)
+    "momentum_prix_20j_nasdaq":  "QQQ",    # proxy ETF Nasdaq-100 (cf. flux_etf_qqq_5j)
+    "momentum_prix_20j_cac40":   "^FCHI",  # CAC 40 (cf. rsi_14j_fchi / alpha_cac_vs_sp_5j)
     # --- Term structure brent (front + M2 indispo plan Grow → n/a explicite) ---
     "brent_term_structure_m1m2": ("BZ=F", "BZ=F"),
     # --- Flux ETF (proxy : variation de prix 5j) ---

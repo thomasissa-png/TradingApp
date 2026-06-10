@@ -590,6 +590,14 @@ def render_html(
   }}
   .debug-meta > summary {{ cursor: pointer; user-select: none; }}
   .debug-meta ul {{ margin: 8px 0 0 0; }}
+  /* Séquence des verdicts par cellule (vue Résultats) — compact ✅❌⚪. */
+  .verdict-seq .verdict-line {{
+    display: flex; align-items: center; gap: 12px;
+    padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 13.5px;
+  }}
+  .verdict-seq .verdict-cell {{ min-width: 150px; color: var(--text-muted); }}
+  .verdict-seq .verdict-glyphs {{ letter-spacing: 2px; font-size: 14px; }}
+  .verdict-seq .vg {{ letter-spacing: 0; }}
   /* Encart "Comment lire les scores" (détaillé, replié par défaut) */
   .help-box {{
     background: var(--bg-panel);
@@ -1617,12 +1625,78 @@ function renderWinrateInto(target) {{
   return true;
 }}
 
+// Symbole compact d'un verdict (rendu pur, AUCUN recalcul de KPI) :
+// VRAI → ✅ · FAUSSE → ❌ · non-conclusive → ⚪. Les autres états
+// (non-notee, suivi-interrompu, en-cours…) renvoient '' (ignorés).
+function verdictGlyph(outcome) {{
+  const o = (outcome || '').toString().trim().toLowerCase();
+  if (o === 'vrai' || o.startsWith('vrai')) return '✅';
+  if (o === 'fausse' || o === 'faux' || o.startsWith('faus')) return '❌';
+  if (o === 'non-conclusive' || o.startsWith('non-concl')) return '⚪';
+  return '';  // non-notee / suivi-interrompu / en-cours / inconnu → ignoré
+}}
+
+// Construit la séquence des ~10 derniers verdicts chronologiques par cellule
+// (actif × horizon), à partir de MEASURES déjà chargé. Affichage compact
+// ✅❌⚪ à côté du win rate. Zéro recalcul : on lit seulement `outcome`.
+const VERDICT_MAX = 10;
+function buildVerdictSequences(host) {{
+  if (!host || !MEASURES || MEASURES.length === 0) return;
+  // Regroupe par cellule.
+  const byCell = {{}};
+  MEASURES.forEach(m => {{
+    const key = (m.actif || '?') + ' · ' + (m.horizon || '?');
+    (byCell[key] = byCell[key] || []).push(m);
+  }});
+  const cells = Object.keys(byCell).sort();
+  if (cells.length === 0) return;
+
+  const section = document.createElement('section');
+  section.className = 'verdict-seq';
+  const h2 = document.createElement('h2');
+  h2.textContent = 'Séquence des verdicts par cellule';
+  section.appendChild(h2);
+  const intro = document.createElement('p');
+  intro.className = 'history-intro';
+  intro.innerHTML = "Les ~10 derniers verdicts, du plus ancien au plus récent (à droite) : "
+    + '<span class="vg">✅</span> direction juste · <span class="vg">❌</span> fausse · '
+    + '<span class="vg">⚪</span> non-conclusive.';
+  section.appendChild(intro);
+
+  cells.forEach(key => {{
+    // Tri chronologique (ancien → récent) par date puis id de bulletin.
+    const rows = byCell[key].slice().sort((a, b) => {{
+      const da = (a.bulletin_date || '') + (a.bulletin_id || '');
+      const db = (b.bulletin_date || '') + (b.bulletin_id || '');
+      return da < db ? -1 : (da > db ? 1 : 0);
+    }});
+    const glyphs = rows.map(r => verdictGlyph(r.outcome)).filter(g => g);
+    if (glyphs.length === 0) return;  // cellule sans verdict conclu → omise
+    const tail = glyphs.slice(-VERDICT_MAX);
+    const line = document.createElement('div');
+    line.className = 'verdict-line';
+    const label = document.createElement('span');
+    label.className = 'verdict-cell';
+    label.textContent = key;
+    const seq = document.createElement('span');
+    seq.className = 'verdict-glyphs';
+    seq.textContent = tail.join(' ');
+    line.appendChild(label);
+    line.appendChild(seq);
+    section.appendChild(line);
+  }});
+
+  // N'ajoute la section que si au moins une cellule a un verdict.
+  if (section.querySelector('.verdict-line')) host.appendChild(section);
+}}
+
 function buildWinrateView() {{
   const content = document.getElementById('winrate-content');
   const empty = document.getElementById('winrate-empty');
   if (!content) return;
   if (renderWinrateInto(content)) {{
     if (empty) empty.hidden = true;
+    buildVerdictSequences(content);
   }} else if (empty) {{
     empty.hidden = false;
     empty.textContent = 'Aucun résultat de win rate disponible pour le moment — les chiffres apparaîtront ici dès les premières mesures.';

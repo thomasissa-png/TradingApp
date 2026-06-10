@@ -102,6 +102,25 @@ def test_render_html_winrate_absent_degradation_propre():
     assert "Aucun résultat de win rate disponible" in html
 
 
+def test_render_html_sequence_verdicts_par_cellule():
+    """La vue Résultats embarque la séquence compacte des verdicts par cellule,
+    dérivée de MEASURES (rendu pur, zéro recalcul de KPI)."""
+    html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD, measures=[
+        {"actif": "Or", "horizon": "24h", "outcome": "VRAI", "bulletin_date": "2026-06-01"},
+        {"actif": "Or", "horizon": "24h", "outcome": "FAUSSE", "bulletin_date": "2026-06-02"},
+        {"actif": "Or", "horizon": "24h", "outcome": "non-conclusive", "bulletin_date": "2026-06-03"},
+        {"actif": "Or", "horizon": "24h", "outcome": "suivi-interrompu", "bulletin_date": "2026-06-04"},
+    ])
+    assert "buildVerdictSequences" in html
+    assert "verdict-seq" in html
+    assert "verdictGlyph" in html
+    # mapping documenté dans le code embarqué
+    assert "✅" in html and "❌" in html and "⚪" in html
+    # les états non conclus sont explicitement ignorés
+    assert "non-conclusive" in html
+    assert "suivi-interrompu" in html
+
+
 def test_render_html_winrate_only_aucun_argent_injecte():
     """Le builder n'ajoute aucune notion d'argent autour du tableau win-rate."""
     html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD)

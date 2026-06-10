@@ -47,7 +47,40 @@ logger = logging.getLogger("agent_news")
 
 
 HEALTHCHECKS_URL = os.environ.get("HEALTHCHECKS_URL", "").strip()
-MAX_EXTRACTIONS_PER_CYCLE = int(os.environ.get("MAX_EXTRACTIONS_PER_CYCLE", "80"))
+# MAX_EXTRACTIONS_PER_CYCLE : plafond de débit (≠ cap COÛT, qui reste dans
+# extractor.py soft=$0.50 / hard=$0.80 et n'est PAS touché ici).
+# 240/cycle × 3 cycles/j × ~$0.0003/extraction ≈ $0.22/j → sous le soft cap.
+# 80 affamait la QUEUE des flux (gnews_silver/vix/nasdaq jamais atteints, cf.
+# v3/audit/news-coverage-diagnostic.md). On relève le débit ET on le répartit
+# équitablement (round-robin par source) pour que CHAQUE flux dédié soit servi.
+MAX_EXTRACTIONS_PER_CYCLE = int(os.environ.get("MAX_EXTRACTIONS_PER_CYCLE", "240"))
+
+
+def _round_robin_by_source(items: list) -> list:
+    """Réordonne `items` en round-robin par source (préserve l'ordre intra-source).
+
+    Le tronquage en aval (`filtered[:MAX]`) prenait les items dans l'ordre de
+    COLLECTE (FIFO : RSS de tête d'abord, flux gnews dédiés en queue) → les flux
+    des actifs « sourds » (silver/vix/nasdaq, positions 500-900 de la file) étaient
+    systématiquement jetés. Le round-robin garantit une QUOTE-PART à chaque source
+    avant la troncature : on prend le 1er item de chaque source, puis le 2e, etc.
+
+    Zéro perte d'information : c'est une PERMUTATION de `items` (même contenu, ordre
+    différent). Stable intra-source (l'item le plus récent d'un flux reste prioritaire
+    si le flux les a déjà triés ainsi).
+    """
+    from collections import OrderedDict
+    buckets: "OrderedDict[str, list]" = OrderedDict()
+    for it in items:
+        buckets.setdefault(getattr(it, "source", "") or "_unknown", []).append(it)
+    interleaved: list = []
+    # Tour de table jusqu'à épuisement de tous les buckets.
+    while any(buckets.values()):
+        for src in list(buckets.keys()):
+            bucket = buckets[src]
+            if bucket:
+                interleaved.append(bucket.pop(0))
+    return interleaved
 
 
 def _ping_healthchecks(suffix: str = "") -> None:
@@ -97,8 +130,13 @@ def run_one_cycle(publisher: RepoPublisher, extractor: Extractor) -> dict:
         return {"raw": len(raw), "deduped": len(deduped), "filtered": 0, "written": 0}
 
     if len(filtered) > MAX_EXTRACTIONS_PER_CYCLE:
+        # Round-robin par source AVANT la troncature : sans ça, le FIFO servait
+        # les sources de tête et affamait les flux dédiés en queue (silver/vix/
+        # nasdaq jamais atteints → 0 ligne écrite, cf. news-coverage-diagnostic.md).
+        filtered = _round_robin_by_source(filtered)
         logger.warning(
-            "Tronquage : %d filtered > MAX %d, on garde %d (le reste reviendra au prochain cron)",
+            "Tronquage : %d filtered > MAX %d, on garde %d en round-robin par source "
+            "(le reste reviendra au prochain cron)",
             len(filtered), MAX_EXTRACTIONS_PER_CYCLE, MAX_EXTRACTIONS_PER_CYCLE,
         )
         filtered = filtered[:MAX_EXTRACTIONS_PER_CYCLE]

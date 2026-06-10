@@ -49,6 +49,33 @@ logger = logging.getLogger(__name__)
 # logique existante (check_freshness en aval) : on garantit juste l'invariant.
 FUTURE_TOLERANCE_MIN: int = 10  # tolérance d'horloge source (minutes)
 
+# ---------------------------------------------------------------------------
+# Filtre de fraîcheur À L'INGESTION (garde-fou anti-pollution archive)
+# ---------------------------------------------------------------------------
+# Google News RSS (queries larges type café) renvoie des articles à `pubDate`
+# ANCIEN (jusqu'à 2022) → 1016 lignes pré-2026-04 polluaient events-log et le
+# compteur Café (cf. v3/audit/news-coverage-diagnostic.md). Le scoring les écarte
+# DÉJÀ via STALE_DAYS=30 (triggers_classifier), mais on évite de les ÉCRIRE.
+# Aligné sur STALE_DAYS=30 par défaut. 0 ou négatif → filtre désactivé (zéro
+# régression sur les tests / callers qui ne veulent pas filtrer).
+INGEST_MAX_AGE_DAYS: int = int(os.environ.get("INGEST_MAX_AGE_DAYS", "30"))
+
+
+def _is_too_old(item: "NewsItem", now=None) -> bool:
+    """True si l'article est plus vieux que INGEST_MAX_AGE_DAYS (publié).
+
+    Zéro invention : `published` est déjà UTC tz-aware (GATE C9). Si le filtre
+    est désactivé (≤0) → jamais trop vieux.
+    """
+    if INGEST_MAX_AGE_DAYS <= 0:
+        return False
+    pub = getattr(item, "published", None)
+    if not isinstance(pub, datetime):
+        return False
+    now = now or datetime.now(timezone.utc)
+    age_days = (now - pub).total_seconds() / 86400.0
+    return age_days > INGEST_MAX_AGE_DAYS
+
 
 def _normalize_to_utc(dt, *, source: str = "") -> datetime:
     """Garantit qu'un datetime est UTC tz-aware et pas dans le futur.
@@ -756,9 +783,19 @@ def collect_all(commit_seen: bool = True, monitor: "SourceMonitor | None" = None
         recent_titles.insert(0, item.title)
         recent_titles = recent_titles[:DEDUP_CACHE_SIZE]
 
-    # Blacklist d'abord, whitelist ensuite
-    filtered = [it for it in deduped if is_finance_relevant(it.title, it.summary)]
-    skipped = len(deduped) - len(filtered)
+    # Blacklist d'abord, whitelist ensuite, PUIS fraîcheur à l'ingestion.
+    # _is_too_old écarte les articles à pubDate ancien (archive Google News RSS)
+    # pour ne pas polluer events-log (cf. news-coverage-diagnostic.md §fraîcheur).
+    now_utc = datetime.now(timezone.utc)
+    finance_ok = [it for it in deduped if is_finance_relevant(it.title, it.summary)]
+    filtered = [it for it in finance_ok if not _is_too_old(it, now_utc)]
+    skipped_stale = len(finance_ok) - len(filtered)
+    skipped = len(deduped) - len(finance_ok)
+    if skipped_stale:
+        logger.info(
+            "collect_all: %d articles finance écartés car trop vieux (>%dj à l'ingestion)",
+            skipped_stale, INGEST_MAX_AGE_DAYS,
+        )
 
     # Renseigne items_kept (post-dédup + filtre finance) par source dans le monitor.
     # ⚠️ items_fetched (déjà enregistré) = bruts reçus.
@@ -773,9 +810,10 @@ def collect_all(commit_seen: bool = True, monitor: "SourceMonitor | None" = None
     monitor.set_items_kept(kept_by_source)
 
     logger.info(
-        "collect_all: raw=%d → deduped=%d → finance_relevant=%d (skipped %d) | "
-        "monitor: %s",
-        len(raw), len(deduped), len(filtered), skipped, monitor.summary(),
+        "collect_all: raw=%d → deduped=%d → finance=%d → frais=%d "
+        "(skip_non_finance=%d skip_stale=%d) | monitor: %s",
+        len(raw), len(deduped), len(finance_ok), len(filtered),
+        skipped, skipped_stale, monitor.summary(),
     )
 
     return {
@@ -783,6 +821,7 @@ def collect_all(commit_seen: bool = True, monitor: "SourceMonitor | None" = None
         "deduped": deduped,
         "filtered": filtered,
         "skipped_non_finance": skipped,
+        "skipped_stale": skipped_stale,
         "monitor": monitor,
     }
 

@@ -4,7 +4,7 @@
 > ⚠️ **SUPERSEDED (2026-06-02) — CE PLAN DÉCRIT L'ARCHITECTURE LEGACY** (Phases 0-5 : Replit + `src/` Python + bot Telegram « 1 signal turbo/jour »).
 > Le projet a **pivoté vers l'architecture v3** (GitHub Actions + git-as-storage, bulletin directionnel 12 actifs × 3 horizons, **mode shadow**). Le `legacy/` est **archivé**.
 > **État réel et roadmap courante : voir `project-context.md`** (section État + Mémo de reprise). Ce fichier est conservé pour l'historique des Phases 0-2a (réellement livrées sur le legacy) mais n'est plus le plan actif.
-> **Phase v3 en cours : mode shadow** — pipeline complet sur vraies données, 619 tests, gates anti-erreur de jugement (6 lots livrés), backtest quant v1 (NO-GO partiel). Prochaine étape : calibration coverage sur données fraîches + Lot 4b gates + backtest v2. Reste avant émission : ~30 j shadow + KPI > 70%.
+> **Phase v3 en cours : mode shadow (état 2026-06-09, Session 4)** — **984 tests**. Backtest quant v1+v2 = **NO-GO, écarté comme jalon** (validation = shadow réel uniquement). **Refonte « 5 rapports/jour » LIVE** : mesure ouverture→clôture, 1 décision notée/jour, Briefing 7h / Suivis 12h-18h / Bilan 22h15 / Bilan semaine + **Manager** (4e agent), VPS déployé, page complète. **WIN RATE ONLY.** Prochaine étape : ~30 j shadow KPI>70% + calage ~23/06 (le Manager / ticket C : frein contre-momentum CAC) + Phase 2 news `nature`. Détail : `project-context.md` (source de vérité).
 
 > Statut global : **PLAN PRODUIT LEGACY — superseded par v3 (cf. project-context.md)**
 > Mode : **AUTOPILOT** phases 0→5, livraison complète, 100% gates PASS.

@@ -19,14 +19,30 @@ méritent d'être tradées.
 
 ---
 
+## Objectif (rappel — ce que cette règle sert)
+
+Le produit est le **trade directionnel sur 1 jour (horizon 24h), entrée et sortie
+intraday**. Le J+60 ci-dessous n'est **PAS** une durée de détention ni un délai-but :
+c'est uniquement le **point de contrôle** (la preuve statistique minimale) avant de
+risquer du capital réel. Dès qu'une cellule 24h franchit le seuil au checkpoint,
+elle se trade **chaque jour ouvré**. La règle est volontairement **24h-only** pour
+coller à cet objectif. (Signé Thomas 2026-06-10 : « mon but, c'est trader sur 1 jour. »)
+
 ## Règle de sélection (formule GRAVÉE)
 
-À **J+60 du shadow**, Thomas ne trade QUE les cellules 24h satisfaisant :
+**Ancrage temporel gravé (anti-post-hoc)** : `J0 = 2026-06-09` (mise en service de
+la mesure ouverture→clôture + 1 décision notée/jour — le WR tradable n'existe que
+depuis cette refonte). Donc **J+60 = 2026-08-08** et **J+90 = 2026-09-07** (fuseau
+Europe/Paris). Ces dates sont fixes : aucune renégociation du point de départ.
+
+À **J+60 (2026-08-08)**, Thomas ne trade QUE les cellules 24h satisfaisant :
 
 > **WR tradable ≥ 70 % sur N ≥ 15 paris non-chevauchants**
 > (N compté depuis `ref_changed` pour les cellules requalifiées par changement de référence)
 
-Si **aucune cellule** ne passe ce seuil à J+60 : **pas de trading, revue à J+90**.
+Si **aucune cellule** ne passe ce seuil à J+60 : **pas de trading, revue à J+90 (2026-09-07)**.
+C'est une **issue valide et attendue** : ne rien trader à J+60 = la discipline qui
+protège contre le trading prématuré sur du bruit, pas un échec.
 
 ---
 

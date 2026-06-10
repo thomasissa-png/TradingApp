@@ -1,0 +1,107 @@
+# Calendrier économique statique — catalyseurs récurrents datés à l'avance.
+#
+# Source de vérité : événements PUBLICS et DATÉS À L'AVANCE (calendriers
+# officiels Fed/BLS/BCE/USDA/EIA/CFTC). ZÉRO API, ZÉRO scraping, ZÉRO invention.
+#
+# Consommé par `v3/scripts/calendrier_eco.py` → affiché dans le Bilan du jour
+# (section « Catalyseurs J+1 »). AUCUN impact sur le scoring/la mesure :
+# le calendrier est PUREMENT INFORMATIF (affichage). Le gate ⚑ peut l'adopter
+# comme source déterministe (flag hors score) — voir calendrier_eco.py.
+#
+# precision:
+#   - `date`  → date ISO officielle CONNUE et CERTAINE (AAAA-MM-JJ).
+#   - `regle` → règle de récurrence calculable (1er vendredi, mercredi…).
+#               Affiché préfixé « ~ » dans le Bilan (honnêteté : pas une date sûre).
+#
+# RÈGLE ABSOLUE : ne JAMAIS mettre une date en `precision: date` sans en être
+# certain. Dans le doute → `precision: regle` avec la règle de récurrence.
+#
+# impact: high | medium (importance attendue du catalyseur sur la direction).
+# actifs: liste de fiche_key (v3/config/fiches/*.yml) concernés.
+# type: FOMC | CPI | NFP | BCE | OPEC | WASDE | EIA | COT
+
+evenements:
+
+  # === FOMC — réunions de la Fed (dates officielles publiées par la Fed) ======
+  # 8 réunions/an. Jour de décision = 2e jour (annonce 14h ET ≈ 20h Paris).
+  # Calendrier 2026 publié par la Réserve fédérale.
+  - nom: "Décision de taux Fed (FOMC)"
+    type: FOMC
+    precision: date
+    dates: ["2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
+            "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09"]
+    impact: high
+    actifs: [or, argent, sp500, nasdaq, cac40, eurusd, vix, petrole, cuivre]
+
+  # === CPI US — inflation (BLS) ===============================================
+  # Publié ~2e semaine du mois (souvent mardi/mercredi, 8h30 ET ≈ 14h30 Paris).
+  # Les dates 2026 exactes ne sont pas certaines ici → règle de récurrence.
+  - nom: "Inflation US (CPI)"
+    type: CPI
+    precision: regle
+    regle: nieme_jour_ouvre_mois   # ~10e jour ouvré du mois (2e semaine)
+    regle_params: { occurrence: 10 }
+    impact: high
+    actifs: [or, argent, sp500, nasdaq, eurusd, vix]
+
+  # === NFP — emploi US (BLS) ==================================================
+  # Règle officielle : 1er vendredi du mois (8h30 ET ≈ 14h30 Paris).
+  - nom: "Emploi US (NFP / rapport mensuel)"
+    type: NFP
+    precision: regle
+    regle: premier_jour_semaine_mois   # 1er vendredi du mois
+    regle_params: { weekday: 4 }       # 0=lundi … 4=vendredi
+    impact: high
+    actifs: [or, argent, sp500, nasdaq, cac40, eurusd, vix]
+
+  # === BCE — réunions de politique monétaire ==================================
+  # 8 réunions/an (jeudi, décision 14h15 Paris). Dates 2026 non certaines ici
+  # au jour près → règle de récurrence (le Bilan affiche « ~ »).
+  - nom: "Décision de taux BCE"
+    type: BCE
+    precision: regle
+    regle: nieme_jour_ouvre_mois   # ~ milieu/fin de mois, jeudi — approximation
+    regle_params: { occurrence: 15 }
+    impact: high
+    actifs: [eurusd, cac40, or]
+
+  # === OPEC+ — réunions ministérielles ========================================
+  # Dates variables (souvent en ligne, ~1ère semaine du mois selon planning).
+  # Aucune date 2026 certaine → règle (médium : impact pétrole surtout).
+  - nom: "Réunion OPEC+"
+    type: OPEC
+    precision: regle
+    regle: premier_jour_semaine_mois   # ~1er mercredi (approximation)
+    regle_params: { weekday: 2 }       # mercredi
+    impact: medium
+    actifs: [petrole]
+
+  # === WASDE — rapport USDA offre/demande agricole ============================
+  # Mensuel, généralement vers le 10-12 du mois (12h ET ≈ 18h Paris).
+  - nom: "Rapport agricole USDA (WASDE)"
+    type: WASDE
+    precision: regle
+    regle: jour_du_mois            # ~le 11 du mois (fenêtre 9-12)
+    regle_params: { day: 11 }
+    impact: medium
+    actifs: [ble, cafe, cacao]
+
+  # === EIA — stocks pétroliers hebdo ==========================================
+  # Hebdomadaire, mercredi (10h30 ET ≈ 16h30 Paris). Décalé à jeudi si lundi férié US.
+  - nom: "Stocks pétroliers US (EIA)"
+    type: EIA
+    precision: regle
+    regle: jour_semaine_hebdo      # chaque mercredi
+    regle_params: { weekday: 2 }   # mercredi
+    impact: medium
+    actifs: [petrole]
+
+  # === COT — positionnement CFTC hebdo ========================================
+  # Hebdomadaire, vendredi (15h30 ET ≈ 21h30 Paris ; données au mardi précédent).
+  - nom: "Positionnement spéculatif (COT / CFTC)"
+    type: COT
+    precision: regle
+    regle: jour_semaine_hebdo      # chaque vendredi
+    regle_params: { weekday: 4 }   # vendredi
+    impact: medium
+    actifs: [or, argent, petrole, cuivre, ble, cafe, cacao, eurusd]

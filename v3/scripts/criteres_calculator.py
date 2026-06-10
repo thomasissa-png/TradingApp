@@ -1382,6 +1382,20 @@ TWELVE_SYMBOLS = {
     "rsi_14j_fchi":          ("RSI", "^FCHI"),
     # --- Trend perf 5j ---
     "mouvement_or_5j":       "GC=F",
+    # --- Momentum-prix 20j (tendance-prix propre v3 — correctif famille
+    # trend-following, audit 10/06 momentum-prix-sweep). Symboles simples →
+    # cas PAR DÉFAUT du dispatcher zscore (z-score des closes sur zscore_window,
+    # exactement comme sox_trend_5j). AUCUNE nouvelle mécanique de calcul : on
+    # branche le ticker du sous-jacent lui-même, le moteur z-score les closes.
+    # Signe +1 appliqué en aval par le scoring (fiche : signe: 1 = suit la
+    # tendance). Donnée absente → None = n/a propre (zéro invention).
+    "momentum_prix_20j_cacao":   "CC=F",
+    "momentum_prix_20j_cafe":    "KC=F",
+    "momentum_prix_20j_ble":     "ZW=F",
+    "momentum_prix_20j_cuivre":  "HG=F",
+    "momentum_prix_20j_petrole": "BZ=F",
+    "momentum_prix_20j_or":      "GC=F",
+    "momentum_prix_20j_argent":  "SI=F",
     # --- Term structure brent (front + M2 indispo plan Grow → n/a explicite) ---
     "brent_term_structure_m1m2": ("BZ=F", "BZ=F"),
     # --- Flux ETF (proxy : variation de prix 5j) ---

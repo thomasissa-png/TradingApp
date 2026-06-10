@@ -2,6 +2,16 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-10 (Session 5) — Fiches v3 : critère tendance-prix (correctif famille trend-following)
+
+**Défaut systémique corrigé.** Le balayage (`v3/audit/momentum-prix-sweep.md`) a montré que **8/12 fiches n'avaient AUCUN critère de tendance-prix propre** — incohérence avec la thèse trend-following (révélé par le cas cacao, Lot F). Décision Thomas : correctif de **famille** maintenant (phase de création), pas un patch cacao, avec `ref_changed` sur les actifs concernés.
+
+- **7 fiches ABSENTES commodities/métaux** dotées d'un `momentum_prix_20j_<actif>` (`zscore`, `zscore_window:60` — cohérent `sox_trend`/`dxy_trend`, le « 20j » = horizon conceptuel ; **signe +1** = prix au-dessus de sa distribution récente → tendance haussière suivie → LONG) : **cacao(9)/café(8)/blé(8)/cuivre(8)/pétrole(7)/or(7)/argent(7)**. Cacao : `hf_positioning_flux_options` **7→5** (contrarian sur-pondéré, cacao-case-study §4).
+- **Gel moteur respecté** : `criteres_calculator.py` n'a reçu que **7 entrées `TWELVE_SYMBOLS`** (mapping ticker → chemin z-score-closes existant `_twelve_zscore_from_symbol`). Aucune nouvelle mécanique, `weighting.yml`/`scoring_analyste.py`(logique)/normalisations/`seuils_reussite_pct` **intacts**. Dégradation propre en n/a si donnée absente.
+- **Cutover étendu** : `ref-changed.json` += `KC=F`/`ZW=F`/`HG=F`/`GC=F` (CC=F/BZ=F/SI=F déjà au 10/06 via Lot A). **Bilan reset : 8 actifs** repartent N=0 au 10/06 (cacao, petrole, nasdaq, argent, café, blé, cuivre, or) ; **4 gardent v1** (sp500, eurusd, cac40, vix). Addendums datés `SELECTION-RULE.md` + `KILL-CRITERION.md` (texte gravé inchangé).
+- Tests : **1043 passed** (le « 1 failed » = faux échec `test_aucune_ecriture_config`, git-status-dépendant, repasse vert après commit). 3 tests mis à jour (cutover 4→8 actifs attendu).
+- ⚠️ **Décision de conception à revoir (flag Thomas)** : momentum = **z-score du NIVEAU de close** (cohérent avec les critères « trend » existants) vs **z-score de la VARIATION 20j** (vrai momentum de rendement, recommandé par le case-study) — ce dernier exigerait une extension moteur d'1 ligne (hors gel). Choix actuel = niveau, gel-safe et consistant. À trancher. **EUR/USD (ABSENT, FX) + indices FAIBLE : tour suivant.**
+
 ## 2026-06-10 (Session 5) — Lot E (news : famine FIFO réparée) + Lot F (cas cacao)
 
 **Lot E — actifs « sourds » aux news : diagnostic-first.** Le « Argent 27 / S&P 31 / VIX 3 » du brief était un **artefact de comptage** (champ `cours` = 1er actif d'un multi-impact). Comptage réel via `impacts[]` : **S&P 659, VIX 304** (faux sourds, OK) ; seul **Argent 11 = vrai sourd**. **Cause racine** : `MAX_EXTRACTIONS_PER_CYCLE=80` tronquait la file en **FIFO** → les flux dédiés (`gnews_silver_industrial`/`gnews_vix`/`gnews_nasdaq`/`copper`/`cac40`/`wheat`/`ecb`/`gold`, positions 500-800) **n'atteignaient jamais le seuil** → **0 ligne** dans events-log malgré des flux sains (62-99 items/cycle, ✅ dans source-health). Café/Brent dominaient car accumulés avant saturation.

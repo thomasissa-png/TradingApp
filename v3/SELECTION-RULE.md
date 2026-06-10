@@ -194,3 +194,35 @@ avec une mesure post-dédup).
 depuis le 2026-06-10 ; ils peuvent ne pas atteindre N ≥ 15 à J+60 (issue valide).
 Les 8 autres conservent leur N depuis l'origine. La règle de sélection elle-même
 (WR tradable ≥ 70 % / N ≥ 15, 24h-only) est **inchangée**.
+
+---
+
+## Addendum — Correctif famille momentum-prix (2026-06-10)
+
+> Append-only. **Ne modifie PAS le texte gravé ni l'addendum « Redémarrage v2 »
+> ci-dessus** : étend uniquement la portée du `ref_changed` au correctif de famille
+> du 10/06 (même journée, lot postérieur au Lot A).
+
+**Le balayage `momentum-prix-sweep.md` (10/06) a établi que 8/12 fiches n'ont aucun
+critère de tendance-prix propre** — incohérent avec la thèse trend-following. Décision
+Thomas (phase de création) : ajouter un critère `momentum_prix_20j_<actif>` (z-score
+des closes du sous-jacent, signe +1 = suit la tendance) aux **7 fiches commodities/métaux
+absentes** : cacao, café, blé, cuivre, pétrole, or, argent. Le cacao réduit aussi
+`hf_positioning_flux_options` de 7 → 5 (contrarian COT sur-pondéré, cacao-case-study §4).
+
+**Le reset s'étend à 4 actifs supplémentaires.** café (`KC=F`), blé (`ZW=F`),
+cuivre (`HG=F`), or (`GC=F`) voient leur **référence de mesure changée** au 2026-06-10
+(nouveau critère dominant ajouté à la fiche) → **N et WR tradable repartent de zéro au
+2026-06-10**. cacao (`CC=F`), pétrole (`BZ=F`), argent (`SI=F`) étaient **déjà reset** au
+2026-06-10 par l'addendum Lot A ci-dessus : leur cutover du même jour couvre aussi
+l'ajout du momentum (pas de double entrée dans `ref-changed.json`, append-only respecté).
+
+**Bilan reset après ce correctif** : 8 actifs reset au 2026-06-10 (cacao, pétrole,
+nasdaq, argent, café, blé, cuivre, or). 4 actifs gardent leur historique v1 (sp500,
+eurusd, cac40, vix — non touchés par le correctif famille ; les indices et l'EUR/USD
+sont **hors périmètre de ce tour**, traités plus tard / Ticket C).
+
+**Mécanisme de scoring INCHANGÉ** : aucune nouvelle mécanique de calcul (le moteur
+z-score déjà les closes d'un symbole, cf. `sox_trend_5j`), `weighting.yml` non touché,
+formules de normalisation et `seuils_reussite_pct` inchangés. La règle de sélection
+elle-même (WR tradable ≥ 70 % / N ≥ 15, 24h-only) reste **inchangée**.

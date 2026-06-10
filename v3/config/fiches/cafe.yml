@@ -118,6 +118,27 @@ criteres:
     effet_long: "Sécheresse"
     effet_short: "Pluies normales"
 
+  # Critère tendance-prix v3 — correctif famille trend-following (audit 10/06,
+  # momentum-prix-sweep §5.2). cle=momentum_prix_20j_cafe, source=Twelve Data KC=F,
+  # poids=8, motif : la fiche n'avait aucun critère de tendance-prix propre →
+  # incohérent avec la thèse trend-following. Signe +1 = on SUIT la tendance.
+  # Calculé par le chemin z-score-closes existant (cas par défaut dispatcher
+  # Twelve, cf. sox_trend_5j) — zéro nouvelle mécanique. Pertinences = défaut
+  # famille {24h:0.6, 7j:1.0, 1m:0.8} (brief 10/06 ; prime sur la reco sweep 0.7/0.7).
+  - id: 11
+    nom: "Tendance du café Arabica (20 jours)"
+    source: "Twelve Data (KC=F)"
+    cle_courante: "momentum_prix_20j_cafe"
+    normalisation: "zscore"
+    zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # +1 : prix au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
+    poids: 8
+    pertinence: { "24h": 0.6, "7j": 1.0, "1m": 0.8 }
+    effet_long: "Café en tendance haussière (z>+1)"
+    effet_short: "Café en tendance baissière (z<-1)"
+
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 9
     nom: "Drapeau : événement de marché majeur imminent"

@@ -134,6 +134,27 @@ criteres:
     effet_long: "PMI > 51 (expansion demande)"
     effet_short: "PMI < 49 (contraction)"
 
+  # Critère tendance-prix v3 — correctif famille trend-following (audit 10/06,
+  # momentum-prix-sweep §5.5). cle=momentum_prix_20j_petrole, source=Twelve Data BZ=F,
+  # poids=7, motif : la fiche n'avait aucun critère de tendance-prix propre →
+  # incohérent avec la thèse trend-following. Signe +1 = on SUIT la tendance.
+  # Calculé par le chemin z-score-closes existant (cas par défaut dispatcher
+  # Twelve, cf. sox_trend_5j) — zéro nouvelle mécanique. Pertinences = défaut
+  # famille {24h:0.6, 7j:1.0, 1m:0.8} (brief 10/06). id=12 (id 11 pris par le GATE).
+  - id: 12
+    nom: "Tendance du pétrole Brent (20 jours)"
+    source: "Twelve Data (BZ=F)"
+    cle_courante: "momentum_prix_20j_petrole"
+    normalisation: "zscore"
+    zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # +1 : prix au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
+    poids: 7
+    pertinence: { "24h": 0.6, "7j": 1.0, "1m": 0.8 }
+    effet_long: "Brent en tendance haussière (z>+1)"
+    effet_short: "Brent en tendance baissière (z<-1)"
+
   # ⚠️ GATE — sémantique non définie dans Analyste.md. Traité en DRAPEAU (n'entre pas dans le score)
   # tant que Thomas n'a pas tranché (voir SCHEMA-fiche.md § GATE). N'a pas de poids numérique.
   - id: 11

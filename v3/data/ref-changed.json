@@ -30,6 +30,30 @@
       "fiche_key": "argent",
       "actif": "Argent",
       "motif": "Dedup Lot A 10/06 : retrait de alpha_argent_vs_or_5j (proche de ratio_gold_silver) — la reference de mesure de la cellule change."
+    },
+    "KC=F": {
+      "ref_changed": "2026-06-10",
+      "fiche_key": "cafe",
+      "actif": "Cafe (Arabica)",
+      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_cafe, poids 8) — correctif famille trend-following, la reference de mesure de la cellule change."
+    },
+    "ZW=F": {
+      "ref_changed": "2026-06-10",
+      "fiche_key": "ble",
+      "actif": "Ble",
+      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_ble, poids 8) — correctif famille trend-following, la reference de mesure de la cellule change."
+    },
+    "HG=F": {
+      "ref_changed": "2026-06-10",
+      "fiche_key": "cuivre",
+      "actif": "Cuivre",
+      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_cuivre, poids 8) — correctif famille trend-following, la reference de mesure de la cellule change."
+    },
+    "GC=F": {
+      "ref_changed": "2026-06-10",
+      "fiche_key": "or",
+      "actif": "Or",
+      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_or, poids 7) — correctif famille trend-following, la reference de mesure de la cellule change."
     }
   }
 }

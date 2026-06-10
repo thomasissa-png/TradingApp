@@ -47,7 +47,7 @@ criteres:
     normalisation: "composite"   # composite zscore put/call OI + zscore COT, signe INVERSÉ — valeur pré-normalisée fournie
     cap: 1.0
     signe: -1                    # inversé : OI puts>>calls + COT nets SHORT => LONG
-    poids: 7                      # absorbe cftc_cot_cocoa (id=4, poids 6) — dedup audit Cowork 10/06 : ce composite intègre déjà le COT CFTC (1 de ses 2 composantes), le standalone le comptait 2×. Poids avant 7 → après 7 (= max(7,6)). Donnée secondaire (COT standalone) abandonnée car le schéma fiche ne supporte pas de source fallback → composite primaire seul.
+    poids: 5                      # 7→5 : correctif famille trend-following (audit 10/06, cacao-case-study §4) — le contrarian COT sur-pondéré verrouillait LONG en marché baissier ; rééquilibré par le momentum-prix (id=11). Historique : absorbait cftc_cot_cocoa (dedup Cowork 10/06, max(7,6)=7), désormais réduit à 5.
     pertinence: { "24h": 0.3, "7j": 0.8, "1m": 1.0 }
     effet_long: "OI puts>>calls + COT nets SHORT"
     effet_short: "OI calls>>puts + COT nets LONG"
@@ -117,6 +117,26 @@ criteres:
     pertinence: { "24h": 0.3, "7j": 0.6, "1m": 0.7 }
     effet_long: "Monnaies fortes (z<-1)"
     effet_short: "Monnaies faibles"
+
+  # Critère tendance-prix v3 — correctif famille trend-following (audit 10/06,
+  # momentum-prix-sweep §5.1 + cacao-case-study §4). cle=momentum_prix_20j_cacao,
+  # source=Twelve Data CC=F, poids=9, motif : 8/12 fiches sans tendance-prix propre
+  # → incohérent avec la thèse trend-following. Signe +1 = on SUIT la tendance
+  # (momentum positif → LONG). Calculé par le chemin z-score-closes existant
+  # (cas par défaut du dispatcher Twelve, cf. sox_trend_5j) — zéro nouvelle mécanique.
+  - id: 11
+    nom: "Tendance du cacao (20 jours)"
+    source: "Twelve Data (CC=F)"
+    cle_courante: "momentum_prix_20j_cacao"
+    normalisation: "zscore"
+    zscore_window: 60            # profondeur de la distribution de référence (cohérent sox_trend_5j/dxy_trend_20j) ; le "20j" du nom = horizon de tendance conceptuel
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # +1 : prix au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
+    poids: 9
+    pertinence: { "24h": 0.8, "7j": 1.0, "1m": 0.8 }
+    effet_long: "Cacao en tendance haussière (z>+1)"
+    effet_short: "Cacao en tendance baissière (z<-1)"
 
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 10

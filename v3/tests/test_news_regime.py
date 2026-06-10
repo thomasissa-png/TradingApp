@@ -213,10 +213,14 @@ def test_carry_prime_sur_regime_news(cuivre, tmp_path):
     """(d) cuivre avec direction antérieure valide + cov dans la fenêtre carry
     + news net → ⏸ carry l'emporte sur 📰 (priorité 2 > 3).
 
-    Couverture FLOOR ≤ cov < 0.40 : on couvre mining_strikes(5)+inventaires(8) =
-    13/48 ≈ 0.27 (≥ FLOOR). mining_strikes est news (+1), inventaires est quant.
-    Direction antérieure LONG récente cohérente → carry LONG, is_carry True,
-    is_news_regime reste False (le carry a court-circuité le bloc news).
+    Couverture FLOOR ≤ cov < 0.40 : on couvre mining_strikes(5)+inventaires(8)+
+    momentum_prix_20j_cuivre(8) = 21/56 = 0.375 (≥ FLOOR, < MIN). Le total de fiche
+    est passé de 48 à 56 avec l'ajout du critère momentum-prix v3 (correctif famille
+    trend-following 10/06) ; on couvre désormais aussi ce critère (valeur neutre)
+    pour rester dans la fenêtre carry. mining_strikes est news (+1), inventaires et
+    momentum sont quant neutres. Direction antérieure LONG récente cohérente →
+    carry LONG, is_carry True, is_news_regime reste False (le carry court-circuite
+    le bloc news).
     """
     ts = NOW - timedelta(hours=2)
     _write_snapshot(tmp_path, ts, [
@@ -225,8 +229,9 @@ def test_carry_prime_sur_regime_news(cuivre, tmp_path):
         _rec("cuivre", "1m", "LONG", ts),
     ])
     valeurs = {
-        "mining_strikes_chili_perou": _news_triplet(1),       # news +1
+        "mining_strikes_chili_perou": _news_triplet(1),         # news +1
         "inventaires_lme_shfe_5j": {"valeur_normalisee": 0.0},  # quant neutre
+        "momentum_prix_20j_cuivre": {"valeur_normalisee": 0.0}, # quant neutre (critère v3)
     }
     r = sa.score_actif(
         "cuivre", cuivre, valeurs, now=NOW, log_dir=tmp_path,

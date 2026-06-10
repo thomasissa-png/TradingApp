@@ -123,3 +123,26 @@ Cutover **court** (lot unique daté du même jour).
 `ticker_principal`** (identifiant stable, robuste au renommage — cf. leçon L023).
 Le Journaliste applique ce registre : aucune cellule des 4 actifs ne mélange une
 observation pré-dédup (v1) et post-dédup (v2) dans un même compteur.
+
+---
+
+## Addendum — Correctif famille momentum-prix (2026-06-10)
+
+> Append-only. **Ne modifie PAS les seuils gravés ni l'addendum « Redémarrage v2 »
+> ci-dessus** : étend la portée du reset au correctif famille du 10/06 (lot postérieur
+> au Lot A, même journée).
+
+**Le reset s'étend à 4 actifs supplémentaires.** Un critère de tendance-prix
+(`momentum_prix_20j_<actif>`, z-score des closes, signe +1) a été **ajouté** aux 7 fiches
+commodities/métaux qui en étaient dépourvues (balayage `momentum-prix-sweep.md` :
+8/12 fiches sans tendance-prix propre = incohérent avec la thèse trend-following).
+Cet ajout change la référence de mesure → **café (`KC=F`), blé (`ZW=F`), cuivre
+(`HG=F`), or (`GC=F`)** rejoignent le reset au 2026-06-10 : leurs observations
+antérieures à cette date ne comptent plus dans le kill criterion. cacao (`CC=F`),
+pétrole (`BZ=F`), argent (`SI=F`) étaient **déjà reset** au 2026-06-10 (Lot A) — leur
+cutover du même jour couvre aussi l'ajout du momentum (pas de double entrée).
+
+**Bilan : 8 actifs reset au 2026-06-10** (cacao, pétrole, nasdaq, argent, café, blé,
+cuivre, or) ; **4 gardent l'historique v1** (sp500, eurusd, cac40, vix). Les seuils du
+kill criterion (55 %, 65 %, N ≥ 15, J+60) et le mécanisme de scoring sont
+**inchangés** (aucune nouvelle mécanique de calcul, `weighting.yml` non touché).

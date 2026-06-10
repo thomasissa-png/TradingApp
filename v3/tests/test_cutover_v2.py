@@ -101,16 +101,28 @@ def test_registre_date_invalide_ignoree(tmp_path):
     assert sv.load_ref_changed(p) == {}
 
 
-def test_registre_reel_contient_les_4_actifs():
-    # Le registre committé doit contenir exactement les 4 actifs dédupliqués.
+def test_registre_reel_contient_les_actifs_reset():
+    # Le registre committé doit contenir les actifs reset au 2026-06-10 :
+    #  - 4 actifs dédupliqués (Lot A audit Cowork 10/06) : cacao, petrole, nasdaq, argent
+    #  - 4 actifs requalifiés par l'ajout du momentum-prix (correctif famille
+    #    trend-following 10/06) : cafe, ble, cuivre, or (cacao/petrole/argent
+    #    étaient déjà reset par le Lot A, leur cutover du même jour couvre l'ajout).
     reg = sv.load_ref_changed()
+    # Lot A (dédup)
     assert reg.get("CC=F") == date(2026, 6, 10)   # cacao
     assert reg.get("BZ=F") == date(2026, 6, 10)   # petrole
     assert reg.get("^IXIC") == date(2026, 6, 10)  # nasdaq
     assert reg.get("SI=F") == date(2026, 6, 10)   # argent
-    # Les actifs NON reset ne doivent PAS y figurer.
-    assert sv.ref_changed_for_ticker("GC=F", reg) is None  # or
-    assert sv.ref_changed_for_ticker("^GSPC", reg) is None  # sp500
+    # Correctif famille momentum-prix (10/06)
+    assert reg.get("KC=F") == date(2026, 6, 10)   # cafe
+    assert reg.get("ZW=F") == date(2026, 6, 10)   # ble
+    assert reg.get("HG=F") == date(2026, 6, 10)   # cuivre
+    assert reg.get("GC=F") == date(2026, 6, 10)   # or
+    # Les actifs NON touchés (indices restants + EUR/USD + vix) ne figurent PAS.
+    assert sv.ref_changed_for_ticker("^GSPC", reg) is None     # sp500
+    assert sv.ref_changed_for_ticker("^FCHI", reg) is None     # cac40
+    assert sv.ref_changed_for_ticker("EURUSD=X", reg) is None  # eurusd
+    assert sv.ref_changed_for_ticker("^VIX", reg) is None      # vix
 
 
 def test_ref_changed_for_ticker():

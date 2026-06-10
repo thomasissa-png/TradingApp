@@ -32,6 +32,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 from config import COST_LEDGER_PATH
 
@@ -83,7 +84,12 @@ _NAT_SET = set(NATURES)
 
 # Version du prompt — bumper à chaque évolution sémantique du schéma.
 # v2.2 (Phase 2 news) : ajout du champ `nature` au schéma DeepSeek.
-PROMPT_VERSION = "v2.3"
+# v2.3 (NT-1) : règle anti sur-structurel + few-shots single-name/deja_cote.
+# v2.4 (audit 10/06) : DATE DU JOUR injectée dans le message variable (règle 10),
+#   few-shot (c) M&A single-name → déclaration central_bank `verbal`, RÈGLES
+#   renumérotées 1→10 (séquence stricte). Préfixe [system+few-shots] inchangé en
+#   structure : un seul bump = une seule invalidation du cache DeepSeek.
+PROMPT_VERSION = "v2.4"
 
 
 # ============================================================
@@ -150,7 +156,7 @@ SCHEMA :
 
 RÈGLES :
 1. AUCUNE INVENTION. Doute -> impacts:[], materiality:"low".
-9. nature : axe PERSISTANCE de l'événement (sert à distinguer une news qui
+2. nature : axe PERSISTANCE de l'événement (sert à distinguer une news qui
    crée/confirme une tendance d'un compte-rendu déjà cuit) :
    - "structurel" : driver SYSTÉMIQUE et DURABLE qui impacte l'OFFRE ou la
      DEMANDE sur des MOIS (politique OPEC+ de production, blocus prolongé d'un
@@ -170,23 +176,29 @@ RÈGLES :
      « récap hebdo des marchés »). L'info est DÉJÀ dans le prix → on l'écarte.
    - "verbal" : déclaration, rumeur, « envisage », « pourrait », « selon des sources »,
      officiel qui menace sans agir. Pas encore un fait → faible persistance.
-2. impacts = SEULEMENT des actifs de la liste fermée réellement et directionnellement
+3. impacts = SEULEMENT des actifs de la liste fermée réellement et directionnellement
    impactés. Un event peut en toucher plusieurs (ex: escalade géopol -> GOLD LONG,
    BRENT LONG, VIX LONG, SP500 SHORT). Aucun actif clair OU impact incertain/neutre
    sur un actif -> NE PAS lister l'actif (impacts peut être [] ou ne contenir que
    les actifs au sens clair).
-3. direction = sens du PRIX de l'actif : hausse=LONG, baisse=SHORT.
+4. direction = sens du PRIX de l'actif : hausse=LONG, baisse=SHORT.
    Pas de "neutre" : si tu ne sais pas trancher, n'inclus pas l'actif. Raisonne
    sur l'effet réel, ignore le ton du titre.
-4. confidence = "high" si la direction est très probable et bien étayée ;
+5. confidence = "high" si la direction est très probable et bien étayée ;
    "medium" si plausible mais avec incertitude ; "low" si signal faible/contestable.
-5. reliability : fait officiel="confirmed" ; presse/source citée="reported" ;
+6. reliability : fait officiel="confirmed" ; presse/source citée="reported" ;
    "selon des sources"/spéculation="rumor".
-6. materiality : "high" seulement si surprise/ampleur notable ; "medium" si signal
+7. materiality : "high" seulement si surprise/ampleur notable ; "medium" si signal
    crédible mais attendu ; "low" si bruit ou déjà connu.
-7. News non-tradable (sport, lifestyle, opinion, people) -> category:"other",
+8. News non-tradable (sport, lifestyle, opinion, people) -> category:"other",
    impacts:[], materiality:"low".
-8. Titre EN ou FR : raisonne, réponds toujours dans ce schéma.
+9. Titre EN ou FR : raisonne, réponds toujours dans ce schéma.
+10. DATE DU JOUR : si le message fournit une ligne « DATE DU JOUR : YYYY-MM-DD »,
+    utilise-la pour juger la fraîcheur SANS RIEN INVENTER. Un fait déjà survenu
+    et daté de plusieurs jours est probablement « deja_cote » (l'info est dans le
+    prix) ; un rapport/échéance programmé dont la date est passée est périmé
+    (materiality plus basse). N'invente jamais une date absente : à défaut de date
+    explicite dans la news, ne déduis rien de l'âge.
 
 Réponds avec UNIQUEMENT le JSON."""
 
@@ -226,19 +238,23 @@ FEW_SHOTS: List[Tuple[str, str]] = [
             "impacts": [],
         }, ensure_ascii=False),
     ),
-    # (c) Rumeur M&A -> reliability:rumor, nature=verbal (déclaration/rumeur)
+    # (c) Déclaration conditionnelle d'un officiel → reliability:reported, nature=verbal.
+    # Pas de single-name : une orientation de banque centrale touche l'indice large +
+    # l'or sans passer par une seule entreprise (évite le piège single-name→indice).
     (
-        "TITRE : Sources say Microsoft in early talks to acquire AI startup Anthropic",
+        "TITRE : Fed official says rate cuts could come sooner than expected if inflation cools",
         json.dumps({
-            "category": "m_a",
-            "subcat": "Big Tech M&A",
-            "trigger": "Rumeur d'acquisition d'Anthropic par Microsoft (early talks)",
+            "category": "central_bank",
+            "subcat": "Fed-FOMC",
+            "trigger": "Un membre de la Fed évoque des baisses de taux plus tôt si l'inflation reflue",
             "news_zone": "US",
-            "reliability": "rumor",
+            "reliability": "reported",
             "materiality": "medium",
             "nature": "verbal",
             "impacts": [
+                {"asset": "SP500",  "direction": "LONG", "confidence": "low"},
                 {"asset": "NASDAQ", "direction": "LONG", "confidence": "low"},
+                {"asset": "GOLD",   "direction": "LONG", "confidence": "low"},
             ],
         }, ensure_ascii=False),
     ),
@@ -489,7 +505,11 @@ class Extractor:
             msgs.append({"role": "user", "content": user_msg})
             msgs.append({"role": "assistant", "content": assistant_msg})
         # Vraie news : seul contenu variable (en queue, n'altère pas le cache préfixe).
-        user_content = f"TITRE : {title.strip()}"
+        # DATE DU JOUR (Europe/Paris) préfixée UNIQUEMENT sur ce message variable :
+        # la date change chaque jour → la mettre dans le system/few-shots casserait le
+        # cache préfixe à chaque jour. Ici, en queue, c'est gratuit côté cache.
+        today = datetime.now(ZoneInfo("Europe/Paris")).strftime("%Y-%m-%d")
+        user_content = f"DATE DU JOUR : {today}\n\nTITRE : {title.strip()}"
         if snippet and snippet.strip():
             user_content += f"\n\nSNIPPET : {snippet.strip()[:1500]}"
         msgs.append({"role": "user", "content": user_content})

@@ -46,13 +46,15 @@ def test_step1_nature_in_extractor_dataclass():
 
 
 def test_step1_nature_enum_and_prompt_version():
-    """Nature ∈ {structurel, ponctuel, deja_cote, verbal} + PROMPT_VERSION bump v2.3.
+    """Nature ∈ {structurel, ponctuel, deja_cote, verbal} + PROMPT_VERSION bump v2.4.
 
     NT-1 (bump v2.2 → v2.3) : ajout règle anti sur-structurel + few-shot
     audit single-name (Cobre Panama) classé ponctuel.
+    Audit 10/06 (bump v2.3 → v2.4) : DATE DU JOUR injectée + few-shot (c) verbal
+    central_bank + renumérotation des RÈGLES.
     """
     assert set(ex.NATURES) == {"structurel", "ponctuel", "deja_cote", "verbal"}
-    assert ex.PROMPT_VERSION == "v2.3"
+    assert ex.PROMPT_VERSION == "v2.4"
 
 
 def test_step1_nature_fallback_invalid_value():

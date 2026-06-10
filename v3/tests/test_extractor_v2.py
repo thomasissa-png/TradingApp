@@ -355,3 +355,113 @@ def test_extractor_disabled_without_api_key(monkeypatch):
     assert e.client is None
     out = e.extract("Some news")
     assert "disabled" in out.error or "hard-capped" in out.error
+
+
+# ---------------------------------------------------------------------------
+# v2.4 — DATE DU JOUR + stabilité du préfixe de cache
+# ---------------------------------------------------------------------------
+
+def _new_extractor_stub() -> "ex.Extractor":
+    """Instance Extractor sans réseau pour tester _build_messages (méthode pure)."""
+    e = ex.Extractor.__new__(ex.Extractor)
+    e.model = "deepseek-chat"
+    return e
+
+
+def test_build_messages_date_only_in_last_user_message():
+    """La DATE DU JOUR n'apparaît QUE dans le dernier message user (le variable).
+    Le préfixe [system + few-shots] ne doit JAMAIS contenir 'DATE DU JOUR'."""
+    e = _new_extractor_stub()
+    msgs = e._build_messages("Iran retaliates", "Tehran launched drones")
+    # Dernier message = user variable, contient la date + le titre
+    last = msgs[-1]
+    assert last["role"] == "user"
+    assert last["content"].startswith("DATE DU JOUR : ")
+    assert "TITRE : Iran retaliates" in last["content"]
+    # Aucun message du préfixe ne contient la LIGNE DATÉE injectée (la mention
+    # 'DATE DU JOUR' dans la règle 10 du system est attendue, mais jamais la date réelle).
+    import re
+    for m in msgs[:-1]:
+        assert not re.search(r"DATE DU JOUR : \d{4}-\d{2}-\d{2}", m["content"]), (
+            "la date réelle ne doit jamais figurer dans le préfixe de cache"
+        )
+
+
+def test_build_messages_prefix_strictly_stable():
+    """Le préfixe [system + few-shots] (tous les messages SAUF le dernier) est
+    STRICTEMENT identique entre 2 builds → cache DeepSeek préservé. Seule la
+    queue (dernier message user) varie."""
+    e = _new_extractor_stub()
+    m1 = e._build_messages("News A", "snippet A")
+    m2 = e._build_messages("News B totalement différente", "snippet B")
+    assert len(m1) == len(m2)
+    # Tous les messages N-1 identiques (préfixe figé)
+    assert m1[:-1] == m2[:-1]
+    # Seul le dernier diffère (queue variable)
+    assert m1[-1] != m2[-1]
+
+
+def test_build_messages_date_format_iso():
+    """La date injectée est au format ISO YYYY-MM-DD (Europe/Paris, pas d'offset dur)."""
+    import re
+    e = _new_extractor_stub()
+    msgs = e._build_messages("X", "")
+    m = re.match(r"^DATE DU JOUR : (\d{4}-\d{2}-\d{2})\n", msgs[-1]["content"])
+    assert m is not None, "préfixe DATE DU JOUR : YYYY-MM-DD attendu"
+
+
+# ---------------------------------------------------------------------------
+# v2.4 — few-shots : plus de single-name M&A → indice ; nouvel exemple verbal
+# ---------------------------------------------------------------------------
+
+def test_fewshots_no_single_name_ma_to_index():
+    """L'ancien few-shot 'Microsoft acquire Anthropic → NASDAQ' est retiré
+    (contredisait l'anti-piège single-name)."""
+    for user_msg, assistant_json in ex.FEW_SHOTS:
+        assert "Anthropic" not in user_msg
+        assert "Microsoft" not in user_msg
+        # plus aucun few-shot category m_a (le seul restant single-name était (c))
+        data = json.loads(assistant_json)
+        if data.get("category") == "m_a":
+            pytest.fail("un few-shot m_a single-name subsiste")
+
+
+def test_fewshots_new_verbal_central_bank_example():
+    """Le few-shot (c) de remplacement est verbal + central_bank, sans single-name."""
+    found = False
+    for user_msg, assistant_json in ex.FEW_SHOTS:
+        if "rate cuts" in user_msg and "Fed official" in user_msg:
+            found = True
+            data = json.loads(assistant_json)
+            assert data["category"] == "central_bank"
+            assert data["nature"] == "verbal"
+            assert data["reliability"] == "reported"
+            # impacts indice-large + or, confidence low (déclaration conditionnelle)
+            assets = {imp["asset"] for imp in data["impacts"]}
+            assert {"SP500", "NASDAQ", "GOLD"} <= assets
+            assert all(imp["confidence"] == "low" for imp in data["impacts"])
+    assert found, "nouveau few-shot verbal central_bank introuvable"
+
+
+# ---------------------------------------------------------------------------
+# v2.4 — RÈGLES renumérotées : séquence strictement croissante 1,2,3,…
+# ---------------------------------------------------------------------------
+
+def test_system_prompt_rules_sequence_strictly_increasing():
+    """Les RÈGLES sont numérotées 1,2,3,… sans saut ni doublon (ex-bug 1,9,2,3)."""
+    import re
+    # Section RÈGLES : entre 'RÈGLES :' et 'Réponds avec UNIQUEMENT le JSON.'
+    body = ex.SYSTEM_PROMPT.split("RÈGLES :", 1)[1]
+    # Numéros en début de ligne (les sous-puces commencent par '-' ou espaces).
+    nums = [int(n) for n in re.findall(r"^(\d+)\.", body, flags=re.MULTILINE)]
+    assert nums, "aucune règle numérotée détectée"
+    assert nums == list(range(1, len(nums) + 1)), f"séquence non croissante : {nums}"
+
+
+def test_system_prompt_mentions_date_rule():
+    """Le SYSTEM_PROMPT contient la règle d'usage de la DATE DU JOUR."""
+    assert "DATE DU JOUR" in ex.SYSTEM_PROMPT
+
+
+def test_prompt_version_is_v24():
+    assert ex.PROMPT_VERSION == "v2.4"

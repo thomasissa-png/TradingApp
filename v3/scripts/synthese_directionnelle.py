@@ -34,7 +34,9 @@ from __future__ import annotations
 import json
 import logging
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger("synthese_directionnelle")
 
@@ -109,6 +111,9 @@ REGLES :
    une news fraîche (≤ 48h) à matérialité high change clairement la donne, et
    tu l'expliques dans le rationale ("malgré -15%/20j, frappe US sur Natanz du
    jour change le régime").
+7. DATE DU JOUR : si une ligne « DATE DU JOUR : YYYY-MM-DD » est fournie, sers-t'en
+   pour évaluer la fraîcheur des news (les news portent leur propre date). Une news
+   ancienne pèse moins qu'une news fraîche à matérialité égale. N'invente aucune date.
 
 Réponds avec UNIQUEMENT le JSON, rien d'autre."""
 
@@ -362,12 +367,26 @@ def synthesize_asset(
     # Contexte prix (dégradation gracieuse : None si market_data KO).
     price_ctx = _fetch_price_context(asset_id)
     price_line = _format_price_context_line(asset_id, price_ctx)
+    # LE PRIX NE MENT PAS : si l'actif EST mappé sur un ticker mais que le contexte
+    # marché n'a pas pu être construit, la règle 6 du prompt tourne à vide sur cet
+    # actif → on le signale en WARNING (échec silencieux sinon).
+    if not price_line and asset_id.upper() in ASSET_TO_YAHOO_TICKER:
+        logger.warning(
+            "synthese[%s]: CONTEXTE MARCHÉ indisponible (price-ctx KO) — règle 'le prix ne ment pas' inactive ce cycle",
+            asset_id,
+        )
+
+    # DATE DU JOUR (Europe/Paris) : les events listés portent des dates ; sans la
+    # date du jour le modèle ne peut pas peser leur fraîcheur (règle 7).
+    today = datetime.now(ZoneInfo("Europe/Paris")).strftime("%Y-%m-%d")
+    date_line = f"DATE DU JOUR : {today}"
 
     user_content = _format_events_for_prompt(asset_id, events_recent)
+    # Préfixe global : date du jour puis contexte prix AVANT la liste d'events,
+    # pour que le LLM les lise comme cadre, pas comme une news de plus.
     if price_line:
-        # Préfixe : le contexte prix arrive AVANT la liste d'events pour
-        # que le LLM le lise comme cadre global, pas comme une news de plus.
         user_content = f"{price_line}\n\n{user_content}"
+    user_content = f"{date_line}\n\n{user_content}"
 
     # Détection de flux contradictoire (LONG:high ET SHORT:high pour cet actif).
     contradictory = _has_contradictory_high_impacts(asset_id, events_recent)

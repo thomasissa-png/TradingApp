@@ -105,8 +105,8 @@ def test_registre_reel_contient_les_actifs_reset():
     # Cutover momentum v3 (2026-06-11) : la v3 corrigée (variation 20j + cap
     # aveugle au momentum + poids ≤6) atterrit au bulletin 11/06 7h → ref_changed
     # des 8 entrées existantes avancé 2026-06-10 → 2026-06-11 (justif CHANGELOG)
-    # + 3 nouvelles entrées (eurusd EUR=X, sp500 ^GSPC, cac40 ^FCHI) = 11 actifs
-    # reset au 2026-06-11. Seul vix garde l'historique v1.
+    # + 3 nouvelles entrées (eurusd EUR=X, sp500 ^GSPC, cac40 ^FCHI), puis VIX
+    # (lot autopilote 10/06 soir) = 12 actifs reset au 2026-06-11.
     reg = sv.load_ref_changed()
     # 8 entrées d'origine (Lot A + correctif famille), ref avancée au 11/06
     assert reg.get("CC=F") == date(2026, 6, 11)   # cacao
@@ -121,10 +121,11 @@ def test_registre_reel_contient_les_actifs_reset():
     assert reg.get("EUR=X") == date(2026, 6, 11)  # eurusd (ticker_principal réel)
     assert reg.get("^GSPC") == date(2026, 6, 11)  # sp500
     assert reg.get("^FCHI") == date(2026, 6, 11)  # cac40
-    # Seul vix (A9, mean-reverting) garde l'historique v1 → absent du registre.
-    assert sv.ref_changed_for_ticker("^VIX", reg) is None       # vix
-    # Total : 11 actifs reset, vix exclu.
-    assert len(reg) == 11
+    # VIX a rejoint le reset le 10/06 soir (critère gap_rv_iv ressuscité, lot
+    # autopilote) → 12/12 actifs en ère v2, plus aucun historique v1.
+    assert reg.get("^VIX") == date(2026, 6, 11)  # vix (gap_rv_iv)
+    # Total : 12 actifs reset (ère v2 complète).
+    assert len(reg) == 12
 
 
 def test_ref_changed_for_ticker():

@@ -119,10 +119,16 @@ def test_gnews_riskoff_query_split_no_400():
                 "OR escalation OR sanctions OR bank failure OR sovereign default")
     assert old_long not in queries, "l'ancienne requête longue (HTTP 400) doit être supprimée"
 
-    q_sympt = "stock market volatility OR VIX OR risk-off OR market selloff"
+    # Fix 11/06 : la moitié symptômes restait en 400 malgré le split → syntaxe
+    # quoted (expressions multi-mots + terme à tiret entre guillemets, doc API).
+    q_sympt = '"stock market volatility" OR VIX OR "risk-off" OR "market selloff"'
     q_causes = "war escalation OR sanctions OR bank failure OR sovereign default"
     assert q_sympt in queries
     assert q_causes in queries
+    # Le terme à tiret ne doit plus apparaître NU (hors guillemets) dans aucune requête.
+    for q in queries:
+        if "risk-off" in q:
+            assert '"risk-off"' in q, f"terme à tiret non quoted dans : {q}"
 
     # Longueur max constatée sur les requêtes qui passent (toutes sauf les 2 nouvelles).
     others = [q for q in queries if q not in (q_sympt, q_causes)]

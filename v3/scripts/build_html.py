@@ -590,6 +590,26 @@ def render_html(
   }}
   .debug-meta > summary {{ cursor: pointer; user-select: none; }}
   .debug-meta ul {{ margin: 8px 0 0 0; }}
+  /* Encart « chauffe » de la vue Résultats — repère doux, pas une alerte. */
+  .winrate-warmup {{
+    background: var(--accent-bg);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 4px 0 18px 0;
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.5;
+  }}
+  /* Lignes sans données (N=0) dans les tables de résultats : grisées pour que
+     l'œil saute aux lignes qui ont du contenu. Posé en JS (data-no-data). */
+  .row-no-data {{ opacity: 0.5; }}
+  /* Mini-légende des verdicts (vue Résultats), au-dessus de la séquence. */
+  .verdict-flip-note {{
+    font-size: 12.5px; color: var(--text-muted);
+    margin: 8px 0 0 0; line-height: 1.5;
+  }}
   /* Séquence des verdicts par cellule (vue Résultats) — compact ✅❌⚪. */
   .verdict-seq .verdict-line {{
     display: flex; align-items: center; gap: 12px;
@@ -672,6 +692,11 @@ def render_html(
   }}
   /* Vues Aujourd'hui / Bilan semaine / Historique */
   .history-intro {{ color: var(--text-muted); margin: 4px 0 18px 0; }}
+  /* Titre humain de la semaine (lundi → vendredi) — sous le H1 « Bilan semaine ». */
+  .week-human-title {{
+    font-size: 15px; font-weight: 600; color: var(--text);
+    margin: 2px 0 4px 0;
+  }}
   /* Vue Aujourd'hui : un groupe replié par jour, chaque rapport en sous-bloc */
   .today-day {{
     border: 1px solid var(--border); border-radius: 8px; margin: 0 0 18px 0;
@@ -740,6 +765,19 @@ def render_html(
   .outcome-vrai {{ color: var(--dir-long-color); font-weight: 600; }}
   .outcome-faux {{ color: var(--dir-short-color); font-weight: 600; }}
   .outcome-neutre {{ color: var(--text-muted); }}
+  /* Regroupement par jour de l'historique : ligne d'en-tête de date + jour courant. */
+  #history-table tr.history-day-row td {{
+    background: var(--th-bg); font-weight: 600; color: var(--text-muted);
+    font-size: 12.5px; text-transform: capitalize;
+    border-top: 2px solid var(--border-strong);
+  }}
+  #history-table tr.history-day-today td {{ color: var(--accent); }}
+  #history-table tr.row-today td {{ background: var(--accent-bg); }}
+  .today-pill {{
+    display: inline-block; margin-left: 8px; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.3px; padding: 1px 7px;
+    border-radius: 10px; background: var(--accent); color: #fff;
+  }}
   #history-summary {{
     display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 8px 0;
   }}
@@ -879,7 +917,11 @@ def render_html(
       </div>
       <section id="winrate-view" hidden aria-label="Résultats — win rate par actif">
         <h1>📈 Résultats / Win rate</h1>
-        <p class="history-intro">Le taux de bonnes directions par actif et par horizon. La vue de résultats la plus à jour — réécrite à chaque run.</p>
+        <p class="history-intro">Le taux de bonnes directions par actif et par horizon — réécrit à chaque run. Deux mesures : le <strong>Win rate</strong> (sur les paris conclus) et le <strong>WR tradable</strong> (VRAI / VRAI+FAUSSE+non-conclusif — inclut les jours sous seuil où une position aurait quand même été prise, donc toujours ≤ Win rate).</p>
+        <p class="history-intro"><strong>⏳ trop peu (N/15)</strong> = il faut au moins 15 paris indépendants par cellule pour qu'un chiffre soit fiable ; en dessous, le taux affiché ne veut encore rien dire.</p>
+        <div class="winrate-warmup" role="note">
+          <strong>Tout est en chauffe.</strong> Les 12 actifs ont été remis à zéro le <strong>11 juin 2026</strong> (passage en ère v2 du moteur). La mesure ouverture→clôture, 1 décision notée par jour, tourne depuis le 9 juin. Premier point de contrôle : le <strong>8 août 2026</strong> — une cellule 24h se trade alors uniquement si son WR tradable ≥&nbsp;70&nbsp;% sur ≥&nbsp;15 paris (règle de sélection gravée, mode test jusque-là).
+        </div>
         <div id="winrate-content"></div>
         <p id="winrate-empty" hidden></p>
       </section>
@@ -891,6 +933,7 @@ def render_html(
       </section>
       <section id="week-view" hidden aria-label="Bilan de la semaine">
         <h1>🗓️ Bilan semaine</h1>
+        <p id="week-human-title" class="week-human-title" hidden></p>
         <p class="history-intro">Win rate cumulé de la semaine en cours (réécrit à chaque run, figé en fin de semaine).</p>
         <div id="week-content"></div>
         <p id="week-empty" hidden></p>
@@ -926,7 +969,7 @@ def render_html(
           <table id="history-table">
             <thead>
               <tr>
-                <th>Date</th><th>Actif</th><th>Horizon</th><th>Direction</th><th>Résultat</th><th>Réalisé %</th>
+                <th>Date</th><th>Créneau</th><th>Actif</th><th>Horizon</th><th>Direction</th><th>Résultat</th><th>Réalisé %</th>
               </tr>
             </thead>
             <tbody id="history-tbody"></tbody>
@@ -1062,6 +1105,35 @@ function dimWeakCells(root) {{
       td.style.opacity = '0.45';
       td.dataset.dimmed = '1';
     }}
+  }});
+}}
+
+// Vue Résultats — grise les lignes SANS données (win rate « — » ET paris = 0)
+// dans les tables de win rate, pour que l'œil aille aux lignes qui ont du contenu.
+// Pur visuel (classe .row-no-data), aucune ligne supprimée, aucun chiffre touché.
+// Idempotent (data-rowscanned sur la table). On repère par en-têtes : la 2e
+// colonne est « Win rate », l'avant-dernière paire contient « Paris (réels) ».
+function dimEmptyRows(root) {{
+  if (!root) return;
+  root.querySelectorAll('table').forEach(table => {{
+    if (table.dataset.rowscanned === '1') return;
+    const headRow = table.querySelector('thead tr') || table.querySelector('tr');
+    if (!headRow) return;
+    const heads = Array.from(headRow.querySelectorAll('th, td')).map(h => (h.textContent || '').toLowerCase());
+    const wrIdx = heads.findIndex(h => h.includes('win rate'));
+    const parisIdx = heads.findIndex(h => h.includes('paris'));
+    if (wrIdx < 0) {{ table.dataset.rowscanned = '1'; return; }}
+    table.querySelectorAll('tbody tr').forEach(tr => {{
+      const cells = tr.querySelectorAll('td');
+      if (cells.length <= wrIdx) return;
+      const wr = (cells[wrIdx].textContent || '').trim();
+      const paris = parisIdx >= 0 && cells.length > parisIdx
+        ? (cells[parisIdx].textContent || '').trim() : '';
+      const wrEmpty = (wr === '' || wr === '—' || wr === '-');
+      const noParis = (parisIdx < 0) || (paris === '' || paris === '0' || paris === '—');
+      if (wrEmpty && noParis) tr.classList.add('row-no-data');
+    }});
+    table.dataset.rowscanned = '1';
   }});
 }}
 
@@ -1381,6 +1453,30 @@ function buildHistorySummary() {{
     wrap.appendChild(card);
   }});
 }}
+// Créneau lisible d'une mesure : l'heure UTC suffixée à l'id (« …-05h ») mappée
+// matin/midi/soir, sinon « 7h » (seul le Briefing 7h est noté — CA-M6b). Renvoie
+// un libellé heure-Paris parlant. Zéro invention : si pas de suffixe, c'est le 7h.
+const SLOT_UTC_TO_PARIS = {{ '05': '7h', '10': '12h', '16': '18h', '19': '18h' }};
+function measureSlot(m) {{
+  const id = (m.bulletin_id || '');
+  const mm = id.match(/-(\\d{{2}})h$/);
+  if (mm) return SLOT_UTC_TO_PARIS[mm[1]] || (mm[1] + 'h UTC');
+  return '7h';
+}}
+// Date courte humaine pour l'historique (« lun. 9 juin »). Réutilise formatBulletinDate.
+function historyDateHuman(iso) {{
+  const d = (iso || '').slice(0, 10);
+  const dt = formatBulletinDate(d);
+  return dt.short || (iso || '—');
+}}
+// Date ISO du jour courant (Europe/Paris approx via locale du navigateur) pour
+// distinguer la journée en cours dans l'historique.
+function todayIso() {{
+  const n = new Date();
+  const p = (x) => String(x).padStart(2, '0');
+  return n.getFullYear() + '-' + p(n.getMonth() + 1) + '-' + p(n.getDate());
+}}
+
 function renderHistoryTable() {{
   const tbody = document.getElementById('history-tbody');
   const empty = document.getElementById('history-empty');
@@ -1413,13 +1509,31 @@ function renderHistoryTable() {{
   }});
   tbody.innerHTML = '';
   const frag = document.createDocumentFragment();
+  // Regroupement visuel par jour : on insère une ligne d'en-tête « date » quand
+  // le jour change (liste triée par date desc). Au-delà de 12 lignes on active
+  // les en-têtes ; en dessous la table reste plate (inutile d'alourdir).
+  const useGroups = rows.length > 12;
+  const TODAY = todayIso();
+  let lastDay = null;
   rows.forEach(m => {{
+    const day = (m.bulletin_date || m.bulletin_id || '').slice(0, 10);
+    if (useGroups && day && day !== lastDay) {{
+      lastDay = day;
+      const isToday = (day === TODAY);
+      const gtr = document.createElement('tr');
+      gtr.className = 'history-day-row' + (isToday ? ' history-day-today' : '');
+      gtr.innerHTML = '<td colspan="7">' + historyDateHuman(day)
+        + (isToday ? ' <span class="today-pill">aujourd\\'hui</span>' : '') + '</td>';
+      frag.appendChild(gtr);
+    }}
     const tr = document.createElement('tr');
+    if (day === TODAY) tr.classList.add('row-today');
     const cls = outcomeClass(m.outcome);
     const dir = (m.conclusion || '—');
     const dirCls = dir === 'LONG' ? 'dir-long' : (dir === 'SHORT' ? 'dir-short' : '');
     tr.innerHTML =
-      '<td>' + (m.bulletin_date || '—') + '</td>'
+      '<td>' + historyDateHuman(m.bulletin_date || m.bulletin_id) + '</td>'
+      + '<td>' + measureSlot(m) + '</td>'
       + '<td>' + (m.actif || '—') + '</td>'
       + '<td>' + (m.horizon || '—') + '</td>'
       + '<td class="' + dirCls + '">' + dir + '</td>'
@@ -1603,16 +1717,45 @@ function buildTodayView() {{
   }});
 }}
 
+// Titre humain de la semaine ISO depuis l'identité du bilan (label « Semaine
+// AAAA-S## » + bornes du markdown « (AAAA-MM-JJ → AAAA-MM-JJ) »). La borne haute
+// du fichier est dimanche ; on affiche du lundi au vendredi (jours de bourse).
+// Renvoie '' si on ne peut pas reconstituer proprement (zéro invention).
+function weekHumanTitle(weekly) {{
+  if (!weekly) return '';
+  const md = weekly.markdown || '';
+  const iso = (weekly.label || '').match(/S(\\d{{2}})/);
+  const range = md.match(/(\\d{{4}})-(\\d{{2}})-(\\d{{2}})\\s*→\\s*(\\d{{4}})-(\\d{{2}})-(\\d{{2}})/);
+  if (!range) return iso ? ('Semaine ISO ' + iso[1]) : '';
+  // Lundi = borne basse ; vendredi = borne basse + 4 jours.
+  const lundi = new Date(Date.UTC(+range[1], +range[2] - 1, +range[3]));
+  const vendredi = new Date(lundi.getTime() + 4 * 86400000);
+  const fmt = (dt) => {{
+    const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet',
+                  'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    return dt.getUTCDate() + ' ' + MOIS[dt.getUTCMonth()];
+  }};
+  const sem = iso ? ('Semaine ISO ' + iso[1] + ' — ') : '';
+  return sem + 'du lundi ' + fmt(lundi) + ' au vendredi ' + fmt(vendredi);
+}}
+
 function buildWeekView() {{
   const content = document.getElementById('week-content');
   const empty = document.getElementById('week-empty');
+  const titleEl = document.getElementById('week-human-title');
   if (!content) return;
   if (!WEEKLY) {{
     content.innerHTML = '';
+    if (titleEl) titleEl.hidden = true;
     if (empty) {{ empty.hidden = false; empty.textContent = 'Aucun bilan de semaine pour le moment — le premier est généré le dimanche suivant (18h), puis chaque dimanche.'; }}
     return;
   }}
   if (empty) empty.hidden = true;
+  const human = weekHumanTitle(WEEKLY);
+  if (titleEl) {{
+    if (human) {{ titleEl.textContent = human; titleEl.hidden = false; }}
+    else titleEl.hidden = true;
+  }}
   renderMarkdownInto(content, WEEKLY.markdown);
 }}
 
@@ -1690,12 +1833,33 @@ function buildVerdictSequences(host) {{
   if (section.querySelector('.verdict-line')) host.appendChild(section);
 }}
 
+// Explication d'une ligne du bloc « Flip vs continuation » présent dans
+// performance.md (ce que ça mesure + pourquoi c'est lié au momentum). On
+// l'insère juste AVANT le titre concerné s'il existe — sinon on ne fait rien
+// (dégradation propre, zéro invention). Idempotent (classe déjà posée).
+function annotateFlipContinuation(root) {{
+  if (!root) return;
+  const heads = Array.from(root.querySelectorAll('h2, h3'));
+  const target = heads.find(h => /flip\\s+vs\\s+continuation/i.test(h.textContent || ''));
+  if (!target || target.dataset.flipAnnotated === '1') return;
+  target.dataset.flipAnnotated = '1';
+  const note = document.createElement('p');
+  note.className = 'verdict-flip-note';
+  note.innerHTML = "Mesure si les <strong>retournements</strong> de direction (flip) "
+    + "réussissent mieux ou moins bien que les <strong>continuations</strong> (même "
+    + "direction que la veille). Sentinelle du bug momentum (type cacao) : un système "
+    + "qui se trompe surtout sur les flips suit la tendance avec retard.";
+  target.parentNode.insertBefore(note, target.nextSibling);
+}}
+
 function buildWinrateView() {{
   const content = document.getElementById('winrate-content');
   const empty = document.getElementById('winrate-empty');
   if (!content) return;
   if (renderWinrateInto(content)) {{
     if (empty) empty.hidden = true;
+    dimEmptyRows(content);
+    annotateFlipContinuation(content);
     buildVerdictSequences(content);
   }} else if (empty) {{
     empty.hidden = false;

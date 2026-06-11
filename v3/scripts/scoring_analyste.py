@@ -1669,23 +1669,38 @@ def regime_extreme_global(results: List["ActifResult"]) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _top_driver(r: "ActifResult", h: str) -> Tuple[str, str]:
+    """Critère à plus forte |contribution| pour (actif, horizon).
+
+    Retourne `(cle_courante, nom)` — `cle_courante` pour identifier le driver
+    (regroupement par clé, jamais par nom — L023) et `nom` pour l'affichage.
+    Source UNIQUE : `contributions[h]` (mêmes données que `_top_explication` et
+    le tableau « Détail par actif »). Exclut gates et critères n/a. Départage
+    déterministe des ex æquo par nom. Retourne `("", "")` si aucun contributeur.
+    """
+    best: Tuple[float, str] = (0.0, "")  # (|c|, nom) pour le tri ex æquo stable
+    best_cle = ""
+    best_nom = ""
+    for c in r.criteres:
+        if c.is_gate or c.is_na:
+            continue
+        ctr = c.contributions.get(h)
+        if ctr is None or abs(ctr) <= 0.0:
+            continue
+        key = (abs(ctr), c.nom)
+        if key > best:
+            best = key
+            best_cle = getattr(c, "cle_courante", "") or ""
+            best_nom = c.nom
+    return best_cle, best_nom
+
+
 def _critere_dominant(r: "ActifResult", h: str) -> str:
     """Nom du critère à plus forte |contribution| pour (actif, horizon).
 
     Exclut gates et critères n/a. Retourne "" si aucun contributeur réel.
     """
-    best_nom = ""
-    best_abs = 0.0
-    for c in r.criteres:
-        if c.is_gate or c.is_na:
-            continue
-        ctr = c.contributions.get(h)
-        if ctr is None:
-            continue
-        if abs(ctr) > best_abs:
-            best_abs = abs(ctr)
-            best_nom = c.nom
-    return best_nom
+    return _top_driver(r, h)[1]
 
 
 def detect_mono_critere_dominant(
@@ -1860,7 +1875,14 @@ def build_a_jouer_block(
     prix_reference = prix_reference or {}
 
     H = "24h"
-    rows: List[Tuple[float, bool, str]] = []  # (|note|, a_eviter, ligne markdown)
+    # Tampon par ligne : on calcule les champs AVANT de poser la colonne « Porté
+    # par » car le marqueur ⚭ dépend des autres lignes (driver partagé) DU MÊME
+    # tableau (Jouables / À éviter sont traités séparément). cle/nom du driver
+    # viennent de _top_driver (même source que _top_explication — factorisé).
+    Row = Tuple[float, bool, str, str, str, str, str, str, str]
+    # (|note|, a_eviter, actif, direction, note_str, conv, flags_str, px_str,
+    #  driver_nom) + driver_cle stocké à part pour le regroupement.
+    buf: List[Tuple[float, bool, Dict[str, str]]] = []
     for r in results:
         conc = r.conclusions.get(H, "")
         score = r.scores.get(H, 0.0)
@@ -1882,14 +1904,56 @@ def build_a_jouer_block(
         conv = _conviction_cell(r, H, seuil_conviction)
         px = prix_reference.get(r.fiche_key)
         px_str = f"{px:g}" if isinstance(px, (int, float)) else "—"
+        driver_cle, driver_nom = _top_driver(r, H)
 
-        line = f"| {r.nom} | {direction} | {note_str} | {conv} | {flags_str} | {px_str} |"
-        rows.append((abs(score), _cell_a_eviter(r, H), line))
+        buf.append((abs(score), _cell_a_eviter(r, H), {
+            "actif": r.nom,
+            "direction": direction,
+            "note_str": note_str,
+            "conv": conv,
+            "flags_str": flags_str,
+            "px_str": px_str,
+            "driver_cle": driver_cle,
+            "driver_nom": driver_nom,
+        }))
 
-    # Tri |note| décroissant, déterministe (la ligne markdown départage les ex æquo).
-    rows.sort(key=lambda t: (-t[0], t[2]))
-    jouables = [ln for _a, evit, ln in rows if not evit]
-    a_eviter = [ln for _a, evit, ln in rows if evit]
+    # Tri |note| décroissant, déterministe (l'actif départage les ex æquo).
+    buf.sort(key=lambda t: (-t[0], t[2]["actif"]))
+    jouables_cells = [d for _a, evit, d in buf if not evit]
+    a_eviter_cells = [d for _a, evit, d in buf if evit]
+
+    def _shared_groups(cells: List[Dict[str, str]]) -> Dict[Tuple[str, str], int]:
+        # Compte par (driver_cle, direction) — regroupement par cle_courante
+        # (L023, jamais par nom), MÊME direction uniquement (pas LONG vs SHORT).
+        from collections import Counter
+        counts: Counter = Counter()
+        for d in cells:
+            cle = d["driver_cle"]
+            if cle and d["direction"] in ("LONG", "SHORT"):
+                counts[(cle, d["direction"])] += 1
+        return {k: n for k, n in counts.items() if n >= 2}
+
+    def _render_table(cells: List[Dict[str, str]], shared: Dict[Tuple[str, str], int]) -> List[str]:
+        lines: List[str] = []
+        if not cells:
+            lines.append("| _aucune_ | — | — | — | — | — | — |")
+            return lines
+        for d in cells:
+            cle, nom = d["driver_cle"], d["driver_nom"]
+            if not nom:
+                porte = "—"
+            else:
+                marker = ""
+                if cle and (cle, d["direction"]) in shared:
+                    marker = SHARED_DRIVERS_SYMBOL_LOCAL + " "
+                porte = marker + _truncate_driver(nom)
+            lines.append(
+                f"| {d['actif']} | {d['direction']} | {d['note_str']} | "
+                f"{d['conv']} | {d['flags_str']} | {porte} | {d['px_str']} |"
+            )
+        return lines
+
+    jouables_shared = _shared_groups(jouables_cells)
 
     out: List[str] = ["## 🎯 À jouer aujourd'hui (24h)", ""]
     out.append(
@@ -1901,28 +1965,90 @@ def build_a_jouer_block(
         "dans « Jouables » — prudence, pas exclusion. Prix de réf. = prix "
         "d'émission stampé (— si pas encore disponible)._"
     )
+    out.append(
+        "_« Porté par » = le critère qui pèse le plus dans la note ; "
+        f"{SHARED_DRIVERS_SYMBOL_LOCAL} = plusieurs lignes reposent sur le même "
+        "driver (jouer ces lignes = multiplier le levier sur UN signal)._"
+    )
     out.append("")
-    header = "| Actif | Direction | Note | Conviction | Drapeaux | Prix de réf. |"
-    sep = "|---|---|---|---|---|---|"
+    header = "| Actif | Direction | Note | Conviction | Drapeaux | Porté par | Prix de réf. |"
+    sep = "|---|---|---|---|---|---|---|"
     out.append("**Jouables**")
     out.append("")
     out.append(header)
     out.append(sep)
-    if jouables:
-        out.extend(jouables)
-    else:
-        out.append("| _aucune_ | — | — | — | — | — |")
+    out.extend(_render_table(jouables_cells, jouables_shared))
     out.append("")
+    # Synthèse des paris partagés (une ligne par groupe ⚭ de même cle+direction).
+    synth = _synthese_paris_partages(jouables_cells, jouables_shared)
+    if synth:
+        out.extend(synth)
+        out.append("")
     out.append("**À éviter** (⚪ coin-flip · ≈ quasi-neutre · 🚫 insuffisant)")
     out.append("")
     out.append(header)
     out.append(sep)
-    if a_eviter:
-        out.extend(a_eviter)
-    else:
-        out.append("| _aucune_ | — | — | — | — | — |")
+    out.extend(_render_table(a_eviter_cells, _shared_groups(a_eviter_cells)))
     out.append("")
     return out
+
+
+# Longueur max d'un nom de critère dans la colonne « Porté par » (troncature
+# propre avec « … » — pas de coupe au milieu d'un mot si évitable).
+DRIVER_NAME_MAX_LEN = 40
+
+
+def _truncate_driver(nom: str) -> str:
+    """Tronque un nom de critère à DRIVER_NAME_MAX_LEN pour la colonne « Porté par ».
+
+    Coupe à la frontière de mot la plus proche sous la limite si possible, sinon
+    coupe dur ; ajoute « … ». Déterministe, pas d'invention de contenu.
+    """
+    if len(nom) <= DRIVER_NAME_MAX_LEN:
+        return nom
+    coupe = nom[: DRIVER_NAME_MAX_LEN - 1].rstrip()
+    espace = coupe.rfind(" ")
+    if espace >= DRIVER_NAME_MAX_LEN // 2:
+        coupe = coupe[:espace].rstrip()
+    return coupe + "…"
+
+
+def _synthese_paris_partages(
+    cells: List[Dict[str, str]],
+    shared: Dict[Tuple[str, str], int],
+) -> List[str]:
+    """Lignes de synthèse « ⚭ Même pari » sous le tableau Jouables.
+
+    Une ligne par groupe (cle_courante, direction) ayant ≥ 2 lignes. Le libellé
+    du driver vient de shared_drivers.driver_label (fallback : nom du critère).
+    Liste les actifs concernés et la direction. Rien si aucun groupe.
+    """
+    if not shared:
+        return []
+    try:
+        import shared_drivers as _sd  # noqa: F401 (lazy, cf. pattern existant)
+    except Exception:  # noqa: BLE001
+        _sd = None  # type: ignore
+    lines: List[str] = []
+    # Ordre déterministe : par nombre de lignes desc, puis par cle.
+    for (cle, direction), _n in sorted(
+        shared.items(), key=lambda kv: (-kv[1], kv[0][0], kv[0][1])
+    ):
+        membres = [d for d in cells if d["driver_cle"] == cle and d["direction"] == direction]
+        actifs = [d["actif"] for d in membres]
+        nom_fallback = membres[0]["driver_nom"] if membres else ""
+        label = _sd.driver_label(cle, nom_fallback) if _sd is not None else nom_fallback
+        label = label or cle
+        if len(actifs) > 1:
+            liste = ", ".join(actifs[:-1]) + " et " + actifs[-1]
+        else:
+            liste = actifs[0]
+        lines.append(
+            f"_{SHARED_DRIVERS_SYMBOL_LOCAL} Même pari : **{label}** porte "
+            f"{liste} ({direction}) — jouer plusieurs de ces lignes = "
+            f"multiplier le levier sur UN driver._"
+        )
+    return lines
 
 
 def _top_explication(r: "ActifResult", h: str) -> str:
@@ -2042,19 +2168,7 @@ def build_top_multi_horizons_block(
         from collections import Counter
         dom_cles: List[Tuple[str, str]] = []  # (cle, label)
         for r, h in selected:
-            best_cle = ""
-            best_label = ""
-            best_abs = 0.0
-            for c in r.criteres:
-                if c.is_gate or c.is_na:
-                    continue
-                ctr = c.contributions.get(h)
-                if ctr is None:
-                    continue
-                if abs(ctr) > best_abs:
-                    best_abs = abs(ctr)
-                    best_cle = getattr(c, "cle_courante", "") or ""
-                    best_label = c.nom
+            best_cle, best_label = _top_driver(r, h)
             if best_cle:
                 lbl = best_label
                 if _sd is not None:

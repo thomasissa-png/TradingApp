@@ -410,7 +410,7 @@ def test_a_jouer_present_et_24h_seulement():
     r = _actif_24h("Fort", 8.0)
     b = sa.render_bulletin([r], {}, NOW, "h", "ok")
     assert "## 🎯 À jouer aujourd'hui (24h)" in b
-    assert "| Actif | Direction | Note | Conviction | Drapeaux | Prix de réf. |" in b
+    assert "| Actif | Direction | Note | Conviction | Drapeaux | Porté par | Prix de réf. |" in b
     assert "**Jouables**" in b and "**À éviter**" in b
     assert b.index("## 🎯 À jouer aujourd'hui (24h)") < b.index("## 🎯 Top convictions multi-horizons")
 
@@ -461,6 +461,114 @@ def test_a_jouer_prix_present_affiche():
     block = sa.build_a_jouer_block([r], NOW, prix_reference={r.fiche_key: 123.45})
     ligne = next(l for l in block if l.startswith("| Fort |"))
     assert "123.45" in ligne
+
+
+# ===========================================================================
+# Bloc « Porté par » + ⚭ paris partagés (demande fondateur 2026-06-11)
+# ===========================================================================
+
+def _fiche_nomme(nom_crit: str, cle: str) -> dict:
+    """Fiche à 1 critère quant nommé / clé arbitraire (pour tester le top-driver)."""
+    return {
+        "actif": "T",
+        "criteres": [
+            {"id": 1, "nom": nom_crit, "cle_courante": cle,
+             "normalisation": "lineaire", "centre": 0.0, "echelle": 1.0,
+             "cap": 5.0, "signe": 1, "poids": 10,
+             "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0}},
+        ],
+    }
+
+
+def _actif_nomme(nom: str, cle: str, nom_crit: str, score: float) -> "sa.ActifResult":
+    # La valeur DOIT être indexée par la cle_courante du critère, sinon is_na=True.
+    vals = {cle: {"valeur": 1.0, "source_track": "twelvedata"}}
+    r = sa.score_actif(nom.lower(), _fiche_nomme(nom_crit, cle), vals)
+    r.nom = nom
+    r.scores = {h: score for h in sa.HORIZONS}
+    direction = "LONG" if score >= 0 else "SHORT"
+    r.conclusions = {h: direction for h in sa.HORIZONS}
+    r.confidence = {h: "normale" for h in sa.HORIZONS}
+    return r
+
+
+def test_a_jouer_porte_par_top_driver():
+    """La colonne « Porté par » affiche le critère à plus forte |contribution|."""
+    r = _actif_nomme("Argent", "taux_reels", "Taux réels US 10 ans", 8.0)
+    block = sa.build_a_jouer_block([r], NOW)
+    ligne = next(l for l in block if l.startswith("| Argent |"))
+    assert "Taux réels US 10 ans" in ligne
+    # Colonne « Porté par » insérée AVANT Prix de réf. (toujours dernière colonne).
+    assert ligne.rstrip().endswith("| — |")
+
+
+def test_a_jouer_porte_par_sans_contribution_tiret():
+    """Cellule sans contributeur réel (insuffisant, 0 contribution) → « — »."""
+    r = _actif_nomme("Vide", "x", "Driver X", 8.0)
+    for c in r.criteres:
+        c.contributions = {h: 0.0 for h in sa.HORIZONS}
+    block = sa.build_a_jouer_block([r], NOW)
+    ligne = next(l for l in block if l.startswith("| Vide |"))
+    cells = [c.strip() for c in ligne.strip("|").split("|")]
+    assert cells[5] == "—"  # colonne « Porté par »
+
+
+def test_a_jouer_marqueur_partage_meme_cle_meme_direction():
+    """≥ 2 lignes de MÊME cle_courante + MÊME direction → préfixe ⚭ + synthèse."""
+    a = _actif_nomme("Argent", "taux_reels", "Taux réels US 10 ans", 8.0)
+    b = _actif_nomme("Nasdaq", "taux_reels", "Taux réels US 10 ans", 7.0)
+    c = _actif_nomme("CAC", "petrole", "Prix du pétrole", 6.0)
+    block = sa.build_a_jouer_block([a, b, c], NOW)
+    txt = "\n".join(block)
+    jouables = txt.split("**Jouables**")[1].split("**À éviter**")[0]
+    l_argent = next(l for l in jouables.splitlines() if l.startswith("| Argent |"))
+    l_nasdaq = next(l for l in jouables.splitlines() if l.startswith("| Nasdaq |"))
+    l_cac = next(l for l in jouables.splitlines() if l.startswith("| CAC |"))
+    assert "⚭" in l_argent and "⚭" in l_nasdaq
+    assert "⚭" not in l_cac  # driver unique → pas de marqueur
+    # Ligne de synthèse par groupe partagé.
+    assert "⚭ Même pari" in jouables
+    assert "Argent et Nasdaq" in jouables or "Argent, Nasdaq" in jouables
+    assert "(LONG)" in jouables
+
+
+def test_a_jouer_pas_de_partage_directions_opposees():
+    """MÊME cle mais directions OPPOSÉES → pas de ⚭ (pas le même pari)."""
+    a = _actif_nomme("LongA", "taux_reels", "Taux réels", 8.0)
+    b = _actif_nomme("ShortB", "taux_reels", "Taux réels", -8.0)
+    block = sa.build_a_jouer_block([a, b], NOW)
+    # Exclut la note d'intro (qui mentionne ⚭ pour la légende) : on regarde le corps.
+    corps = "\n".join(block).split("**Jouables**")[1]
+    assert "⚭" not in corps
+    assert "Même pari" not in corps
+
+
+def test_a_jouer_pas_de_synthese_si_aucun_groupe():
+    """Aucun driver partagé → aucune ligne « Même pari »."""
+    a = _actif_nomme("A", "d1", "Driver 1", 8.0)
+    b = _actif_nomme("B", "d2", "Driver 2", 7.0)
+    block = sa.build_a_jouer_block([a, b], NOW)
+    corps = "\n".join(block).split("**Jouables**")[1]
+    assert "Même pari" not in corps
+    assert "⚭" not in corps
+
+
+def test_a_jouer_note_intro_porte_par():
+    """La note d'intro explique « Porté par » et le symbole ⚭."""
+    r = _actif_nomme("Argent", "taux_reels", "Taux réels", 8.0)
+    txt = "\n".join(sa.build_a_jouer_block([r], NOW))
+    assert "« Porté par »" in txt
+    assert "même\ndriver" in txt or "même driver" in txt
+
+
+def test_truncate_driver_nom_long():
+    """Un nom > 40 chars est tronqué proprement avec « … »."""
+    long = "Taux d'intérêt réels américains à dix ans corrigés de l'inflation"
+    out = sa._truncate_driver(long)
+    assert out.endswith("…")
+    assert len(out) <= sa.DRIVER_NAME_MAX_LEN + 1  # +1 pour le caractère « … »
+    court = "Taux réels"
+    assert sa._truncate_driver(court) == court  # pas de troncature si court
 
 
 # ===========================================================================

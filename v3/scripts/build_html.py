@@ -1630,12 +1630,19 @@ function renderMarkdownInto(target, md) {{
   if (typeof marked !== 'undefined') {{
     marked.setOptions({{gfm: true, breaks: false}});
     target.innerHTML = marked.parse(md || '');
+    // Même pipeline de transformations que la vue bulletin principale : sans
+    // ça, le briefing affiché dans « Aujourd'hui » semblait être un AUTRE
+    // rapport (mur de texte non replié, hash en tête — incident 11/06). Seule
+    // la sous-navigation reste propre à la vue principale (pas de subnav
+    // multiple dans l'accordéon par jour).
+    relocateDebugMeta(target);
     addLevelBadges(target);
     dimWeakCells(target);
     colorizeDirections(target);
     addSymbolTooltips(target);
     markDenseTables(target);
     wrapTables(target);
+    foldSections(target);
   }} else {{
     const pre = document.createElement('pre');
     pre.textContent = md || '';

@@ -530,3 +530,159 @@ def test_metadata_en_pied_pas_en_tete():
     # Pied : section --- + métadonnées techniques.
     assert "_Analyste version : v3.0.0 · Fiches hash : abcd1234_" in b
     assert b.index("_Analyste version") > b.index("## 🎯 À jouer aujourd'hui (24h)")
+
+
+# ===========================================================================
+# Bloc 5 — Conviction EXPLICITE (audit UX 2026-06-11)
+#   Renommage d'affichage SEUL : mêmes conditions, mêmes seuils que l'ancien
+#   « forte »/« faible ». On vérifie chaque libellé + l'ordre de priorité.
+# ===========================================================================
+
+SEUIL = 0.6  # seuil par défaut (bilan_jour KO → 0.6, cf. build_a_jouer_block)
+
+
+def test_conviction_forte():
+    """|score| ≥ seuil + aucun drapeau → « forte »."""
+    # Fiche 2 critères équilibrés → pas de mono (◧) ; score franc, pas de divergence.
+    r = sa.score_actif("test", _fiche_equilibree(), _vals2(1.0, 1.0))
+    r.scores = {"24h": 8.0, "7j": 8.0, "1m": 8.0}
+    r.conclusions = {h: "LONG" for h in sa.HORIZONS}
+    assert sa._conviction_cell(r, "24h", SEUIL) == "forte"
+
+
+def test_conviction_molle_score_faible():
+    """|score| < NEUTRAL_BAND → « molle (score faible) »."""
+    r = sa.score_actif("test", _fiche_equilibree(), _vals2(1.0, 1.0))
+    r.scores = {"24h": 0.20, "7j": 0.20, "1m": 0.20}  # < 0.30
+    r.conclusions = {h: "LONG" for h in sa.HORIZONS}
+    assert sa._conviction_cell(r, "24h", SEUIL) == "molle (score faible)"
+
+
+def test_conviction_molle_entre_neutral_et_seuil():
+    """NEUTRAL_BAND ≤ |score| < seuil, sans drapeau → « molle (score faible) »
+    (ancien « faible » non dégradé)."""
+    r = sa.score_actif("test", _fiche_equilibree(), _vals2(1.0, 1.0))
+    r.scores = {"24h": 0.45, "7j": 0.45, "1m": 0.45}  # 0.30 ≤ 0.45 < 0.6
+    r.conclusions = {h: "LONG" for h in sa.HORIZONS}
+    assert sa._conviction_cell(r, "24h", SEUIL) == "molle (score faible)"
+
+
+def test_conviction_contestee_divergence():
+    """Divergence quant↔news (↯) → « contestée (news à contre-sens) »."""
+    r = sa.score_actif("test", _fiche_equilibree(), _vals2(1.0, 1.0))
+    r.scores = {"24h": 8.0, "7j": 8.0, "1m": 8.0}
+    r.conclusions = {h: "LONG" for h in sa.HORIZONS}
+    r.divergence_quant_news = {"24h": True, "7j": False, "1m": False}
+    assert sa._conviction_cell(r, "24h", SEUIL) == "contestée (news à contre-sens)"
+
+
+def test_conviction_fragile_mono_critere():
+    """Mono-critère dominant (◧) → « fragile (1 seul critère) »."""
+    # Fiche à 1 seul critère → mono-dominant garanti.
+    r = sa.score_actif("test", _fiche(quant_poids=12), _vals(1.0))
+    r.scores = {"24h": 8.0, "7j": 8.0, "1m": 8.0}
+    r.conclusions = {h: "LONG" for h in sa.HORIZONS}
+    assert sa._conviction_cell(r, "24h", SEUIL) == "fragile (1 seul critère)"
+
+
+def test_conviction_zigzag_horizons():
+    """Incohérence inter-horizons (⇆) → « zigzag horizons »."""
+    r = sa.score_actif("test", _fiche_equilibree(), _vals2(1.0, 1.0))
+    r.scores = {"24h": 8.0, "7j": 8.0, "1m": 8.0}
+    r.conclusions = {h: "LONG" for h in sa.HORIZONS}
+    r.incoherence_inter_horizons = True
+    assert sa._conviction_cell(r, "24h", SEUIL) == "zigzag horizons"
+
+
+def test_conviction_insuffisant():
+    """INSUFFISANT → « — »."""
+    r = sa.score_actif("test", _fiche_equilibree(), _vals2(1.0, 1.0))
+    r.conclusions = {h: sa.CONCLUSION_INSUFFISANT for h in sa.HORIZONS}
+    assert sa._conviction_cell(r, "24h", SEUIL) == "—"
+
+
+def test_conviction_priorite_molle_avant_contestee():
+    """Priorité : molle > contestée. Si |score| < NEUTRAL_BAND ET divergence,
+    on affiche « molle » (la plus disqualifiante)."""
+    r = sa.score_actif("test", _fiche_equilibree(), _vals2(1.0, 1.0))
+    r.scores = {"24h": 0.20, "7j": 0.20, "1m": 0.20}  # < 0.30
+    r.conclusions = {h: "LONG" for h in sa.HORIZONS}
+    r.divergence_quant_news = {"24h": True, "7j": True, "1m": True}
+    assert sa._conviction_cell(r, "24h", SEUIL) == "molle (score faible)"
+
+
+def test_conviction_priorite_contestee_avant_fragile():
+    """Priorité : contestée > fragile. Fiche mono-critère (◧) + divergence (↯)
+    → on affiche « contestée » (plus disqualifiante que la fragilité)."""
+    r = sa.score_actif("test", _fiche(quant_poids=12), _vals(1.0))  # mono garanti
+    r.scores = {"24h": 8.0, "7j": 8.0, "1m": 8.0}
+    r.conclusions = {h: "LONG" for h in sa.HORIZONS}
+    r.divergence_quant_news = {"24h": True, "7j": True, "1m": True}
+    assert sa._conviction_cell(r, "24h", SEUIL) == "contestée (news à contre-sens)"
+
+
+def test_a_jouer_libelle_explicite_dans_table():
+    """Le tableau « À jouer » affiche le libellé explicite, pas « faible »."""
+    fort = _actif_24h("Fort", 8.0)
+    block = sa.build_a_jouer_block([fort], NOW, seuil_conviction=SEUIL)
+    txt = "\n".join(block)
+    assert "forte" in txt
+    assert "| faible |" not in txt  # plus de libellé binaire « faible »
+
+
+# ===========================================================================
+# Bloc 6 — Phrase d'explication déterministe sous chaque top conviction
+# ===========================================================================
+
+def test_top_explication_top2_criteres():
+    """La phrase cite les 2 critères à plus forte |contribution| (nom + valeur
+    signée), du plus fort au moins fort."""
+    r = sa.score_actif("test", _fiche_equilibree(), _vals2(3.0, 1.0))
+    r.conclusions = {h: "LONG" for h in sa.HORIZONS}
+    phrase = sa._top_explication(r, "24h")
+    assert phrase.startswith("_Porté par QuantA (") and "QuantB (" in phrase
+    # QuantA (val 3) cité avant QuantB (val 1).
+    assert phrase.index("QuantA") < phrase.index("QuantB")
+    assert phrase.endswith("._")
+
+
+def test_top_explication_news_contre_sens():
+    """Divergence quant↔news → mention « news en sens inverse (↯) »."""
+    r = sa.score_actif("test", _fiche_equilibree(), _vals2(2.0, 1.0))
+    r.conclusions = {h: "LONG" for h in sa.HORIZONS}
+    r.divergence_quant_news = {"24h": True, "7j": False, "1m": False}
+    phrase = sa._top_explication(r, "24h")
+    assert "news en sens inverse (↯)" in phrase
+    assert "📰" not in phrase  # exclusif avec ↯
+
+
+def test_top_explication_porte_par_news():
+    """News dominantes et alignées avec la conclusion → « porté par les news 📰 »."""
+    fiche = {
+        "actif": "TestActif",
+        "criteres": [
+            {"id": 1, "nom": "Quant", "cle_courante": "q", "normalisation": "lineaire",
+             "centre": 0.0, "echelle": 1.0, "cap": 5.0, "signe": 1, "poids": 3,
+             "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0}},
+            {"id": 2, "nom": "NewsGeo", "cle_courante": "ng", "normalisation": "lineaire",
+             "centre": 0.0, "echelle": 1.0, "cap": 5.0, "signe": 1, "poids": 12,
+             "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0}},
+        ],
+    }
+    vals = {
+        "q": {"valeur": 1.0, "source_track": "twelvedata"},
+        "ng": {"valeur": 1.0, "source_track": "ia_synthese"},
+    }
+    r = sa.score_actif("test", fiche, vals)
+    r.conclusions = {h: "LONG" for h in sa.HORIZONS}
+    r.divergence_quant_news = {h: False for h in sa.HORIZONS}
+    phrase = sa._top_explication(r, "24h")
+    assert "porté par les news 📰" in phrase
+    assert "↯" not in phrase
+
+
+def test_top_explication_vide_si_aucun_contributeur():
+    """Aucune contribution réelle → phrase vide (zéro invention)."""
+    r = sa.score_actif("test", _fiche_equilibree(), _vals2(0.0, 0.0))
+    r.conclusions = {h: "LONG" for h in sa.HORIZONS}
+    assert sa._top_explication(r, "24h") == ""

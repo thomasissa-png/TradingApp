@@ -1782,30 +1782,43 @@ def build_top3_block(results: List["ActifResult"]) -> List[str]:
 
 
 def _conviction_cell(r: "ActifResult", h: str, seuil: float) -> str:
-    """Niveau de conviction (« forte » / « faible ») d'une cellule, calculé
-    avec EXACTEMENT la logique de `bilan_jour.conviction_level` (§4.7) mais à
-    partir de l'ActifResult au lieu du record decision-log (mêmes drapeaux,
-    même seuil — zéro nouveau seuil métier).
+    """Libellé EXPLICITE de conviction d'une cellule (audit UX 2026-06-11 :
+    « forte »/« faible » binaire illisible — « faible » sur un score de 13 semble
+    absurde). La LOGIQUE est INCHANGÉE (mêmes conditions, mêmes seuils que
+    `bilan_jour.conviction_level` §4.7) : seul le LIBELLÉ d'affichage change.
 
-    Forte = |score| >= seuil ET aucun drapeau parmi : mono-critère dominant (◧),
-    incohérence inter-horizons (⇆), divergence quant↔news (↯), quasi-neutre (≈
-    incluant coin-flip). Sinon « faible ». Un INSUFFISANT n'a pas de conviction
-    (« — »).
+    Mapping des conditions (toutes calculées comme avant) :
+      - aucune condition dégradante + |score| >= seuil → « forte »
+      - |score| < NEUTRAL_BAND (≈/⚪)                  → « molle (score faible) »
+      - divergence quant↔news (↯)                      → « contestée (news à contre-sens) »
+      - mono-critère dominant (◧)                      → « fragile (1 seul critère) »
+      - incohérence inter-horizons (⇆)                 → « zigzag horizons »
+      - INSUFFISANT                                    → « — »
+
+    Priorité si plusieurs conditions actives (la plus disqualifiante d'abord) :
+      molle > contestée > fragile > zigzag. On n'affiche QUE la première — les
+      drapeaux restants demeurent visibles dans la colonne « Drapeaux ».
     """
     conc = r.conclusions.get(h, "")
     if conc not in ("LONG", "SHORT"):
         return "—"
     score = abs(r.scores.get(h, 0.0))
     mono_dom, _ = detect_mono_critere_dominant(r, h)
-    drapeaux = (
-        mono_dom
-        or r.incoherence_inter_horizons
-        or r.divergence_quant_news.get(h, False)
-        or (score < NEUTRAL_BAND)  # quasi_neutre (englobe coin-flip |score|<0.05)
-    )
-    if score >= seuil and not drapeaux:
+    # Conditions EXISTANTES, ordre de priorité d'affichage (n'altère ni seuils ni logique).
+    if score < NEUTRAL_BAND:  # quasi_neutre (englobe coin-flip |score|<0.05)
+        return "molle (score faible)"
+    if r.divergence_quant_news.get(h, False):
+        return "contestée (news à contre-sens)"
+    if mono_dom:
+        return "fragile (1 seul critère)"
+    if r.incoherence_inter_horizons:
+        return "zigzag horizons"
+    if score >= seuil:
         return "forte"
-    return "faible"
+    # |score| entre NEUTRAL_BAND et seuil, sans drapeau : ancien « faible »
+    # (ni assez fort, ni dégradé) → on le qualifie de « molle (score faible) »
+    # (même famille que le quasi-neutre : la note ne porte pas la conviction).
+    return "molle (score faible)"
 
 
 def _cell_a_eviter(r: "ActifResult", h: str) -> bool:
@@ -1881,10 +1894,12 @@ def build_a_jouer_block(
     out: List[str] = ["## 🎯 À jouer aujourd'hui (24h)", ""]
     out.append(
         "_Les 12 cellules à 24h (horizon de trade), triées par force de note. "
-        "« À éviter » = quasi coin-flip (⚪), quasi-neutre (≈) ou données "
-        "insuffisantes (🚫). Les drapeaux de prudence (◧ ⚠️ ↯ …) restent dans "
-        "« Jouables » — prudence, pas exclusion. Prix de réf. = prix d'émission "
-        "stampé (— si pas encore disponible)._"
+        "« Conviction » = force du score ET absence de contestation (forte = note "
+        "≥ seuil sans drapeau ; sinon le libellé dit POURQUOI : molle, contestée, "
+        "fragile ou zigzag). « À éviter » = quasi coin-flip (⚪), quasi-neutre (≈) "
+        "ou données insuffisantes (🚫). Les drapeaux de prudence (◧ ⚠️ ↯ …) restent "
+        "dans « Jouables » — prudence, pas exclusion. Prix de réf. = prix "
+        "d'émission stampé (— si pas encore disponible)._"
     )
     out.append("")
     header = "| Actif | Direction | Note | Conviction | Drapeaux | Prix de réf. |"
@@ -1908,6 +1923,53 @@ def build_a_jouer_block(
         out.append("| _aucune_ | — | — | — | — | — |")
     out.append("")
     return out
+
+
+def _top_explication(r: "ActifResult", h: str) -> str:
+    """Phrase d'explication DÉTERMINISTE (zéro LLM) d'une cellule du top conviction.
+
+    Source UNIQUE : les `contributions[h]` des critères de l'ActifResult (mêmes
+    données que le tableau « Détail par actif »). Cite les 2 critères qui portent
+    le PLUS la direction (|contribution| max, nom trader + valeur signée), puis,
+    si pertinent : « news en sens inverse (↯) » (divergence quant↔news sur cet
+    horizon) OU « porté par les news 📰 » (les contributions news dominent et vont
+    dans le sens de la conclusion). Retourne "" si aucun contributeur réel.
+    """
+    contribs: List[Tuple[float, str, float, bool]] = []  # (|c|, nom, c_signed, is_news)
+    for c in r.criteres:
+        if c.is_gate or c.is_na:
+            continue
+        ctr = c.contributions.get(h)
+        if ctr is None or abs(ctr) <= 0.0:
+            continue
+        is_news = c.source_track.startswith("ia") or c.source_track == "keyword"
+        contribs.append((abs(ctr), c.nom, float(ctr), is_news))
+    if not contribs:
+        return ""
+    # Tri |contribution| desc, départage déterministe par nom pour stabilité.
+    contribs.sort(key=lambda t: (-t[0], t[1]))
+    top2 = contribs[:2]
+    parts = [f"{nom} ({c_signed:+.1f})" for _a, nom, c_signed, _n in top2]
+    if len(parts) == 1:
+        coeur = f"Porté par {parts[0]}"
+    else:
+        coeur = f"Porté par {parts[0]} et {parts[1]}"
+
+    mention = ""
+    if r.divergence_quant_news.get(h, False):
+        mention = " ; news en sens inverse (↯)"
+    else:
+        # 📰 — les news dominent ET vont dans le sens de la conclusion.
+        news_total = sum(c for _a, _nm, c, is_n in contribs if is_n)
+        quant_total = sum(c for _a, _nm, c, is_n in contribs if not is_n)
+        conc = r.conclusions.get(h, "")
+        news_aligne = (
+            (conc == "LONG" and news_total > 0)
+            or (conc == "SHORT" and news_total < 0)
+        )
+        if abs(news_total) > abs(quant_total) and news_aligne:
+            mention = " ; porté par les news 📰"
+    return f"_{coeur}{mention}._"
 
 
 def build_top_multi_horizons_block(
@@ -1965,6 +2027,10 @@ def build_top_multi_horizons_block(
         flags_str = (" — drapeaux : " + " ".join(flags)) if flags else ""
         suffix = f" — {raison}" if raison else ""
         out.append(f"- **{r.nom} {h} — {conc} ({score:+.2f})**{suffix}{flags_str}")
+        # Phrase d'explication déterministe (2 critères porteurs + ↯/📰).
+        explication = _top_explication(r, h)
+        if explication:
+            out.append(f"  {explication}")
 
     # ⚭ — si ≥ 2 cellules du top partagent le même driver dominant.
     if shared_summary:

@@ -154,10 +154,13 @@ STRUCTURED_QUERIES = [
     "CAC 40 OR SBF 120 OR LVMH OR TotalEnergies OR profit warning France OR résultats trimestriels OR France budget politics",  # + earnings mid-cap / profit warnings (dernier fix CAC, audit R3)
     "Nvidia OR semiconductor OR AI chips OR TSMC OR chip export controls OR earnings guidance OR data center capex",  # Nasdaq + pivot baissier
     # VIX : causes AMONT (war/escalation/...) en plus des symptômes → capter la peur AVANT le spike.
-    # Fix 10/06 (audit DeepSeek) : la requête unique 9-termes renvoyait HTTP 400 sur GNews
-    # (source-health : gnews 13/14, 1 requête en échec). Scindée en 2 requêtes courtes
-    # (symptômes marché / causes amont géopol) sous la longueur des requêtes qui passent.
-    "stock market volatility OR VIX OR risk-off OR market selloff",  # VIX symptômes marché
+    # Fix 10/06 (audit DeepSeek) : la requête unique 9-termes renvoyait HTTP 400 sur GNews.
+    # Fix 11/06 : la moitié « symptômes » restait en 400 malgré le split (la longueur n'était
+    # donc pas la cause). Guillemets sur les expressions multi-mots et le terme à tiret
+    # (« risk-off » : tiret nu ambigu pour le parseur GNews — syntaxe doc API). Non validable
+    # en live sans GNEWS_API_KEY → vérifier source-health 15/15 au prochain run ; si encore
+    # 400, retirer « risk-off » (le flux RSS dédié gnews_vix le couvre déjà, quoted).
+    '"stock market volatility" OR VIX OR "risk-off" OR "market selloff"',  # VIX symptômes marché
     "war escalation OR sanctions OR bank failure OR sovereign default",  # VIX causes amont géopol/systémiques
 ]
 

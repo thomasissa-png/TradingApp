@@ -262,8 +262,10 @@ def test_regime_extreme_annonce_une_fois_quand_global():
     # est marqué « Drapeau régime ⚑ actif » dans la colonne « Comment c'est lu »
     # (info de risque préservée après suppression de la colonne « Note »).
     detail = b.split("## Détail par actif")[1]
-    assert "⚑ actif" in detail
-    assert "Drapeau régime ⚑ actif" in detail
+    # [P-B3 audit visuel 12/06] : le gate ACTIF est désormais mis en valeur
+    # (gras + ⚑ en tête) et remonté en tête de tableau ; les gates INACTIFS sont
+    # masqués. L'info de risque reste visible — le libellé a changé de forme.
+    assert "⚑ **Drapeau régime ACTIF**" in detail
 
 
 def test_regime_extreme_garde_le_drapeau_par_cellule_si_partiel():

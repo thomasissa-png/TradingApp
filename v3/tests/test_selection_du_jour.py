@@ -176,8 +176,8 @@ def test_bloc_tableau_et_ecartee(monkeypatch):
     assert "| Or | LONG | +0.90 | Fed | 2400 |" in texte
     assert "écartée : Argent — même pari (drv_macro) que Or" in texte
     # Intro : les 4 règles en clair (dédup par FAMILLE de drivers).
-    assert "conviction **forte**" in texte
-    assert "un seul pari par famille de drivers" in texte
+    assert "**signal fort**" in texte
+    assert "chaque type de marché représenté une seule fois" in texte
 
 
 def test_bloc_avertissement_catalyseur_j0(monkeypatch):
@@ -469,4 +469,4 @@ def test_selection_motif_famille_affiche_dans_bloc(monkeypatch):
     )
     texte = "\n".join(sa.build_selection_du_jour_block([argent, eurusd], _NOW))
     assert "écartée : EUR/USD — même pari (taux/dollar) que Argent" in texte
-    assert "un seul pari par famille de drivers" in texte
+    assert "chaque type de marché représenté une seule fois" in texte

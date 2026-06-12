@@ -115,6 +115,11 @@ MONO_CRITERE_RATIO: float = 0.50
 # une ligne de comptage. Évite ~45 lignes de n/a redondants avec les tableaux Détail.
 LIMITES_POIDS_MIN: float = 8.0
 
+# Nombre max de calls affichés dans « 🔎 Calls 24h jugés » du bulletin markdown
+# (C-B3 audit visuel 12/06). ≈ 1 semaine ouvrée. L'historique complet reste
+# consultable dans la vue Historique de la page HTML (zéro perte de donnée).
+MAX_CALLS_DISPLAYED: int = 7
+
 # ---------------------------------------------------------------------------
 # RÉGIME NEWS (ticket D) — actifs structurellement news-driven
 # ---------------------------------------------------------------------------
@@ -1973,12 +1978,51 @@ def build_a_jouer_block(
     out.append("")
     header = "| Actif | Direction | Note | Conviction | Drapeaux | Porté par | Prix de réf. |"
     sep = "|---|---|---|---|---|---|---|"
+    # [H-B1 audit visuel 12/06] : guider l'œil dans « Jouables » — séparer les
+    # convictions FORTES (le pari net) des autres lignes jouables (prudence). Au
+    # sein des fortes, celles SANS drapeau (les plus propres) d'abord, puis celles
+    # AVEC drapeau(s). Le tri |note| desc EST préservé à l'intérieur de chaque
+    # sous-groupe (buf est déjà trié). Zéro changement de scoring/sélection.
+    def _is_forte(d: Dict[str, str]) -> bool:
+        return d.get("conv", "") == "forte"
+
+    def _has_flag(d: Dict[str, str]) -> bool:
+        return d.get("flags_str", "—") not in ("", "—")
+
+    forte_clean = [d for d in jouables_cells if _is_forte(d) and not _has_flag(d)]
+    forte_flagged = [d for d in jouables_cells if _is_forte(d) and _has_flag(d)]
+    autres_jouables = [d for d in jouables_cells if not _is_forte(d)]
+
     out.append("**Jouables**")
     out.append("")
-    out.append(header)
-    out.append(sep)
-    out.extend(_render_table(jouables_cells, jouables_shared))
-    out.append("")
+    if forte_clean:
+        out.append("_Conviction forte — sans drapeau_")
+        out.append("")
+        out.append(header)
+        out.append(sep)
+        out.extend(_render_table(forte_clean, jouables_shared))
+        out.append("")
+    if forte_flagged:
+        out.append("_Conviction forte — avec drapeau(s) (prudence)_")
+        out.append("")
+        out.append(header)
+        out.append(sep)
+        out.extend(_render_table(forte_flagged, jouables_shared))
+        out.append("")
+    # Les autres lignes jouables (conviction non-forte mais ni ⚪ ni ≈ ni 🚫).
+    if autres_jouables:
+        out.append("_Autres lignes jouables_")
+        out.append("")
+        out.append(header)
+        out.append(sep)
+        out.extend(_render_table(autres_jouables, jouables_shared))
+        out.append("")
+    # Si rien dans aucun sous-groupe (cas dégénéré) : tableau vide explicite.
+    if not (forte_clean or forte_flagged or autres_jouables):
+        out.append(header)
+        out.append(sep)
+        out.extend(_render_table([], jouables_shared))
+        out.append("")
     # Synthèse des paris partagés (une ligne par groupe ⚭ de même cle+direction).
     synth = _synthese_paris_partages(jouables_cells, jouables_shared)
     if synth:
@@ -2246,11 +2290,11 @@ def build_selection_du_jour_block(
 
     out: List[str] = ["## 🎯 Sélection du jour — max 3", ""]
     out.append(
-        "_Les paris 24h qui passent les 4 règles : (1) conviction **forte**, "
-        "(2) couverture ≥ 70 %, (3) **un seul pari par famille de drivers** (deux "
-        "lignes portées par le même complexe macro — ex. taux/dollar — = un seul "
-        "pari, on garde la plus forte), (4) **3 maximum**. Moins de 3 — voire zéro "
-        "— est normal : ne pas forcer un pari._"
+        "_Les meilleurs paris 24h du jour : (1) **signal fort**, (2) **données "
+        "suffisantes** sur l'actif, (3) **chaque type de marché représenté une "
+        "seule fois** (deux lignes portées par le même moteur — ex. taux/dollar — "
+        "comptent pour un seul pari, on garde la plus forte), (4) **3 maximum**. "
+        "Moins de 3 — voire zéro — est normal : on ne force jamais un pari._"
     )
     out.append("")
 
@@ -2448,7 +2492,8 @@ def build_top_multi_horizons_block(
     out.append(
         "_Les meilleures convictions tous horizons confondus, avec leurs "
         "drapeaux : une note forte portée par 1 seul critère (◧) ou divergente "
-        "(↯) reste à lire avec prudence._"
+        "(↯) reste à lire avec prudence. Ces convictions peuvent recouper les "
+        "lignes 24h de « À jouer » ci-dessus (mêmes actifs, autres horizons)._"
     )
     out.append("")
     now_for_flags = datetime.now(timezone.utc)
@@ -2798,7 +2843,12 @@ def render_bulletin(
                 # entre parenthèses. La direction de tête = direction pondérée.
                 # Le brut (=score primaire pm1) reste affiché → parsé comme
                 # score mesuré par journaliste (mesure inchangée).
-                core = f"{conc_p} {score_p:+.2f} (brut {conc} {score:+.2f}){tie}{gate_flag}{news_flag}"
+                # [P-B1/I-3 audit visuel 12/06] : on ne RÉPÈTE le mot direction
+                # `brut SHORT -8.24` que si la direction du brut DIFFÈRE du
+                # pondéré (info utile : les deux méthodes divergent) ; sinon
+                # `(brut -8.24)` (le signe du chiffre porte déjà la direction).
+                brut_dir = f"{conc} " if conc != conc_p else ""
+                core = f"{conc_p} {score_p:+.2f} (brut {brut_dir}{score:+.2f}){tie}{gate_flag}{news_flag}"
             elif pond_differe:
                 # Hors news : on garde primaire en tête, pondéré en annotation.
                 core = (
@@ -2883,7 +2933,18 @@ def render_bulletin(
         lines.append("")
         lines.append("| Critère | Comment c'est lu | Valeur actuelle | Penchant | Importance | Sens | Effet 24h | Effet 7j | Effet 1m |")
         lines.append("|---|---|---|---|---|---|---|---|---|")
-        for c in r.criteres:
+        # [P-B3 audit visuel 12/06] : on masque les lignes « Drapeau régime ⚑ »
+        # (gate) INACTIVES — elles répétaient le même libellé sur chaque actif
+        # (~10 lignes de bruit). Le gate ACTIF reste affiché EN TÊTE du tableau
+        # (info de risque, fond mis en valeur via préfixe ⚑). Les autres critères
+        # gardent leur ordre.
+        gates_actifs_detail = [c for c in r.criteres if c.is_gate and c.gate_active]
+        criteres_detail = (
+            gates_actifs_detail
+            + [c for c in r.criteres if not (c.is_gate and not c.gate_active)
+               and c not in gates_actifs_detail]
+        )
+        for c in criteres_detail:
             valeur_brute_str = _fmt_raw(c.valeur_brute)
             vn = "—" if c.valeur_norm is None else f"{c.valeur_norm:+.3f}"
             poids = "—" if c.is_gate else f"{c.poids:g}"
@@ -2892,12 +2953,15 @@ def render_bulletin(
                 sens = "—"
             else:
                 sens = "normal" if c.signe == 1 else "inversé"
-            ctr = {h: ("—" if c.is_na or c.is_gate else f"{c.contributions[h]:+.3f}") for h in HORIZONS}
+            # [P-B2 audit visuel 12/06] : un effet quasi nul (|contrib| < 0.001,
+            # ex. critère news à direction 0) s'affiche « — » plutôt que
+            # « +0.000 » (zéros parasites qui polluent la lecture).
+            ctr = {h: _fmt_effet(c, h) for h in HORIZONS}
             # « Comment c'est lu » : type traduit. Le gate ACTIF garde sa
             # visibilité de risque (info auparavant portée par la colonne Note).
             lu = _label_type_norm(c.type_norm)
             if c.is_gate and c.gate_active:
-                lu = lu + " ⚑ actif"
+                lu = "⚑ **" + lu + " ACTIF**"
             lines.append(
                 f"| {c.nom} | {lu} | {valeur_brute_str} | {vn} | {poids} | {sens} | "
                 f"{ctr['24h']} | {ctr['7j']} | {ctr['1m']} |"
@@ -2927,7 +2991,13 @@ def render_bulletin(
             has_limit = True
             lines.append(f"### {r.nom}")
             for c in nas_majeurs:
-                lines.append(f"- n/a : {c.nom} (poids {c.poids:g}) — {c.note}")
+                # [P-B4 audit visuel 12/06] : « n/a : » dit déjà que la valeur
+                # est absente → on n'ajoute « — {note} » que si la note porte une
+                # info SUPPLÉMENTAIRE (cause précise : source DEAD, stdev=0, etc.),
+                # pas la redondance générique « (valeur absente) ».
+                note = c.note or ""
+                detail = "" if note.strip() in ("n/a (valeur absente)", "") else f" — {note}"
+                lines.append(f"- n/a : {c.nom} (poids {c.poids:g}){detail}")
             for c in gates_actifs:
                 lines.append(f"- ⚑ GATE actif : {c.nom} — {c.note}")
             if n_mineurs:
@@ -3545,6 +3615,13 @@ def build_audit_veille_24h(
         key=lambda t: (t[1].cell.bulletin_date, t[0], t[1].cell.actif_name),
         reverse=True,
     )
+    # [C-B3 audit visuel 12/06] : à 7h, Thomas veut les calls RÉCENTS (≈ 1
+    # semaine), pas l'historique complet (l'intégral est dans la vue Historique
+    # de la page). On tronque à MAX_CALLS_DISPLAYED, en gardant les plus récents
+    # (la liste est triée date desc). La synthèse X✅/Y❌ porte alors sur la
+    # fenêtre affichée (cohérent avec ce qui est listé).
+    tronque = len(retained) > MAX_CALLS_DISPLAYED
+    retained = retained[:MAX_CALLS_DISPLAYED]
 
     # Ligne de synthèse EN TÊTE : « X ✅ / Y ❌ (du A au B) ».
     n_vrai = sum(1 for _, m in retained if m.outcome == OUTCOME_VRAI)
@@ -3556,7 +3633,11 @@ def build_audit_veille_24h(
         if d_min != d_max
         else f"le {d_min.isoformat()}"
     )
-    lines.append(f"**{n_vrai} ✅ / {n_faux} ❌** ({periode})")
+    suffixe_tronque = (
+        f" — {MAX_CALLS_DISPLAYED} plus récents ; historique complet dans la vue Historique"
+        if tronque else ""
+    )
+    lines.append(f"**{n_vrai} ✅ / {n_faux} ❌** ({periode}{suffixe_tronque})")
     lines.append("")
 
     for _, m in retained:
@@ -3581,6 +3662,26 @@ def build_audit_veille_24h(
         )
     lines.append("")
     return lines
+
+
+# Seuil sous lequel un « Effet » (contribution par horizon) est affiché « — »
+# au lieu de « +0.000 » (P-B2 audit visuel 12/06 — anti-zéros parasites).
+EFFET_EPSILON: float = 0.001
+
+
+def _fmt_effet(c: "CritereResult", h: str) -> str:
+    """Formate la contribution d'un critère pour la colonne « Effet {h} ».
+
+    « — » pour les gates / n.a. (pas de contribution) ET pour les effets quasi
+    nuls (|contrib| < EFFET_EPSILON, ex. critère news à direction 0 → +0.000).
+    Sinon le chiffre signé à 3 décimales (inchangé). Zéro impact sur le score.
+    """
+    if c.is_na or c.is_gate:
+        return "—"
+    val = c.contributions.get(h, 0.0)
+    if abs(val) < EFFET_EPSILON:
+        return "—"
+    return f"{val:+.3f}"
 
 
 def _fmt_raw(raw: Any) -> str:

@@ -332,14 +332,18 @@ def build_shared_drivers_block(summary: List[Dict[str, Any]]) -> List[str]:
     )
     lines.append("")
     for d in summary:
-        actifs_str = ", ".join(d["actifs"])
-        # n_cellules compte actif × horizon ; le libellé explicite les deux
-        # pour ne pas laisser croire à N actifs distincts (lecture trader).
+        # [C-B4 audit visuel 12/06] : bullet unique, langage trader — on nomme
+        # le driver, les actifs et la direction, sans la prose redondante
+        # « porte N cellule(s) sur M actif(s) » (déjà visible via ⚭ dans le
+        # tableau À jouer). Liste lisible : « Nasdaq et Or » plutôt que virgules.
+        actifs = list(d["actifs"])
+        if len(actifs) > 1:
+            actifs_str = ", ".join(actifs[:-1]) + " et " + actifs[-1]
+        else:
+            actifs_str = actifs[0] if actifs else "—"
         lines.append(
-            f"- {SHARED_DRIVERS_SYMBOL} {d['label']} : porte {d['n_cellules']} "
-            f"cellule(s) {d['direction']} sur {d['n_actifs']} actif(s) "
-            f"({actifs_str}) — un retournement de ce driver les fausserait "
-            f"ensemble."
+            f"- {SHARED_DRIVERS_SYMBOL} **{d['label']}** : {actifs_str} "
+            f"{d['direction']} — un retournement les fausse ensemble."
         )
     lines.append("")
     return lines

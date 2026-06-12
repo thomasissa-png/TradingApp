@@ -99,9 +99,12 @@ def _fmt_pct(v: Optional[float], signed: bool = True) -> str:
 
 
 def _fmt_points(v: Optional[float]) -> str:
+    # [P-S2 audit visuel 12/06] : « pts » seul était ambigu (points d'index ?
+    # de %?). Le delta vs suivi précédent est une variation de POINTS DE
+    # POURCENTAGE → on suffixe « %pts » pour lever l'ambiguïté.
     if not isinstance(v, (int, float)):
         return "—"
-    return f"{v:+.2f}pts"
+    return f"{v:+.2f}%pts"
 
 
 def _fmt_price(v: Optional[float]) -> str:
@@ -485,6 +488,18 @@ def build_suivi(
         deltas_now[actif] = delta
 
         statut = compute_statut(delta, call, band)
+        # [H-S2/I-4 audit visuel 12/06] : au 18h, les marchés US sont ouverts
+        # depuis 15h30. Si on a un prix 18h mais PAS d'ouverture stampée (delta
+        # None), un statut « — » est confusant (donne l'impression d'un actif
+        # non ouvert). On marque explicitement « ⏳ données manquantes » (zéro
+        # invention : on ne fabrique pas d'ouverture, on dit juste qu'elle manque).
+        if (
+            report_type == REPORT_18H
+            and group == "us"
+            and delta is None
+            and isinstance(prix_courant, (int, float))
+        ):
+            statut = "⏳ données manquantes"
         # Tendance : générique (vs précédent) ; pour les actifs US au 18h on
         # surclasse par le flag US (open 15h30 a confirmé/infirmé le call).
         delta_prec = prev.get(actif)
@@ -518,7 +533,9 @@ def _render_markdown(r: SuiviRapport) -> str:
     heure = r.now.strftime("%Hh%M")
     h = r.report_type
     L: List[str] = []
-    L.append(f"## Suivi {h} — {r.date_j.isoformat()} {heure}")
+    # [I-7 audit visuel 12/06] : H1 pour tous les rapports (cohérence avec le
+    # Briefing — le suivi était en H2).
+    L.append(f"# Suivi {h} — {r.date_j.isoformat()} {heure}")
     L.append("")
 
     if h == REPORT_12H:
@@ -530,26 +547,43 @@ def _render_markdown(r: SuiviRapport) -> str:
         )
         L.append("")
         L.append("### Positions du matin vs ouverture")
-        prec_col = "Δ vs 7h"
     else:
         L.append("### Positions vs ouverture + dynamique intraday")
-        prec_col = "Δ vs 12h"
 
     L.append("")
-    L.append(
-        f"| Actif | Call 7h | Ouverture | Prix {h} | Delta% | {prec_col} | "
-        f"Tendance | Statut | Suggestion |"
-    )
-    L.append("|---|---|---|---|---|---|---|---|---|")
-    if not r.lignes:
-        L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | | | |")
-    for li in r.lignes:
+    # [H-S1/P-S1/I-1 audit visuel 12/06] : au 12h, les colonnes « Δ précédent »
+    # et « Tendance » sont structurellement vides (pas de suivi antérieur) → on
+    # les RETIRE (tableau 7 colonnes). Au 18h, elles sont remplies → tableau 9
+    # colonnes. Le libellé de la colonne delta est UNIFORME : « Δ précédent »
+    # (au lieu de « Δ vs 7h » / « Δ vs 12h » — incohérence inter-rapports).
+    if h == REPORT_12H:
         L.append(
-            f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | "
-            f"{_fmt_price(li.prix_courant)} | {_fmt_pct(li.delta_pct)} | "
-            f"{_fmt_points(li.delta_vs_prec)} | {li.tendance} | {li.statut} | "
-            f"{li.suggestion} |"
+            f"| Actif | Call 7h | Ouverture | Prix {h} | Delta% | Statut | Suggestion |"
         )
+        L.append("|---|---|---|---|---|---|---|")
+        if not r.lignes:
+            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | |")
+        for li in r.lignes:
+            L.append(
+                f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | "
+                f"{_fmt_price(li.prix_courant)} | {_fmt_pct(li.delta_pct)} | "
+                f"{li.statut} | {li.suggestion} |"
+            )
+    else:
+        L.append(
+            f"| Actif | Call 7h | Ouverture | Prix {h} | Delta% | Δ précédent | "
+            f"Tendance | Statut | Suggestion |"
+        )
+        L.append("|---|---|---|---|---|---|---|---|---|")
+        if not r.lignes:
+            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | | | |")
+        for li in r.lignes:
+            L.append(
+                f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | "
+                f"{_fmt_price(li.prix_courant)} | {_fmt_pct(li.delta_pct)} | "
+                f"{_fmt_points(li.delta_vs_prec)} | {li.tendance} | {li.statut} | "
+                f"{li.suggestion} |"
+            )
     L.append("")
 
     # News à impact depuis le matin (court).
@@ -557,6 +591,12 @@ def _render_markdown(r: SuiviRapport) -> str:
     L.append(f"### News à impact depuis {src}")
     if r.news:
         L.extend(r.news[:MAX_NEWS])
+        # [C-S1 audit visuel 12/06] : les news du suivi proviennent du même
+        # decision-log 7h → au 18h, elles sont identiques à celles du matin. On
+        # le signale pour éviter au lecteur de les relire comme du neuf.
+        if h == REPORT_18H:
+            L.append("")
+            L.append("_(mêmes news que les suivis précédents — source : Briefing 7h.)_")
     else:
         L.append(f"Pas de news impactante depuis {src}.")
     L.append("")
@@ -573,7 +613,31 @@ def _render_markdown(r: SuiviRapport) -> str:
             )
     else:
         L.append("Aucune alerte de sortie.")
+    L.append("")
+
+    # [I-6 audit visuel 12/06] : catalyseurs du lendemain au suivi 18h (Thomas
+    # décide en fin de journée s'il garde ses positions overnight). Copie légère
+    # depuis le calendrier éco (même source que le Bilan du jour, zéro invention).
+    if h == REPORT_18H:
+        L.append("### Catalyseurs J+1")
+        L.extend(_catalyseurs_j1_court(r.now))
+        L.append("")
     return "\n".join(L)
+
+
+def _catalyseurs_j1_court(now: datetime) -> List[str]:
+    """Catalyseurs J+1 en 1-2 lignes pour le suivi 18h (I-6).
+
+    Réutilise `bilan_jour._catalyseurs_j1` (même calendrier éco statique, même
+    format ~/🔴/🟡) — zéro nouvelle source, zéro invention. Best-effort : si le
+    calendrier est indisponible, message propre via la fonction réutilisée.
+    """
+    try:
+        from bilan_jour import _catalyseurs_j1  # noqa: PLC0415
+        return _catalyseurs_j1(now)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("catalyseurs J+1 (suivi 18h) indisponibles : %s", e)
+        return ["Catalyseurs J+1 indisponibles (calendrier éco)."]
 
 
 def write_suivi(rapport: SuiviRapport, base_dir: Path = SUIVI_DIR) -> Path:

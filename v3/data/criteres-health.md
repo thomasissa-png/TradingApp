@@ -1,12 +1,13 @@
 # Santé des critères
 
-_Cycle : 2026-06-11 05:24 UTC_
+_Cycle : 2026-06-12 05:23 UTC_
 
-**Synthèse** : 29 motifs de skip distincts, 31 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
+**Synthèse** : 30 motifs de skip distincts, 33 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 
 | Occurrences | Motif | Détail (cause exacte) |
 |---:|---|---|
 | 3 | c2_std_zero | `unknown` |
+| 2 | Open-Meteo injoignable (récents) | `6.8,-5.3:net_error` |
 | 1 | CBOE non câblé (Put/Call sans CSV public) | `put_call_ratio_cboe_5j` |
 | 1 | composite_no_subsource | `demande_pv_mining_strikes` |
 | 1 | composite_partial | `hf_positioning_flux_options` |

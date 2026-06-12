@@ -131,10 +131,20 @@ def main() -> int:
             logger.warning("load_veille KO (is_flip absent du decision-log) : %s", e)
         # Étage 2 (SHADOW) — capteurs courts 24h (retour veille / gap overnight)
         # tracés au decision-log, poids 0. Best-effort : indispo → champs None.
+        # ⚠️ Le stamp d'émission est posé PLUS BAS (étape 3) : à cet instant le
+        # fichier prix-emission de CE bulletin n'existe pas encore. On le pose
+        # donc ICI (idempotent + entry-lock, indépendant du contenu du bulletin)
+        # pour que le gap overnight soit calculable au moment où le decision-log
+        # est écrit — sinon il serait None pour toujours (le log ne se réécrit
+        # pas). L'étape 3 retombe alors sur le stamp déjà posé (no-op).
         shadow_capteurs: Optional[dict] = None
         try:
-            _fiches = scoring_analyste.load_fiches()
             bulletin_id = f"{now:%Y-%m-%d}-{now:%H}h"
+            try:
+                journaliste.stamp_prix_emission(bulletin_id)
+            except Exception as e:  # noqa: BLE001 — stamp best-effort (Twelve KO)
+                logger.warning("stamp_prix_emission anticipé KO : %s", e)
+            _fiches = scoring_analyste.load_fiches()
             _prix_emission = journaliste.load_prix_emission(bulletin_id)
             shadow_capteurs = scoring_analyste.compute_shadow_capteurs(
                 _fiches, prix_emission=_prix_emission,

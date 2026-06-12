@@ -418,7 +418,10 @@ def _read_weekly_archive(iso: str) -> Optional[str]:
 
 def render_bilan_semaine(bilan: BilanSemaine) -> str:
     L: List[str] = []
-    L.append(f"## Bilan semaine — {bilan.iso} ({bilan.lundi.isoformat()} → {bilan.dimanche.isoformat()})")
+    # [I-7 audit visuel 12/06] : H1 pour tous les rapports (harmonisation des
+    # niveaux de titre — le bilan semaine était en H2). Le range lundi→dimanche
+    # reste présent (lu par build_html.weekHumanTitle pour le titre humain).
+    L.append(f"# Bilan semaine — {bilan.iso} ({bilan.lundi.isoformat()} → {bilan.dimanche.isoformat()})")
     L.append("")
     L.append(f"- Généré : {bilan.now.isoformat()} (dimanche 18h Paris)")
     L.append("- WIN RATE ONLY — aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.")

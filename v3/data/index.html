@@ -137,8 +137,13 @@
     padding: 24px 32px 48px 32px;
   }
   /* Barre de légende sticky (toujours visible au-dessus du bulletin) */
+  /* [CH-5 audit visuel 12/06] : la légende n'est PLUS une barre sticky (elle
+     occupait ~40px permanents pour une info rarement consultée). Elle défile
+     avec le contenu après le premier coup d'œil ; la légende complète reste
+     dans le help-box repliable. Seule la subnav reste collante sous le header
+     → ~40px de chrome permanent récupérés. */
   .legend-bar {
-    position: sticky; top: 0; z-index: 5;
+    position: static;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
     padding: 10px 20px;
@@ -151,9 +156,9 @@
     display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
   }
   .legend-bar code { background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
-  /* Sous-navigation d'ancres intra-bulletin */
+  /* Sous-navigation d'ancres intra-bulletin (seule barre sticky sous le header) */
   .subnav {
-    position: sticky; top: 41px; z-index: 4;
+    position: sticky; top: 0; z-index: 4;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
     padding: 8px 20px;
@@ -449,22 +454,25 @@
     main { width: 100%; }
     .content-inner { padding: 12px 14px 32px 14px; }
     .legend-bar { padding: 8px 12px; font-size: 12px; }
-    .subnav { padding: 6px 12px; top: 39px; }
+    .subnav { padding: 6px 12px; top: 0; }
     .subnav a { font-size: 12px; padding: 3px 8px; }
     main h1 { font-size: 22px; }
     main h2 { font-size: 18px; margin-top: 28px; scroll-margin-top: 130px; }
     main h3 { font-size: 15.5px; scroll-margin-top: 130px; }
     .help-box { font-size: 13px; }
     /* Tables denses (Détail par actif, 9 colonnes) : on masque sur mobile la
-       3e colonne (« Valeur actuelle », nombreuses décimales) et la 4e
-       (« Penchant », valeur normalisée interne secondaire) pour garder le
-       Critère + Sens + les 3 colonnes « Effet » lisibles. La classe
-       .dense-table est posée en JS UNIQUEMENT sur les tables à ≥8 colonnes —
-       la table Synthèse (4 colonnes) n'est PAS ciblée. */
+       3e (« Valeur actuelle »), la 4e (« Penchant ») et — [CH-6 audit visuel
+       12/06] — la 6e (« Sens », déjà expliquée dans l'encart « Comment lire »)
+       pour tomber à 6 colonnes lisibles à 375px : Critère · Comment c'est lu ·
+       Importance · Effet 24h/7j/1m. La classe .dense-table est posée en JS
+       UNIQUEMENT sur les tables à ≥8 colonnes — la Synthèse (4 col.) n'est PAS
+       ciblée. */
     .dense-table td:nth-child(3),
     .dense-table th:nth-child(3),
     .dense-table td:nth-child(4),
-    .dense-table th:nth-child(4) { display: none; }
+    .dense-table th:nth-child(4),
+    .dense-table td:nth-child(6),
+    .dense-table th:nth-child(6) { display: none; }
   }
 </style>
 </head>
@@ -474,13 +482,15 @@
     <button class="hamburger" id="hamburger" aria-label="Ouvrir la liste des bulletins" aria-expanded="false">☰</button>
     <h1>TradingApp v3 — Bulletins</h1>
   </div>
-  <div class="meta">Généré : 2026-06-12 07:15 UTC</div>
+  <div class="meta">Généré : 2026-06-12 09:34 UTC</div>
   <div class="legend">
     Légende symboles :
     <code>⚑</code> gate régime ·
-    <code>📰</code> news&gt;50% (abs/abs) ·
-    <code>⚪</code> coin-flip (|score|&lt;0.05, non-actionnable) ·
-    <code>⚠</code> divergence pm1/pondéré
+    <code>📰</code> news&gt;50% ·
+    <code>⚪</code> coin-flip (non-actionnable) ·
+    <code>⚠</code> calcul contesté ·
+    <code>🔴</code> alerte ·
+    <code>🟡</code> vigilance
   </div>
 </header>
 <div class="context-banner" role="note" aria-label="Contexte du système">
@@ -509,15 +519,17 @@
         <span>·</span>
         <span><span class="dir-short">🔴 SHORT</span> = baisse</span>
         <span>·</span>
-        <span><code>|score|</code> = force de conviction (≈ 50% + |score|/15, max à 7,5)</span>
+        <span><code>note</code> = force de conviction (plus elle est haute, plus la conviction est forte)</span>
         <span>·</span>
-        <span>⚪ &lt;0.05 = non-actionnable</span>
+        <span>⚪ = non-actionnable</span>
         <span>·</span>
         <span>📰 news&gt;50%</span>
         <span>·</span>
         <span>⚑ gate</span>
         <span>·</span>
-        <span>⚠ divergence pm1/pondéré</span>
+        <span>⚠ calcul contesté</span>
+        <span>·</span>
+        <span>🔴 alerte · 🟡 vigilance</span>
       </div>
     </div>
     <nav class="subnav" id="subnav" aria-label="Sections du bulletin">
@@ -12952,6 +12964,66 @@ function dimEmptyRows(root) {
   });
 }
 
+// [P-R1 + C-R1 audit visuel 12/06] — Vue Résultats :
+//  P-R1 : grise (row-no-data) toute ligne dont N < WINRATE_MIN_N (trop peu de
+//         paris pour être significatif — le tableau est sinon noyé de zéros).
+//  C-R1 : pour les sections 7j et 1m, MASQUE les lignes vides (N=0 ET Non
+//         notés=0) et insère UN message unique « en attente de données ».
+// Pur visuel : aucune ligne supprimée du markdown source, aucun chiffre touché.
+const WINRATE_MIN_N = 5;
+function _leadingInt(s) {
+  const m = (s || '').match(/-?\d+/);
+  return m ? parseInt(m[0], 10) : 0;
+}
+function enhanceWinrateRows(root) {
+  if (!root) return;
+  // Repère la section (h3) de chaque table : 24 heures / 7 jours / 1 mois.
+  root.querySelectorAll('table').forEach(table => {
+    if (table.dataset.wrEnhanced === '1') return;
+    const headRow = table.querySelector('thead tr') || table.querySelector('tr');
+    if (!headRow) return;
+    const heads = Array.from(headRow.querySelectorAll('th, td')).map(h => (h.textContent || '').toLowerCase());
+    const wrIdx = heads.findIndex(h => h.includes('win rate'));
+    const parisIdx = heads.findIndex(h => h.includes('paris'));
+    if (wrIdx < 0 || parisIdx < 0) { table.dataset.wrEnhanced = '1'; return; }
+    // Section = texte du h3 précédent la table.
+    let prev = table.previousElementSibling;
+    while (prev && prev.tagName !== 'H3') prev = prev.previousElementSibling;
+    const sectionTxt = prev ? (prev.textContent || '').toLowerCase() : '';
+    const isLongHorizon = sectionTxt.includes('7 jour') || sectionTxt.includes('1 mois');
+    const nonNotesIdx = heads.findIndex(h => h.includes('non not'));
+    let hidden = 0;
+    table.querySelectorAll('tbody tr').forEach(tr => {
+      const cells = tr.querySelectorAll('td');
+      if (cells.length <= parisIdx) return;
+      const n = _leadingInt(cells[parisIdx].textContent);
+      const nonNotes = (nonNotesIdx >= 0 && cells.length > nonNotesIdx)
+        ? _leadingInt(cells[nonNotesIdx].textContent) : 0;
+      // C-R1 : 7j/1m sans aucune donnée → masquer.
+      if (isLongHorizon && n === 0 && nonNotes === 0) {
+        tr.style.display = 'none';
+        hidden++;
+        return;
+      }
+      // P-R1 : N < seuil → grisé (significativité nulle).
+      if (n < WINRATE_MIN_N) tr.classList.add('row-no-data');
+    });
+    if (isLongHorizon && hidden > 0) {
+      const tb = table.querySelector('tbody');
+      if (tb) {
+        const msg = document.createElement('tr');
+        msg.className = 'wr-empty-horizon';
+        const td = document.createElement('td');
+        td.colSpan = heads.length;
+        td.innerHTML = '<em>Horizon long en attente de données (premiers résultats à partir de juillet).</em>';
+        msg.appendChild(td);
+        tb.appendChild(msg);
+      }
+    }
+    table.dataset.wrEnhanced = '1';
+  });
+}
+
 // P1-C — préfixe un badge de niveau (🔴/🟡) en début de cellule de décision, dérivé
 // des drapeaux existants. 🔴 prime sur 🟡. Idempotent (data-badged). HTML only.
 function addLevelBadges(root) {
@@ -13137,6 +13209,8 @@ const FOLD_SECTION_PATTERNS = [
   /calls\s+24h\s+jug/i,        // « 🔎 Calls 24h jugés (fenêtre récente) » (nouveau titre)
   /audit\s+de\s+la\s+veille/i, // ancien titre (bulletins archivés)
   /détail\s+par\s+actif/i,
+  /synthèse\s+des\s+décisions/i, // [S-B3] redondante avec « À jouer » → drill-down
+  /fausses\s+aux\s+retournements/i, // [C-BD2] métrique technique du moteur (bilan jour)
 ];
 
 function foldSections(root) {
@@ -13145,6 +13219,43 @@ function foldSections(root) {
   h2s.forEach(h => {
     const txt = h.textContent || '';
     if (FOLD_SECTION_PATTERNS.some(re => re.test(txt))) foldOneSection(h);
+  });
+  // [C-B1 audit visuel 12/06] : à l'intérieur de « Détail par actif » (replié),
+  // chaque actif (### = h3) devient un <details> individuel → on n'ouvre que
+  // l'actif voulu sans dérouler les 12. Idempotent (data-folded sur le h3).
+  foldPerActifDetail(root);
+}
+
+// Replie chaque sous-section actif (### h3) du Détail par actif dans un
+// <details> propre. Le contenu d'un actif court jusqu'au prochain h3 OU jusqu'à
+// la fin du conteneur (fin du fold parent). Le glossaire / encart « Comment
+// lire » (paragraphes hors h3) restent visibles en tête, non repliés.
+function foldPerActifDetail(root) {
+  if (!root) return;
+  // On cible les h3 situés DANS la section repliée « Détail par actif » : son
+  // summary porte un id sec-… ; le contenu est dans le <details> parent.
+  const summaries = Array.from(root.querySelectorAll('details.fold-section > summary'));
+  const detailSummary = summaries.find(s => /détail\s+par\s+actif/i.test(s.textContent || ''));
+  if (!detailSummary) return;
+  const container = detailSummary.parentNode; // le <details> du Détail par actif
+  const h3s = Array.from(container.querySelectorAll(':scope > h3'));
+  h3s.forEach(h3 => {
+    if (h3.dataset.folded === '1') return;
+    const d = document.createElement('details');
+    d.className = 'fold-actif';
+    const sm = document.createElement('summary');
+    sm.textContent = (h3.textContent || '').trim();
+    d.appendChild(sm);
+    const collected = [];
+    let node = h3.nextSibling;
+    while (node && !(node.nodeType === 1 && node.tagName === 'H3')) {
+      collected.push(node);
+      node = node.nextSibling;
+    }
+    container.insertBefore(d, h3);
+    collected.forEach(n => d.appendChild(n));
+    h3.dataset.folded = '1';
+    h3.remove();
   });
 }
 
@@ -13214,8 +13325,11 @@ function outcomeClass(outcome) {
   return 'neutre';
 }
 function outcomeBadge(cls, outcome) {
+  // [I-2 audit visuel 12/06] : verdict standardisé « ✅ VRAI » / « ❌ FAUSSE »
+  // partout (le Bilan du jour utilise déjà FAUSSE ; la vue Historique disait
+  // FAUX → incohérence inter-rapports corrigée).
   if (cls === 'vrai') return '✅ VRAI';
-  if (cls === 'faux') return '❌ FAUX';
+  if (cls === 'faux') return '❌ FAUSSE';
   // affiche l'outcome brut tel quel (en-cours, interrompu, non-conclusive…)
   return '⏳ ' + (outcome || '—');
 }
@@ -13388,6 +13502,12 @@ function showAuxView(sectionId, navId) {
   clearAuxNavActive();
   const nav = document.getElementById(navId);
   if (nav) nav.classList.add('active');
+  // [CH-4] titre d'onglet par vue auxiliaire.
+  const AUX_TITLES = {
+    'nav-today': 'Aujourd\'hui', 'nav-winrate': 'Résultats / Win rate',
+    'nav-week': 'Bilan semaine', 'nav-history': 'Historique',
+  };
+  document.title = `${AUX_TITLES[navId] || 'Vue'} · TradingApp v3`;
   renderList(null);
   const mainEl = document.getElementById('bulletin-main');
   if (mainEl) mainEl.scrollTop = 0;
@@ -13426,7 +13546,10 @@ function showWeek() {
 function showHistory() {
   if (!HISTORY_BUILT) {
     // Win rate en tête de l'onglet (résultats principaux), puis A/B replié.
-    renderWinrateInto(document.getElementById('history-winrate'));
+    const hwr = document.getElementById('history-winrate');
+    renderWinrateInto(hwr);
+    dimEmptyRows(hwr);
+    enhanceWinrateRows(hwr);
     buildHistoryFilters();
     buildHistorySummary();
     HISTORY_BUILT = true;
@@ -13681,6 +13804,7 @@ function buildWinrateView() {
   if (renderWinrateInto(content)) {
     if (empty) empty.hidden = true;
     dimEmptyRows(content);
+    enhanceWinrateRows(content);
     annotateFlipContinuation(content);
     buildVerdictSequences(content);
   } else if (empty) {
@@ -13725,6 +13849,12 @@ function selectBulletin(id) {
   }
   history.replaceState(null, '', '#' + encodeURIComponent(id));
   renderList(id);
+  // [CH-4 audit visuel 12/06] : le titre d'onglet reflète le bulletin actif
+  // (utile quand l'onglet reste ouvert toute la journée). Ex. « Briefing — mer.
+  // 12 juin · 7h ».
+  const dt = formatBulletinDate(b.id);
+  const tt = dt.time ? ` · ${dt.time}` : '';
+  document.title = `Briefing — ${dt.short}${tt} · TradingApp v3`;
   if (mainEl) mainEl.scrollTop = 0;
 }
 

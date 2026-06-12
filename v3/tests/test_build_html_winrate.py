@@ -85,7 +85,10 @@ def test_render_html_winrate_en_tete_onglet_historique():
     html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD)
     # Le win rate est rendu en tête de l'onglet Historique.
     assert 'id="history-winrate"' in html
-    assert "renderWinrateInto(document.getElementById('history-winrate'))" in html
+    # Le win rate est rendu dans #history-winrate (le call passe désormais par
+    # une variable `hwr` pour enchaîner dimEmptyRows/enhanceWinrateRows — P-R1/C-R1).
+    assert "getElementById('history-winrate')" in html
+    assert "renderWinrateInto(hwr)" in html
     # Le bloc A/B Brier est rétrogradé dans un <details> replié et secondaire.
     assert 'id="history-ab-fold"' in html
     assert "Détail technique par cellule" in html

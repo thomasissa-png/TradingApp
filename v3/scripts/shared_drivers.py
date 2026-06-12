@@ -49,6 +49,112 @@ def driver_label(cle: str, nom_fallback: str = "") -> str:
     return nom_fallback or cle
 
 
+# ---------------------------------------------------------------------------
+# Familles macro — dédup de la « Sélection du jour » par FAMILLE de drivers.
+# ---------------------------------------------------------------------------
+# Défaut démontré (11/06) : la sélection aurait retenu Argent (top-driver
+# `taux_10y_us_reels_tips`), EUR/USD (`differentiel_taux_2y_us_de`) et Café —
+# trois « paris différents » selon la dédup par `cle_courante`. Or TIPS et écart
+# 2Y US-DE sont LE MÊME complexe taux réels / dollar : c'est un seul pari macro
+# répliqué. La dédup de SÉLECTION doit donc raisonner par FAMILLE macro, pas par
+# critère littéral (réf. brief 12/06).
+#
+# Ce mapping NE TOUCHE PAS le bloc « À jouer » ni les drivers partagés ⚭ (qui
+# restent à la granularité critère, informative). Il sert UNIQUEMENT à la dédup
+# de sélection 24h (affichage + decision-log shadow).
+#
+# Construction 100 % à partir des `cle_courante` RÉELLES des 12 fiches
+# (grep cle_courante v3/config/fiches/*.yml) — zéro invention de clé. Toute clé
+# ABSENTE de ce mapping retombe en famille SINGLETON (= la clé elle-même) :
+# aucun regroupement abusif (leçon L023, zéro invention).
+#
+# Familles (label trader = motif affiché « même pari (<label>) que <Actif> ») :
+#   - taux_dollar      : complexe taux réels / dollar (TIPS, écarts de taux
+#                        US-DE 2Y/10Y, variation du 10Y US, dollar DXY, USD/JPY,
+#                        FedWatch). L'OAT-Bund est un driver FRANCE → stress_europe.
+#   - risk_on_off      : régime de risque (VIX niveau/régime/term structure, V2X,
+#                        VXN, VVIX, SKEW, spread crédit HY, put/call).
+#   - metaux_croises   : complexe métaux précieux croisé (mouvement de l'or,
+#                        ratio or/argent, ratio cuivre/or).
+#   - stress_europe    : stress souverain zone euro (OAT-Bund, tension politique FR).
+#   - tendance_propre  : PAR-ACTIF (momentum/RSI/breadth/flux de SON propre actif)
+#                        → JAMAIS regroupé entre actifs différents (cf. ci-dessous).
+#
+# tendance_propre est INTRINSÈQUEMENT par-actif : le momentum de l'or et le
+# momentum du cacao ne sont PAS le même pari. Ces clés ne sont donc PAS dans la
+# table fixe : `famille_macro()` les détecte par préfixe et préfixe la famille
+# par la fiche/actif (ex. `tendance_propre:or`) → deux actifs ≠ deux familles.
+
+# Mapping EXACT cle_courante → (famille, label trader). Une seule entrée par clé.
+_FAMILLE_EXACTE: Dict[str, Tuple[str, str]] = {
+    # --- taux_dollar : complexe taux réels / dollar ---
+    "taux_10y_us_reels_tips": ("taux_dollar", "taux/dollar"),
+    "differentiel_taux_2y_us_de": ("taux_dollar", "taux/dollar"),
+    "differentiel_taux_10y_us_bund": ("taux_dollar", "taux/dollar"),
+    "taux_10y_us_delta_5j": ("taux_dollar", "taux/dollar"),
+    "dxy_trend_20j": ("taux_dollar", "taux/dollar"),
+    "usd_jpy_proxy_risk": ("taux_dollar", "taux/dollar"),
+    "fedwatch_proba": ("taux_dollar", "taux/dollar"),
+    # --- risk_on_off : régime de risque ---
+    "niveau_vix_absolu": ("risk_on_off", "régime de risque"),
+    "vix_regime": ("risk_on_off", "régime de risque"),
+    "vix_risk_off_proxy": ("risk_on_off", "régime de risque"),
+    "term_structure_vix_vix3m": ("risk_on_off", "régime de risque"),
+    "v2x_regime": ("risk_on_off", "régime de risque"),
+    "vxn_regime": ("risk_on_off", "régime de risque"),
+    "vvix": ("risk_on_off", "régime de risque"),
+    "skew_index_cboe": ("risk_on_off", "régime de risque"),
+    "put_call_ratio_cboe_5j": ("risk_on_off", "régime de risque"),
+    "hy_credit_spread": ("risk_on_off", "régime de risque"),
+    # --- metaux_croises : complexe métaux précieux croisé ---
+    "mouvement_or_5j": ("metaux_croises", "métaux croisés"),
+    "flux_etf_or_5j": ("metaux_croises", "métaux croisés"),
+    "ratio_gold_silver": ("metaux_croises", "métaux croisés"),
+    "ratio_cuivre_or": ("metaux_croises", "métaux croisés"),
+    # --- stress_europe : stress souverain zone euro ---
+    "spread_oat_bund_10y": ("stress_europe", "stress zone euro"),
+    "spread_oat_bund_stress_ez": ("stress_europe", "stress zone euro"),
+    "tension_politique_fr": ("stress_europe", "stress zone euro"),
+}
+
+# Préfixes des critères de TENDANCE PROPRE (par-actif). La famille est suffixée
+# par la fiche/actif → `tendance_propre:<fiche>` (deux actifs ≠ deux familles).
+_TENDANCE_PROPRE_PREFIXES: Tuple[str, ...] = (
+    "momentum_prix_",
+    "rsi_14j_",
+    "breadth_",
+    "sox_trend",
+)
+_TENDANCE_PROPRE_LABEL = "tendance propre"
+
+
+def famille_macro(cle: str, fiche_key: str = "") -> Tuple[str, str]:
+    """Famille macro + label trader d'un driver, pour la dédup de SÉLECTION.
+
+    Retourne `(famille, label)` :
+      - clé mappée dans `_FAMILLE_EXACTE` → sa famille + son label trader ;
+      - clé de tendance propre (préfixe) → `("tendance_propre:<fiche>", ...)`
+        afin que deux actifs distincts ne soient JAMAIS regroupés (le momentum
+        de l'or et celui du cacao ne sont pas le même pari) ;
+      - sinon → SINGLETON : `(cle, cle)`. Aucun regroupement abusif, zéro
+        invention de famille (leçon L023).
+
+    `fiche_key` n'est utilisé QUE pour la tendance propre. Si vide pour une clé
+    de tendance, on retombe sur la clé brute (singleton de fait) plutôt que de
+    fusionner deux actifs à tort.
+    """
+    if not cle:
+        return "", ""
+    if cle in _FAMILLE_EXACTE:
+        return _FAMILLE_EXACTE[cle]
+    for prefixe in _TENDANCE_PROPRE_PREFIXES:
+        if cle.startswith(prefixe):
+            if fiche_key:
+                return (f"tendance_propre:{fiche_key}", _TENDANCE_PROPRE_LABEL)
+            return (cle, _TENDANCE_PROPRE_LABEL)
+    return (cle, cle)
+
+
 def _cell_driver_parts(criteres: List[Any], horizon: str) -> Dict[str, Tuple[float, int]]:
     """Pour une cellule (liste de critères, un horizon), retourne par
     `cle_courante` la part |contribution| / Σ|contributions| et le signe de la

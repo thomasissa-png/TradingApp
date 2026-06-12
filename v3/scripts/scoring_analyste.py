@@ -2033,17 +2033,20 @@ def compute_selection_du_jour(
     plancher d'affichage SELECTION_COVERAGE_MIN) :
       1. conviction « forte » (`_conviction_cell` == "forte") ;
       2. coverage ≥ SELECTION_COVERAGE_MIN (champ `coverage` existant de l'actif) ;
-      3. un seul pari par driver : si plusieurs candidates partagent le même
-         (`_top_driver` cle_courante, direction), on garde LA plus forte |note|
-         et on écarte les autres (motif tracé) ;
+      3. un seul pari par FAMILLE macro : si plusieurs candidates partagent la
+         même (`famille_macro` du top-driver, direction), on garde LA plus forte
+         |note| et on écarte les autres (motif tracé). La dédup raisonne par
+         famille macro (TIPS et écart 2Y US-DE = même complexe taux/dollar = un
+         seul pari) et NON par critère littéral (réf. brief 12/06, défaut 11/06) ;
       4. max SELECTION_MAX lignes, tri |note| décroissant.
 
     Retourne (selection, ecartees) :
       - selection : liste de dicts {fiche_key, actif, direction, note, driver_cle,
         driver_nom, coverage} — au plus SELECTION_MAX, triée |note| desc.
       - ecartees  : liste de dicts {fiche_key, actif, motif} pour les candidates
-        passant (1) et (2) mais écartées par (3) la dédup driver ou (4) le cap.
-        `motif` = « même pari que <Actif> » (dédup) ou « hors top 3 » (cap).
+        passant (1) et (2) mais écartées par (3) la dédup famille ou (4) le cap.
+        `motif` = « même pari (<famille>) que <Actif> » (dédup) ou « hors top 3 »
+        (cap), où <famille> est le label trader de la famille macro partagée.
     NE MODIFIE NI score NI conclusion (lecture seule sur `results`).
     """
     if seuil_conviction is None:
@@ -2079,25 +2082,35 @@ def compute_selection_du_jour(
     # Tri |note| décroissant, déterministe (actif départage les ex æquo).
     candidates.sort(key=lambda d: (-abs(d["note"]), d["actif"]))
 
-    # Étape 3 : dédup par (driver_cle, direction) — un seul pari par driver. La
-    # première candidate vue (|note| max) gagne ; les suivantes sont écartées.
-    # Dédup UNIQUEMENT si le driver est connu (cle non vide) : sans driver
+    # Étape 3 : dédup par (FAMILLE macro, direction) — un seul pari par famille.
+    # La première candidate vue (|note| max) gagne ; les suivantes de même famille
+    # ET même direction sont écartées. La famille macro regroupe les critères qui
+    # sont LE MÊME pari (TIPS + écart 2Y US-DE = complexe taux/dollar) ; une clé
+    # inconnue retombe en famille SINGLETON (= la clé), donc pas de regroupement
+    # abusif. Dédup UNIQUEMENT si le driver est connu (cle non vide) : sans driver
     # identifiable, on ne peut pas affirmer « même pari » (zéro invention).
+    import shared_drivers as _shared_drivers  # lazy, cf. pattern existant
     selection: List[Dict[str, Any]] = []
     ecartees: List[Dict[str, Any]] = []
-    gagnant_par_driver: Dict[Tuple[str, str], str] = {}
+    gagnant_par_famille: Dict[Tuple[str, str], Tuple[str, str]] = {}
     for c in candidates:
         cle = c["driver_cle"]
-        groupe = (cle, c["direction"]) if cle else None
-        if groupe is not None and groupe in gagnant_par_driver:
+        if cle:
+            famille, label = _shared_drivers.famille_macro(cle, c["fiche_key"])
+            groupe = (famille, c["direction"])
+        else:
+            famille, label, groupe = "", "", None
+        if groupe is not None and groupe in gagnant_par_famille:
+            gagnant_actif, gagnant_label = gagnant_par_famille[groupe]
+            motif = f"même pari ({gagnant_label}) que {gagnant_actif}"
             ecartees.append({
                 "fiche_key": c["fiche_key"],
                 "actif": c["actif"],
-                "motif": f"même pari que {gagnant_par_driver[groupe]}",
+                "motif": motif,
             })
             continue
         if groupe is not None:
-            gagnant_par_driver[groupe] = c["actif"]
+            gagnant_par_famille[groupe] = (c["actif"], label)
         selection.append(c)
 
     # Étape 4 : cap max SELECTION_MAX (les surnuméraires sont « hors top 3 »).
@@ -2234,9 +2247,10 @@ def build_selection_du_jour_block(
     out: List[str] = ["## 🎯 Sélection du jour — max 3", ""]
     out.append(
         "_Les paris 24h qui passent les 4 règles : (1) conviction **forte**, "
-        "(2) couverture ≥ 70 %, (3) **un seul pari par driver** (deux lignes sur "
-        "le même moteur = on garde la plus forte), (4) **3 maximum**. Moins de 3 "
-        "— voire zéro — est normal : ne pas forcer un pari._"
+        "(2) couverture ≥ 70 %, (3) **un seul pari par famille de drivers** (deux "
+        "lignes portées par le même complexe macro — ex. taux/dollar — = un seul "
+        "pari, on garde la plus forte), (4) **3 maximum**. Moins de 3 — voire zéro "
+        "— est normal : ne pas forcer un pari._"
     )
     out.append("")
 

@@ -1993,6 +1993,304 @@ def build_a_jouer_block(
     return out
 
 
+# ---------------------------------------------------------------------------
+# « 🎯 Sélection du jour — max 3 » (décision fondateur 12/06 : « 2-3 bons paris
+# par jour, pas 12 »). ZÉRO CUTOVER : aucun score, aucune conclusion, aucune
+# mesure de signal ne change. Bloc d'AFFICHAGE + champ de MESURE (decision-log)
+# qui RESTREINT la vue 24h aux paris les plus convaincants selon des conditions
+# EXISTANTES (conviction « forte », coverage, top-driver). S'abstenir (aucune
+# sélection) est une réponse valide — on ne force jamais 3 lignes.
+# ---------------------------------------------------------------------------
+
+# Seuil de couverture MINIMAL pour entrer dans la « Sélection du jour ». C'est un
+# seuil d'AFFICHAGE/SÉLECTION (pas un seuil de scoring/conclusion) : il ne touche
+# AUCUN score ni conclusion (les cellules sous 0.70 restent jouables ailleurs).
+# Valeur fixée par la décision fondateur du 12/06 (≥ 0.70 = couverture franche).
+SELECTION_COVERAGE_MIN: float = 0.70
+# Nombre maximal de paris retenus par la sélection du jour (décision fondateur).
+SELECTION_MAX: int = 3
+
+# Note discrète (fin de section « À jouer ») signalant que les capteurs courts
+# shadow tournent (Étage 2) — pour que Thomas sache qu'ils sont tracés au
+# decision-log SANS effet sur les notes. Promotion éventuelle : ticket C (~23/06).
+_SHADOW_CAPTEURS_NOTE: List[str] = [
+    "_Capteurs courts (shadow, sans effet sur les notes) : retour veille / gap "
+    "overnight tracés au decision-log._",
+    "",
+]
+
+
+def compute_selection_du_jour(
+    results: List["ActifResult"],
+    seuil_conviction: Optional[float] = None,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Calcule la « Sélection du jour — max 3 » sur l'horizon 24h.
+
+    Source de vérité UNIQUE partagée par le bloc bulletin (1a) ET le decision-log
+    (1b) : zéro divergence possible entre ce qui est AFFICHÉ et ce qui est MESURÉ.
+
+    Les 4 règles (toutes réutilisent l'existant, zéro nouveau seuil métier hors le
+    plancher d'affichage SELECTION_COVERAGE_MIN) :
+      1. conviction « forte » (`_conviction_cell` == "forte") ;
+      2. coverage ≥ SELECTION_COVERAGE_MIN (champ `coverage` existant de l'actif) ;
+      3. un seul pari par driver : si plusieurs candidates partagent le même
+         (`_top_driver` cle_courante, direction), on garde LA plus forte |note|
+         et on écarte les autres (motif tracé) ;
+      4. max SELECTION_MAX lignes, tri |note| décroissant.
+
+    Retourne (selection, ecartees) :
+      - selection : liste de dicts {fiche_key, actif, direction, note, driver_cle,
+        driver_nom, coverage} — au plus SELECTION_MAX, triée |note| desc.
+      - ecartees  : liste de dicts {fiche_key, actif, motif} pour les candidates
+        passant (1) et (2) mais écartées par (3) la dédup driver ou (4) le cap.
+        `motif` = « même pari que <Actif> » (dédup) ou « hors top 3 » (cap).
+    NE MODIFIE NI score NI conclusion (lecture seule sur `results`).
+    """
+    if seuil_conviction is None:
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import bilan_jour as _bj  # import paresseux (isole d'un éventuel KO)
+            seuil_conviction = _bj._load_score_fort_seuil()
+        except Exception:  # noqa: BLE001 — défaut documenté si bilan_jour KO
+            seuil_conviction = 0.6
+
+    H = "24h"
+    # Étape 1+2 : candidates = cellules 24h conviction « forte » ET coverage OK.
+    candidates: List[Dict[str, Any]] = []
+    for r in results:
+        conc = r.conclusions.get(H, "")
+        if conc not in ("LONG", "SHORT"):
+            continue
+        if _conviction_cell(r, H, seuil_conviction) != "forte":
+            continue
+        if r.coverage < SELECTION_COVERAGE_MIN:
+            continue
+        driver_cle, driver_nom = _top_driver(r, H)
+        candidates.append({
+            "fiche_key": r.fiche_key,
+            "actif": r.nom,
+            "direction": conc,
+            "note": r.scores.get(H, 0.0),
+            "driver_cle": driver_cle,
+            "driver_nom": driver_nom,
+            "coverage": r.coverage,
+        })
+
+    # Tri |note| décroissant, déterministe (actif départage les ex æquo).
+    candidates.sort(key=lambda d: (-abs(d["note"]), d["actif"]))
+
+    # Étape 3 : dédup par (driver_cle, direction) — un seul pari par driver. La
+    # première candidate vue (|note| max) gagne ; les suivantes sont écartées.
+    # Dédup UNIQUEMENT si le driver est connu (cle non vide) : sans driver
+    # identifiable, on ne peut pas affirmer « même pari » (zéro invention).
+    selection: List[Dict[str, Any]] = []
+    ecartees: List[Dict[str, Any]] = []
+    gagnant_par_driver: Dict[Tuple[str, str], str] = {}
+    for c in candidates:
+        cle = c["driver_cle"]
+        groupe = (cle, c["direction"]) if cle else None
+        if groupe is not None and groupe in gagnant_par_driver:
+            ecartees.append({
+                "fiche_key": c["fiche_key"],
+                "actif": c["actif"],
+                "motif": f"même pari que {gagnant_par_driver[groupe]}",
+            })
+            continue
+        if groupe is not None:
+            gagnant_par_driver[groupe] = c["actif"]
+        selection.append(c)
+
+    # Étape 4 : cap max SELECTION_MAX (les surnuméraires sont « hors top 3 »).
+    retenues = selection[:SELECTION_MAX]
+    for c in selection[SELECTION_MAX:]:
+        ecartees.append({
+            "fiche_key": c["fiche_key"],
+            "actif": c["actif"],
+            "motif": "hors top 3",
+        })
+    return retenues, ecartees
+
+
+def _catalyseurs_j0_high(now: datetime) -> List[Dict[str, Any]]:
+    """Événements à impact `high` du calendrier tombant AUJOURD'HUI (J0).
+
+    Import TOLÉRANT (calendrier_eco peut être absent/KO → liste vide, zéro
+    invention). `evenements_a_venir` démarre à J+1, donc on relit J0 via le même
+    module (charger_evenements + _dates_pour_event) — réutilisation, pas de
+    nouvelle source. Retourne [{nom, actifs:[...], impact}] pour les seuls events
+    d'impact « high » qui tombent le jour `now` (Europe/Paris).
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import calendrier_eco as _cal  # import paresseux/tolérant
+    except Exception:  # noqa: BLE001 — calendrier indispo → pas d'avertissement
+        return []
+    try:
+        jour = now.date()
+        out: List[Dict[str, Any]] = []
+        for ev in _cal.charger_evenements():
+            if str(ev.get("impact") or "medium").strip().lower() != "high":
+                continue
+            if _cal._dates_pour_event(ev, jour, jour):
+                out.append({
+                    "nom": str(ev.get("nom") or ev.get("type") or "Événement"),
+                    "actifs": [str(a) for a in (ev.get("actifs") or [])],
+                    "impact": "high",
+                })
+        return out
+    except Exception:  # noqa: BLE001 — toute anomalie calendrier → silencieux
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Étage 2 — Capteurs courts 24h en SHADOW (decision-log only, poids 0).
+# ---------------------------------------------------------------------------
+# Ces deux capteurs n'entrent PAS dans le score (observabilité pure). Ils sont
+# tracés au decision-log pour le ticket C (~23/06) qui décidera de leur promotion
+# en VRAIS critères. Zéro invention : toute donnée manquante → None.
+#   - shadow_retour_j1   : close J-1 / close J-2 − 1 (rendement de la veille).
+#   - shadow_gap_overnight : prix d'émission 7h / close J-1 − 1 (gap overnight).
+# Source closes : fetch_twelve_series (déjà utilisé par les critères). Prix
+# d'émission : stamp 7h existant (même source que « Prix de réf. »).
+# ---------------------------------------------------------------------------
+
+
+def compute_shadow_capteurs(
+    fiches: Dict[str, dict],
+    prix_emission: Optional[Dict[str, float]] = None,
+    fetch_series: Optional[Any] = None,
+) -> Dict[str, Dict[str, Optional[float]]]:
+    """Calcule les capteurs courts shadow par fiche_key.
+
+    Retourne {fiche_key: {"shadow_retour_j1": float|None,
+                          "shadow_gap_overnight": float|None}}.
+
+    `prix_emission` : {ticker: prix} du stamp 7h (load_prix_emission). Absent →
+    gap overnight None (zéro invention).
+    `fetch_series` : callable(symbol) -> [(dt, close)] oldest→newest (par défaut
+    criteres_calculator.fetch_twelve_series). Absent/KO → retour_j1 None.
+
+    Best-effort intégral : aucune exception ne remonte (run bulletin protégé).
+    """
+    prix_emission = prix_emission or {}
+    if fetch_series is None:
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import criteres_calculator as _cc  # import paresseux/tolérant
+            fetch_series = _cc.fetch_twelve_series
+        except Exception:  # noqa: BLE001 — pas de fetcher → tout None
+            fetch_series = None
+
+    out: Dict[str, Dict[str, Optional[float]]] = {}
+    for key, fiche in (fiches or {}).items():
+        ticker = fiche.get("ticker_principal")
+        retour_j1: Optional[float] = None
+        gap_overnight: Optional[float] = None
+        close_j1: Optional[float] = None
+        close_j2: Optional[float] = None
+        if ticker and fetch_series is not None:
+            try:
+                serie = fetch_series(ticker, outputsize=10)
+            except Exception:  # noqa: BLE001 — fetch KO → capteurs None
+                serie = None
+            if serie and len(serie) >= 1:
+                # Série triée oldest→newest : [-1] = close J-1, [-2] = close J-2.
+                close_j1 = serie[-1][1]
+                if len(serie) >= 2:
+                    close_j2 = serie[-2][1]
+        # shadow_retour_j1 = close J-1 / close J-2 − 1 (None si l'un manque/≤0).
+        if (isinstance(close_j1, (int, float)) and isinstance(close_j2, (int, float))
+                and close_j2 not in (0, 0.0)):
+            retour_j1 = round(close_j1 / close_j2 - 1.0, 6)
+        # shadow_gap_overnight = prix émission 7h / close J-1 − 1 (None si manque).
+        px_emission = prix_emission.get(ticker) if ticker else None
+        if (isinstance(px_emission, (int, float))
+                and isinstance(close_j1, (int, float)) and close_j1 not in (0, 0.0)):
+            gap_overnight = round(px_emission / close_j1 - 1.0, 6)
+        out[key] = {
+            "shadow_retour_j1": retour_j1,
+            "shadow_gap_overnight": gap_overnight,
+        }
+    return out
+
+
+def build_selection_du_jour_block(
+    results: List["ActifResult"],
+    now: datetime,
+    prix_reference: Optional[Dict[str, float]] = None,
+    seuil_conviction: Optional[float] = None,
+) -> List[str]:
+    """Construit le bloc « ## 🎯 Sélection du jour — max 3 » (placé EN PREMIER,
+    avant « À jouer aujourd'hui »).
+
+    Affiche au plus SELECTION_MAX paris 24h (cf. `compute_selection_du_jour`).
+    Sous le tableau : avertissement ⚠️ si un catalyseur `high` du calendrier (J0)
+    concerne un actif sélectionné. Si aucune cellule ne passe → message
+    d'abstention (s'abstenir est une réponse valide).
+    """
+    prix_reference = prix_reference or {}
+    selection, ecartees = compute_selection_du_jour(results, seuil_conviction)
+
+    out: List[str] = ["## 🎯 Sélection du jour — max 3", ""]
+    out.append(
+        "_Les paris 24h qui passent les 4 règles : (1) conviction **forte**, "
+        "(2) couverture ≥ 70 %, (3) **un seul pari par driver** (deux lignes sur "
+        "le même moteur = on garde la plus forte), (4) **3 maximum**. Moins de 3 "
+        "— voire zéro — est normal : ne pas forcer un pari._"
+    )
+    out.append("")
+
+    if not selection:
+        out.append(
+            "_Aucune sélection aujourd'hui (aucune cellule ne passe les 4 règles) "
+            "— ne pas forcer._"
+        )
+        out.append("")
+        return out
+
+    header = "| Actif | Direction | Note | Porté par | Prix de réf. |"
+    sep = "|---|---|---|---|---|"
+    out.append(header)
+    out.append(sep)
+    for s in selection:
+        note_str = f"{s['note']:+.2f}"
+        porte = _truncate_driver(s["driver_nom"]) if s["driver_nom"] else "—"
+        px = prix_reference.get(s["fiche_key"])
+        px_str = f"{px:g}" if isinstance(px, (int, float)) else "—"
+        out.append(
+            f"| {s['actif']} | {s['direction']} | {note_str} | {porte} | {px_str} |"
+        )
+    out.append("")
+
+    # Candidates écartées par la dédup driver (motif explicite sous le tableau).
+    ecartees_dedup = [e for e in ecartees if e["motif"].startswith("même pari")]
+    for e in ecartees_dedup:
+        out.append(f"_écartée : {e['actif']} — {e['motif']}._")
+    if ecartees_dedup:
+        out.append("")
+
+    # Avertissement catalyseur J0 (impact high) sur un actif sélectionné. Le
+    # calendrier liste les actifs par `fiche_key` (cf. calendrier-eco.yml) → on
+    # croise sur fiche_key, puis on affiche le NOM lisible de l'actif sélectionné.
+    cat_high = _catalyseurs_j0_high(now)
+    if cat_high:
+        nom_par_key = {s["fiche_key"]: s["actif"] for s in selection}
+        emis = False
+        for ev in cat_high:
+            touches = [nom_par_key[k] for k in ev["actifs"] if k in nom_par_key]
+            if touches:
+                liste = ", ".join(touches)
+                out.append(
+                    f"⚠️ **{ev['nom']} aujourd'hui** — peut retourner ce pari "
+                    f"({liste})."
+                )
+                emis = True
+        if emis:
+            out.append("")
+
+    return out
+
+
 # Longueur max d'un nom de critère dans la colonne « Porté par » (troncature
 # propre avec « … » — pas de coupe au milieu d'un mot si évitable).
 DRIVER_NAME_MAX_LEN = 40
@@ -2545,8 +2843,11 @@ def render_bulletin(
     # l'ancien « Top 3 convictions du jour » (qui mélangeait les horizons et
     # masquait les drapeaux). On garde un mini « Top convictions multi-horizons »
     # APRÈS, avec les drapeaux de chaque cellule + la ligne ⚭ si convergence.
+    # « Sélection du jour — max 3 » EN PREMIER (décision fondateur 12/06).
     head_block = (
-        build_a_jouer_block(results, now, prix_reference=prix_reference)
+        build_selection_du_jour_block(results, now, prix_reference=prix_reference)
+        + build_a_jouer_block(results, now, prix_reference=prix_reference)
+        + _SHADOW_CAPTEURS_NOTE
         + build_top_multi_horizons_block(results, _shared_summary)
     )
     lines = lines[:_meta_end] + [""] + head_block + synth_lines + lines[_meta_end:]
@@ -2653,6 +2954,7 @@ def build_decision_log_records(
     results: List[ActifResult],
     now: datetime,
     veille_conclusions: Optional[Dict[str, Dict[str, str]]] = None,
+    shadow_capteurs: Optional[Dict[str, Dict[str, Optional[float]]]] = None,
 ) -> List[Dict[str, Any]]:
     """Construit la liste de lignes JSONL (une par cellule actif × horizon).
 
@@ -2661,6 +2963,14 @@ def build_decision_log_records(
     - critères contributeurs (cle_courante, valeur, valeur_normalisee, valeur_ponderee,
       poids, pertinence, materiality, reliability, source_track, facteur, contrib_pm1, contrib_pond)
     - score_pm1, score_pond, conclusion_pm1, conclusion_pond, diverge
+
+    Étage 1b (SHADOW, decision-log only) : les records 24h portent
+    `selection_du_jour` (bool) + `selection_motif_exclusion` (str, si écartée par
+    la dédup driver / cap). AUCUN impact scoring/conclusion.
+    Étage 2 (SHADOW) : les records 24h portent `shadow_retour_j1` et
+    `shadow_gap_overnight` (None si non fournis/indisponibles). `shadow_capteurs`
+    = {fiche_key: {shadow_retour_j1, shadow_gap_overnight}} (cf.
+    compute_shadow_capteurs) ; None → champs à None (zéro invention).
     """
     import math as _math
     # Lot 5 C8a — import paresseux de triggers_classifier (évite couplage dur,
@@ -2671,6 +2981,12 @@ def build_decision_log_records(
     # par cellule la liste des drivers partagés qui la portent (part ≥ seuil).
     import shared_drivers as _shared_drivers  # noqa: F401 (lazy, cf. pattern existant)
     _cles_partagees = _shared_drivers.compute_shared_cles(results, HORIZONS)
+    # Étage 1b — sélection du jour (24h) : MÊME source que le bloc bulletin (1a),
+    # zéro divergence affichage⇄mesure. fiche_keys retenus + motifs d'exclusion.
+    _selection, _ecartees = compute_selection_du_jour(results)
+    _selection_keys = {s["fiche_key"] for s in _selection}
+    _motif_exclusion = {e["fiche_key"]: e["motif"] for e in _ecartees}
+    shadow_capteurs = shadow_capteurs or {}
     records: List[Dict[str, Any]] = []
     bulletin_date = now.strftime("%Y-%m-%d")
     generated_at = now.isoformat()
@@ -2934,6 +3250,22 @@ def build_decision_log_records(
             # conclusion. Sert à MESURER le sur-poids (ex. VIX régime qui flippe
             # le S&P à lui seul). Non affiché dans la matrice (anti soupe de symboles).
             mono_dominant, mono_nom = detect_mono_critere_dominant(r, h)
+            # Étage 1b + 2 (SHADOW) — champs « sélection du jour » et capteurs
+            # courts, posés UNIQUEMENT sur l'horizon 24h (la sélection et les
+            # capteurs sont définis sur le pari 24h). AUCUN impact scoring.
+            selection_extra: Dict[str, Any] = {}
+            if h == "24h":
+                selection_extra["selection_du_jour"] = bool(
+                    r.fiche_key in _selection_keys
+                )
+                motif = _motif_exclusion.get(r.fiche_key)
+                if motif:
+                    selection_extra["selection_motif_exclusion"] = motif
+                cap = shadow_capteurs.get(r.fiche_key, {})
+                selection_extra["shadow_retour_j1"] = cap.get("shadow_retour_j1")
+                selection_extra["shadow_gap_overnight"] = cap.get(
+                    "shadow_gap_overnight"
+                )
             records.append({
                 "bulletin_date": bulletin_date,
                 "generated_at": generated_at,
@@ -3014,6 +3346,7 @@ def build_decision_log_records(
                 "contrib_momentum": round(float(cap_info.get("contrib_momentum", 0.0)), 6),
                 "cap_quant_ex_momentum": round(float(cap_info.get("cap_quant_ex_momentum", 0.0)), 6),
                 **directional_flags,
+                **selection_extra,
             })
     return records
 

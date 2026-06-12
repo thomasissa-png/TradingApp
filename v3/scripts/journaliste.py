@@ -2275,6 +2275,10 @@ def render_performance(
     lines: List[str] = []
     lines.append("# Win rate du bulletin — Journaliste")
     lines.append("")
+    # [S-R1 audit visuel 12/06] : la synthèse « X / 36 cellules fiables » est le
+    # chiffre le plus important → EN TÊTE, avant les métadonnées explicatives.
+    lines.append(_winrate_synthese_line(rows))
+    lines.append("")
     lines.append(f"- Généré : {now.isoformat()}")
     lines.append(f"- Journaliste version : {JOURNALISTE_VERSION}")
     lines.append(f"- Win rate = taux de bonnes directions sur les paris indépendants (N_eff)")
@@ -2289,7 +2293,6 @@ def render_performance(
         "vrais paris indépendants). N'entre PAS dans les règles de décision."
     )
     lines.append("")
-    lines.append(_winrate_synthese_line(rows))
 
     # CA-M7 — Compteur de jours de bourse exclus (férié partiel : un marché
     # ouvert, l'autre fermé → la garde globale is_trading_day saute le run).
@@ -2317,15 +2320,19 @@ def render_performance(
         lines.append("")
         lines.append("### Flip vs continuation")
         lines.append("")
+        # [P-R2 audit visuel 12/06] : à petit N (< N_EFFECTIVE_MIN), ces taux ne
+        # sont pas interprétables → on le dit pour éviter une fausse impression.
+        def _n_warn(n: int) -> str:
+            return " _(N trop faible, non interprétable)_" if n < N_EFFECTIVE_MIN else ""
         if total_flip > 0:
             lines.append(
                 f"- Win rate sur retournements : **{total_vrai_flip / total_flip * 100.0:.1f}%** "
-                f"(N={total_flip})"
+                f"(N={total_flip}){_n_warn(total_flip)}"
             )
         if total_cont > 0:
             lines.append(
                 f"- Win rate sur continuations : **{total_vrai_cont / total_cont * 100.0:.1f}%** "
-                f"(N={total_cont})"
+                f"(N={total_cont}){_n_warn(total_cont)}"
             )
     lines.append("")
     return "\n".join(lines)

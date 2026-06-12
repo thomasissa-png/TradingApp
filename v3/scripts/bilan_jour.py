@@ -690,9 +690,22 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     )
 
     L: List[str] = []
-    L.append(f"## Bilan du jour — {bilan.date_j.isoformat()}")
+    # [I-7 audit visuel 12/06] : tous les rapports commencent par un H1 (le
+    # Briefing est en H1, le suivi et le bilan étaient en H2 — incohérent).
+    L.append(f"# Bilan du jour — {bilan.date_j.isoformat()}")
     L.append("")
     L.append(f"_Généré : {bilan.now.isoformat()} (Europe/Paris)._")
+    L.append("")
+    # [H-BD1 audit visuel 12/06] : ligne résumé du score EN TÊTE, avant le
+    # tableau détaillé — Thomas voit « j'ai eu raison combien de fois » d'un coup.
+    wr_txt = (
+        f" — Win rate : {bilan.win_rate_jour:.0f}%"
+        if bilan.win_rate_jour is not None else ""
+    )
+    L.append(
+        f"**Résultat du {bilan.date_j.strftime('%d/%m')} : "
+        f"{bilan.n_vrai} ✅ / {bilan.n_fausse} ❌ / {bilan.n_nc} ⚪{wr_txt}**"
+    )
     L.append("")
     L.append("### Résultat des calls 7h")
     L.append("")
@@ -740,25 +753,26 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         )
         L.append("")
 
-    # Win rate du jour
+    # Win rate du jour — [H-BD2 audit visuel 12/06] : 2 niveaux. Le chiffre
+    # PRIMAIRE (le WR du jour) en gras, seul, en premier. Le détail (WR tradable,
+    # conviction forte/faible, sélection) descend en bloc « Détail » secondaire.
     L.append("### Win rate du jour")
     denom = bilan.n_vrai + bilan.n_fausse
-    L.append(
-        f"- Paris conclusifs : {denom} / {denom + bilan.n_nc} "
-        f"({bilan.n_nc} non-conclusifs sous seuil)"
-    )
     if bilan.win_rate_jour is not None:
         L.append(
-            f"- Win rate du jour : **{bilan.n_vrai}/{denom} = {bilan.win_rate_jour:.0f}%**"
+            f"**{bilan.win_rate_jour:.0f}% ({bilan.n_vrai}/{denom})** "
+            f"— {denom} paris conclusifs, {bilan.n_nc} non-conclusifs sous seuil."
         )
     else:
-        L.append("- Win rate du jour : — (aucun call conclusif aujourd'hui)")
+        L.append("**— (aucun call conclusif aujourd'hui)**")
+    L.append("")
+    L.append("_Détail :_")
     # WR tradable (secondaire) : inclut les non-conclusifs au dénominateur.
     denom_trad = bilan.n_vrai + bilan.n_fausse + bilan.n_nc
     if bilan.wr_tradable_jour is not None:
         L.append(
-            f"- WR tradable du jour : **{bilan.n_vrai}/{denom_trad} = "
-            f"{bilan.wr_tradable_jour:.0f}%** (VRAI / VRAI+FAUSSE+non-conclusif)"
+            f"- WR tradable du jour : {bilan.n_vrai}/{denom_trad} = "
+            f"{bilan.wr_tradable_jour:.0f}% (VRAI / VRAI+FAUSSE+non-conclusif)"
         )
     else:
         L.append("- WR tradable du jour : — (aucun pari tradable aujourd'hui)")
@@ -768,8 +782,8 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     s = bilan.selection
     if s.taux is not None:
         L.append(
-            f"- WR Sélection du jour : **{s.n_vrai_select}/{s.n_select} = "
-            f"{s.taux:.0f}%** (paris du bloc « 🎯 Sélection du jour — max 3 »)"
+            f"- WR Sélection du jour : {s.n_vrai_select}/{s.n_select} = "
+            f"{s.taux:.0f}% (paris du bloc « 🎯 Sélection du jour — max 3 »)"
         )
     else:
         L.append(
@@ -789,12 +803,9 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     # (forward-test J+60 = 2026-08-08). N'entre dans AUCUNE décision.
     fr = bilan.fausses_retournement
     L.append("### FAUSSES aux retournements (shadow A5)")
-    L.append(
-        "_Cellules conclusives en situation de retournement (cap anti-inversion "
-        "déclenché OU news opposées au quant hors-momentum). Métrique "
-        "d'observabilité momentum v3 — DISTINCTE du win rate, sans impact "
-        "décisionnel. WIN RATE ONLY._"
-    )
+    # [P-BD1 audit visuel 12/06] : explication réduite à 1 ligne (le détail
+    # complet était du bruit après la première lecture).
+    L.append("_Métrique shadow momentum (ne change pas le win rate) :_")
     if fr.taux_fausses is not None:
         L.append(
             f"- FAUSSES aux retournements (jour) : "
@@ -814,8 +825,12 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         for actif, amp in sorted(faux_gros, key=lambda x: x[1], reverse=True):
             L.append(
                 f"- ⚡ {actif} : call faux, le marché a bougé {amp:.2f}% "
-                f"dans le sens opposé. → À analyser dans le bilan semaine."
+                f"dans le sens opposé."
             )
+        # [C-BD1 audit visuel 12/06] : renvoi au bilan semaine UNE seule fois,
+        # en bas de liste (au lieu de répété sur chaque erreur).
+        L.append("")
+        L.append("_Ces erreurs seront analysées dans le bilan de semaine._")
     else:
         L.append("Pas de call faux à forte amplitude aujourd'hui.")
     L.append("")

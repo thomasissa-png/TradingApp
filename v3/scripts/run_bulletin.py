@@ -129,8 +129,21 @@ def main() -> int:
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("load_veille KO (is_flip absent du decision-log) : %s", e)
+        # Étage 2 (SHADOW) — capteurs courts 24h (retour veille / gap overnight)
+        # tracés au decision-log, poids 0. Best-effort : indispo → champs None.
+        shadow_capteurs: Optional[dict] = None
+        try:
+            _fiches = scoring_analyste.load_fiches()
+            bulletin_id = f"{now:%Y-%m-%d}-{now:%H}h"
+            _prix_emission = journaliste.load_prix_emission(bulletin_id)
+            shadow_capteurs = scoring_analyste.compute_shadow_capteurs(
+                _fiches, prix_emission=_prix_emission,
+            )
+        except Exception as e:  # noqa: BLE001 — capteurs shadow non bloquants
+            logger.warning("capteurs shadow indisponibles : %s", e)
         recs = scoring_analyste.build_decision_log_records(
             results, now, veille_conclusions=veille_conclusions_for_log,
+            shadow_capteurs=shadow_capteurs,
         )
         dl_path = scoring_analyste.write_decision_log(recs, now)
         n_diverge = sum(1 for r in recs if r.get("diverge"))

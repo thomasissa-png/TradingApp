@@ -150,6 +150,92 @@ def load_conviction_map(
     return result
 
 
+def load_selection_map(
+    bulletin_date: date,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+) -> Dict[Tuple[str, str], bool]:
+    """Mappe (actif, horizon) -> `selection_du_jour` pour le bulletin du jour.
+
+    Étage 1c (décision fondateur 12/06) — la « Sélection du jour » devient un
+    objet MESURÉ : on lit le champ shadow `selection_du_jour` des records du
+    decision-log du jour (dernier record par cellule, comme conviction). Seules
+    les cellules explicitement `selection_du_jour: true` sont retenues (toute
+    autre — false OU champ absent, anciens logs — est NON sélectionnée : zéro
+    invention, dégradation propre). N'altère NI score NI win rate global.
+    """
+    result: Dict[Tuple[str, str], bool] = {}
+    if not decision_log_dir.exists():
+        return result
+    prefix = bulletin_date.isoformat()
+    files = sorted(decision_log_dir.glob(f"{prefix}-*.jsonl"))
+    for fp in files:
+        try:
+            with fp.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(rec, dict):
+                        continue
+                    if rec.get("bulletin_date") != prefix:
+                        continue
+                    actif = rec.get("actif")
+                    horizon = rec.get("horizon")
+                    if not actif or not horizon:
+                        continue
+                    # Champ absent (anciens logs) → False (dégradation propre).
+                    result[(str(actif), str(horizon))] = bool(
+                        rec.get("selection_du_jour", False)
+                    )
+        except OSError as e:
+            logger.warning("decision-log illisible %s : %s", fp, e)
+            continue
+    return result
+
+
+@dataclass
+class WinRateSelection:
+    """Agrégat WR de la « Sélection du jour » (Étage 1c). WIN RATE ONLY.
+
+    n_select = cellules sélectionnées conclusives (VRAI+FAUSSE) ; n_vrai_select =
+    celles VRAI. Les non-conclusives (NC) sont exclues, comme le WR global.
+    """
+    n_select: int = 0
+    n_vrai_select: int = 0
+
+    @property
+    def taux(self) -> Optional[float]:
+        return round(self.n_vrai_select / self.n_select * 100.0, 1) if self.n_select else None
+
+
+def win_rate_selection(
+    measures: List[Any],
+    selection_map: Dict[Tuple[str, str], bool],
+) -> WinRateSelection:
+    """WR des cellules de la « Sélection du jour » (Étage 1c).
+
+    `measures` : objets avec .outcome, .cell.actif_name, .horizon. On ne compte
+    que VRAI/FAUSSE des cellules `selection_du_jour: true` (mêmes règles VRAI/
+    FAUSSE/NC que le WR global). Cellule sans entrée = non sélectionnée (exclue).
+    """
+    from journaliste import OUTCOME_VRAI, OUTCOME_FAUSSE  # noqa: PLC0415
+
+    wr = WinRateSelection()
+    for m in measures:
+        if m.outcome not in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            continue
+        if not selection_map.get((m.cell.actif_name, m.horizon), False):
+            continue
+        wr.n_select += 1
+        if m.outcome == OUTCOME_VRAI:
+            wr.n_vrai_select += 1
+    return wr
+
+
 # ---------------------------------------------------------------------------
 # A5 (audit momentum-family 10/06) — métrique « FAUSSES aux retournements »
 # ---------------------------------------------------------------------------
@@ -359,6 +445,9 @@ class BilanJour:
     # Métrique SECONDAIRE — coexiste avec le win rate conclusif (≤ celui-ci).
     wr_tradable_jour: Optional[float] = None
     conviction: WinRateConviction = field(default_factory=WinRateConviction)
+    # Étage 1c (décision fondateur 12/06) — WR de la « Sélection du jour ».
+    # La sélection devient un objet mesuré, à côté du WR global.
+    selection: WinRateSelection = field(default_factory=WinRateSelection)
     # A5 (audit momentum-family 10/06) — métrique shadow « FAUSSES aux
     # retournements ». OBSERVABILITÉ PURE : n'altère NI le win rate, NI les
     # conclusions, NI aucun kill-criterion. WIN RATE ONLY.
@@ -577,6 +666,12 @@ def build_bilan_jour(
     conv_map = load_conviction_map(date_j, decision_log_dir)
     bilan.conviction = win_rate_par_conviction(measures_24h, conv_map)
 
+    # Étage 1c — WR de la « Sélection du jour » (objet mesuré dédié). Source : le
+    # champ shadow `selection_du_jour` du decision-log du jour. Dégradation propre
+    # si absent (anciens logs → sélection vide).
+    selection_map = load_selection_map(date_j, decision_log_dir)
+    bilan.selection = win_rate_selection(measures_24h, selection_map)
+
     # A5 — métrique shadow « FAUSSES aux retournements » (observabilité pure,
     # zéro impact scoring/conclusions). Même source que la conviction : le
     # decision-log d'émission du jour.
@@ -667,6 +762,19 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         )
     else:
         L.append("- WR tradable du jour : — (aucun pari tradable aujourd'hui)")
+    # WR Sélection du jour (Étage 1c) — les paris du bloc « 🎯 Sélection du jour
+    # — max 3 », mesurés comme objet dédié (VRAI/FAUSSE, NC exclus comme le WR
+    # global). « — » si aucune cellule sélectionnée n'est conclusive aujourd'hui.
+    s = bilan.selection
+    if s.taux is not None:
+        L.append(
+            f"- WR Sélection du jour : **{s.n_vrai_select}/{s.n_select} = "
+            f"{s.taux:.0f}%** (paris du bloc « 🎯 Sélection du jour — max 3 »)"
+        )
+    else:
+        L.append(
+            "- WR Sélection du jour : — (aucun pari sélectionné conclusif aujourd'hui)"
+        )
     # Win rate par conviction (CA-W6)
     c = bilan.conviction
     tf = f"{c.taux_forte:.0f}%" if c.taux_forte is not None else "— (N insuffisant)"

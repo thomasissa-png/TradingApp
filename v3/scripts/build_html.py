@@ -739,6 +739,32 @@ def render_html(
     padding: 2px 7px; border-radius: 10px; background: var(--accent-bg); color: var(--accent);
     flex-shrink: 0;
   }}
+  /* Fil de la journée sous le briefing 7h (vue Historique/bulletin) : séparateur
+     léger + rapports repliés. Cohérent avec .today-report / .fold-section. */
+  .day-fil-sep {{
+    display: flex; align-items: center; gap: 12px;
+    margin: 28px 0 14px 0; font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted);
+  }}
+  .day-fil-sep::before, .day-fil-sep::after {{
+    content: ""; flex: 1; height: 1px; background: var(--border);
+  }}
+  .day-fil-report {{
+    border: 1px solid var(--border); border-radius: 8px; margin: 0 0 12px 0;
+    background: var(--bg-panel); overflow: hidden;
+  }}
+  .day-fil-report > summary {{
+    cursor: pointer; padding: 11px 16px; font-weight: 600; font-size: 14px;
+    color: var(--accent); list-style: none; user-select: none;
+    display: flex; align-items: center; gap: 8px;
+  }}
+  .day-fil-report > summary::-webkit-details-marker {{ display: none; }}
+  .day-fil-report > summary::before {{
+    content: "▸"; display: inline-block; transition: transform 0.15s ease;
+    color: var(--text-muted);
+  }}
+  .day-fil-report[open] > summary::before {{ transform: rotate(90deg); }}
+  .day-fil-body {{ padding: 4px 18px 16px 18px; }}
   /* Vue Historique */
   #history-view .history-intro {{ color: var(--text-muted); margin: 4px 0 18px 0; }}
   .history-filters {{
@@ -1774,6 +1800,24 @@ function renderMarkdownInto(target, md) {{
   }}
 }}
 
+// Rapports REPORTS d'une date ISO (YYYY-MM-DD), triés dans l'ordre de lecture
+// de la journée : suivi 12h → suivi 18h → bilan du jour (22h). Renvoie [] si
+// rien (dégradation propre côté appelants). Helper partagé entre la vue
+// « Aujourd'hui » (buildTodayView) et le fil de la vue « Historique »
+// (selectBulletin) — un seul ordre canonique, pas de duplication.
+function sameDayReports(dateIso) {{
+  if (!dateIso) return [];
+  const suivis = [];
+  let bilan = null;
+  REPORTS.forEach(r => {{
+    if (r.date !== dateIso) return;
+    if (r.kind === 'bilan-jour') bilan = r;
+    else suivis.push(r);
+  }});
+  suivis.sort((a, b) => (a.slot || '').localeCompare(b.slot || ''));
+  return bilan ? suivis.concat([bilan]) : suivis;
+}}
+
 // Construit la vue « Aujourd'hui » : pour chaque jour (récent d'abord), un
 // groupe repliable contenant le briefing 7h + les suivis 12h/18h + le bilan du
 // jour. Réutilise BULLETINS (briefings) + REPORTS (suivis/bilans).
@@ -1785,17 +1829,14 @@ function buildTodayView() {{
 
   // Regroupe par date ISO (YYYY-MM-DD). Un briefing 7h = un bulletin dont l'id
   // commence par la date ; on extrait juste les 10 premiers caractères.
-  const byDay = {{}};  // date -> groupe (briefings / suivis / bilan)
-  const ensure = (d) => (byDay[d] = byDay[d] || {{ briefings: [], suivis: [], bilan: null }});
+  const byDay = {{}};  // date -> groupe (briefings)
+  const ensure = (d) => (byDay[d] = byDay[d] || {{ briefings: [] }});
   BULLETINS.forEach(b => {{
     const d = (b.id || '').slice(0, 10);
     if (/^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(d)) ensure(d).briefings.push(b);
   }});
   REPORTS.forEach(r => {{
-    const d = r.date;
-    if (!d) return;
-    if (r.kind === 'bilan-jour') ensure(d).bilan = r;
-    else ensure(d).suivis.push(r);
+    if (r.date) ensure(r.date);  // un jour sans briefing mais avec suivi/bilan reste listé
   }});
 
   const days = Object.keys(byDay).sort().reverse();
@@ -1811,8 +1852,9 @@ function buildTodayView() {{
     const details = document.createElement('details');
     details.className = 'today-day';
     if (di === 0) details.open = true;  // le jour le plus récent ouvert par défaut
+    const dayReports = sameDayReports(d);
     const summary = document.createElement('summary');
-    const n = grp.briefings.length + grp.suivis.length + (grp.bilan ? 1 : 0);
+    const n = grp.briefings.length + dayReports.length;
     summary.innerHTML = '<span>' + dt.short + '</span>'
       + '<span class="day-count">' + n + ' rapport' + (n > 1 ? 's' : '') + '</span>';
     details.appendChild(summary);
@@ -1820,11 +1862,10 @@ function buildTodayView() {{
     // Ordre de lecture du jour : briefing 7h → suivi 12h → suivi 18h → bilan 22h.
     const ordered = [];
     grp.briefings.forEach(b => ordered.push({{ tag: 'Briefing', slot: b.slot || '7h', md: b.markdown, key: '07' }}));
-    grp.suivis
-      .slice()
-      .sort((a, b) => (a.slot || '').localeCompare(b.slot || ''))
-      .forEach(s => ordered.push({{ tag: 'Suivi', slot: s.slot, md: s.markdown, key: s.slot }}));
-    if (grp.bilan) ordered.push({{ tag: 'Bilan', slot: '22h', md: grp.bilan.markdown, key: '22' }});
+    dayReports.forEach(r => {{
+      const isBilan = r.kind === 'bilan-jour';
+      ordered.push({{ tag: isBilan ? 'Bilan' : 'Suivi', slot: isBilan ? '22h' : r.slot, md: r.markdown, key: isBilan ? '22' : r.slot }});
+    }});
 
     ordered.forEach((item, ii) => {{
       const rd = document.createElement('details');
@@ -1998,6 +2039,44 @@ function buildWinrateView() {{
   }}
 }}
 
+// Ajoute, à la suite du briefing 7h rendu dans `container`, le fil des rapports
+// du même jour (suivi 12h → suivi 18h → bilan 22h). Chaque rapport est un
+// <details class="day-fil-report"> REPLIÉ, rendu paresseusement via le pipeline
+// unifié. Si aucun rapport ce jour-là → n'ajoute rien (zéro séparateur, zéro
+// message). Présentation pure : aucune logique métier, aucun scoring.
+function appendDayFil(container, id) {{
+  if (!container) return;
+  const dateIso = (id || '').slice(0, 10);
+  const reports = sameDayReports(dateIso);
+  if (reports.length === 0) return;  // dégradation propre
+
+  // Séparateur léger « ── La journée ── », uniquement s'il y a ≥1 rapport.
+  const sep = document.createElement('div');
+  sep.className = 'day-fil-sep';
+  sep.textContent = 'La journée';
+  container.appendChild(sep);
+
+  const LABELS = {{ '12h': '🕛 Suivi 12h', '18h': '🕕 Suivi 18h' }};
+  reports.forEach(r => {{
+    const isBilan = r.kind === 'bilan-jour';
+    const label = isBilan ? '🌙 Bilan du jour — 22h15' : (LABELS[r.slot] || ('Suivi ' + (r.slot || '')));
+    const rd = document.createElement('details');
+    rd.className = 'day-fil-report';  // replié par défaut (pas d'attribut open)
+    const rs = document.createElement('summary');
+    rs.textContent = label;
+    rd.appendChild(rs);
+    const body = document.createElement('div');
+    body.className = 'day-fil-body';
+    rd.appendChild(body);
+    // Rendu paresseux : on ne parse le markdown qu'à la première ouverture.
+    let rendered = false;
+    rd.addEventListener('toggle', () => {{
+      if (rd.open && !rendered) {{ renderMarkdownInto(body, r.markdown); rendered = true; }}
+    }});
+    container.appendChild(rd);
+  }});
+}}
+
 function selectBulletin(id) {{
   hideAuxViews();
   const b = BULLETINS.find(x => x.id === id);
@@ -2032,6 +2111,11 @@ function selectBulletin(id) {{
     const subnav = document.getElementById('subnav');
     if (subnav) subnav.style.display = 'none';
   }}
+  // Le fil complet de la journée sous le briefing 7h : suivi 12h → suivi 18h →
+  // bilan 22h (REPORTS, 30 derniers jours). Chaque rapport en <details> REPLIÉ —
+  // le briefing reste la lecture primaire. Dégradation propre : aucun rapport du
+  // jour (bulletin pré-refonte ou > 30 jours) → on n'ajoute RIEN.
+  appendDayFil(content, b.id);
   history.replaceState(null, '', '#' + encodeURIComponent(id));
   renderList(id);
   // [CH-4 audit visuel 12/06] : le titre d'onglet reflète le bulletin actif

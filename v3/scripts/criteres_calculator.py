@@ -58,6 +58,107 @@ SKIP_COUNTER: Counter = Counter()
 DEFAULT_TIMEOUT = 15  # seconds
 
 # ---------------------------------------------------------------------------
+# Prix le plus FRAIS pour les actifs CONTINUS (fin de l'angle mort overnight /
+# week-end — décision fondateur 2026-06-15).
+#
+# Problème : les actifs cotés en CONTINU (or, argent, pétrole, cuivre, cacao,
+# café, blé, FX) bougent overnight et le week-end alors que le système calcule
+# ses critères de niveau/momentum/RSI sur la SÉRIE DE CLOSES dont le dernier
+# point est le close J-1. À 7h le lundi, le système ne « voit » donc pas le
+# mouvement vendredi-soir→lundi-matin et peut shorter en silence un actif qui a
+# déjà bougé de +2 %.
+#
+# Correctif : pour ces actifs UNIQUEMENT, si un prix temps réel PLUS FRAIS que
+# close[-1] est disponible au moment du run, on l'APPEND (ou on remplace
+# close[-1] si même jour calendaire) comme dernier point de la série — au point
+# de capture unique `fetch_twelve_series`, donc tous les critères à série de
+# closes (z-score niveau, variation 20j/momentum, RSI, perf 5j) en bénéficient.
+#
+# Dégradation sûre OBLIGATOIRE (zéro invention) : si aucun prix frais n'est posé
+# pour le symbole, OU si le prix frais n'est PAS strictement plus récent que
+# close[-1] (cas Twelve gratuit qui renvoie le close de vendredi à 7h le lundi),
+# la série est renvoyée INCHANGÉE — comportement actuel exact.
+#
+# Les actifs NON continus (S&P/Nasdaq/CAC/VIX, marché cash fermé à 7h) ne sont
+# JAMAIS dans cette map → close J-1 reste leur dernier prix réel, inchangé.
+#
+# Portée volontairement restreinte aux séries MONO-SYMBOLE (niveau, momentum,
+# RSI, perf 5j). Les spreads/ratios/alpha (multi-symboles, alignés par date)
+# ignorent naturellement un point « aujourd'hui » sans contrepartie côté second
+# symbole → pas de pollution.
+_FRESH_PRICE_OVERRIDES: Dict[str, Tuple[float, date]] = {}
+
+
+def set_fresh_price_override(symbol: str, price: float, tick_date: date) -> None:
+    """Enregistre un prix frais (price, date) pour `symbol` (continu uniquement).
+
+    Appelé par `run()` après fetch temps réel des tickers continus. La date est
+    celle du tick (jour de marché du prix), utilisée pour décider si le point est
+    plus frais que close[-1] dans `fetch_twelve_series`.
+    """
+    if isinstance(price, (int, float)) and _is_valid_price(float(price)) and isinstance(tick_date, date):
+        _FRESH_PRICE_OVERRIDES[symbol] = (float(price), tick_date)
+
+
+def clear_fresh_price_overrides() -> None:
+    """Vide la map (fin de run). Idempotent."""
+    _FRESH_PRICE_OVERRIDES.clear()
+
+
+def _apply_fresh_price(
+    symbol: str,
+    series: List[Tuple[datetime, float]],
+    interval: str,
+) -> List[Tuple[datetime, float]]:
+    """Injecte le prix frais du symbole en dernier point de la série (continu).
+
+    Règles (dégradation sûre, zéro invention) :
+      - série journalière (`interval == "1day"`) UNIQUEMENT (les intraday ne sont
+        pas concernés par l'angle mort overnight) ;
+      - override présent pour `symbol`, sinon série INCHANGÉE ;
+      - prix frais STRICTEMENT plus récent que la date de close[-1] → on APPEND
+        un point daté du tick ;
+      - prix frais du MÊME jour calendaire que close[-1] → on REMPLACE close[-1]
+        (raffraîchissement intraday du dernier point) ;
+      - prix frais plus ANCIEN (ou égal) que close[-1] → série INCHANGÉE (cas
+        Twelve gratuit qui sert le close de vendredi le lundi à 7h).
+
+    Best-effort : toute anomalie → série d'origine (aucune exception ne remonte).
+    """
+    if interval != "1day" or not series:
+        return series
+    ov = _FRESH_PRICE_OVERRIDES.get(symbol)
+    if ov is None:
+        return series
+    fresh_price, fresh_date = ov
+    try:
+        last_dt, _last_close = series[-1]
+        last_date = last_dt.date()
+        if fresh_date > last_date:
+            # Point overnight/week-end : on APPEND (date du tick, midi UTC pour
+            # rester trié strictement après le close J-1 sans collision).
+            new_dt = datetime(
+                fresh_date.year, fresh_date.month, fresh_date.day, 12, 0,
+                tzinfo=timezone.utc,
+            )
+            SKIP_COUNTER[f"fresh_price_appended:{symbol}"] += 1
+            logger.info(
+                "Prix frais continu %s : close[-1]=%s → +point %s @ %.6g",
+                symbol, last_date, fresh_date, fresh_price,
+            )
+            return series + [(new_dt, fresh_price)]
+        if fresh_date == last_date:
+            # Même jour : raffraîchit le dernier point (intraday > close partiel).
+            SKIP_COUNTER[f"fresh_price_refreshed:{symbol}"] += 1
+            return series[:-1] + [(last_dt, fresh_price)]
+        # Prix frais périmé (≤ close[-1]) → no-op (dégradation sûre).
+        SKIP_COUNTER[f"fresh_price_stale:{symbol}"] += 1
+        return series
+    except Exception as e:  # noqa: BLE001 — jamais casser la chaîne critère
+        logger.warning("apply_fresh_price %s KO : %s — série inchangée", symbol, e)
+        return series
+
+# ---------------------------------------------------------------------------
 # GATE C2 — Intégrité des critères quant (garde-fous P0, déterministes)
 # ---------------------------------------------------------------------------
 # Bornage des z-scores : tout |z| > Z_CLIP_MAX est clippé à ±Z_CLIP_MAX (3σ).
@@ -315,6 +416,9 @@ def fetch_twelve_series(symbol: str, *, interval: str = "1day", outputsize: int 
     out = _filter_spikes(out, _spike_threshold_for_symbol(symbol), label=symbol)
     if not out:
         return None
+    # Injection du prix le plus FRAIS pour les actifs continus (no-op si aucun
+    # override posé ou si le prix frais n'est pas plus récent que close[-1]).
+    out = _apply_fresh_price(symbol, out, interval)
     return out
 
 
@@ -3099,6 +3203,60 @@ def load_fiches(fiches_dir: Path = FICHES_DIR) -> Dict[str, dict]:
     return fiches
 
 
+def _continu_tickers(fiches: Dict[str, dict]) -> List[str]:
+    """Tickers `ticker_principal` des actifs du groupe CONTINU (or, argent,
+    pétrole, cuivre, cacao, café, blé, FX…).
+
+    Réutilise la source de vérité existante `mesure_ouverture.actif_group` (groupe
+    eu / us / continu déduit famille + overrides config). Zéro liste en dur :
+    si l'import échoue, retourne [] (dégradation sûre → aucun prix frais injecté,
+    comportement actuel exact).
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import mesure_ouverture as _mo  # noqa: E402
+    except Exception as e:  # noqa: BLE001
+        logger.warning("mesure_ouverture indispo (%s) — pas de prix frais continu", e)
+        return []
+    out: List[str] = []
+    for fiche in (fiches or {}).values():
+        try:
+            if _mo.actif_group(fiche) == "continu":
+                ticker = fiche.get("ticker_principal")
+                if ticker:
+                    out.append(ticker)
+        except Exception:  # noqa: BLE001 — une fiche bancale ne casse pas le run
+            continue
+    return out
+
+
+def _prime_fresh_prices(fiches: Dict[str, dict], now: datetime) -> None:
+    """Pose les overrides de prix frais pour les actifs continus avant le calcul.
+
+    Source du prix : `fetch_twelve_price` (LE MÊME appel temps réel que
+    `journaliste.stamp_prix_emission` ; au stade « critères » le fichier
+    prix-emission de ce bulletin n'existe pas encore → on lit la source live, un
+    seul fetch par ticker). On lit aussi la date du tick pour décider de la
+    fraîcheur (cf. `_apply_fresh_price`).
+
+    Best-effort intégral : tout échec → aucun override (comportement actuel).
+    """
+    clear_fresh_price_overrides()
+    tick_date = now.astimezone(timezone.utc).date()
+    for ticker in _continu_tickers(fiches):
+        if ticker in _FRESH_PRICE_OVERRIDES:
+            continue
+        try:
+            price = fetch_twelve_price(ticker)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("prix frais %s KO : %s — skip (no-op)", ticker, e)
+            price = None
+        if price is None:
+            # Pas de prix frais → no-op (dégradation sûre, zéro invention).
+            continue
+        set_fresh_price_override(ticker, price, tick_date)
+
+
 def run(now: Optional[datetime] = None) -> Path:
     SKIP_COUNTER.clear()
     if now is None:
@@ -3109,6 +3267,16 @@ def run(now: Optional[datetime] = None) -> Path:
     fiches = load_fiches()
     triggers_cfg = tc.load_triggers_config()
     events = tc.parse_events_log()
+
+    # Prix le plus FRAIS pour les actifs continus (fin de l'angle mort overnight /
+    # week-end). No-op sûr si le prix frais manque ou n'est pas plus récent que
+    # close[-1]. Posé AVANT le calcul des critères (point de capture unique
+    # fetch_twelve_series). Nettoyé en fin de run (finally) pour ne pas fuir
+    # d'état entre runs (tests, run multi-créneaux).
+    try:
+        _prime_fresh_prices(fiches, now)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("priming prix frais continu KO : %s — run sans (no-op)", e)
 
     # Synthèse directionnelle par actif (niveau 1 — DeepSeek). Si la clé
     # DEEPSEEK_API_KEY est absente OU si le hard-cap coût est atteint,
@@ -3159,6 +3327,8 @@ def run(now: Optional[datetime] = None) -> Path:
     logger.info("Santé critères persistée : %s", health)
     if SKIP_COUNTER:
         logger.info("Skips : %s", dict(SKIP_COUNTER))
+    # Nettoyage des overrides de prix frais : pas de fuite d'état entre runs.
+    clear_fresh_price_overrides()
     return out
 
 

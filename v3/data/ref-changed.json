@@ -8,16 +8,16 @@
   },
   "ref_changed": {
     "CC=F": {
-      "ref_changed": "2026-06-11",
+      "ref_changed": "2026-06-15",
       "fiche_key": "cacao",
       "actif": "Cacao",
-      "motif": "Dedup Lot A 10/06 : retrait de cftc_cot_cocoa (deja dans le composite ICE+CFTC) — la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 9->6) — les cellules reset repartent a zero, ref_changed avance au 1er bulletin avec le signal v3 (11/06 7h)."
+      "motif": "Dedup Lot A 10/06 : retrait de cftc_cot_cocoa (deja dans le composite ICE+CFTC) — la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 9->6) — les cellules reset repartent a zero. MAJ 15/06 (justif CHANGELOG) : criteres sur prix le plus frais — fin de l'angle mort overnight/week-end (le niveau/momentum/RSI integre desormais le prix temps reel plus frais que close J-1 pour les actifs continus). Le signal change => reset N=0, 3e reset des continus (cout assume, vrai defaut corrige), ref_changed avance au 1er bulletin avec le signal 15/06."
     },
     "BZ=F": {
-      "ref_changed": "2026-06-11",
+      "ref_changed": "2026-06-15",
       "fiche_key": "petrole",
       "actif": "Petrole",
-      "motif": "Dedup Lot A 10/06 : retrait de api_weekly_surprise (pre-indicateur d'EIA) — la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 7->6) — reset au 1er bulletin v3 (11/06 7h)."
+      "motif": "Dedup Lot A 10/06 : retrait de api_weekly_surprise (pre-indicateur d'EIA) — la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 7->6) — reset au 1er bulletin v3 (11/06 7h). MAJ 15/06 (justif CHANGELOG) : criteres sur prix le plus frais — fin de l'angle mort overnight/week-end. Le signal change => reset N=0, 3e reset des continus, ref_changed avance au 15/06."
     },
     "^IXIC": {
       "ref_changed": "2026-06-11",
@@ -26,40 +26,40 @@
       "motif": "Dedup Lot A 10/06 : retrait de concentration_top7 (inverse de breadth) — la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3/A8) : atterrissage momentum v3 corrige + ajout momentum_prix_20j_nasdaq (proxy QQQ, poids 4, plafond indices A8) — reset au 1er bulletin v3 (11/06 7h)."
     },
     "SI=F": {
-      "ref_changed": "2026-06-11",
+      "ref_changed": "2026-06-15",
       "fiche_key": "argent",
       "actif": "Argent",
-      "motif": "Dedup Lot A 10/06 : retrait de alpha_argent_vs_or_5j (proche de ratio_gold_silver) — la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 7->6) — reset au 1er bulletin v3 (11/06 7h)."
+      "motif": "Dedup Lot A 10/06 : retrait de alpha_argent_vs_or_5j (proche de ratio_gold_silver) — la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 7->6) — reset au 1er bulletin v3 (11/06 7h). MAJ 15/06 (justif CHANGELOG) : criteres sur prix le plus frais — fin de l'angle mort overnight/week-end. Le signal change => reset N=0, 3e reset des continus, ref_changed avance au 15/06."
     },
     "KC=F": {
-      "ref_changed": "2026-06-11",
+      "ref_changed": "2026-06-15",
       "fiche_key": "cafe",
       "actif": "Cafe (Arabica)",
-      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_cafe) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 8->6) — reset au 1er bulletin v3 (11/06 7h)."
+      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_cafe) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 8->6) — reset au 1er bulletin v3 (11/06 7h). MAJ 15/06 (justif CHANGELOG) : criteres sur prix le plus frais — fin de l'angle mort overnight/week-end. Le signal change => reset N=0, 3e reset des continus, ref_changed avance au 15/06."
     },
     "ZW=F": {
-      "ref_changed": "2026-06-11",
+      "ref_changed": "2026-06-15",
       "fiche_key": "ble",
       "actif": "Ble",
-      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_ble) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 8->6) — reset au 1er bulletin v3 (11/06 7h)."
+      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_ble) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 8->6) — reset au 1er bulletin v3 (11/06 7h). MAJ 15/06 (justif CHANGELOG) : criteres sur prix le plus frais — fin de l'angle mort overnight/week-end. Le signal change => reset N=0, 3e reset des continus, ref_changed avance au 15/06."
     },
     "HG=F": {
-      "ref_changed": "2026-06-11",
+      "ref_changed": "2026-06-15",
       "fiche_key": "cuivre",
       "actif": "Cuivre",
-      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_cuivre) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 8->6) — reset au 1er bulletin v3 (11/06 7h)."
+      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_cuivre) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 8->6) — reset au 1er bulletin v3 (11/06 7h). MAJ 15/06 (justif CHANGELOG) : criteres sur prix le plus frais — fin de l'angle mort overnight/week-end. Le signal change => reset N=0, 3e reset des continus, ref_changed avance au 15/06."
     },
     "GC=F": {
-      "ref_changed": "2026-06-11",
+      "ref_changed": "2026-06-15",
       "fiche_key": "or",
       "actif": "Or",
-      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_or) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 7->6) — reset au 1er bulletin v3 (11/06 7h)."
+      "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_or) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 7->6) — reset au 1er bulletin v3 (11/06 7h). MAJ 15/06 (justif CHANGELOG) : criteres sur prix le plus frais — fin de l'angle mort overnight/week-end (cas demontre lundi 15/06 : prix or 7h = exactement le close de vendredi, shadow_gap_overnight ~0 => mouvement week-end invisible). Le signal change => reset N=0, 3e reset des continus, ref_changed avance au 15/06."
     },
     "EUR=X": {
-      "ref_changed": "2026-06-11",
+      "ref_changed": "2026-06-15",
       "fiche_key": "eurusd",
       "actif": "EUR/USD",
-      "motif": "Ajout momentum_prix_20j v3 (variation 20j) — momentum_prix_20j_eurusd (proxy EUR=X, poids 5, famille A8) ; 1er bulletin avec le signal = 11/06 7h. La reference de mesure de la cellule change (justif CHANGELOG 11/06)."
+      "motif": "Ajout momentum_prix_20j v3 (variation 20j) — momentum_prix_20j_eurusd (proxy EUR=X, poids 5, famille A8) ; 1er bulletin avec le signal = 11/06 7h. La reference de mesure de la cellule change (justif CHANGELOG 11/06). MAJ 15/06 (justif CHANGELOG) : criteres sur prix le plus frais — fin de l'angle mort overnight/week-end (FX cote en continu). Le signal change => reset N=0, 3e reset des continus, ref_changed avance au 15/06."
     },
     "^GSPC": {
       "ref_changed": "2026-06-11",

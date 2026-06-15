@@ -185,3 +185,11 @@ momentum v3 aux points de retournement (forward-test J+60).
 - **VIX rejoint le reset du 2026-06-11** (critère `gap_rv_iv` poids 5 ressuscité — calculable depuis SPY+CBOE déjà ingérés). **À compter du 11/06, les 12 actifs sont en ère v2** ; plus aucune cellule ne porte d'historique v1.
 - Critères ressuscités le même jour : café `usd_brl` (poids 6, Twelve), EUR/USD `balance_commerciale_ez` (poids 3, Eurostat) — actifs déjà reset au 11/06, même ère.
 - Conséquence N≥15 à J+60=2026-08-08 : inchangée (déjà documentée pour les 11 autres) — désormais valable pour les 12.
+
+---
+
+## Addendum — 2026-06-15 : critères des actifs continus sur le prix le plus frais
+
+**Changement de signal (VOLET A).** Pour les actifs **continus** (or, argent, pétrole, cuivre, cacao, café, blé, EUR/USD ; source `mesure_ouverture.actif_group`), les critères de niveau/momentum/RSI intègrent désormais le **prix temps réel plus frais que `close[-1]`** quand il est disponible (fin de l'angle mort overnight/week-end démontré le 15/06 sur l'or). Dégradation sûre : prix frais absent/périmé → comportement actuel exact (zéro invention).
+
+**Impact kill-criterion.** Le kill-criterion (WR tradable < seuil sur N suffisant, 24h-only) **reste inchangé dans sa formule**. Seule la **référence de mesure** des 8 cellules continues change → leur `ref_changed` avance à **2026-06-15** (`ref-changed.json`, append-only, justifié CHANGELOG). Ces cellules repartent **N=0 au 15/06** (3e reset des continus — coût assumé). Conséquence sur N≥15 à J+60 (= 2026-08-14) : fenêtre utile raccourcie pour ces 8 actifs — issue valide, pas un échec. Les non-continus (`^GSPC`, `^IXIC`, `^FCHI`, `^VIX`) conservent leur historique depuis le 11/06. **Aucun poids ni seuil de fiche n'est touché.**

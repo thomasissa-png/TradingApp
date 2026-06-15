@@ -218,12 +218,12 @@ def test_filtre_7h_reconnaissance_creneaux():
 def test_seul_7h_compte_dans_kpi(tmp_path):
     """3 bulletins le même jour → seul le 7h donne une mesure NOTÉE (N_brut=1).
 
-    Date POST-cutover (GC=F/Or est reset au 2026-06-10 depuis le correctif famille
-    momentum-prix) : on date le bulletin au 2026-06-11 pour que l'observation entre
-    bien dans le KPI v2 et que le test isole son objet réel (filtre 7h vs 12h/18h,
-    CA-M6b), sans interférence de l'enforcement cutover.
+    Date POST-cutover (GC=F/Or est reset au 2026-06-15 depuis le correctif « prix
+    le plus frais » des continus) : on date le bulletin au 2026-06-15 pour que
+    l'observation entre bien dans le KPI v2 et que le test isole son objet réel
+    (filtre 7h vs 12h/18h, CA-M6b), sans interférence de l'enforcement cutover.
     """
-    bdate = date(2026, 6, 11)
+    bdate = date(2026, 6, 15)
     today = jr.compute_echeance(bdate, "24h")
     bulletins = tmp_path / "bulletins"
     prix_ouv = tmp_path / "prix-ouverture"

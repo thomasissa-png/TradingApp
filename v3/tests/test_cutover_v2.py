@@ -102,29 +102,29 @@ def test_registre_date_invalide_ignoree(tmp_path):
 
 
 def test_registre_reel_contient_les_actifs_reset():
-    # Cutover momentum v3 (2026-06-11) : la v3 corrigée (variation 20j + cap
-    # aveugle au momentum + poids ≤6) atterrit au bulletin 11/06 7h → ref_changed
-    # des 8 entrées existantes avancé 2026-06-10 → 2026-06-11 (justif CHANGELOG)
-    # + 3 nouvelles entrées (eurusd EUR=X, sp500 ^GSPC, cac40 ^FCHI), puis VIX
-    # (lot autopilote 10/06 soir) = 12 actifs reset au 2026-06-11.
+    # Cutover « prix le plus frais » (2026-06-15) : les critères des actifs
+    # CONTINUS intègrent désormais le prix temps réel plus frais que close[-1]
+    # (fin de l'angle mort overnight/week-end). Le SIGNAL change → ref_changed des
+    # 8 continus (or, argent, pétrole, cuivre, cacao, café, blé, EUR/USD) avancé
+    # 2026-06-11 → 2026-06-15 (justif CHANGELOG, 3e reset des continus). Les 4 NON
+    # continus (nasdaq ^IXIC, sp500 ^GSPC, cac40 ^FCHI, vix ^VIX) ne sont PAS
+    # touchés (cash fermé à 7h → close J-1 = dernier prix réel) → restent au 11/06.
     reg = sv.load_ref_changed()
-    # 8 entrées d'origine (Lot A + correctif famille), ref avancée au 11/06
-    assert reg.get("CC=F") == date(2026, 6, 11)   # cacao
-    assert reg.get("BZ=F") == date(2026, 6, 11)   # petrole
+    # 8 actifs CONTINUS reset au 15/06 (VOLET C — prix le plus frais).
+    assert reg.get("CC=F") == date(2026, 6, 15)   # cacao
+    assert reg.get("BZ=F") == date(2026, 6, 15)   # petrole
+    assert reg.get("SI=F") == date(2026, 6, 15)   # argent
+    assert reg.get("KC=F") == date(2026, 6, 15)   # cafe
+    assert reg.get("ZW=F") == date(2026, 6, 15)   # ble
+    assert reg.get("HG=F") == date(2026, 6, 15)   # cuivre
+    assert reg.get("GC=F") == date(2026, 6, 15)   # or
+    assert reg.get("EUR=X") == date(2026, 6, 15)  # eurusd (FX, continu)
+    # 4 actifs NON continus : inchangés au 11/06 (marché cash fermé à 7h).
     assert reg.get("^IXIC") == date(2026, 6, 11)  # nasdaq
-    assert reg.get("SI=F") == date(2026, 6, 11)   # argent
-    assert reg.get("KC=F") == date(2026, 6, 11)   # cafe
-    assert reg.get("ZW=F") == date(2026, 6, 11)   # ble
-    assert reg.get("HG=F") == date(2026, 6, 11)   # cuivre
-    assert reg.get("GC=F") == date(2026, 6, 11)   # or
-    # 3 nouvelles entrées (fin de la famille momentum, A8)
-    assert reg.get("EUR=X") == date(2026, 6, 11)  # eurusd (ticker_principal réel)
     assert reg.get("^GSPC") == date(2026, 6, 11)  # sp500
     assert reg.get("^FCHI") == date(2026, 6, 11)  # cac40
-    # VIX a rejoint le reset le 10/06 soir (critère gap_rv_iv ressuscité, lot
-    # autopilote) → 12/12 actifs en ère v2, plus aucun historique v1.
-    assert reg.get("^VIX") == date(2026, 6, 11)  # vix (gap_rv_iv)
-    # Total : 12 actifs reset (ère v2 complète).
+    assert reg.get("^VIX") == date(2026, 6, 11)   # vix
+    # Total : 12 actifs au registre (8 continus au 15/06 + 4 non continus au 11/06).
     assert len(reg) == 12
 
 

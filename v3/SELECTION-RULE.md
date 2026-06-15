@@ -273,3 +273,16 @@ règle, NI le kill-criterion.
 - **VIX rejoint le reset du 2026-06-11** (critère `gap_rv_iv` poids 5 ressuscité — calculable depuis SPY+CBOE déjà ingérés). **À compter du 11/06, les 12 actifs sont en ère v2** ; plus aucune cellule ne porte d'historique v1.
 - Critères ressuscités le même jour : café `usd_brl` (poids 6, Twelve), EUR/USD `balance_commerciale_ez` (poids 3, Eurostat) — actifs déjà reset au 11/06, même ère.
 - Conséquence N≥15 à J+60=2026-08-08 : inchangée (déjà documentée pour les 11 autres) — désormais valable pour les 12.
+
+
+---
+
+## Addendum — 2026-06-15 : critères des actifs continus sur le prix le plus frais (fin de l'angle mort overnight/week-end)
+
+**Défaut démontré lundi 15/06.** Pour l'or (`GC=F`), le prix dont le système dispose à 7h le lundi = **exactement le close de vendredi** (capteur `shadow_gap_overnight ≈ 0`). Les critères de niveau/momentum/RSI s'appuient sur `close[-1]` (close J-1) → le système **ignorait tout mouvement overnight/week-end** sur les actifs cotés en **continu** (or, argent, pétrole, cuivre, cacao, café, blé, FX) et pouvait recommander un SHORT prioritaire contre un actif ayant déjà bougé de +2 %, invisible pour lui. Légitime pour S&P/Nasdaq/CAC (marché cash **fermé** à 7h → close J-1 = dernier prix réel), **faux** pour les continus.
+
+**Correctif (VOLET A).** Pour les actifs du groupe **continu** uniquement (source : `mesure_ouverture.actif_group`), si un prix temps réel **plus frais** que `close[-1]` est disponible au run, il est **appendé** comme dernier point de la série de closes (ou remplace `close[-1]` si même jour). Point d'injection unique : `criteres_calculator.fetch_twelve_series` → tous les critères à série de closes (z-score niveau, variation 20j, RSI, perf 5j) en bénéficient. **Dégradation sûre** : prix frais absent OU non plus récent que `close[-1]` (cas Twelve gratuit le lundi 7h) → **série inchangée, comportement actuel exact** (zéro invention). Les non-continus (S&P/Nasdaq/CAC/VIX) ne sont **jamais** touchés.
+
+**Visibilité (VOLET B).** Sous la « Sélection du jour », un drapeau ⚠️ signale un actif continu qui **bouge à contre-sens** de la conclusion depuis la dernière clôture vue (`shadow_gap_overnight` ≥ 0,8 % et de sens opposé). Anti-bruit : gap ≈ 0 ou aligné → rien.
+
+**Reset : 8 actifs continus au 2026-06-15** (or `GC=F`, argent `SI=F`, pétrole `BZ=F`, cuivre `HG=F`, cacao `CC=F`, café `KC=F`, blé `ZW=F`, EUR/USD `EUR=X`). Leur `ref_changed` avance **2026-06-11 → 2026-06-15** (justification gravée dans CHANGELOG.md, comme l'exige le `_doc` du registre) : le signal change quand le prix frais est intégré. **3e reset des continus — coût assumé, vrai défaut corrigé.** Les non-continus (`^GSPC`, `^IXIC`, `^FCHI`, `^VIX`) gardent leur `ref_changed` 2026-06-11. La règle de sélection (WR tradable ≥ 70 % / N ≥ 15, 24h-only) reste **inchangée** ; les poids/seuils des fiches ne sont **pas** touchés. 

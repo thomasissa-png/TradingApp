@@ -2271,11 +2271,82 @@ def compute_shadow_capteurs(
     return out
 
 
+# VOLET B (2026-06-15) — seuil de matérialité du mouvement « depuis la dernière
+# clôture vue par le système » au-delà duquel on lève un drapeau ⚠️ sur un actif
+# continu sélectionné. 0.8 % (0.008) = mouvement intraday/overnight non
+# négligeable pour un actif macro. En-dessous (ou ~0), on n'affiche RIEN (anti-
+# bruit). Le drapeau n'est levé que si le mouvement est de SENS OPPOSÉ à la
+# conclusion (le système décide peut-être sur une donnée dépassée).
+_GAP_CONTRESENS_SEUIL: float = 0.008
+
+
+def _is_continu_fiche(fiche_key: str, fiches: Optional[Dict[str, dict]]) -> bool:
+    """True si l'actif `fiche_key` est du groupe CONTINU (or, argent, pétrole,
+    cuivre, cacao, café, blé, FX). Réutilise mesure_ouverture.actif_group (source
+    de vérité). Best-effort : indispo / fiche absente → False (pas de drapeau)."""
+    if not fiches or fiche_key not in fiches:
+        return False
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import mesure_ouverture as _mo  # noqa: E402
+        return _mo.actif_group(fiches[fiche_key]) == "continu"
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _build_gap_contresens_flags(
+    selection: List[Dict[str, Any]],
+    shadow_capteurs: Optional[Dict[str, Dict[str, Optional[float]]]],
+    fiches: Optional[Dict[str, dict]],
+) -> List[str]:
+    """VOLET B — drapeaux ⚠️ « bouge à contre-sens depuis la dernière clôture vue ».
+
+    Pour chaque actif CONTINU de la sélection : si son `shadow_gap_overnight`
+    (mouvement prix-courant / close J-1 utilisé par le système) est ≥ seuil de
+    matérialité ET de SENS OPPOSÉ à la conclusion (LONG alors que ça baisse, ou
+    SHORT alors que ça monte), on lève un drapeau. But : le bulletin DIT quand il
+    décide sur une donnée potentiellement dépassée.
+
+    Dégradation sûre (zéro bruit, zéro invention) :
+      - pas de shadow_capteurs / gap None / |gap| < seuil → RIEN ;
+      - actif non continu → jamais de drapeau (close J-1 = dernier prix réel) ;
+      - gap ALIGNÉ avec la conclusion → RIEN (le système voit déjà dans le bon sens).
+    """
+    if not shadow_capteurs:
+        return []
+    out: List[str] = []
+    for s in selection:
+        key = s["fiche_key"]
+        if not _is_continu_fiche(key, fiches):
+            continue
+        cap = shadow_capteurs.get(key) or {}
+        gap = cap.get("shadow_gap_overnight")
+        if not isinstance(gap, (int, float)):
+            continue
+        if abs(gap) < _GAP_CONTRESENS_SEUIL:
+            continue
+        direction = s["direction"]
+        # Contre-sens : LONG mais gap < 0 (ça baisse) ; SHORT mais gap > 0 (ça monte).
+        contresens = (direction == "LONG" and gap < 0) or (direction == "SHORT" and gap > 0)
+        if not contresens:
+            continue
+        out.append(
+            f"⚠️ **{s['actif']}** bouge à contre-sens depuis la dernière clôture "
+            f"vue par le système ({gap:+.1%}) — le pari {direction} repose "
+            f"peut-être sur un prix déjà dépassé."
+        )
+    if out:
+        out.append("")
+    return out
+
+
 def build_selection_du_jour_block(
     results: List["ActifResult"],
     now: datetime,
     prix_reference: Optional[Dict[str, float]] = None,
     seuil_conviction: Optional[float] = None,
+    shadow_capteurs: Optional[Dict[str, Dict[str, Optional[float]]]] = None,
+    fiches: Optional[Dict[str, dict]] = None,
 ) -> List[str]:
     """Construit le bloc « ## 🎯 Sélection du jour — max 3 » (placé EN PREMIER,
     avant « À jouer aujourd'hui »).
@@ -2326,6 +2397,12 @@ def build_selection_du_jour_block(
         out.append(f"_écartée : {e['actif']} — {e['motif']}._")
     if ecartees_dedup:
         out.append("")
+
+    # VOLET B — drapeau ⚠️ « bouge à contre-sens depuis la dernière clôture vue »
+    # pour les actifs CONTINUS de la sélection (fin de l'angle mort overnight /
+    # week-end côté visibilité). No-op si pas de shadow_capteurs, gap < seuil, ou
+    # gap aligné avec la conclusion.
+    out += _build_gap_contresens_flags(selection, shadow_capteurs, fiches)
 
     # Avertissement catalyseur J0 (impact high) sur un actif sélectionné. Le
     # calendrier liste les actifs par `fiche_key` (cf. calendrier-eco.yml) → on
@@ -2609,6 +2686,8 @@ def render_bulletin(
     fiches_h: str,
     freshness_msg: str,
     prix_reference: Optional[Dict[str, float]] = None,
+    shadow_capteurs: Optional[Dict[str, Dict[str, Optional[float]]]] = None,
+    fiches: Optional[Dict[str, dict]] = None,
 ) -> str:
     # Lot 5 C8a — import paresseux (cohérent avec build_decision_log_records).
     import triggers_classifier as _tc_classifier  # noqa: F401
@@ -2909,7 +2988,10 @@ def render_bulletin(
     # APRÈS, avec les drapeaux de chaque cellule + la ligne ⚭ si convergence.
     # « Sélection du jour — max 3 » EN PREMIER (décision fondateur 12/06).
     head_block = (
-        build_selection_du_jour_block(results, now, prix_reference=prix_reference)
+        build_selection_du_jour_block(
+            results, now, prix_reference=prix_reference,
+            shadow_capteurs=shadow_capteurs, fiches=fiches,
+        )
         + build_a_jouer_block(results, now, prix_reference=prix_reference)
         + _SHADOW_CAPTEURS_NOTE
         + build_top_multi_horizons_block(results, _shared_summary)
@@ -3753,20 +3835,50 @@ def run(
     # run_bulletin.stamp_prix_emission) → map vide → colonne « — » (zéro
     # invention). Sur un re-render ultérieur (stamp présent), les prix s'affichent.
     prix_reference: Dict[str, float] = {}
+    stamped: Dict[str, float] = {}
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import journaliste as _journ  # noqa: F401
         bulletin_id = f"{now:%Y-%m-%d}-{now:%H}h"
-        stamped = _journ.load_prix_emission(bulletin_id)  # {ticker: prix}
+        stamped = _journ.load_prix_emission(bulletin_id) or {}  # {ticker: prix}
         for key, fiche in fiches.items():
             ticker = fiche.get("ticker_principal")
             if ticker and ticker in stamped:
                 prix_reference[key] = stamped[ticker]
     except Exception as e:  # noqa: BLE001 — l'absence de prix ne casse pas le bulletin
         logger.warning("prix de référence À jouer indisponible : %s", e)
+
+    # VOLET B — capteurs courts shadow (gap overnight) pour le drapeau ⚠️
+    # contre-sens des actifs continus. Au run 7h le stamp n'existe pas encore
+    # (prix_reference vide) → on alimente le prix d'émission par un fetch LIVE des
+    # tickers (même source que le stamp) pour que le gap soit calculable. Best-
+    # effort intégral : indispo → shadow_capteurs vide → aucun drapeau (no-op).
+    shadow_capteurs_for_render: Dict[str, Dict[str, Optional[float]]] = {}
+    try:
+        prix_emission_live: Dict[str, float] = dict(stamped)
+        if not prix_emission_live:
+            import criteres_calculator as _cc_live  # noqa: F811
+            for _k, _f in fiches.items():
+                _tk = _f.get("ticker_principal")
+                if not _tk or _tk in prix_emission_live:
+                    continue
+                try:
+                    _px = _cc_live.fetch_twelve_price(_tk)
+                except Exception:  # noqa: BLE001
+                    _px = None
+                if isinstance(_px, (int, float)):
+                    prix_emission_live[_tk] = float(_px)
+        shadow_capteurs_for_render = compute_shadow_capteurs(
+            fiches, prix_emission=prix_emission_live,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("capteurs shadow (drapeau contre-sens) indispo : %s", e)
+
     content = render_bulletin(
         results, veille_conclusions, now, fhash, fresh_msg,
         prix_reference=prix_reference,
+        shadow_capteurs=shadow_capteurs_for_render,
+        fiches=fiches,
     )
     # Un fichier distinct par créneau (3 runs/jour). Le créneau est l'HEURE DE
     # PARIS du run, zéro-paddée (ex. bulletin-2026-06-05-18h.md pour un run 18h04

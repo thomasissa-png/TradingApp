@@ -1,8 +1,8 @@
 # Santé des critères
 
-_Cycle : 2026-06-12 05:23 UTC_
+_Cycle : 2026-06-15 05:23 UTC_
 
-**Synthèse** : 30 motifs de skip distincts, 33 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
+**Synthèse** : 29 motifs de skip distincts, 32 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 
 | Occurrences | Motif | Détail (cause exacte) |
 |---:|---|---|
@@ -29,7 +29,6 @@ _Cycle : 2026-06-12 05:23 UTC_
 | 1 | Source z-score non programmatique | `egypte_gasc_tenders` |
 | 1 | Source z-score non programmatique | `inventaires_comex_silver` |
 | 1 | Source z-score non programmatique | `inventaires_lme_shfe_5j` |
-| 1 | Source z-score non programmatique | `nass_crop_progress` |
 | 1 | Source z-score non programmatique | `spread_arabica_robusta` |
 | 1 | Source z-score non programmatique | `spread_ny_london` |
 | 1 | Source z-score non programmatique | `spread_oat_bund_stress_ez` |

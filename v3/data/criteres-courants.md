@@ -2,49 +2,49 @@
 # Source de vérité du moteur de scoring (Analyste).
 
 ```yaml
-last_update: '2026-06-12T05:23:53.178102+00:00'
+last_update: '2026-06-15T05:23:33.763741+00:00'
 argent:
   taux_10y_us_reels_tips:
-    valeur: 2.21
+    valeur: 2.16
+    valeur_normalisee: 0.7524356753319108
+    valeur_ponderee: 0.7524356753319108
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  mouvement_or_5j:
+    valeur: 0.06383152439186301
     valeur_normalisee: 1.0
     valeur_ponderee: 1.0
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  mouvement_or_5j:
-    valeur: -0.032778159237561444
-    valeur_normalisee: -0.5868946822086936
-    valeur_ponderee: -0.5868946822086936
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   ratio_gold_silver:
-    valeur: 62.6083647723245
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 61.453824638047735
+    ts: '2026-06-15T05:23:33.763741+00:00'
   caixin_pmi_manuf:
     valeur_normalisee: 0.0
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
     note: hors fenêtre
   cftc_cot_silver:
-    valeur: 24492.0
-    valeur_normalisee: -0.18736391301050243
-    valeur_ponderee: -0.18736391301050243
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 21439.0
+    valeur_normalisee: -0.2761544121303307
+    valeur_ponderee: -0.2761544121303307
+    ts: '2026-06-15T05:23:33.763741+00:00'
   flux_etf_slv_pslv_5j:
-    valeur: -0.09196775156763215
-    valeur_normalisee: -0.4861322138455309
-    valeur_ponderee: -0.4861322138455309
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: -0.004547669319473813
+    valeur_normalisee: 0.07368491649924704
+    valeur_ponderee: 0.07368491649924704
+    ts: '2026-06-15T05:23:33.763741+00:00'
   momentum_prix_20j_argent:
-    valeur: -0.11390298779697894
-    valeur_normalisee: -0.6519344976120861
-    valeur_ponderee: -0.6519344976120861
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: -0.08425253242630881
+    valeur_normalisee: -0.4297502376705939
+    valeur_ponderee: -0.4297502376705939
+    ts: '2026-06-15T05:23:33.763741+00:00'
   gate_regime_extreme:
     valeur: false
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
 ble:
   noaa_drought_midwest_plains:
-    valeur: 0.2888654580101037
-    valeur_normalisee: 0.14443272900505186
-    valeur_ponderee: 0.14443272900505186
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 0.2930712936759181
+    valeur_normalisee: 0.14653564683795905
+    valeur_ponderee: 0.14653564683795905
+    ts: '2026-06-15T05:23:33.763741+00:00'
   geopolitique_mer_noire:
     valeur: 0
     valeur_normalisee: 0.0
@@ -52,56 +52,59 @@ ble:
     materiality: ''
     reliability: ''
     source_track: ia_synthese_faible
-    ts: '2026-06-12T05:23:53.178102+00:00'
-    synthese_rationale: 'Signaux contradictoires : escalade Iran (LONG) vs météo favorable
-      et liquidation de fonds (SHORT). Le prix a baissé de 8.81% sur 20j, suggérant
-      que les news SHORT sont déjà intégrées, mais la fraîcheur de la news LONG du
-      11 juin (high matérialité) n''a pas encore inversé la tendance. Pas de signal
-      do'
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    synthese_rationale: 'Signaux contradictoires : escalade US-Iran (LONG high) et
+      météo favorable + liquidations (SHORT medium) s''opposent. Le prix a baissé
+      de 10% sur 20j, suggérant que les risques LONG sont déjà intégrés ou dominés
+      par les shorts.'
     nature: structurel
     p2_shadow_contrib_exclu:
-      24h: 0.7
-      7j: 0.7
-      1m: 0.7
+      24h: 0.9333333333333332
+      7j: 0.9333333333333332
+      1m: 0.9333333333333332
+  nass_crop_progress:
+    valeur_normalisee: 0.0
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    note: hors fenêtre
   cftc_cot_wheat:
-    valeur: -47361.0
-    valeur_normalisee: -0.06793769229046236
-    valeur_ponderee: -0.06793769229046236
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: -67881.0
+    valeur_normalisee: -0.3345346843914137
+    valeur_ponderee: -0.3345346843914137
+    ts: '2026-06-15T05:23:33.763741+00:00'
   meteo_australie_dryland:
-    valeur: 0.000960211703760389
-    valeur_normalisee: 0.0004801058518801945
-    valeur_ponderee: 0.0004801058518801945
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 0.030795078925148888
+    valeur_normalisee: 0.015397539462574444
+    valeur_ponderee: 0.015397539462574444
+    ts: '2026-06-15T05:23:33.763741+00:00'
   dxy_trend_20j:
     valeur: 120.0831
     valeur_normalisee: 0.48294014677064406
     valeur_ponderee: 0.48294014677064406
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   momentum_prix_20j_ble:
-    valeur: -0.08811602165595867
-    valeur_normalisee: -0.7680250882213531
-    valeur_ponderee: -0.7680250882213531
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: -0.10355963578945193
+    valeur_normalisee: -0.8291425371328061
+    valeur_ponderee: -0.8291425371328061
+    ts: '2026-06-15T05:23:33.763741+00:00'
   gate_regime_extreme:
     valeur: false
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
 cac40:
   spread_oat_bund_10y:
     valeur: 0.6785842105
     valeur_normalisee: 0.28629604490204547
     valeur_ponderee: 0.28629604490204547
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   alpha_cac_vs_sp_5j:
-    valeur: 0.020256797352316225
-    valeur_normalisee: 0.6262742945830935
-    valeur_ponderee: 0.6262742945830935
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 0.010443935283285244
+    valeur_normalisee: 0.3906674835339068
+    valeur_ponderee: 0.3906674835339068
+    ts: '2026-06-15T05:23:33.763741+00:00'
   flux_etf_msci_france_5j:
-    valeur: 0.00540073449989209
-    valeur_normalisee: 0.05755372575816598
-    valeur_ponderee: 0.05755372575816598
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 0.02777777777777768
+    valeur_normalisee: 0.4976786801337989
+    valeur_ponderee: 0.4976786801337989
+    ts: '2026-06-15T05:23:33.763741+00:00'
   tension_politique_fr:
     valeur: 0
     valeur_normalisee: 0.0
@@ -109,94 +112,86 @@ cac40:
     materiality: ''
     reliability: ''
     source_track: none
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   rsi_14j_fchi:
-    valeur: 54.6963436585633
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 62.13421814045727
+    ts: '2026-06-15T05:23:33.763741+00:00'
   momentum_prix_20j_cac40:
-    valeur: 0.014665407083244153
-    valeur_normalisee: 0.19126854469066268
-    valeur_ponderee: 0.19126854469066268
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  gate_regime_extreme:
-    valeur: true
-    ts: '2026-06-12T05:23:53.178102+00:00'
-cacao:
-  hf_positioning_flux_options:
-    valeur: -23189.0
-    valeur_normalisee: -0.7730303034118962
-    valeur_ponderee: -0.7730303034118962
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  grindings_q:
-    valeur_normalisee: 0.0
-    ts: '2026-06-12T05:23:53.178102+00:00'
-    note: hors fenêtre
-  eudr:
-    valeur: -1
-    valeur_normalisee: -1.0
-    valeur_ponderee: -0.42
-    materiality: medium
-    reliability: reported
-    source_track: ia_synthese
-    ts: '2026-06-12T05:23:53.178102+00:00'
-    synthese_rationale: Majoritarily SHORT news (demand fears, strong Ivorian exports)
-      dominate, with only one LONG signal (China-Brazil) that is offset by its low
-      relevance to cocoa. Price is slightly down over 20d, consistent with SHORT bias,
-      but recent 5d uptick suggests some caution.
-    nature: structurel
-    event_id: 4c438c43b8e7
-    event_date: '2026-05-15T00:00:00+00:00'
-    event_date_source: rss
-    freshness_days: '28.22'
-    p2_shadow_contrib_exclu:
-      24h: -19.33333333333336
-      7j: -19.33333333333336
-      1m: -19.33333333333336
-  maladies_cabosses:
-    valeur: -1
-    valeur_normalisee: -1.0
-    valeur_ponderee: -0.42
-    materiality: medium
-    reliability: reported
-    source_track: ia_synthese
-    ts: '2026-06-12T05:23:53.178102+00:00'
-    synthese_rationale: Majoritarily SHORT news (demand fears, strong Ivorian exports)
-      dominate, with only one LONG signal (China-Brazil) that is offset by its low
-      relevance to cocoa. Price is slightly down over 20d, consistent with SHORT bias,
-      but recent 5d uptick suggests some caution.
-    nature: structurel
-    event_id: 4c438c43b8e7
-    event_date: '2026-05-15T00:00:00+00:00'
-    event_date_source: rss
-    freshness_days: '28.22'
-    p2_shadow_contrib_exclu:
-      24h: -19.33333333333336
-      7j: -19.33333333333336
-      1m: -19.33333333333336
-  momentum_prix_20j_cacao:
-    valeur: -0.004911814386282853
-    valeur_normalisee: -0.31954920409474274
-    valeur_ponderee: -0.31954920409474274
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 0.05008712048555797
+    valeur_normalisee: 0.557014084745987
+    valeur_ponderee: 0.557014084745987
+    ts: '2026-06-15T05:23:33.763741+00:00'
   gate_regime_extreme:
     valeur: false
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
+cacao:
+  hf_positioning_flux_options:
+    valeur: -29350.0
+    valeur_normalisee: -0.8736520422725818
+    valeur_ponderee: -0.8736520422725818
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  grindings_q:
+    valeur_normalisee: 0.0
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    note: hors fenêtre
+  eudr:
+    valeur: 0
+    valeur_normalisee: 0.0
+    valeur_ponderee: 0.0
+    materiality: ''
+    reliability: ''
+    source_track: ia_synthese_faible
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    synthese_rationale: Majorité de news SHORT (demande faible, offre abondante) mais
+      une news LONG récente (stocks limités) et une matérialité high (Chine lève interdiction
+      Brésil) créent un signal mitigé. Le prix est en légère hausse, suggérant que
+      le marché a déjà intégré les craintes baissières.
+    nature: structurel
+    p2_shadow_contrib_exclu:
+      24h: -23.53333333333336
+      7j: -23.53333333333336
+      1m: -23.53333333333336
+  maladies_cabosses:
+    valeur: 0
+    valeur_normalisee: 0.0
+    valeur_ponderee: 0.0
+    materiality: ''
+    reliability: ''
+    source_track: ia_synthese_faible
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    synthese_rationale: Majorité de news SHORT (demande faible, offre abondante) mais
+      une news LONG récente (stocks limités) et une matérialité high (Chine lève interdiction
+      Brésil) créent un signal mitigé. Le prix est en légère hausse, suggérant que
+      le marché a déjà intégré les craintes baissières.
+    nature: structurel
+    p2_shadow_contrib_exclu:
+      24h: -23.53333333333336
+      7j: -23.53333333333336
+      1m: -23.53333333333336
+  momentum_prix_20j_cacao:
+    valeur: 0.013455604564795776
+    valeur_normalisee: -0.2365131065695948
+    valeur_ponderee: -0.2365131065695948
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  gate_regime_extreme:
+    valeur: false
+    ts: '2026-06-15T05:23:33.763741+00:00'
 cafe:
   meteo_bresil_minas_gerais:
-    valeur: -0.3392828045527763
-    valeur_normalisee: -0.16964140227638816
-    valeur_ponderee: -0.16964140227638816
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: -0.3341641867475241
+    valeur_normalisee: -0.16708209337376204
+    valeur_ponderee: -0.16708209337376204
+    ts: '2026-06-15T05:23:33.763741+00:00'
   usd_brl:
-    valeur: 5.116
-    valeur_normalisee: 0.6886623168256384
-    valeur_ponderee: 0.6886623168256384
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 5.0648
+    valeur_normalisee: 0.312285943777733
+    valeur_ponderee: 0.312285943777733
+    ts: '2026-06-15T05:23:33.763741+00:00'
   cftc_cot_coffee:
-    valeur: 10188.0
-    valeur_normalisee: -0.5226180177014742
-    valeur_ponderee: -0.5226180177014742
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 1316.0
+    valeur_normalisee: -0.6884038422015029
+    valeur_ponderee: -0.6884038422015029
+    ts: '2026-06-15T05:23:33.763741+00:00'
   maladies_cabosses_rouille:
     valeur: -1
     valeur_normalisee: -1.0
@@ -204,16 +199,17 @@ cafe:
     materiality: medium
     reliability: reported
     source_track: ia_synthese
-    ts: '2026-06-12T05:23:53.178102+00:00'
-    synthese_rationale: Majoritarily SHORT news, including high-materiality US tariff
-      proposal on Brazilian goods and harvest pressure, outweigh a single LONG news
-      on Chinese import ban lift. Price down 7.85% over 20 days aligns with SHORT
-      bias, but recent 5-day uptick (+1.57%) and mixed signals cap conviction at medium.
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    synthese_rationale: Multiple harvest pressure news (medium mat) and a high-mat
+      US tariff proposal on Brazilian goods dominate, outweighing a single high-mat
+      China lifting ban. Price -6.7% over 20d confirms bearish bias, but recent +3.17%
+      over 5d suggests some stabilization; conviction medium due to mixed high-mat
+      signa
     nature: structurel
     event_id: cb5427ddc947
     event_date: '2026-06-03T00:00:00+00:00'
     event_date_source: rss
-    freshness_days: '9.22'
+    freshness_days: '12.22'
     p2_shadow_contrib_exclu:
       24h: 50.900000000000006
       7j: 50.900000000000006
@@ -225,224 +221,229 @@ cafe:
     materiality: ''
     reliability: ''
     source_track: calendrier
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   meteo_vietnam_robusta:
-    valeur: -0.11056222140086613
-    valeur_normalisee: -0.05528111070043307
-    valeur_ponderee: -0.05528111070043307
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: -0.07127490203589365
+    valeur_normalisee: -0.035637451017946825
+    valeur_ponderee: -0.035637451017946825
+    ts: '2026-06-15T05:23:33.763741+00:00'
   momentum_prix_20j_cafe:
-    valeur: -0.07846235013582825
-    valeur_normalisee: -0.5587875304699153
-    valeur_ponderee: -0.5587875304699153
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: -0.06703250324668797
+    valeur_normalisee: -0.35358083217314257
+    valeur_ponderee: -0.35358083217314257
+    ts: '2026-06-15T05:23:33.763741+00:00'
   gate_regime_extreme:
     valeur: false
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
 cuivre:
   caixin_pmi_manuf:
     valeur_normalisee: 0.0
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
     note: hors fenêtre
   mining_strikes_chili_perou:
     valeur: 1
     valeur_normalisee: 1.0
-    valeur_ponderee: 0.42
-    materiality: medium
+    valeur_ponderee: 0.7
+    materiality: high
     reliability: reported
     source_track: ia_synthese
-    ts: '2026-06-12T05:23:53.178102+00:00'
-    synthese_rationale: Plusieurs news high matérialité récentes (inflation PPI Chine,
-      objectif cuivre Goldman Sachs, droits de douane Trump) dominent le signal LONG,
-      malgré quelques news SHORT plus anciennes. Le prix a déjà monté de 2% sur 5j,
-      mais les news LONG fraîches (≤48h) confirment la tendance.
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    synthese_rationale: Dominance de news LONG matérialité élevée (inflation PPI Chine,
+      objectif cuivre Goldman Sachs) et fraîches (nucléaire, batteries, VE). Les quelques
+      news SHORT sont anciennes ou de faible matérialité, et le prix (+1.64% sur 20j)
+      confirme le biais haussier.
     nature: structurel
     event_id: 6b209aac5fd5
     event_date: '2026-06-05T00:00:00+00:00'
     event_date_source: rss
-    freshness_days: '7.22'
+    freshness_days: '10.22'
     p2_shadow_contrib_exclu:
-      24h: 2.4
-      7j: 2.4
-      1m: 2.4
+      24h: 2.6333333333333333
+      7j: 2.6333333333333333
+      1m: 2.6333333333333333
   dxy_trend_20j:
     valeur: 120.0831
     valeur_normalisee: 0.48294014677064406
     valeur_ponderee: 0.48294014677064406
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   cftc_cot_copper_nets:
-    valeur: 79599.0
+    valeur: 75588.0
     valeur_normalisee: 1.0
     valeur_ponderee: 1.0
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   news_construction_infra:
+    valeur: 1
+    valeur_normalisee: 1.0
+    valeur_ponderee: 1.0
+    materiality: high
+    reliability: confirmed
+    source_track: ia_synthese
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    synthese_rationale: Dominance de news LONG matérialité élevée (inflation PPI Chine,
+      objectif cuivre Goldman Sachs) et fraîches (nucléaire, batteries, VE). Les quelques
+      news SHORT sont anciennes ou de faible matérialité, et le prix (+1.64% sur 20j)
+      confirme le biais haussier.
+    nature: structurel
+    event_id: 077856a285a5
+    event_date: '2026-06-10T00:00:00+00:00'
+    event_date_source: rss
+    freshness_days: '5.22'
+    p2_shadow_contrib_exclu:
+      24h: 15.699999999999998
+      7j: 15.699999999999998
+      1m: 15.699999999999998
+  ratio_cuivre_or:
+    valeur: 0.0015099871447539547
+    valeur_normalisee: 0.8684559908665905
+    valeur_ponderee: 0.8684559908665905
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  momentum_prix_20j_cuivre:
+    valeur: 0.016380297645594455
+    valeur_normalisee: -0.31099485002417826
+    valeur_ponderee: -0.31099485002417826
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  gate_regime_extreme:
+    valeur: true
+    ts: '2026-06-15T05:23:33.763741+00:00'
+eurusd:
+  differentiel_taux_2y_us_de:
+    valeur: 1.4410598367999996
+    valeur_normalisee: 0.47102912567013266
+    valeur_ponderee: 0.47102912567013266
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  differentiel_taux_10y_us_bund:
+    valeur: 1.4536842105
+    valeur_normalisee: 0.15009886818300844
+    valeur_ponderee: 0.15009886818300844
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  dxy_trend_20j:
+    valeur: 120.0831
+    valeur_normalisee: 0.48294014677064406
+    valeur_ponderee: 0.48294014677064406
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  usd_jpy_proxy_risk:
+    valeur: 160.01276
+    valeur_normalisee: 0.4659160529346998
+    valeur_ponderee: 0.4659160529346998
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  cftc_cot_eur_nets:
+    valeur: -18345.0
+    valeur_normalisee: -0.5514666177749327
+    valeur_ponderee: -0.5514666177749327
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  balance_commerciale_ez:
+    valeur: 7820.6
+    valeur_normalisee: -0.10896677791699855
+    valeur_ponderee: -0.10896677791699855
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  momentum_prix_20j_eurusd:
+    valeur: -0.0010144254741148995
+    valeur_normalisee: -0.002706139232562481
+    valeur_ponderee: -0.002706139232562481
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  gate_regime_extreme:
+    valeur: true
+    ts: '2026-06-15T05:23:33.763741+00:00'
+nasdaq:
+  taux_10y_us_reels_tips:
+    valeur: 2.16
+    valeur_normalisee: 0.7524356753319108
+    valeur_ponderee: 0.7524356753319108
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  sox_trend_5j:
+    valeur: 596.25
+    valeur_normalisee: 0.750770933682463
+    valeur_ponderee: 0.750770933682463
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  breadth_nasdaq100_ma50:
+    valeur: 0.16587184271473193
+    valeur_normalisee: 0.17361812827572243
+    valeur_ponderee: 0.17361812827572243
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  sentiment_ia_megacaps:
     valeur: 1
     valeur_normalisee: 1.0
     valeur_ponderee: 0.6
     materiality: medium
     reliability: confirmed
     source_track: ia_synthese
-    ts: '2026-06-12T05:23:53.178102+00:00'
-    synthese_rationale: Plusieurs news high matérialité récentes (inflation PPI Chine,
-      objectif cuivre Goldman Sachs, droits de douane Trump) dominent le signal LONG,
-      malgré quelques news SHORT plus anciennes. Le prix a déjà monté de 2% sur 5j,
-      mais les news LONG fraîches (≤48h) confirment la tendance.
-    nature: structurel
-    event_id: 077856a285a5
-    event_date: '2026-06-10T00:00:00+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    synthese_rationale: Accord de paix US-Iran confirmé le 15 juin (matérialité high)
+      domine le signal, malgré des news SHORT plus anciennes sur inflation et escalade.
+      Le marché a déjà intégré une partie du mouvement (+2.31% sur 5j), mais la fraîcheur
+      et la matérialité de la paix justifient une conviction haute.
+    nature: ponctuel
+    event_id: f8ac42ecf6c4
+    event_date: '2026-06-12T00:00:00+00:00'
     event_date_source: rss
-    freshness_days: '2.22'
+    freshness_days: '3.22'
     p2_shadow_contrib_exclu:
-      24h: 15.466666666666663
-      7j: 15.466666666666663
-      1m: 15.466666666666663
-  ratio_cuivre_or:
-    valeur: 0.0015248971954445335
-    valeur_normalisee: 1.0
-    valeur_ponderee: 1.0
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  momentum_prix_20j_cuivre:
-    valeur: 0.0062796376526190745
-    valeur_normalisee: -0.45871645281303713
-    valeur_ponderee: -0.45871645281303713
-    ts: '2026-06-12T05:23:53.178102+00:00'
+      24h: 13.666666666666668
+      7j: 13.666666666666668
+      1m: 13.666666666666668
+  flux_etf_qqq_5j:
+    valeur: 0.02309027890701576
+    valeur_normalisee: 0.15916054129526044
+    valeur_ponderee: 0.15916054129526044
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  spread_nasdaq_russell2000:
+    valeur: 428.39001999999994
+    valeur_normalisee: 0.4360158142428537
+    valeur_ponderee: 0.4360158142428537
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  rsi_14j_ixic:
+    valeur: 56.13354926497232
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  momentum_prix_20j_nasdaq:
+    valeur: 0.002153475379026437
+    valeur_normalisee: -0.41288653814749926
+    valeur_ponderee: -0.41288653814749926
+    ts: '2026-06-15T05:23:33.763741+00:00'
   gate_regime_extreme:
     valeur: true
-    ts: '2026-06-12T05:23:53.178102+00:00'
-eurusd:
-  differentiel_taux_2y_us_de:
-    valeur: 1.4945704583999997
-    valeur_normalisee: 0.7430495926506506
-    valeur_ponderee: 0.7430495926506506
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  differentiel_taux_10y_us_bund:
-    valeur: 1.5536842104999997
-    valeur_normalisee: 0.6614072599297771
-    valeur_ponderee: 0.6614072599297771
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
+or:
+  taux_10y_us_reels_tips:
+    valeur: 2.16
+    valeur_normalisee: 0.7524356753319108
+    valeur_ponderee: 0.7524356753319108
+    ts: '2026-06-15T05:23:33.763741+00:00'
   dxy_trend_20j:
     valeur: 120.0831
     valeur_normalisee: 0.48294014677064406
     valeur_ponderee: 0.48294014677064406
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  usd_jpy_proxy_risk:
-    valeur: 160.28142
-    valeur_normalisee: 0.6239542647754439
-    valeur_ponderee: 0.6239542647754439
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  cftc_cot_eur_nets:
-    valeur: 15729.0
-    valeur_normalisee: -0.31647179596046804
-    valeur_ponderee: -0.31647179596046804
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  balance_commerciale_ez:
-    valeur: 7820.6
-    valeur_normalisee: -0.10896677791699855
-    valeur_ponderee: -0.10896677791699855
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  momentum_prix_20j_eurusd:
-    valeur: -0.0031028063159346253
-    valeur_normalisee: -0.15857550353007402
-    valeur_ponderee: -0.15857550353007402
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  gate_regime_extreme:
-    valeur: true
-    ts: '2026-06-12T05:23:53.178102+00:00'
-nasdaq:
-  taux_10y_us_reels_tips:
-    valeur: 2.21
-    valeur_normalisee: 1.0
-    valeur_ponderee: 1.0
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  sox_trend_5j:
-    valeur: 586.92999
-    valeur_normalisee: 0.7260121014302173
-    valeur_ponderee: 0.7260121014302173
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  breadth_nasdaq100_ma50:
-    valeur: 0.16490963855421686
-    valeur_normalisee: 0.030779437814295582
-    valeur_ponderee: 0.030779437814295582
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  sentiment_ia_megacaps:
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  cftc_cot_nets:
+    valeur: 165904.0
+    valeur_normalisee: -0.28823309737285147
+    valeur_ponderee: -0.28823309737285147
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  flux_etf_or_5j:
+    valeur: -0.02448006320613927
+    valeur_normalisee: -0.12419363240237871
+    valeur_ponderee: -0.12419363240237871
+    ts: '2026-06-15T05:23:33.763741+00:00'
+  tension_geopolitique:
     valeur: -1
     valeur_normalisee: -1.0
     valeur_ponderee: -0.6
     materiality: medium
     reliability: confirmed
     source_track: ia_synthese
-    ts: '2026-06-12T05:23:53.178102+00:00'
-    synthese_rationale: Majorité de news SHORT à matérialité élevée (escalade Iran,
-      inflation PPI, récession mondiale) dominent, malgré une news LONG récente sur
-      espoirs de paix. Le prix a baissé de 3.17% sur 5j, confirmant le biais baissier.
-    nature: ponctuel
-    event_id: af1792191952
-    event_date: '2026-06-11T00:00:00+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    synthese_rationale: Multiples news confirmées de matérialité high le 15 juin annoncent
+      un accord de paix US-Iran et la réouverture d'Ormuz, réduisant les tensions
+      géopolitiques et pesant sur l'or. Le contexte de prix (+6.38% sur 5j) est cohérent
+      avec un rebond technique, mais la fraîcheur et la force du signal short do
+    nature: structurel
+    event_id: a32bd9c09b72
+    event_date: '2026-06-15T00:00:00+00:00'
     event_date_source: rss
-    freshness_days: '1.22'
+    freshness_days: '0.22'
     p2_shadow_contrib_exclu:
-      24h: 12.0
-      7j: 12.0
-      1m: 12.0
-  flux_etf_qqq_5j:
-    valeur: -0.03171708499368209
-    valeur_normalisee: -0.6850851979054997
-    valeur_ponderee: -0.6850851979054997
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  spread_nasdaq_russell2000:
-    valeur: 426.71
-    valeur_normalisee: 0.4310155878441126
-    valeur_ponderee: 0.4310155878441126
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  rsi_14j_ixic:
-    valeur: 54.47007737204687
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  momentum_prix_20j_nasdaq:
-    valeur: 0.0033719689560249844
-    valeur_normalisee: -0.4006141965480803
-    valeur_ponderee: -0.4006141965480803
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  gate_regime_extreme:
-    valeur: true
-    ts: '2026-06-12T05:23:53.178102+00:00'
-or:
-  taux_10y_us_reels_tips:
-    valeur: 2.21
-    valeur_normalisee: 1.0
-    valeur_ponderee: 1.0
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  dxy_trend_20j:
-    valeur: 120.0831
-    valeur_normalisee: 0.48294014677064406
-    valeur_ponderee: 0.48294014677064406
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  cftc_cot_nets:
-    valeur: 171417.0
-    valeur_normalisee: -0.2399836149756058
-    valeur_ponderee: -0.2399836149756058
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  flux_etf_or_5j:
-    valeur: -0.06066569554467127
-    valeur_normalisee: -0.580783366235638
-    valeur_ponderee: -0.580783366235638
-    ts: '2026-06-12T05:23:53.178102+00:00'
-  tension_geopolitique:
-    valeur: 0
-    valeur_normalisee: 0.0
-    valeur_ponderee: 0.0
-    materiality: ''
-    reliability: ''
-    source_track: ia_synthese_faible
-    ts: '2026-06-12T05:23:53.178102+00:00'
-    synthese_rationale: Les news du 12 juin sont massivement SHORT (espoirs de paix
-      Iran) mais contredisent les news LONG des 10-11 juin (escalade militaire). Le
-      prix a baissé de 7% sur 20j, suggérant que le marché a déjà intégré les espoirs
-      de paix. Aucun signal dominant clair.
-    nature: verbal
-    p2_shadow_contrib_exclu:
-      24h: 60.13333333333332
-      7j: 60.13333333333332
-      1m: 60.13333333333332
+      24h: 58.13333333333332
+      7j: 58.13333333333332
+      1m: 58.13333333333332
   demande_indienne_saisonniere:
     valeur: 0
     valeur_normalisee: 0.0
@@ -450,186 +451,240 @@ or:
     materiality: ''
     reliability: ''
     source_track: calendrier
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   vix_risk_off_proxy:
     valeur: 14.95
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   momentum_prix_20j_or:
-    valeur: -0.07034336533902263
-    valeur_normalisee: -0.6970224207388196
-    valeur_ponderee: -0.6970224207388196
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: -0.039053425119337515
+    valeur_normalisee: -0.23460586293902538
+    valeur_ponderee: -0.23460586293902538
+    ts: '2026-06-15T05:23:33.763741+00:00'
   gate_regime_extreme:
     valeur: true
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
 petrole:
   eia_crude_surprise:
-    valeur: 426485.0
-    valeur_normalisee: -0.14232190988008056
-    valeur_ponderee: -0.14232190988008056
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur_normalisee: 0.0
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    note: hors fenêtre
   tension_geopol_moyen_orient:
-    valeur: 0
-    valeur_normalisee: 0.0
-    valeur_ponderee: 0.0
-    materiality: ''
-    reliability: ''
-    source_track: ia_synthese_faible
-    ts: '2026-06-12T05:23:53.178102+00:00'
-    synthese_rationale: Les news du 12 juin sont massivement SHORT (accord Iran proche)
-      mais contredisent les news LONG des 10-11 juin (escalade militaire, fermeture
-      Ormuz). Le prix a déjà baissé de 14.76% sur 20j, suggérant que le marché a pricé
-      l'apaisement. Signal trop contradictoire et prix en désaccord avec les news
-      L
-    nature: verbal
+    valeur: -1
+    valeur_normalisee: -1.0
+    valeur_ponderee: -0.6
+    materiality: medium
+    reliability: confirmed
+    source_track: ia_synthese
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    synthese_rationale: Multiples news confirmées de matérialité haute le 15 juin
+      annoncent un accord de paix US-Iran avec réouverture du détroit d'Ormuz, signal
+      SHORT dominant. Malgré une baisse de -13.67% sur 20j, la fraîcheur et la matérialité
+      élevée des news justifient une conviction haute.
+    nature: structurel
+    event_id: a32bd9c09b72
+    event_date: '2026-06-15T00:00:00+00:00'
+    event_date_source: rss
+    freshness_days: '0.22'
     p2_shadow_contrib_exclu:
-      24h: 62.23333333333331
-      7j: 62.23333333333331
-      1m: 62.23333333333331
+      24h: 60.69999999999996
+      7j: 60.69999999999996
+      1m: 60.69999999999996
   cftc_cot_crude_nets:
-    valeur: 28239.0
-    valeur_normalisee: 0.07039238470355488
-    valeur_ponderee: 0.07039238470355488
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 42102.0
+    valeur_normalisee: 0.35966847625640336
+    valeur_ponderee: 0.35966847625640336
+    ts: '2026-06-15T05:23:33.763741+00:00'
   opec_production_policy:
-    valeur: 0
-    valeur_normalisee: 0.0
-    valeur_ponderee: 0.0
-    materiality: ''
-    reliability: ''
-    source_track: ia_synthese_faible
-    ts: '2026-06-12T05:23:53.178102+00:00'
-    synthese_rationale: Les news du 12 juin sont massivement SHORT (accord Iran proche)
-      mais contredisent les news LONG des 10-11 juin (escalade militaire, fermeture
-      Ormuz). Le prix a déjà baissé de 14.76% sur 20j, suggérant que le marché a pricé
-      l'apaisement. Signal trop contradictoire et prix en désaccord avec les news
-      L
-    nature: verbal
+    valeur: -1
+    valeur_normalisee: -1.0
+    valeur_ponderee: -0.6
+    materiality: medium
+    reliability: confirmed
+    source_track: ia_synthese
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    synthese_rationale: Multiples news confirmées de matérialité haute le 15 juin
+      annoncent un accord de paix US-Iran avec réouverture du détroit d'Ormuz, signal
+      SHORT dominant. Malgré une baisse de -13.67% sur 20j, la fraîcheur et la matérialité
+      élevée des news justifient une conviction haute.
+    nature: structurel
+    event_id: a32bd9c09b72
+    event_date: '2026-06-15T00:00:00+00:00'
+    event_date_source: rss
+    freshness_days: '0.22'
     p2_shadow_contrib_exclu:
-      24h: 71.80000000000001
-      7j: 71.80000000000001
-      1m: 71.80000000000001
+      24h: 70.26666666666671
+      7j: 70.26666666666671
+      1m: 70.26666666666671
+    sign_conflict: true
+    sign_conflict_details:
+    - event_id: 34a7e1cc4307
+      asset: BRENT
+      rule_name: eia_stocks
+      expected_direction: SHORT
+      ia_direction: LONG
+      matched_subject: oil stocks
+      matched_surprise: hausse
+      surprise_polarity: up
+      title: Avertissement des dirigeants pétroliers sur des stocks bas et une hausse
+        des prix de l'essence cet été
+    - event_id: 3d89aa578c9d
+      asset: BRENT
+      rule_name: eia_stocks
+      expected_direction: LONG
+      ia_direction: SHORT
+      matched_subject: eia
+      matched_surprise: baisse
+      surprise_polarity: down
+      title: Stocks de pétrole brut US en baisse, mais moins que prévu
+    - event_id: 0c1807e7a1bb
+      asset: BRENT
+      rule_name: eia_stocks
+      expected_direction: SHORT
+      ia_direction: LONG
+      matched_subject: eia
+      matched_surprise: increased
+      surprise_polarity: up
+      title: U.S. crude oil inventories fell for the seventh consecutive week, refineries
+        increased capacity use
+    - event_id: a2dbe0286308
+      asset: BRENT
+      rule_name: eia_stocks
+      expected_direction: LONG
+      ia_direction: SHORT
+      matched_subject: oil stockpiles
+      matched_surprise: draws
+      surprise_polarity: down
+      title: China draws crude oil stockpiles to offset Middle East supply disruption
+    - event_id: a064c322c763
+      asset: BRENT
+      rule_name: eia_stocks
+      expected_direction: SHORT
+      ia_direction: LONG
+      matched_subject: oil stocks
+      matched_surprise: hausse
+      surprise_polarity: up
+      title: Avertissement des dirigeants pétroliers sur des stocks très bas et hausse
+        imminente des prix
   dxy_trend_20j:
     valeur: 120.0831
     valeur_normalisee: 0.48294014677064406
     valeur_ponderee: 0.48294014677064406
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   cushing_stocks:
     valeur: 21640.0
     valeur_normalisee: -0.46183300244117564
     valeur_ponderee: -0.46183300244117564
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   spread_brent_wti:
-    valeur: 2.459689999999995
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 2.817510000000013
+    ts: '2026-06-15T05:23:33.763741+00:00'
   caixin_pmi_manuf:
     valeur_normalisee: 0.0
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
     note: hors fenêtre
   momentum_prix_20j_petrole:
-    valeur: -0.1481948778671296
-    valeur_normalisee: -0.5547588931840983
-    valeur_ponderee: -0.5547588931840983
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: -0.13638720831519913
+    valeur_normalisee: -0.48295333402578383
+    valeur_ponderee: -0.48295333402578383
+    ts: '2026-06-15T05:23:33.763741+00:00'
   gate_evenement_extreme:
     valeur: true
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
 sp500:
   vix_regime:
     valeur: 14.95
     valeur_normalisee: 0.9749999999999996
     valeur_ponderee: 0.9749999999999996
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   taux_10y_us_delta_5j:
-    valeur: 0.05999999999999961
-    valeur_normalisee: 0.20636628586462605
-    valeur_ponderee: 0.20636628586462605
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: -0.019999999999999574
+    valeur_normalisee: -0.2515490424803897
+    valeur_ponderee: -0.2515490424803897
+    ts: '2026-06-15T05:23:33.763741+00:00'
   hy_credit_spread:
-    valeur: 2.8
-    valeur_normalisee: -0.2497553510657212
-    valeur_ponderee: -0.2497553510657212
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 2.78
+    valeur_normalisee: -0.2910616262436043
+    valeur_ponderee: -0.2910616262436043
+    ts: '2026-06-15T05:23:33.763741+00:00'
   breadth_sp_ma50:
-    valeur: 0.28430654570176556
-    valeur_normalisee: 0.020202354416422236
-    valeur_ponderee: 0.020202354416422236
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 0.285338712504213
+    valeur_normalisee: 0.0992536157122518
+    valeur_ponderee: 0.0992536157122518
+    ts: '2026-06-15T05:23:33.763741+00:00'
   dxy_trend_20j:
     valeur: 120.0831
     valeur_normalisee: 0.48294014677064406
     valeur_ponderee: 0.48294014677064406
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   flux_etf_spy_ivv_5j:
-    valeur: -0.025531992643722967
-    valeur_normalisee: -0.7160164030868638
-    valeur_ponderee: -0.7160164030868638
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 0.005694542820073867
+    valeur_normalisee: -0.022801285396143633
+    valeur_ponderee: -0.022801285396143633
+    ts: '2026-06-15T05:23:33.763741+00:00'
   shiller_cape_fwd_pe:
-    valeur: 41.2
+    valeur: 41.43
     valeur_normalisee: 1.0
     valeur_ponderee: 1.0
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   rsi_14j_gspc:
-    valeur: 51.512259489153095
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 54.26789596069342
+    ts: '2026-06-15T05:23:33.763741+00:00'
   taux_10y_us_reels_tips:
-    valeur: 2.21
-    valeur_normalisee: 1.0
-    valeur_ponderee: 1.0
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: 2.16
+    valeur_normalisee: 0.7524356753319108
+    valeur_ponderee: 0.7524356753319108
+    ts: '2026-06-15T05:23:33.763741+00:00'
   momentum_prix_20j_sp500:
-    valeur: -0.00612950115180988
-    valeur_normalisee: -0.3565029132606754
-    valeur_ponderee: -0.3565029132606754
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: -0.008580910984960943
+    valeur_normalisee: -0.386804719238686
+    valeur_ponderee: -0.386804719238686
+    ts: '2026-06-15T05:23:33.763741+00:00'
   gate_regime_extreme:
     valeur: true
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
 vix:
   niveau_vix_absolu:
     valeur: 14.95
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   term_structure_vix_vix3m:
     valeur: 0.8223322332233223
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   skew_index_cboe:
     valeur: 148.7
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   vvix:
     valeur: 92.67
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
   gap_rv_iv:
-    valeur: -0.11874199930185547
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: -0.2668324728824505
+    ts: '2026-06-15T05:23:33.763741+00:00'
   cftc_cot_vix_nets:
-    valeur: -69952.0
-    valeur_normalisee: -0.3350126494595268
-    valeur_ponderee: -0.3350126494595268
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    valeur: -74420.0
+    valeur_normalisee: -0.4200243704620096
+    valeur_ponderee: -0.4200243704620096
+    ts: '2026-06-15T05:23:33.763741+00:00'
   tension_geopolitique_active:
-    valeur: 1
-    valeur_normalisee: 1.0
-    valeur_ponderee: 1.0
-    materiality: high
+    valeur: -1
+    valeur_normalisee: -1.0
+    valeur_ponderee: -0.6
+    materiality: medium
     reliability: confirmed
     source_track: ia_synthese
-    ts: '2026-06-12T05:23:53.178102+00:00'
-    synthese_rationale: 'Majorité de news LONG à matérialité élevée et confirmées
-      (escalade US-Iran, fermeture Ormuz, frappes réciproques) dominent les rares
-      signaux SHORT non confirmés ou démentis. Le contexte de prix (-10.68% sur 20j)
-      est contredit par la fraîcheur et la force des news LONG du jour, indiquant
-      un possible '
+    ts: '2026-06-15T05:23:33.763741+00:00'
+    synthese_rationale: Multiples news confirmées de matérialité high le 15 juin annoncent
+      un accord de paix US-Iran et la réouverture d'Ormuz, signal dominant SHORT malgré
+      le contexte de baisse du VIX (-12.71% sur 20j). La fraîcheur et la cohérence
+      des news justifient une conviction élevée.
     nature: structurel
-    event_id: 593608b2206b
-    event_date: '2026-06-12T00:00:00+00:00'
+    event_id: a32bd9c09b72
+    event_date: '2026-06-15T00:00:00+00:00'
     event_date_source: rss
     freshness_days: '0.22'
     p2_shadow_contrib_exclu:
-      24h: 54.79999999999999
-      7j: 54.79999999999999
-      1m: 54.79999999999999
+      24h: 52.79999999999999
+      7j: 52.79999999999999
+      1m: 52.79999999999999
   gate_evenement_macro_imminent:
     valeur: true
-    ts: '2026-06-12T05:23:53.178102+00:00'
+    ts: '2026-06-15T05:23:33.763741+00:00'
 ```

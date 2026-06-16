@@ -2061,21 +2061,21 @@ _IA_TO_FICHE = {
 }
 
 
-def _fomc_imminent_deterministe(now: datetime) -> bool:
-    """True si un événement majeur DÉTERMINISTE (FOMC par défaut) tombe à J-1/J0.
+def _fomc_imminent_deterministe(now: datetime, fiche_key: str) -> bool:
+    """True si un événement majeur DÉTERMINISTE imminent (J-1/J0) concerne CET actif.
 
-    Source : `calendrier_eco.evenement_majeur_imminent` (catalyseurs PUBLICS et
-    DATÉS À L'AVANCE — calendrier-eco.yml). C'est une source DÉTERMINISTE du gate
-    « événement de marché majeur imminent » (flag hors score), complémentaire du
-    best-effort news.
+    ASSET-AWARE (corrige la régression 16/06) : un FOMC concerne or/S&P/EUR-USD…
+    mais PAS le cacao. On n'allume donc le gate que si `fiche_key` figure dans les
+    `actifs` de l'événement majeur imminent (`calendrier_eco.actifs_majeurs_imminents`).
+    Allumer pour TOUS les actifs violait le principe du gate v2 (spécifique à
+    l'actif). Flag hors score → zéro effet sur le score.
 
-    Import paresseux + tolérant : si le module est absent, illisible ou lève une
-    exception, on retombe sur False → comportement actuel strictement préservé
-    (le gate reste alimenté par les news). Zéro effet sur le score (gate = flag).
+    Import paresseux + tolérant : module absent/illisible/exception → False
+    (comportement news-seul strictement préservé).
     """
     try:
         import calendrier_eco as _cal  # noqa: PLC0415 — import paresseux/tolérant
-        return bool(_cal.evenement_majeur_imminent(now))
+        return fiche_key in _cal.actifs_majeurs_imminents(now)
     except Exception as e:  # noqa: BLE001 — module absent/illisible → flag news seul
         logger.debug("calendrier_eco indisponible pour le gate FOMC (%s) — news seul", e)
         return False
@@ -2103,10 +2103,10 @@ def _resolve_gate(fiche_key: str, cle: str, now: datetime, events: List[dict]) -
     # FLAG hors score (cf. fiches « Drapeau régime/événement … imminent »,
     # pertinence 1.0 sur 3 horizons mais traité comme drapeau par le scoring),
     # l'OR-er ici n'ajoute aucun poids au score : il rend le drapeau déterministe
-    # même quand aucune news FOMC n'a été ingérée. S'applique à TOUS les actifs
-    # (un FOMC est un catalyseur de marché global). Import paresseux/tolérant :
-    # module absent ou erreur → comportement actuel (best-effort news seul).
-    if _fomc_imminent_deterministe(now):
+    # même quand aucune news FOMC n'a été ingérée. ASSET-AWARE : n'allume que les
+    # actifs CONCERNÉS par l'événement (un FOMC n'allume pas le cacao). Import
+    # paresseux/tolérant : module absent ou erreur → comportement news seul.
+    if _fomc_imminent_deterministe(now, fiche_key):
         return True
 
     kws = _GATE_KEYWORDS.get(fiche_key, ())

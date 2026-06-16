@@ -22,6 +22,15 @@ import briefing as bf  # noqa: E402
 import criteres_calculator as cc  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _neutralise_gate_calendrier(monkeypatch):
+    """Les tests de gate isolent le path NEWS/EIA. Le gate calendrier déterministe
+    (FOMC J-1/J0, asset-aware) dépend de `datetime.now()` → on le neutralise ici
+    pour que ces tests restent déterministes même la veille d'un vrai FOMC. Sa
+    logique propre est couverte par test_sources_gratuites_lot."""
+    monkeypatch.setattr(cc, "_fomc_imminent_deterministe", lambda now, fiche_key: False)
+
+
 # --- Garde-fou perf : aucun hang sur le vrai events-log -------------------
 
 def test_parse_real_eventslog_is_fast():

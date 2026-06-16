@@ -717,6 +717,60 @@ YML_KEY_TO_CLE_COURANTE: Dict[Tuple[str, str], str] = {
 
 
 # ---------------------------------------------------------------------------
+# Porteur unique de la synthèse nette par actif (anti double-comptage — L013)
+# ---------------------------------------------------------------------------
+# PROBLÈME (bug 16/06) : la synthèse directionnelle DeepSeek est UNE direction
+# nette PAR ACTIF. Or elle était appliquée à TOUT critère IA-routable
+# (`_criterion_has_ia_route`). Pour un actif ayant PLUSIEURS créneaux news IA,
+# le même signal net était donc compté 2-3 fois (poids cumulés) → conviction
+# artificiellement gonflée. C'est précisément le double-amortissement interdit
+# par L013 (« ne jamais empiler un signal news sur plusieurs critères »).
+#
+# RÈGLE DÉTERMINISTE : un seul critère par actif PORTE la synthèse nette
+# (`source_track="ia_synthese"`). Les AUTRES créneaux news IA de l'actif
+# retombent sur leur détection PAR MOTS-CLÉS DÉDIÉS uniquement (leur thème
+# propre via CRITERION_SCOPE.domain_hints) et valent 0/n-a si leurs mots-clés
+# ne déclenchent pas (zéro invention — pas de news OPEC dédiée → slot OPEC = 0,
+# il ne doit PAS porter le sentiment pétrole général déguisé).
+#
+# Choix du porteur :
+#  - cacao → "maladies_cabosses_cacao" : slot explicitement renommé le 16/06
+#    « Synthèse news cacao (net, IA) » (cle_courante stable "maladies_cabosses").
+#    Override nominatif justifié : ce slot a été désigné porteur du net.
+#  - cuivre / petrole → tie-break POIDS MAX (stable, non arbitraire) parmi les
+#    créneaux news IA de la fiche :
+#      cuivre   : mining_strikes_chili_perou (poids 5) > news_construction (4)
+#      petrole  : geopol_iran (poids 7) > opec_politique (6)
+#    NB discutable (remonté à Thomas) : pour cuivre/petrole le porteur reste un
+#    slot THÉMATIQUE — il portera le net même s'il provient d'un autre thème.
+#    Le poids max est le tie-break le moins arbitraire ; documenté tel quel.
+#
+# Clés = clés YAML (`cle` de triggers-and-windows.yml), comme CRITERION_SCOPE.
+# Un actif mono-créneau news IA n'apparaît PAS ici : son unique critère reste
+# trivialement le porteur (pas de double-comptage possible → non-régression).
+SYNTHESE_NET_CARRIER: Dict[str, str] = {
+    "cacao": "maladies_cabosses_cacao",
+    "cuivre": "mining_strikes_chili_perou",
+    "petrole": "geopol_iran",
+}
+
+
+def _is_synthese_carrier(actif_key: str, cle: str) -> bool:
+    """Le critère (actif_key, cle) est-il l'UNIQUE porteur de la synthèse nette ?
+
+    - Actif multi-créneaux news IA listé dans SYNTHESE_NET_CARRIER : seul le
+      critère désigné porte le net ; les autres → keyword-only (anti L013).
+    - Actif NON listé (mono-créneau news IA, ex. or/argent/cafe/ble/cac40/
+      nasdaq/vix) : tout critère IA-routable reste porteur (comportement legacy
+      inchangé — un seul créneau, aucun double-comptage possible).
+    """
+    carrier = SYNTHESE_NET_CARRIER.get(actif_key)
+    if carrier is None:
+        return True
+    return cle == carrier
+
+
+# ---------------------------------------------------------------------------
 # Parsing events-log.md
 # ---------------------------------------------------------------------------
 
@@ -1366,7 +1420,13 @@ def _resolve_triplet_impl(
     # elle PRIME sur l'agrégation mécanique : c'est elle qui résout les conflits
     # multi-news (ex Pétrole 16 LONG vs 8 SHORT). On l'applique uniquement aux
     # critères qui ont un scope IA (sinon la synthèse n'aurait pas vu cet actif).
-    if synthese and _criterion_has_ia_route(actif_key, cle):
+    #
+    # ANTI DOUBLE-COMPTAGE (L013) : la synthèse nette est UNE direction PAR
+    # ACTIF. On ne l'applique qu'au PORTEUR unique désigné
+    # (`_is_synthese_carrier`). Les autres créneaux news IA du même actif
+    # poursuivent vers le fallback keyword-only ci-dessous (thème dédié, 0 si
+    # pas de news propre). Cf. SYNTHESE_NET_CARRIER pour la règle de choix.
+    if synthese and _criterion_has_ia_route(actif_key, cle) and _is_synthese_carrier(actif_key, cle):
         direction = str(synthese.get("direction", "")).upper()
         conviction = str(synthese.get("conviction", "")).lower()
         rationale = str(synthese.get("rationale", ""))[:300]

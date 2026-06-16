@@ -507,6 +507,41 @@ def _fetch_rss(name: str, url: str, monitor: "SourceMonitor | None" = None) -> l
     return items
 
 
+def collect_rss_light(monitor: "SourceMonitor | None" = None) -> list:
+    """Récolte RSS LÉGÈRE pour les suivis 12h/18h : titres finance frais, SANS état.
+
+    Réutilise EXACTEMENT le chemin `_fetch_rss` (mêmes flux RSS_FEEDS + early-signal,
+    même résilience http_retry) que la collecte principale, mais :
+    - ZÉRO écriture dans la DB de dédup SQLite (pas de `_add_title`) → aucun effet
+      de bord sur le pipeline 7h (le suivi est pure lecture/présentation).
+    - ZÉRO appel DeepSeek / extraction (Q9 — suivi léger) : on ne renvoie que des
+      `NewsItem` bruts (title/published/source) déjà filtrés finance (blacklist
+      puis whitelist), à charge de l'appelant de filtrer par date / dédupliquer
+      contre ce qui a déjà été montré.
+
+    Best-effort : un flux KO log WARNING + skip (jamais de crash). Retour : liste
+    de NewsItem finance-pertinents (peut être vide). L'appelant gère la dégradation
+    propre si la liste est vide ET qu'aucun flux n'a répondu.
+    """
+    raw: list = []
+    for name, url, _interval in RSS_FEEDS:
+        if name.startswith("reuters_"):
+            continue
+        try:
+            raw.extend(_fetch_rss(name, url, monitor=monitor))
+        except Exception as e:  # noqa: BLE001 — un flux KO ne bloque pas le suivi
+            logger.warning("collect_rss_light: RSS %s KO: %s — skip", name, e)
+    for name, url, _interval in EARLY_SIGNAL_FEEDS:
+        try:
+            raw.extend(_fetch_rss(name, url, monitor=monitor))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("collect_rss_light: early-signal %s KO: %s — skip", name, e)
+    # Filtre finance (blacklist d'abord, whitelist ensuite) — pas de dédup DB.
+    filtered = [it for it in raw if it.title and is_finance_relevant(it.title, it.summary)]
+    logger.info("collect_rss_light: raw=%d → finance=%d", len(raw), len(filtered))
+    return filtered
+
+
 def collect_rss_phase21(commit_seen: bool = True) -> dict:
     """Poll RSS_FEEDS (sauf Reuters mort), dédup, blacklist+whitelist finance.
 

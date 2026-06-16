@@ -339,11 +339,152 @@ def _puce(ev: Dict[str, str], actif_label: str = "") -> str:
     return f"- [{zone}]{mat_tag}{arrow_str} {trigger} ({source})"
 
 
+# ---------------------------------------------------------------------------
+# Intro « décor du jour » + Top news à impact (bloc A — 7h)
+# ---------------------------------------------------------------------------
+# DÉTERMINISTE, zéro LLM, zéro invention. Construit en TÊTE du Briefing 7h à
+# partir des SEULES données déjà disponibles :
+#   - catalyseurs J0 d'impact `high` du calendrier éco statique
+#     (_catalyseurs_j0_high, ré-utilisé depuis scoring_analyste — aucune source
+#      neuve) ;
+#   - thèmes news DOMINANTS du corpus matin = actifs portant le plus d'events
+#     à impact (materiality high>medium), dans l'ordre canonique des 12 actifs ;
+#   - top 1-3 news = vrais titres de l'events-log triés par materiality puis
+#     fraîcheur, avec actif + sens d'impact déjà qualifié par DeepSeek.
+# Si pas de catalyseur / pas de news → on le DIT (« aucun », « pas d'actualité »).
+# Style FACTUEL (décision Thomas 16/06) : pas d'avis, pas de prévision, aucune
+# valeur monétaire. L'intro est du CONTEXTE, jamais une nouvelle prédiction.
+
+# Nombre max de news dans le bloc « Top actualités à impact » (7h reste court).
+MAX_TOP_NEWS = 3
+# Nombre max de thèmes dominants cités dans la phrase d'intro.
+MAX_THEMES_INTRO = 2
+
+
+def _catalyseurs_j0_noms(now: datetime) -> List[str]:
+    """Noms des catalyseurs J0 d'impact `high` du jour (liste, possiblement vide).
+
+    Réutilise `scoring_analyste._catalyseurs_j0_high` (calendrier éco statique,
+    même source, zéro invention). Import TOLÉRANT : module absent / KO → [].
+    """
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from scoring_analyste import _catalyseurs_j0_high  # import paresseux/tolérant
+    except Exception:  # noqa: BLE001 — calendrier indispo → pas de catalyseur cité
+        return []
+    try:
+        cats = _catalyseurs_j0_high(now)
+    except Exception:  # noqa: BLE001
+        return []
+    # Dédup en préservant l'ordre (un même event peut concerner plusieurs actifs).
+    noms: List[str] = []
+    for ev in cats:
+        nom = str(ev.get("nom") or "").strip()
+        if nom and nom not in noms:
+            noms.append(nom)
+    return noms
+
+
+def _themes_dominants(groups: Dict[str, List[Dict[str, str]]]) -> List[str]:
+    """Actifs dominants du corpus matin (le ou les 2 avec le plus d'events à impact).
+
+    Le « thème » est l'actif le plus chargé en events à impact ce matin (proxy
+    déterministe, zéro invention : on ne réécrit pas un récit). On pondère par la
+    matérialité (high=3, medium=2, low=1) pour qu'un actif avec 1 event `high`
+    prime sur un actif avec 3 events `low`. Exclut « Autres » (hors univers).
+    Ordre de départage stable : score desc, puis ordre canonique des 12 actifs.
+    """
+    ordre = [a for a, _, _ in TICKER_TO_ACTIF]
+    rang_canon = {a: i for i, a in enumerate(ordre)}
+    scores: Dict[str, int] = {}
+    for actif, evs in groups.items():
+        if actif == "Autres":
+            continue
+        s = sum(_MAT_RANK.get((ev.get("materiality", "") or "").lower(), 0) + 1 for ev in evs)
+        if s > 0:
+            scores[actif] = s
+    classes = sorted(scores.items(), key=lambda kv: (-kv[1], rang_canon.get(kv[0], 99)))
+    return [a for a, _ in classes[:MAX_THEMES_INTRO]]
+
+
+def _top_news_lignes(
+    impactful: List[Dict[str, str]], max_news: int = MAX_TOP_NEWS
+) -> List[str]:
+    """Lignes « Top actualités à impact » : vrais titres triés materiality+fraîcheur.
+
+    Ne garde QUE les events réellement à impact (high>medium ; les low/"" sont
+    écartés du TOP — ils restent dans le détail par actif). Dédup par titre+source.
+    Chaque ligne nomme l'actif + le sens d'impact déjà qualifié (↑/↓/→). Zéro
+    invention : aucun event high/medium → liste vide (message géré par l'appelant).
+    """
+    forts = [
+        ev for ev in impactful
+        if (ev.get("materiality", "") or "").lower() in ("high", "medium")
+    ]
+    forts = _dedup_news_in_actif(_sort_by_materiality_then_date(forts))
+    lignes: List[str] = []
+    for ev in forts[:max_news]:
+        actif = _primary_actif_from_event(ev) or "Marché"
+        mat = (ev.get("materiality", "") or "").strip().lower()
+        arrow = _direction_arrow_for(ev, actif) if actif != "Marché" else ""
+        sens = {"↑": "haussier", "↓": "baissier", "→": "neutre"}.get(arrow, "")
+        trigger = (ev.get("trigger", "") or "").strip()
+        if len(trigger) > 180:
+            trigger = trigger[:177].rstrip() + "..."
+        sens_str = f" → {sens}" if sens else ""
+        lignes.append(f"- **{actif}**{sens_str} ({mat}) : {trigger}")
+    return lignes
+
+
+def build_intro_block(
+    impactful: List[Dict[str, str]],
+    groups: Dict[str, List[Dict[str, str]]],
+    today: date,
+    now: Optional[datetime] = None,
+) -> List[str]:
+    """Bloc « Décor du jour » : intro factuelle 1-2 phrases + top 1-3 news.
+
+    DÉTERMINISTE (zéro LLM). Sources : catalyseurs J0 (calendrier statique) +
+    thèmes dominants + top news (events réels). Retourne des lignes markdown.
+    """
+    from datetime import datetime as _dt
+    now = now or _dt.combine(today, _dt.min.time())
+
+    cats = _catalyseurs_j0_noms(now)
+    themes = _themes_dominants(groups)
+
+    if cats:
+        cat_str = ", ".join(cats)
+        phrase_cat = f"Catalyseur(s) du jour : {cat_str}."
+    else:
+        phrase_cat = "Pas de catalyseur majeur identifié au calendrier."
+    if themes:
+        phrase_themes = f"Thèmes news dominants ce matin : {', '.join(themes)}."
+    else:
+        phrase_themes = "Aucun thème news dominant ce matin."
+
+    lines: List[str] = []
+    lines.append("## Décor du jour")
+    lines.append("")
+    lines.append(f"_Journée du {today:%Y-%m-%d}. {phrase_cat} {phrase_themes}_")
+    lines.append("")
+    lines.append("**Top actualités à impact**")
+    top = _top_news_lignes(impactful)
+    if top:
+        lines.extend(top)
+    else:
+        lines.append("- Pas d'actualité à fort impact ce matin.")
+    lines.append("")
+    return lines
+
+
 def build_briefing(
     events_path: Path = EVENTS_LOG,
     today: Optional[date] = None,
     max_par_actif: int = 3,
     source_health_path: Path = SOURCE_HEALTH,
+    now: Optional[datetime] = None,
 ) -> str:
     """Construit le bloc markdown '## Briefing du jour'.
 
@@ -361,6 +502,12 @@ def build_briefing(
     groups = group_by_actif(impactful)
 
     lines: List[str] = []
+    # Bloc A — « Décor du jour » : intro factuelle + top 1-3 news, EN TÊTE du
+    # Briefing (avant la synthèse des events par actif). Déterministe, best-effort.
+    try:
+        lines.extend(build_intro_block(impactful, groups, today, now))
+    except Exception as e:  # noqa: BLE001 — l'intro ne doit jamais casser le briefing
+        logger.warning("Intro « décor du jour » non rendue : %s", e)
     lines.append("## Briefing du jour")
     lines.append("")
     lines.append(

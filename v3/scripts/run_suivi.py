@@ -12,7 +12,7 @@ Rapport COURT (Thomas lit en 2 min). Pour chaque position du Briefing 7h du jour
   CONTRE le call. DRAPEAU-SUGGESTION, JAMAIS UN ORDRE.
 - Marchés US à 12h : pas encore ouverts (ouverture 15h30 Paris) → affichés
   explicitement « pas encore ouvert » (CA-S, correction M-H). 1er statut US au 18h.
-- News à impact depuis le matin (court).
+- Contexte news du Briefing 7h (NON réactualisé : pas de ré-ingestion, court).
 
 Garde-fous (non négociables) :
 - WIN RATE ONLY — aucune valeur monétaire (€/$/gain/perte). Le % de mouvement est OK.
@@ -586,9 +586,11 @@ def _render_markdown(r: SuiviRapport) -> str:
             )
     L.append("")
 
-    # News à impact depuis le matin (court).
-    src = "7h" if h == REPORT_12H else "12h"
-    L.append(f"### News à impact depuis {src}")
+    # Contexte news du Briefing 7h (NON réactualisé — fix libellé 16/06, Thomas).
+    # Le suivi NE ré-ingère PAS les news : ces lignes proviennent du decision-log
+    # 7h du jour (cf. news_a_impact). L'ancien titre « News à impact depuis 7h/12h »
+    # impliquait à tort une réactualisation continue → libellé honnête.
+    L.append("### Contexte news (bulletin 7h, non réactualisé)")
     if r.news:
         L.extend(r.news[:MAX_NEWS])
         # [C-S1 audit visuel 12/06] : les news du suivi proviennent du même
@@ -598,7 +600,7 @@ def _render_markdown(r: SuiviRapport) -> str:
             L.append("")
             L.append("_(mêmes news que les suivis précédents — source : Briefing 7h.)_")
     else:
-        L.append(f"Pas de news impactante depuis {src}.")
+        L.append("Aucune news impactante dans le Briefing 7h.")
     L.append("")
 
     # Suggestions de sortie (drapeaux — Thomas décide).

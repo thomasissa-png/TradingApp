@@ -103,6 +103,21 @@ EPSILON_CARRY: float = 0.05
 # toucher la direction. Mesure inchangée : la cellule reste LONG/SHORT.
 NEUTRAL_BAND: float = 0.30
 
+# ---------------------------------------------------------------------------
+# GARDE-FOU CONVICTION vs COUVERTURE (« confiant ET aveugle » — Thomas 16/06)
+# ---------------------------------------------------------------------------
+# Cas réel cacao 16/06 : SHORT « forte » affiché alors que coverage=41% ET le
+# critère de POIDS MAX de la fiche (« Arrivées ports » poids 9) était n/a. Le
+# système était confiant tout en étant aveugle à son driver structurel principal.
+# Règle : une conviction ne peut PAS être « forte » si (a) coverage < ce seuil
+# ET (b) le critère non-gate de poids maximal de la fiche est absent (n/a). Dans
+# ce cas la conviction est dégradée en « fragile (couverture insuffisante) ».
+# La DIRECTION (LONG/SHORT) reste INCHANGÉE (jamais neutre) — seul le LIBELLÉ de
+# conviction change, comme les autres dégradations de `_conviction_cell`.
+# Distinct du palier confidence "faible" (coverage<COVERAGE_OK) : ce garde-fou
+# cible le cas spécifique « confiance haute MALGRÉ le driver max manquant ».
+CONVICTION_COVERAGE_MIN: float = 0.50
+
 # Mono-critère dominant (K1 — audit trio bulletin 03/06). SHADOW decision-log only :
 # détecte si UN SEUL critère fournit > 50% du |score| (somme des |contributions|).
 # Sert à MESURER le sur-poids (ex. VIX régime qui flippe le S&P à lui seul). Pas
@@ -1801,6 +1816,23 @@ def build_top3_block(results: List["ActifResult"]) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
+def _max_weight_critere_is_na(r: "ActifResult") -> bool:
+    """True si le critère NON-GATE de poids maximal de la fiche est absent (n/a).
+
+    Sert au garde-fou conviction (16/06) : un actif dont le driver de poids le
+    plus fort manque ne peut pas porter une conviction « forte » à couverture
+    insuffisante. Les gates (sans poids numérique) et les critères présents sont
+    ignorés du test. Aucun critère non-gate → False (rien à invalider).
+    """
+    non_gate = [c for c in r.criteres if not c.is_gate]
+    if not non_gate:
+        return False
+    poids_max = max(abs(c.poids) for c in non_gate)
+    # Le(s) critère(s) à poids max : n/a si TOUS les porteurs du poids max sont absents.
+    porteurs_max = [c for c in non_gate if abs(c.poids) == poids_max]
+    return all(c.is_na for c in porteurs_max)
+
+
 def _conviction_cell(r: "ActifResult", h: str, seuil: float) -> str:
     """Libellé EXPLICITE de conviction d'une cellule (audit UX 2026-06-11 :
     « forte »/« faible » binaire illisible — « faible » sur un score de 13 semble
@@ -1833,6 +1865,17 @@ def _conviction_cell(r: "ActifResult", h: str, seuil: float) -> str:
         return "fragile (1 seul critère)"
     if r.incoherence_inter_horizons:
         return "zigzag horizons"
+    # GARDE-FOU « confiant ET aveugle » (Thomas 16/06) : pas de « forte » si la
+    # couverture est insuffisante (< CONVICTION_COVERAGE_MIN) ET que le critère
+    # de poids MAX de la fiche est n/a. La direction reste notée (LONG/SHORT) ;
+    # seule la conviction est dégradée. Inséré AVANT le palier « forte » pour le
+    # court-circuiter ; n'affecte ni le score ni la conclusion (libellé only).
+    if (
+        score >= seuil
+        and r.coverage < CONVICTION_COVERAGE_MIN
+        and _max_weight_critere_is_na(r)
+    ):
+        return "fragile (couverture insuffisante)"
     if score >= seuil:
         return "forte"
     # |score| entre NEUTRAL_BAND et seuil, sans drapeau : ancien « faible »
@@ -2210,6 +2253,121 @@ def _catalyseurs_j0_high(now: datetime) -> List[Dict[str, Any]]:
 # Source closes : fetch_twelve_series (déjà utilisé par les critères). Prix
 # d'émission : stamp 7h existant (même source que « Prix de réf. »).
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Chantier ③ (16/06, Thomas) — DÉTECTEUR « CHOC D'OFFRE » CACAO en SHADOW.
+# ---------------------------------------------------------------------------
+# PROBLÈME résolu : le 16/06 le marché price un CHOC D'OFFRE cacao (El Niño /
+# récolte 2026-27 sous la normale / cherelles / maladies) = HAUSSIER, mais la
+# SYNTHÈSE NET DeepSeek a renvoyé baissier (bruit de demande dominant) → le vrai
+# signal d'offre a été NOYÉ. Ce détecteur capte SÉPARÉMENT le récit d'OFFRE
+# PROSPECTIVE haussier, pour qu'il ne soit plus dilué dans le net.
+#
+# POURQUOI SHADOW (poids 0, L015) — IMPÉRATIF :
+#   (a) ÉVITER LE DOUBLE-AMORTISSEMENT (L013) : la synthèse net IA (slot
+#       maladies_cabosses + eudr) PORTE DÉJÀ une partie du signal offre. Activer
+#       ce détecteur EN PLUS, sans décider comment il REMPLACE ou COMPLÈTE le
+#       net, double-compterait le même récit. Il faut d'abord trancher la
+#       méthodo (cf. point ouvert handoff) AVANT de câbler une contribution.
+#   (b) CALIBRER SUR DU RÉEL (mesurer avant d'agir) : on observe d'abord la
+#       FRÉQUENCE et la JUSTESSE du détecteur au decision-log avant de lui
+#       donner un poids. Le bulletin reste INCHANGÉ (test-verrou conclusions).
+#
+# CRITÈRE D'ACTIVATION FUTUR (sur preuve, à valider Thomas) : promouvoir en
+# critère pondéré seulement si, sur ≥ N cycles où shadow_choc_offre.detected,
+# la direction HAUSSIER offre a un meilleur win-rate cacao que la synthèse net
+# seule — ET après décision méthodo de remplacement/complément (anti-L013).
+#
+# ZÉRO INVENTION : events-log absent / aucune news offre → detected=False,
+# would_be_contrib=0.0, conclusion inchangée.
+
+# Mots-clés OFFRE HAUSSIÈRE cacao (offre↓ = prix↑). Réutilise/étend les
+# long_keywords du triplet maladies_cabosses_cacao + le récit prospectif raté
+# le 16/06 (météo/El Niño/récolte/cherelles/ICCO). En minuscules, match substr.
+SHADOW_CHOC_OFFRE_CACAO_KEYWORDS: Tuple[str, ...] = (
+    "el nino", "el niño", "el-nino",
+    "drought west africa", "sécheresse", "harmattan",
+    "poor harvest", "récolte sous", "crop shortfall", "below average crop",
+    "cherelle", "cherelles", "flower failure",
+    "black pod", "swollen shoot", "pod borer", "cocoa disease", "maladie cacao",
+    "cocoa deficit", "supply deficit", "icco deficit", "production deficit",
+    "supply shock", "choc d'offre", "tight supply cocoa",
+)
+# Mots-clés de DÉMENTI / détente (annulent un signal offre haussier).
+SHADOW_CHOC_OFFRE_CACAO_NEGATORS: Tuple[str, ...] = (
+    "good harvest", "bumper crop", "récolte saine", "healthy cocoa harvest",
+    "surplus", "outbreak contained", "favorable weather", "rain returns",
+)
+
+
+def compute_shadow_choc_offre_cacao(
+    events: Optional[List[dict]] = None,
+    now: Optional[datetime] = None,
+    lookback_jours: int = 30,
+) -> Dict[str, Any]:
+    """Détecteur SHADOW (poids 0) du récit de CHOC D'OFFRE cacao haussier.
+
+    Scanne les events récents (≤ lookback_jours) pour des mots-clés d'OFFRE
+    PROSPECTIVE haussière (météo/El Niño/récolte/maladie/déficit), DÉCOUPLÉ de
+    la synthèse net DeepSeek. Retourne un dict tracé tel quel au decision-log :
+
+      {"detected": bool,            # ≥1 event offre haussier net (après démentis)
+       "direction": +1|0,          # +1 = offre↓ haussier ; 0 si rien/neutralisé
+       "n_events": int,            # nb d'events offre haussiers retenus
+       "negators": int,            # nb d'events de démenti/détente vus
+       "keywords": List[str],      # mots-clés déclencheurs (dédupliqués, ≤8)
+       "would_be_contrib": float}  # contribution SI activé (poids 0 → 0.0 ici)
+
+    `would_be_contrib` est laissé à 0.0 (poids 0, shadow) : la contribution
+    réelle ne sera fixée qu'à l'activation, après décision méthodo anti-L013.
+    Zéro invention : events None/vides → detected=False, direction=0.
+    """
+    now = now or datetime.now(timezone.utc)
+    if events is None:
+        try:
+            import triggers_classifier as _tc  # lazy, cohérent avec le module
+            events = _tc.parse_events_log()
+        except Exception:  # noqa: BLE001 — events indispo → shadow vide (zéro invention)
+            events = []
+    hits: List[str] = []
+    negators = 0
+    for ev in events or []:
+        try:
+            dt = ev.get("_canonical_dt") or ev.get("_dt")
+            if isinstance(dt, datetime):
+                age = (now - dt).total_seconds() / 86400.0
+                if age > lookback_jours or age < -2:  # tolère léger futur (cf. C9)
+                    continue
+            blob = " ".join(
+                str(ev.get(k, "") or "") for k in ("L1", "L2", "trigger", "cours", "news_zone")
+            ).lower()
+            if not blob.strip():
+                continue
+            # Ne scanne que les events à pertinence cacao (cours/zone) pour éviter
+            # qu'un « el nino » café/sucre pollue le détecteur cacao.
+            is_cacao = ("cocoa" in blob or "cacao" in blob
+                        or "ci" in str(ev.get("news_zone", "")).lower()
+                        or "gh" in str(ev.get("news_zone", "")).lower())
+            if not is_cacao:
+                continue
+            if any(neg in blob for neg in SHADOW_CHOC_OFFRE_CACAO_NEGATORS):
+                negators += 1
+                continue
+            for kw in SHADOW_CHOC_OFFRE_CACAO_KEYWORDS:
+                if kw in blob and kw not in hits:
+                    hits.append(kw)
+        except Exception:  # noqa: BLE001 — un event malformé ne casse pas le scan
+            continue
+    detected = len(hits) > 0
+    return {
+        "detected": detected,
+        "direction": 1 if detected else 0,
+        "n_events": len(hits),
+        "negators": negators,
+        "keywords": hits[:8],
+        "would_be_contrib": 0.0,  # SHADOW poids 0 — aucune contribution au score
+    }
 
 
 def compute_shadow_capteurs(
@@ -3432,6 +3590,22 @@ def build_decision_log_records(
                 selection_extra["shadow_gap_overnight"] = cap.get(
                     "shadow_gap_overnight"
                 )
+                # Chantier ③ — détecteur « choc d'offre » cacao en SHADOW (poids 0,
+                # L015). Tracé au decision-log, AUCUN impact score/conclusion (cf.
+                # compute_shadow_choc_offre_cacao + test-verrou conclusions). Calculé
+                # UNIQUEMENT pour cacao (récit d'offre prospective spécifique) ; les
+                # autres actifs n'ont pas ce champ (zéro bruit). Best-effort : toute
+                # anomalie events-log → detected=False (zéro invention).
+                if r.fiche_key == "cacao":
+                    try:
+                        selection_extra["shadow_choc_offre"] = (
+                            compute_shadow_choc_offre_cacao(now=now)
+                        )
+                    except Exception:  # noqa: BLE001
+                        selection_extra["shadow_choc_offre"] = {
+                            "detected": False, "direction": 0, "n_events": 0,
+                            "negators": 0, "keywords": [], "would_be_contrib": 0.0,
+                        }
             records.append({
                 "bulletin_date": bulletin_date,
                 "generated_at": generated_at,

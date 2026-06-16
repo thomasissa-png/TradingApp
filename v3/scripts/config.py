@@ -112,6 +112,13 @@ EARLY_SIGNAL_FEEDS = [
     # Actifs sous-couverts — Google News RSS ciblé (testé : ~100 items/requête)
     ("gnews_coffee",  "https://news.google.com/rss/search?q=coffee+prices+arabica+robusta&hl=en-US&gl=US&ceid=US:en", 3600),
     ("gnews_cocoa",   "https://news.google.com/rss/search?q=cocoa+prices+Ivory+Coast+Ghana&hl=en-US&gl=US&ceid=US:en", 3600),
+    # Ajout 16/06 (chantier sources OFFRE prospective, Thomas) : le système a RATÉ
+    # le récit de CHOC D'OFFRE cacao 2026-27 (El Niño / météo Afrique de l'Ouest /
+    # récolte sous la normale / cherelles / maladies). gnews_cocoa ci-dessus est
+    # demande+prix-centré → on AJOUTE un flux dédié OFFRE PROSPECTIVE (météo, surveys
+    # de récolte, maladies, bilans ICCO/StoneX). Additif, zéro invention : si le flux
+    # ne renvoie rien → critères offre restent n/a. Alimente le détecteur shadow ③.
+    ("gnews_cocoa_supply", "https://news.google.com/rss/search?q=cocoa+%22El+Nino%22+OR+%22West+Africa+weather%22+OR+%22cocoa+harvest%22+OR+cherelles+OR+%22black+pod%22+OR+%22swollen+shoot%22+OR+%22ICCO+deficit%22+OR+%22cocoa+supply%22&hl=en-US&gl=US&ceid=US:en", 3600),
     # Fix 31/05 : query précédente (wheat+grain+prices+harvest) renvoyait ~0-2 titres
     # sur Google News RSS. Query élargie + opérateur OR pour fertilité.
     ("gnews_wheat",   "https://news.google.com/rss/search?q=wheat+OR+grain+OR+%22soft+commodities%22+harvest+USDA+Black+Sea&hl=en-US&gl=US&ceid=US:en", 3600),
@@ -148,7 +155,11 @@ STRUCTURED_QUERIES = [
     '"S&P 500" earnings OR corporate earnings beat OR EPS surprise OR earnings guidance OR market correction',  # S&P (driver-isé) — "S&P 500" quoté : le & non quoté cassait GNews (HTTP 400, doc gnews.io)
     "EUR USD OR ECB rate decision OR Fed ECB divergence OR dollar index",                  # EUR/USD resserré
     "coffee prices OR arabica OR robusta OR Brazil harvest OR frost Brazil OR drought Minas Gerais",  # Café + gel/sécheresse
-    "cocoa prices OR Ivory Coast OR Ghana cocoa OR cocoa grindings OR EUDR deforestation",
+    # Enrichi 16/06 (chantier sources OFFRE prospective) : ajout du récit d'offre
+    # 2026-27 (El Niño, météo Afrique de l'Ouest, surveys de récolte/cherelles,
+    # maladies black pod/swollen shoot, déficit ICCO). Capte le choc d'offre HAUSSIER
+    # raté le 16/06. Additif : aucune source → critères offre n/a (zéro invention).
+    'cocoa prices OR Ivory Coast OR Ghana cocoa OR cocoa grindings OR EUDR deforestation OR "cocoa harvest" OR "El Nino cocoa" OR "black pod" OR "swollen shoot" OR "ICCO deficit"',
     "wheat prices OR Black Sea grain OR Russia wheat OR US wheat crop OR WASDE OR Egypt GASC OR Australia wheat",  # Blé + demande importateur
     "copper prices OR LME copper OR Chile mine OR China copper demand",
     "CAC 40 OR SBF 120 OR LVMH OR TotalEnergies OR profit warning France OR résultats trimestriels OR France budget politics",  # + earnings mid-cap / profit warnings (dernier fix CAC, audit R3)
@@ -193,7 +204,7 @@ SOURCE_WEIGHTS = {
     "ecb_press": 1.5, "boe_news": 1.3, "boj_news": 1.3,
     "investing_economy": 0.9,
     # Actifs sous-couverts — Google News RSS ciblé (agrégateur, bruit modéré)
-    "gnews_coffee": 0.8, "gnews_cocoa": 0.8, "gnews_wheat": 0.8,
+    "gnews_coffee": 0.8, "gnews_cocoa": 0.8, "gnews_cocoa_supply": 0.9, "gnews_wheat": 0.8,
     "gnews_copper": 0.8, "gnews_cac40": 0.8, "gnews_nasdaq": 0.8, "gnews_vix": 0.8,
     "gnews_ecb_policy": 0.8, "gnews_silver_industrial": 0.8, "gnews_gold_cb": 0.8,
     # Sources structurées (agrégateurs API) — bruit élevé mais couverture large

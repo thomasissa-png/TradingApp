@@ -280,6 +280,9 @@ FINANCE_KEYWORDS = [
     r"\bwheat\b", r"\bcorn\b", r"\bsoy(bean)?s?\b", r"\bcoffee\b",
     r"\bcocoa\b", r"\bcotton\b", r"\bsugar\b", r"\bharvest\b",
     r"\busda\b", r"\bwasde\b", r"\bdrought\b",
+    # Offre prospective cacao (ajout 16/06) : choc d'offre météo/récolte/maladie.
+    r"\bel\s+ni(ñ|n)o\b", r"\bblack\s+pod\b", r"\bswollen\s+shoot\b",
+    r"\bcherelles?\b", r"\bicco\b",
     # Banques centrales
     r"\bfed(eral)?\s+reserve\b", r"\bfed\b", r"\bfomc\b", r"\bpowell\b",
     r"\becb\b", r"\blagarde\b", r"\bboj\b", r"\bbank\s+of\s+japan\b",

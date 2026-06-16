@@ -92,17 +92,29 @@ criteres:
     effet_long: "S'élargit (squeeze NY)"
     effet_short: "Se resserre"
 
+  # NOM CORRIGÉ 16/06 (chantier interprétation, Thomas) : ce slot est rempli
+  # par la SYNTHÈSE NET DeepSeek du corpus cacao (source_track=ia_synthese), PAS
+  # par un détecteur de maladie isolé — le triggers_classifier applique la
+  # direction NET de l'actif à tout critère IA-routé (cf. CRITERION_SCOPE
+  # ("cacao","maladies_cabosses_cacao") + ligne 1369 triggers_classifier).
+  # L'ancien libellé « Maladies des cabosses → biais baissier » était un NON-SENS
+  # métier (une maladie ampute la récolte = OFFRE↓ = HAUSSIER ; jamais baissier).
+  # Le contenu réel = direction net du corpus (demande+offre confondues). Renommé
+  # pour que le libellé n'implique JAMAIS un sens opposé à son contenu.
+  # cle_courante INCHANGÉE (L023 : agrégation/mesure stables) ; signe/poids INCHANGÉS
+  # (zéro modif silencieuse). Le vrai signal d'offre prospective arrive en SHADOW
+  # via shadow_choc_offre (cf. chantier ③) — séparé de cette synthèse net.
   - id: 8
-    nom: "Maladies des cabosses (impact récolte)"
+    nom: "Synthèse news cacao (net, IA)"
     source: "events-log"
     cle_courante: "maladies_cabosses"
-    normalisation: "triplet"     # +1 outbreak 30j / 0 / -1 aucun
+    normalisation: "triplet"     # +1 net haussier / 0 / -1 net baissier (DeepSeek)
     cap: 1.0
     signe: 1
     poids: 4
     pertinence: { "24h": 0.2, "7j": 0.5, "1m": 0.9 }
-    effet_long: "Outbreak 30j"
-    effet_short: "Aucun"
+    effet_long: "Corpus news net haussier (offre tendue / demande forte)"
+    effet_short: "Corpus news net baissier"
 
   - id: 9
     nom: "Taux de change franc CFA et cédi ghanéen"

@@ -20,3 +20,10 @@
 - ⚠️ **Seuil CRITICAL à 3 WARNING consécutifs** : la prochaine session (S5) doit revenir à un volume normal (sessions plus courtes) pour éviter le 3e WARNING → audit profond forcé. Plan : S5 = observation live + petits chantiers (pas de nouveau mega-chantier).
 - **Gap framework persistant** : `scripts/perf-trend.sh` toujours absent (mesure manuelle). À importer depuis Agent-Team.
 - Verdict global : **PASS** caps/net-zero ; **WARNING M7** (volume, justifié par le mandat autopilote — surveiller que S5 ne soit pas un 3e WARNING).
+
+**Détail Session 7 (2026-06-16)** :
+- Caps : tous OK (CLAUDE 110<125, lessons 45<80, context 142<250, founder-prefs 30). Net-zero prompts : 0 fichier de prompt (CLAUDE/agents/gates) modifié → ✅. Archivé 5 P2 (>5 sessions) → lessons-learned-archive.md.
+- **M7 WARNING (volume agents élevé, ~18 invocations sur 5 jours live 11→16/06)** — JUSTIFIÉ : mandats explicites répétés de Thomas (« implémente tout / GO / en autopilote »), livrables tous DISTINCTS (momentum live, UX ×2 audits+fixes, DeepSeek v2.4, sources/calendrier, continu, Twelve-natif, gate, sélection), zéro retry-sur-même-échec, zéro dérive de scope. Multi-jour compté comme 1 session.
+- **Script `scripts/perf-trend.sh` toujours ABSENT** (gap framework persistant depuis S2) — mesure manuelle. À importer depuis Agent-Team (reco P1).
+- Note : clôture demandée « ne lance aucun agent » → pas d'audit profond délégué malgré le volume ; recommandation = **S8 = session LÉGÈRE** (fix mesure ciblé + nettoyage), pas de nouveau méga-chantier.
+- Verdict global : **PASS caps/net-zero ; WARNING M7 volume (justifié mandat, à surveiller).**

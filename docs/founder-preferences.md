@@ -15,6 +15,9 @@
 - [PRÉFÉRENCE FONDATEUR] : Thomas privilégie **« mesurer avant d'agir »** — différer une action (ex. Lot 4b gates) pour calibrer ses seuils sur la **fréquence réelle mesurée** plutôt que sur une intuition. Anti-calibration au doigt mouillé.
 - [PRÉFÉRENCE FONDATEUR] : Thomas valorise la **concertation contradictoire de 3 experts** (Analyst / News Trader / Spéculateur, chacun conteste les autres) + **itération jusqu'à une note cible** (ex. 10/10) comme mécanisme de décision de conception. À réutiliser pour tout arbitrage à fort enjeu.
 - [PRÉFÉRENCE FONDATEUR] : Thomas veut des **garde-fous explicites à chaque étape clé** pour éviter les erreurs de jugement, et qu'ils soient **visibles** (affichés, pas seulement loggés). Le système doit « savoir quand ne pas se faire confiance, et le montrer ».
+- [PRÉFÉRENCE FONDATEUR] : Thomas exige qu'on **vérifie sur pièces (données réelles) AVANT d'affirmer** — il rejette frontalement les explications théoriques sorties de mémoire (« ton analyse est fausse », 16/06). Concéder vite et re-vérifier quand il conteste, plutôt que défendre. Il **pousse jusqu'à la cause racine** : il insiste/reformule tant qu'une incohérence n'est pas expliquée par les chiffres.
+- [PRÉFÉRENCE FONDATEUR] : Thomas **confronte les chiffres du système à son broker live** ; un écart système↔réalité = signal d'alarme à **investiguer sur pièces**, jamais à expliquer/minimiser. Son instinct sur les données s'est révélé juste 3× (or 11/06, 15/06, source futures).
+- [PRÉFÉRENCE FONDATEUR] : le système doit être **HONNÊTE sur ses angles morts** — afficher un ⚠️ quand il décide sur une donnée potentiellement périmée, plutôt que recommander en silence contre un mouvement visible à l'écran (« c'est pas malin », 15/06). L'affichage doit refléter la réalité observable par le trader.
 
 ## Produit (spécifique TradingApp, mais révèle son mindset)
 

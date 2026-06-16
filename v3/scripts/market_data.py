@@ -101,6 +101,34 @@ def td_available() -> bool:
     return bool(_twelve_key())
 
 
+# ── Provenance par symbole (fin de l'angle mort source) ────────────
+# Enregistre, pour chaque ticker (format Yahoo), la SOURCE réellement utilisée
+# au dernier fetch_history/fetch_price réussi : "twelve_native", "yfinance_fallback"
+# ou "stooq_fallback" (ce dernier posé par criteres_calculator qui gère Stooq).
+# But : on doit TOUJOURS savoir d'où vient chaque prix, même quand Twelve sert la
+# donnée silencieusement. Purement informatif (zéro effet sur le scoring).
+_provenance: dict[str, str] = {}
+_provenance_lock = threading.Lock()
+
+
+def record_provenance(yf_ticker: str, source: str) -> None:
+    """Enregistre la source effective d'un ticker (twelve_native / yfinance_fallback / stooq_fallback)."""
+    with _provenance_lock:
+        _provenance[yf_ticker] = source
+
+
+def get_provenance() -> dict[str, str]:
+    """Copie du registre de provenance {ticker_yahoo: source}."""
+    with _provenance_lock:
+        return dict(_provenance)
+
+
+def clear_provenance() -> None:
+    """Réinitialise le registre (appelé en début de cycle par criteres_calculator)."""
+    with _provenance_lock:
+        _provenance.clear()
+
+
 # ── Ticker mapping: yfinance format → (td_symbol, extra_params) ──
 # Verified against TD /indices, /forex_pairs, /commodities endpoints (2026-03).
 _TICKER_MAP: dict[str, tuple[str, dict]] = {
@@ -155,11 +183,18 @@ _TICKER_MAP: dict[str, tuple[str, dict]] = {
     # IMPORTANT: Many commodity symbols collide with stock tickers on TD.
     # Without type=commodities, TD returns the stock price.
     "CL=F": ("CL1", {"type": "commodities"}),    # WTI Crude (front month)
-    "BZ=F": ("CO1", {"type": "commodities"}),     # Brent Crude (front month)
+    # Brent : symbole spot natif Twelve XBR/USD (close ~82,8 vérifié 2026-06-16,
+    # niveau système ~83). L'ancien CO1 (type=commodities) renvoyait 404 → fallback
+    # yfinance caché. XBR/USD est servi directement par Twelve → source unique.
+    "BZ=F": ("XBR/USD", {}),     # Brent Crude (spot natif Twelve)
     "NG=F": ("NG1", {"type": "commodities"}),  # Natural Gas
     # Precious metals — forex-style symbols, no collision
-    "GC=F": ("XAU/USD", {}),    # Gold
-    "SI=F": ("XAG/USD", {}),    # Silver
+    # Or/Argent : symboles spot natifs Twelve (XAU/USD close 4326 ✓ ~4325 ;
+    # XAG/USD close 69,9 ✓ ~70). Les futures Yahoo (GC=F/SI=F) renvoient 404 sur
+    # Twelve /time_series → ce mapping fait de Twelve la source unique (fin du
+    # fallback yfinance caché). ticker_principal des fiches reste GC=F/SI=F (L023).
+    "GC=F": ("XAU/USD", {}),    # Gold (spot natif Twelve)
+    "SI=F": ("XAG/USD", {}),    # Silver (spot natif Twelve)
     "PL=F": ("XPT/USD", {}),    # Platinum
     "PA=F": ("XPD/USD", {}),    # Palladium
     # Base metals — HG1 collides with Homag Group AG → need type=commodities
@@ -463,6 +498,7 @@ def fetch_history(ticker: str, period_days: int = 25, interval: str = "1day"):
             df = _td_values_to_dataframe(data["values"], tz)
             if df is not None and not df.empty:
                 logger.debug("TD fetch OK: %s (%s) → %d bars", ticker, td_sym, len(df))
+                record_provenance(ticker, "twelve_native")
                 _cache_set(cache_key, df, ttl)
                 return df
 
@@ -471,6 +507,7 @@ def fetch_history(ticker: str, period_days: int = 25, interval: str = "1day"):
     df = _yf_history(ticker, period=yf_period, interval=yf_interval)
     if df is not None:
         logger.debug("yfinance fetch OK: %s → %d bars (TD unavailable)", ticker, len(df))
+        record_provenance(ticker, "yfinance_fallback")
     _cache_set(cache_key, df, ttl)
     return df
 
@@ -673,6 +710,8 @@ def fetch_price(ticker: str, bypass_cache: bool = False) -> Optional[float]:
                 price = float(data["price"])
                 if price <= 0:
                     price = None
+                else:
+                    record_provenance(ticker, "twelve_native")
             except (ValueError, TypeError):
                 price = None
 
@@ -684,6 +723,8 @@ def fetch_price(ticker: str, bypass_cache: bool = False) -> Optional[float]:
             price = float(info.get("lastPrice") or info.get("regularMarketPrice") or 0)
             if price <= 0:
                 price = None
+            else:
+                record_provenance(ticker, "yfinance_fallback")
         except Exception:
             price = None
 

@@ -384,6 +384,8 @@ def fetch_twelve_series(symbol: str, *, interval: str = "1day", outputsize: int 
             fb = fetch_stooq_series(symbol, outputsize=outputsize)
             if fb:
                 SKIP_COUNTER[f"twelve_fallback_stooq:{symbol}"] += 1
+                # Provenance : Stooq a effectivement servi cette série (Twelve KO).
+                md.record_provenance(symbol, "stooq_fallback")
                 logger.info("Twelve KO symbol=%s → fallback Stooq (%d points)", symbol, len(fb))
                 return fb
         SKIP_COUNTER[f"twelve_empty:{symbol}"] += 1
@@ -3153,13 +3155,44 @@ def _skip_reason(key: str) -> str:
     return f"{label} — {detail}" if detail else label
 
 
+def _render_provenance_block(provenance: Dict[str, str]) -> List[str]:
+    """Rend le bloc « Provenance des prix » : pour chaque source effectivement
+    utilisée ce cycle, le nombre de symboles et la liste triée.
+
+    Fin de l'angle mort : on sait TOUJOURS d'où vient chaque prix
+    (twelve_native / yfinance_fallback / stooq_fallback), même quand Twelve sert
+    silencieusement. Purement informatif.
+    """
+    if not provenance:
+        return []
+    by_source: Dict[str, List[str]] = {}
+    for ticker, source in provenance.items():
+        by_source.setdefault(source, []).append(ticker)
+    lines = [
+        "## Provenance des prix (source réellement utilisée ce cycle)",
+        "",
+        "| N | source | symboles |",
+        "|---:|---|---|",
+    ]
+    # Ordre stable : twelve_native d'abord, puis fallbacks, puis le reste.
+    order = {"twelve_native": 0, "yfinance_fallback": 1, "stooq_fallback": 2}
+    for source in sorted(by_source, key=lambda s: (order.get(s, 9), s)):
+        symbols = ", ".join(sorted(by_source[source]))
+        lines.append(f"| {len(by_source[source])} | {source} | {symbols} |")
+    lines.append("")
+    return lines
+
+
 def write_criteres_health(skips: Dict[str, int], now: datetime,
-                          path: Path = CRITERES_HEALTH_OUT) -> Path:
+                          path: Path = CRITERES_HEALTH_OUT,
+                          provenance: Optional[Dict[str, str]] = None) -> Path:
     """Persiste la santé des critères : chaque SKIP/n/a → la RAISON exacte.
 
     Format compact type source-health.md. Rend l'« échec invisible » VISIBLE :
     SKIP_COUNTER n'était jamais persisté → la cause CI-only de la météo cacao
     (HTTP 429/net_error capturé via status_out) apparaît ici au prochain run.
+    Inclut un bloc « Provenance des prix » (twelve_native / yfinance_fallback /
+    stooq_fallback par symbole) si `provenance` est fourni.
     Zéro effet de bord sur le scoring (fichier informatif).
     """
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -3170,9 +3203,11 @@ def write_criteres_health(skips: Dict[str, int], now: datetime,
         f"_Cycle : {ts}_",
         "",
     ]
+    prov_block = _render_provenance_block(provenance or {})
     if not skips:
         lines.append("**Aucun critère skippé ce cycle.** Tous les critères câblés ont été alimentés.")
         lines.append("")
+        lines.extend(prov_block)
         path.write_text("\n".join(lines), encoding="utf-8")
         return path
     total = sum(skips.values())
@@ -3189,6 +3224,7 @@ def write_criteres_health(skips: Dict[str, int], now: datetime,
         label = SKIP_REASON_LABELS.get(prefix, prefix)
         lines.append(f"| {skips[key]} | {label} | `{detail}` |")
     lines.append("")
+    lines.extend(prov_block)
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
 
@@ -3259,6 +3295,9 @@ def _prime_fresh_prices(fiches: Dict[str, dict], now: datetime) -> None:
 
 def run(now: Optional[datetime] = None) -> Path:
     SKIP_COUNTER.clear()
+    # Provenance par symbole : on repart à zéro pour ne refléter QUE ce cycle
+    # (sinon le registre de market_data accumulerait entre runs/tests).
+    md.clear_provenance()
     if now is None:
         now = datetime.now(timezone.utc)
     elif now.tzinfo is None:
@@ -3321,7 +3360,7 @@ def run(now: Optional[datetime] = None) -> Path:
     total_filled = sum(len(v) for k, v in payload.items() if k != "last_update")
 
     out = write_criteres(payload)
-    health = write_criteres_health(dict(SKIP_COUNTER), now)
+    health = write_criteres_health(dict(SKIP_COUNTER), now, provenance=md.get_provenance())
     logger.info("Critères : %d/%d alimentés (%.0f%%)", total_filled, total_crit,
                 100.0 * total_filled / max(total_crit, 1))
     logger.info("Santé critères persistée : %s", health)

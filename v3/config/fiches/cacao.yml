@@ -120,14 +120,16 @@ criteres:
 
   # Critère tendance-prix v3 — correctif famille trend-following (audit 10/06,
   # momentum-prix-sweep §5.1 + cacao-case-study §4). cle=momentum_prix_20j_cacao,
-  # source=Twelve Data CC=F, poids initial 9 ramené à 6 (A3 prove-first, concertation 10/06), motif : 8/12 fiches sans tendance-prix propre
+  # source=yfinance via CC=F (Twelve ne sert PAS ce future : COCOA=404, ETF au
+  # mauvais niveau écartés — zéro invention ; CC=F reste l'identifiant interne
+  # ticker_principal), poids initial 9 ramené à 6 (A3 prove-first, concertation 10/06), motif : 8/12 fiches sans tendance-prix propre
   # → incohérent avec la thèse trend-following. Signe +1 = on SUIT la tendance
   # (momentum positif → LONG). Calculé par la branche dédiée
   # `momentum_prix_20j_` du dispatcher (A1, 10/06) : VRAIE variation 20j puis
   # z-score de la série de rendements — plus le z-score du niveau (laggard).
   - id: 11
     nom: "Tendance du cacao (20 jours)"
-    source: "Twelve Data (CC=F)"
+    source: "yfinance (Twelve ne sert pas ce future)"
     cle_courante: "momentum_prix_20j_cacao"
     normalisation: "zscore"
     zscore_window: 60            # profondeur de la distribution de référence (cohérent sox_trend_5j/dxy_trend_20j) ; le "20j" du nom = horizon de tendance conceptuel

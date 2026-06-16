@@ -123,7 +123,8 @@ criteres:
     effet_short: "Demande PV baisse OU stocks normalisés"
 
   # Critère tendance-prix v3 — correctif famille trend-following (audit 10/06,
-  # momentum-prix-sweep §5.7). cle=momentum_prix_20j_argent, source=Twelve Data SI=F,
+  # momentum-prix-sweep §5.7). cle=momentum_prix_20j_argent, source=Twelve Data XAG/USD
+  # (SI=F est l'identifiant interne ticker_principal ; Twelve interroge XAG/USD natif),
   # poids initial 7 ramené à 6 (A3 prove-first, concertation 10/06), motif : la fiche n'avait aucun critère de tendance-prix PROPRE
   # (mouvement_or_5j = prix de l'or, ratio_gold_silver = relatif) → incohérent avec
   # la thèse trend-following. Capte les mouvements idiosyncratiques de l'argent.
@@ -133,7 +134,7 @@ criteres:
   # Pertinences = défaut famille {24h:0.6, 7j:1.0, 1m:0.8} (brief 10/06).
   - id: 11
     nom: "Tendance de l'argent (20 jours)"
-    source: "Twelve Data (SI=F)"
+    source: "Twelve Data (XAG/USD)"
     cle_courante: "momentum_prix_20j_argent"
     normalisation: "zscore"
     zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel

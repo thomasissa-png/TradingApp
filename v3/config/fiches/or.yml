@@ -121,7 +121,8 @@ criteres:
     effet_short: "VIX<14"
 
   # Critère tendance-prix v3 — correctif famille trend-following (audit 10/06,
-  # momentum-prix-sweep §5.6). cle=momentum_prix_20j_or, source=Twelve Data GC=F,
+  # momentum-prix-sweep §5.6). cle=momentum_prix_20j_or, source=Twelve Data XAU/USD
+  # (GC=F est l'identifiant interne ticker_principal ; Twelve interroge XAU/USD natif),
   # poids initial 7 ramené à 6 (A3 prove-first, concertation 10/06), motif : la fiche n'avait aucun critère de tendance-prix propre →
   # incohérent avec la thèse trend-following (découplage TIPS documenté audit 05/06).
   # Signe +1 = on SUIT la tendance. Calculé par la branche dédiée
@@ -131,7 +132,7 @@ criteres:
   # Pertinences = défaut famille {24h:0.6, 7j:1.0, 1m:0.8} (brief 10/06).
   - id: 11
     nom: "Tendance de l'or (20 jours)"
-    source: "Twelve Data (GC=F)"
+    source: "Twelve Data (XAU/USD)"
     cle_courante: "momentum_prix_20j_or"
     normalisation: "zscore"
     zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel

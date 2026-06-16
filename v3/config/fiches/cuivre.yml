@@ -121,7 +121,9 @@ criteres:
     effet_short: "Baisse (z<-1, safe haven)"
 
   # Critère tendance-prix v3 — correctif famille trend-following (audit 10/06,
-  # momentum-prix-sweep §5.4). cle=momentum_prix_20j_cuivre, source=Twelve Data HG=F,
+  # momentum-prix-sweep §5.4). cle=momentum_prix_20j_cuivre, source=yfinance via HG=F
+  # (Twelve ne sert PAS ce future au bon niveau : XCU/USD=404, ETF au mauvais niveau
+  # écartés — zéro invention ; HG=F reste l'identifiant interne ticker_principal),
   # poids initial 8 ramené à 6 (A3 prove-first, concertation 10/06), motif : la fiche n'avait aucun critère de tendance-prix propre →
   # incohérent avec la thèse trend-following. Signe +1 = on SUIT la tendance.
   # Calculé par la branche dédiée `momentum_prix_20j_` du dispatcher (A1,
@@ -129,7 +131,7 @@ criteres:
   # famille {24h:0.6, 7j:1.0, 1m:0.8} (brief 10/06).
   - id: 11
     nom: "Tendance du cuivre (20 jours)"
-    source: "Twelve Data (HG=F)"
+    source: "yfinance (Twelve ne sert pas ce future)"
     cle_courante: "momentum_prix_20j_cuivre"
     normalisation: "zscore"
     zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel

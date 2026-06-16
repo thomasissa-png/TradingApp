@@ -49,19 +49,21 @@ def _no_real_http(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_fomc_imminent_deterministe_true(monkeypatch):
-    """calendrier_eco signale un FOMC imminent → helper True."""
-    monkeypatch.setattr(cal, "evenement_majeur_imminent", lambda *a, **k: True)
+    """calendrier_eco signale un FOMC imminent concernant l'actif → helper True (asset-aware)."""
+    monkeypatch.setattr(cal, "actifs_majeurs_imminents", lambda *a, **k: {"sp500", "or"})
     now = datetime(2026, 6, 17, 10, 0, tzinfo=timezone.utc)
-    assert cc._fomc_imminent_deterministe(now) is True
+    # Concerné par le FOMC → True ; non concerné (cacao) → False (spécificité actif).
+    assert cc._fomc_imminent_deterministe(now, "sp500") is True
+    assert cc._fomc_imminent_deterministe(now, "cacao") is False
 
 
 def test_fomc_imminent_deterministe_tolere_module_ko(monkeypatch):
     """Si calendrier_eco lève une exception → helper retombe sur False (comportement actuel)."""
     def _boom(*a, **k):  # noqa: ANN001
         raise RuntimeError("module KO")
-    monkeypatch.setattr(cal, "evenement_majeur_imminent", _boom)
+    monkeypatch.setattr(cal, "actifs_majeurs_imminents", _boom)
     now = datetime(2026, 6, 17, 10, 0, tzinfo=timezone.utc)
-    assert cc._fomc_imminent_deterministe(now) is False
+    assert cc._fomc_imminent_deterministe(now, "sp500") is False
 
 
 def test_resolve_gate_active_par_fomc_sans_news(monkeypatch):

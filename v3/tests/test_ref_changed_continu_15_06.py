@@ -15,6 +15,10 @@ REF_CHANGED = Path(__file__).resolve().parents[1] / "data" / "ref-changed.json"
 
 _CONTINUS = ["GC=F", "SI=F", "BZ=F", "HG=F", "CC=F", "KC=F", "ZW=F", "EUR=X"]
 _NON_CONTINUS = ["^GSPC", "^IXIC", "^FCHI", "^VIX"]
+# Cutover 2026-06-16 (source = Twelve natif XAU/XAG/XBR) : or/argent/Brent
+# avancent du 15/06 au 16/06. Les 5 autres continus restent au 15/06 (Twelve ne
+# sert pas leur future au bon niveau → yfinance conservé, pas de changement de source).
+_NATIVE_16_06 = {"GC=F", "SI=F", "BZ=F"}
 
 
 def _load():
@@ -25,8 +29,9 @@ def test_continus_resets_au_15_06():
     rc = _load()
     for ticker in _CONTINUS:
         assert ticker in rc, f"{ticker} absent du registre"
-        assert rc[ticker]["ref_changed"] == "2026-06-15", (
-            f"{ticker} devrait être reset au 15/06"
+        attendu = "2026-06-16" if ticker in _NATIVE_16_06 else "2026-06-15"
+        assert rc[ticker]["ref_changed"] == attendu, (
+            f"{ticker} devrait être reset au {attendu}"
         )
 
 

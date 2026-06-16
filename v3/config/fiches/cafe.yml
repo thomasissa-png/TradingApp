@@ -119,7 +119,9 @@ criteres:
     effet_short: "Pluies normales"
 
   # Critère tendance-prix v3 — correctif famille trend-following (audit 10/06,
-  # momentum-prix-sweep §5.2). cle=momentum_prix_20j_cafe, source=Twelve Data KC=F,
+  # momentum-prix-sweep §5.2). cle=momentum_prix_20j_cafe, source=yfinance via KC=F
+  # (Twelve ne sert PAS ce future : COFFEE=404, ETF au mauvais niveau écartés —
+  # zéro invention ; KC=F reste l'identifiant interne ticker_principal),
   # poids initial 8 ramené à 6 (A3 prove-first, concertation 10/06), motif : la fiche n'avait aucun critère de tendance-prix propre →
   # incohérent avec la thèse trend-following. Signe +1 = on SUIT la tendance.
   # Calculé par la branche dédiée `momentum_prix_20j_` du dispatcher (A1,
@@ -127,7 +129,7 @@ criteres:
   # famille {24h:0.6, 7j:1.0, 1m:0.8} (brief 10/06 ; prime sur la reco sweep 0.7/0.7).
   - id: 11
     nom: "Tendance du café Arabica (20 jours)"
-    source: "Twelve Data (KC=F)"
+    source: "yfinance (Twelve ne sert pas ce future)"
     cle_courante: "momentum_prix_20j_cafe"
     normalisation: "zscore"
     zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel

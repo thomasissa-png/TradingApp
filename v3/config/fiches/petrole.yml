@@ -135,7 +135,8 @@ criteres:
     effet_short: "PMI < 49 (contraction)"
 
   # Critère tendance-prix v3 — correctif famille trend-following (audit 10/06,
-  # momentum-prix-sweep §5.5). cle=momentum_prix_20j_petrole, source=Twelve Data BZ=F,
+  # momentum-prix-sweep §5.5). cle=momentum_prix_20j_petrole, source=Twelve Data XBR/USD
+  # (BZ=F est l'identifiant interne ticker_principal ; Twelve interroge XBR/USD natif),
   # poids initial 7 ramené à 6 (A3 prove-first, concertation 10/06), motif : la fiche n'avait aucun critère de tendance-prix propre →
   # incohérent avec la thèse trend-following. Signe +1 = on SUIT la tendance.
   # Calculé par la branche dédiée `momentum_prix_20j_` du dispatcher (A1,
@@ -143,7 +144,7 @@ criteres:
   # famille {24h:0.6, 7j:1.0, 1m:0.8} (brief 10/06). id=12 (id 11 pris par le GATE).
   - id: 12
     nom: "Tendance du pétrole Brent (20 jours)"
-    source: "Twelve Data (BZ=F)"
+    source: "Twelve Data (XBR/USD)"
     cle_courante: "momentum_prix_20j_petrole"
     normalisation: "zscore"
     zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel

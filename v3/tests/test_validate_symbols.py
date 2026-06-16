@@ -164,7 +164,12 @@ class TestTickerMapMarketData:
         """Sanity : _map_ticker fait bien la traduction documentée."""
         # Commodity future → symbole Twelve + type=commodities
         assert md._map_ticker("CL=F") == ("CL1", {"type": "commodities"})
-        assert md._map_ticker("BZ=F") == ("CO1", {"type": "commodities"})
+        # Brent → symbole spot natif Twelve XBR/USD (cutover 2026-06-16 : l'ancien
+        # CO1 type=commodities renvoyait 404 → fallback yfinance caché). Or/argent
+        # idem (XAU/USD, XAG/USD) — Twelve devient la source unique de ces 3 actifs.
+        assert md._map_ticker("BZ=F") == ("XBR/USD", {})
+        assert md._map_ticker("GC=F") == ("XAU/USD", {})
+        assert md._map_ticker("SI=F") == ("XAG/USD", {})
         # Forex → format A/B
         assert md._map_ticker("EURUSD=X") == ("EUR/USD", {})
         # Alias raccourci EUR=X (utilisé dans nos fiches)

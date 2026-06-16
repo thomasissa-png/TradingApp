@@ -262,3 +262,35 @@ def evenement_majeur_imminent(
         if _dates_pour_event(ev, debut, fin):
             return True
     return False
+
+
+def actifs_majeurs_imminents(
+    now: Optional[datetime] = None,
+    types: tuple = TYPES_MAJEURS,
+    horizon_jours: int = GATE_HORIZON_JOURS,
+    path: Optional[Path] = None,
+) -> set:
+    """Ensemble des `fiche_key` CONCERNÉES par un événement majeur imminent (J0..J+horizon).
+
+    Variante ASSET-AWARE de `evenement_majeur_imminent` : un FOMC concerne l'or,
+    le S&P… mais PAS le cacao. Un gate « événement majeur imminent » doit donc
+    s'allumer UNIQUEMENT pour les actifs listés dans `actifs` de l'événement, pas
+    pour tous (cf. principe du gate v2 : spécifique à l'actif). Retourne l'union
+    des `actifs` des événements majeurs imminents (vide si aucun).
+    """
+    now = now or datetime.now(PARIS_TZ)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=PARIS_TZ)
+    aujourd_hui = now.astimezone(PARIS_TZ).date()
+    debut = aujourd_hui  # J0 inclus
+    fin = aujourd_hui + timedelta(days=max(0, int(horizon_jours)))
+    cibles = {t.upper() for t in types}
+
+    concernes: set = set()
+    for ev in charger_evenements(path):
+        if str(ev.get("type") or "").upper() not in cibles:
+            continue
+        if _dates_pour_event(ev, debut, fin):
+            for a in (ev.get("actifs") or []):
+                concernes.add(str(a))
+    return concernes

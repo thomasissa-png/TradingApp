@@ -137,7 +137,9 @@ criteres:
     effet_short: "DXY monte"
 
   # Critère tendance-prix v3 — correctif famille trend-following (audit 10/06,
-  # momentum-prix-sweep §5.3). cle=momentum_prix_20j_ble, source=Twelve Data ZW=F,
+  # momentum-prix-sweep §5.3). cle=momentum_prix_20j_ble, source=yfinance via ZW=F
+  # (Twelve ne sert PAS ce future : WHEAT=404, ETF au mauvais niveau écartés —
+  # zéro invention ; ZW=F reste l'identifiant interne ticker_principal),
   # poids initial 8 ramené à 6 (A3 prove-first, concertation 10/06), motif : la fiche n'avait aucun critère de tendance-prix propre →
   # incohérent avec la thèse trend-following. Signe +1 = on SUIT la tendance.
   # Calculé par la branche dédiée `momentum_prix_20j_` du dispatcher (A1,
@@ -145,7 +147,7 @@ criteres:
   # famille {24h:0.6, 7j:1.0, 1m:0.8} (brief 10/06).
   - id: 11
     nom: "Tendance du blé (20 jours)"
-    source: "Twelve Data (ZW=F)"
+    source: "yfinance (Twelve ne sert pas ce future)"
     cle_courante: "momentum_prix_20j_ble"
     normalisation: "zscore"
     zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel

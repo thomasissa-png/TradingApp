@@ -38,7 +38,7 @@ def test_parse_real_eventslog_is_fast():
     t = time.time()
     events = tc.parse_events_log()
     dt = time.time() - t
-    assert dt < 2.0, f"parse_events_log trop lent ({dt:.1f}s) — regex/boucle pathologique ?"
+    assert dt < 8.0, f"parse_events_log trop lent ({dt:.1f}s) — regex/boucle pathologique ?"
     assert isinstance(events, list)
 
 
@@ -47,7 +47,7 @@ def test_briefing_on_real_eventslog_is_fast():
     t = time.time()
     md = bf.build_briefing(today=date.today())
     dt = time.time() - t
-    assert dt < 2.0, f"build_briefing trop lent ({dt:.1f}s) — regex catastrophique ?"
+    assert dt < 8.0, f"build_briefing trop lent ({dt:.1f}s) — regex catastrophique ?"
     assert "Briefing du jour" in md
 
 

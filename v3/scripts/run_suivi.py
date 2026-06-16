@@ -375,17 +375,40 @@ def news_a_impact(
     return out
 
 
+# source_track signifiant « ce créneau news porte la direction NETTE IA »
+# (synthèse DeepSeek du corpus). Doit rester aligné avec
+# scoring_analyste.SYNTHESE_NET_TRACKS / SYNTHESE_NET_LABEL.
+_SYNTHESE_NET_TRACKS = frozenset({"ia_synthese", "ia_synthese_faible"})
+_SYNTHESE_NET_LABEL = "Synthèse news (net, IA)"
+
+
+def _nom_affiche_news(nom: str, source_track: str) -> str:
+    """Libellé DYNAMIQUE d'un critère news lu depuis le decision-log.
+
+    Miroir de scoring_analyste._nom_affiche : si le créneau porte le net IA
+    (source_track ∈ _SYNTHESE_NET_TRACKS) → « Synthèse news (net, IA) », sinon
+    le nom de fiche tel quel. PUR AFFICHAGE, se dégrade proprement si
+    source_track absent (vieux decision-logs → nom legacy, jamais de crash).
+    """
+    if (source_track or "").strip().lower() in _SYNTHESE_NET_TRACKS:
+        return _SYNTHESE_NET_LABEL
+    return nom
+
+
 def _dominant_news_critere(criteres: List[dict]) -> Optional[tuple]:
     """Critère news à plus forte |contribution| dans une cellule. (nom, sens) ou None.
 
     On considère « news » un critère de type triplet ou dont la source vient des
-    events-log. Zéro invention : si rien ne matche → None.
+    events-log. Zéro invention : si rien ne matche → None. Le `nom` retourné est
+    le libellé DYNAMIQUE (cf. _nom_affiche_news) : « Synthèse news (net, IA) »
+    quand le créneau porte le net, son thème de fiche sinon.
     """
     best = None
     best_abs = 0.0
     for c in criteres:
         type_norm = (c.get("type_norm") or "").lower()
-        source = (c.get("source_track") or c.get("cle") or "").lower()
+        track = (c.get("source_track") or "")
+        source = (track or c.get("cle") or "").lower()
         nom = (c.get("nom") or "").strip()
         is_news = type_norm == "triplet" or "event" in source or "news" in source
         if not is_news or not nom:
@@ -397,7 +420,7 @@ def _dominant_news_critere(criteres: List[dict]) -> Optional[tuple]:
         if abs(contrib) > best_abs:
             best_abs = abs(contrib)
             sens = "haussier" if contrib > 0 else ("baissier" if contrib < 0 else "neutre")
-            best = (nom, sens)
+            best = (_nom_affiche_news(nom, track), sens)
     return best
 
 

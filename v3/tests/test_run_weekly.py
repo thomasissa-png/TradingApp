@@ -173,6 +173,13 @@ def test_aucune_ecriture_config(monkeypatch, tmp_path):
         ["git", "diff", "--name-only", "--", "v3/config/"],
         cwd=ROOT.parent, capture_output=True, text=True,
     ).stdout
+    # État porcelain AVANT (tolère une édition de config légitime non commitée
+    # dans le working tree — l'invariant testé est « le Manager n'ajoute/modifie
+    # RIEN », pas « v3/config/ est vierge dans l'absolu »).
+    untracked_before = subprocess.run(
+        ["git", "status", "--porcelain", "--", "v3/config/"],
+        cwd=ROOT.parent, capture_output=True, text=True,
+    ).stdout
 
     rw.build_bilan_semaine(
         now=NOW, fiches={}, fetch_price=None, state_dir=tmp_path, persist_state=True
@@ -183,12 +190,15 @@ def test_aucune_ecriture_config(monkeypatch, tmp_path):
         cwd=ROOT.parent, capture_output=True, text=True,
     ).stdout
     assert before == after, f"v3/config/ modifié par le Manager : {after}"
-    # Le Manager n'écrit RIEN sous config, même pas un fichier non tracké.
-    untracked = subprocess.run(
+    # Le Manager n'écrit RIEN sous config (before == after, robuste à un diff
+    # config pré-existant non commité).
+    untracked_after = subprocess.run(
         ["git", "status", "--porcelain", "--", "v3/config/"],
         cwd=ROOT.parent, capture_output=True, text=True,
     ).stdout
-    assert untracked == "", f"v3/config/ a un changement non tracké : {untracked}"
+    assert untracked_after == untracked_before, (
+        f"v3/config/ modifié par le Manager : {untracked_after}"
+    )
 
 
 # ---------------------------------------------------------------------------

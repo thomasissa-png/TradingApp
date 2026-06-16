@@ -1711,7 +1711,7 @@ def _top_driver(r: "ActifResult", h: str) -> Tuple[str, str]:
         if key > best:
             best = key
             best_cle = getattr(c, "cle_courante", "") or ""
-            best_nom = c.nom
+            best_nom = _nom_critere(c)  # libellé dynamique (net IA vs thème)
     return best_cle, best_nom
 
 
@@ -1749,7 +1749,7 @@ def detect_mono_critere_dominant(
         somme_abs += a
         if a > best_abs:
             best_abs = a
-            best_nom = c.nom
+            best_nom = _nom_critere(c)  # libellé dynamique (net IA vs thème)
     if somme_abs <= 0.0 or best_nom is None:
         return False, None
     if best_abs > MONO_CRITERE_RATIO * somme_abs:
@@ -2660,7 +2660,7 @@ def _top_explication(r: "ActifResult", h: str) -> str:
         if ctr is None or abs(ctr) <= 0.0:
             continue
         is_news = c.source_track.startswith("ia") or c.source_track == "keyword"
-        contribs.append((abs(ctr), c.nom, float(ctr), is_news))
+        contribs.append((abs(ctr), _nom_critere(c), float(ctr), is_news))
     if not contribs:
         return ""
     # Tri |contribution| desc, départage déterministe par nom pour stabilité.
@@ -2801,6 +2801,46 @@ TYPE_NORM_LABELS: Dict[str, str] = {
 def _label_type_norm(type_norm: str) -> str:
     """Libellé humain d'un type de normalisation ; retombe sur le brut si inconnu."""
     return TYPE_NORM_LABELS.get(type_norm, type_norm)
+
+
+# Libellé affiché quand un créneau news PORTE la direction NETTE (synthèse
+# DeepSeek du corpus de l'actif), par opposition à sa détection mots-clés
+# thématique. Voir _nom_affiche.
+SYNTHESE_NET_LABEL = "Synthèse news (net, IA)"
+
+# source_track qui signifient « ce créneau porte le net IA » (synthèse
+# directionnelle DeepSeek du corpus). Toute autre valeur (keyword, calendrier,
+# ia_conflict, none, "", absent) = le créneau est en mode thématique → on
+# affiche son nom de fiche tel quel (cf. triggers_classifier).
+SYNTHESE_NET_TRACKS = frozenset({"ia_synthese", "ia_synthese_faible"})
+
+
+def _nom_affiche(nom: str, source_track: str) -> str:
+    """Libellé DYNAMIQUE d'un critère news, honnête dans ses 2 modes.
+
+    Un créneau news « porteur du net » (cf. SYNTHESE_NET_CARRIER dans
+    triggers_classifier) est à double casquette : tantôt il porte la DIRECTION
+    NETTE du corpus (synthèse DeepSeek, source_track ∈ SYNTHESE_NET_TRACKS),
+    tantôt il retombe sur sa DÉTECTION MOTS-CLÉS thématique (source_track
+    "keyword" ou autre). Aucun NOM FIXE n'est honnête dans les 2 modes — d'où
+    le libellé calculé AU RENDU :
+
+    - source_track porte le net → « Synthèse news (net, IA) ».
+    - sinon (keyword, calendrier, conflit, absent, critère non-news) → `nom`
+      de fiche tel quel (comportement legacy, jamais de crash).
+
+    PUR AFFICHAGE : n'altère ni cle_courante, ni signe, ni poids, ni score
+    (L023). Se dégrade proprement si source_track manquant/inconnu.
+    """
+    track = (source_track or "").strip().lower()
+    if track in SYNTHESE_NET_TRACKS:
+        return SYNTHESE_NET_LABEL
+    return nom
+
+
+def _nom_critere(c: "CritereResult") -> str:
+    """Raccourci : libellé dynamique d'un CritereResult (lit son source_track)."""
+    return _nom_affiche(c.nom, getattr(c, "source_track", "") or "")
 
 
 # Encart statique « Comment lire ce tableau » (reco-wording §5). Inséré une
@@ -3203,7 +3243,7 @@ def render_bulletin(
             if c.is_gate and c.gate_active:
                 lu = "⚑ **" + lu + " ACTIF**"
             lines.append(
-                f"| {c.nom} | {lu} | {valeur_brute_str} | {vn} | {poids} | {sens} | "
+                f"| {_nom_critere(c)} | {lu} | {valeur_brute_str} | {vn} | {poids} | {sens} | "
                 f"{ctr['24h']} | {ctr['7j']} | {ctr['1m']} |"
             )
         if r.tie_break_notes:
@@ -3237,9 +3277,9 @@ def render_bulletin(
                 # pas la redondance générique « (valeur absente) ».
                 note = c.note or ""
                 detail = "" if note.strip() in ("n/a (valeur absente)", "") else f" — {note}"
-                lines.append(f"- n/a : {c.nom} (poids {c.poids:g}){detail}")
+                lines.append(f"- n/a : {_nom_critere(c)} (poids {c.poids:g}){detail}")
             for c in gates_actifs:
-                lines.append(f"- ⚑ GATE actif : {c.nom} — {c.note}")
+                lines.append(f"- ⚑ GATE actif : {_nom_critere(c)} — {c.note}")
             if n_mineurs:
                 lines.append(
                     f"- _(+{n_mineurs} critère{'s' if n_mineurs > 1 else ''} "

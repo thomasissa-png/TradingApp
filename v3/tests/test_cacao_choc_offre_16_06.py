@@ -85,18 +85,57 @@ def _actif_cacao(
 # ① Libellés honnêtes
 # ---------------------------------------------------------------------------
 
-def test_fiche_cacao_slot_renomme_sans_non_sens():
-    """Le slot rempli par la synthèse net ne porte plus un libellé « maladie »
-    (qui impliquait un sens métier opposé à son contenu net)."""
+def test_fiche_cacao_slot_nom_thematique_reel():
+    """RÉCONCILIATION 16/06 (libellé dynamique) : le slot maladies_cabosses est à
+    DOUBLE CASQUETTE. Son NOM DE FICHE est désormais son VRAI thème keyword
+    (« Maladies des cabosses », cohérent signe +1 = offre↓ = haussier) ; le
+    libellé « Synthèse news (net, IA) » est appliqué DYNAMIQUEMENT au rendu quand
+    le créneau porte le net (cf. test_libelle_dynamique_*). L'ancien nom statique
+    « Synthèse news cacao (net, IA) » était FAUX en mode keyword → revert."""
     fiche = yaml.safe_load((ROOT / "config" / "fiches" / "cacao.yml").read_text("utf-8"))
     slot = next(c for c in fiche["criteres"] if c.get("cle_courante") == "maladies_cabosses")
     # cle_courante INCHANGÉE (L023), signe/poids INCHANGÉS (zéro modif silencieuse).
     assert slot["cle_courante"] == "maladies_cabosses"
     assert slot["signe"] == 1
     assert slot["poids"] == 4
-    # Le NOM affiché ne doit plus dire « Maladies des cabosses » (non-sens baissier).
-    assert "Maladies des cabosses" not in slot["nom"]
-    assert "synth" in slot["nom"].lower() or "news" in slot["nom"].lower()
+    # Le nom de fiche = thème keyword réel (cohérent avec signe +1, mode keyword).
+    assert "Maladies des cabosses" in slot["nom"]
+
+
+def test_libelle_dynamique_porte_le_net():
+    """Un critère news dont le source_track porte le net (ia_synthese /
+    ia_synthese_faible) s'affiche « Synthèse news (net, IA) », quel que soit son
+    nom de fiche — uniforme pour TOUS les actifs."""
+    assert sa._nom_affiche("Maladies des cabosses (impact récolte)", "ia_synthese") == sa.SYNTHESE_NET_LABEL
+    assert sa._nom_affiche("Grèves minières Chili/Pérou", "ia_synthese_faible") == sa.SYNTHESE_NET_LABEL
+    assert sa._nom_affiche("Géopolitique Iran", "IA_SYNTHESE") == sa.SYNTHESE_NET_LABEL  # casse insensible
+    assert "synth" in sa.SYNTHESE_NET_LABEL.lower()
+
+
+def test_libelle_dynamique_mode_keyword_garde_le_theme():
+    """En mode keyword (détection mots-clés thématique) le créneau garde son nom
+    de fiche — pas de « Synthèse news »."""
+    assert sa._nom_affiche("Maladies des cabosses (impact récolte)", "keyword") == "Maladies des cabosses (impact récolte)"
+    assert sa._nom_affiche("Grèves minières Chili/Pérou", "keyword") == "Grèves minières Chili/Pérou"
+
+
+def test_libelle_dynamique_degrade_proprement():
+    """source_track absent / inconnu / non-news → nom de fiche (legacy), jamais
+    de crash (vieux decision-logs, critères quant)."""
+    assert sa._nom_affiche("Météo CI+Ghana", "") == "Météo CI+Ghana"
+    assert sa._nom_affiche("Météo CI+Ghana", "none") == "Météo CI+Ghana"
+    assert sa._nom_affiche("Météo CI+Ghana", "calendrier") == "Météo CI+Ghana"
+    assert sa._nom_affiche("Météo CI+Ghana", "ia_conflict") == "Météo CI+Ghana"
+    assert sa._nom_affiche("Météo CI+Ghana", None) == "Météo CI+Ghana"  # type: ignore[arg-type]
+
+
+def test_cacao_16_06_net_short_plus_de_non_sens():
+    """Cas cacao 16/06 (net SHORT) : le slot maladies_cabosses porté par le net
+    ne s'affiche PLUS « Maladies des cabosses → baissier » (non-sens : maladie =
+    haussier), mais « Synthèse news (net, IA) → baissier » (cohérent)."""
+    affiche = sa._nom_affiche("Maladies des cabosses (impact récolte)", "ia_synthese")
+    assert "Maladies des cabosses" not in affiche
+    assert affiche == sa.SYNTHESE_NET_LABEL
 
 
 def test_suivi_libelle_news_honnete():

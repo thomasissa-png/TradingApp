@@ -298,3 +298,15 @@ règle, NI le kill-criterion.
 **Reset.** Le niveau spot diffère légèrement du future → z-scores/momentum bougent → **le signal change**. `ref_changed` de `GC=F`, `SI=F`, `BZ=F` avance **2026-06-15 → 2026-06-16** (`ref-changed.json`, append-only). **Cuivre/cacao/café/blé : INCHANGÉS** — Twelve ne sert PAS ces futures au bon niveau (`XCU/USD`, `COCOA`, `COFFEE`, `WHEAT` = 404 ; ETF au mauvais niveau écartés, zéro invention) → ils gardent yfinance et leur `ref_changed` 2026-06-15. La règle de sélection (WR tradable ≥ 70 % / N ≥ 15, 24h-only) et **aucun poids ni seuil** ne sont touchés.
 
 **Provenance.** Chaque cycle logge désormais la source réellement utilisée par symbole (`twelve_native` / `yfinance_fallback` / `stooq_fallback`) dans `criteres-health.md` (bloc « Provenance des prix ») — fin de l'angle mort.
+
+---
+
+## Addendum — 2026-06-16 : fix L027 — la référence de mesure du WR des continus = ÉMISSION 7h (fin de l'« ouverture » 8h qui tronquait le mouvement)
+
+> Append-only. **Ne modifie PAS le texte gravé** (WR tradable ≥ 70 % / N ≥ 15, 24h-only) : la formule de sélection est intacte. Ce qui change, c'est la **sémantique du WR mesuré** pour les continus — donc la valeur des chiffres comparés au seuil.
+
+**Défaut P0 corrigé (prouvé sur pièces — GO mesure Thomas).** Pour les actifs **continus** (cotés 24/7), la référence du 24h était l'« ouverture » stampée à **heure fixe 8h Paris**. Ce point pouvait tomber **au milieu d'un mouvement déjà entamé depuis l'émission 7h** → le 24h ne mesurait que la fin tronquée. **Cas fondateur (15/06, or, XAU/USD natif)** : open de session ≈ 4215 → close ≈ 4309 (**+2,2 %**). Le **SHORT était PERDANT**, mais classé **« NC » (+0,18 %)** car la référence 8h (≈ 4308) tombait **après** le rallye. **Le WR tradable des continus était donc artificiellement gonflé** (des FAUSSE comptés en NC).
+
+**Correctif (sémantique de mesure, scopé aux continus).** Référence du 24h des continus = **prix d'ÉMISSION 7h** (le moment où Thomas lit et peut agir ; un continu cote en continu à 7h ⇒ prix live valide), alignement **L021** (« mesurer depuis le point d'exécution réel »). Les **non-continus** (indices cash CAC 9h / S&P-Nasdaq 15h30, VIX) restent mesurés depuis l'**ouverture de marché** (fermés à 7h ⇒ un prix de 7h serait un prix de nuit). Implémenté dans `journaliste._resolve_prix_reference` (group-aware via `mesure_ouverture.actif_group`).
+
+**Reset : 8 continus au 2026-06-17** (or `GC=F`, argent `SI=F`, pétrole `BZ=F`, cuivre `HG=F`, cacao `CC=F`, café `KC=F`, blé `ZW=F`, EUR/USD `EUR=X`). `ref_changed` avance au **1er bulletin sous la nouvelle sémantique = 2026-06-17** (`ref-changed.json`, append-only, justification CHANGELOG). **4e reset des continus — coût assumé, VRAI défaut corrigé (dit honnêtement)** : le WR tradable des continus mesuré sous l'ancienne sémantique n'était pas comparable (il cachait des pertes). Les non-continus (`^GSPC`, `^IXIC`, `^FCHI`, `^VIX`) gardent leur `ref_changed` 2026-06-11. La règle de sélection (WR tradable ≥ 70 % / N ≥ 15, 24h-only) reste **inchangée** ; **aucun poids ni seuil de fiche n'est touché**. Test-verrou : `tests/test_verrou_l027_mesure_continu.py`.

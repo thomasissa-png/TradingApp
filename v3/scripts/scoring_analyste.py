@@ -3591,6 +3591,29 @@ def load_conviction_map(
     return result
 
 
+def _source_canonique_attendue(m, fiches: Dict[str, dict]) -> Optional[str]:
+    """Source de référence CANONIQUE attendue pour la mesure `m` (fix L027).
+
+    - actif CONTINU (or, argent, métaux, commodities, FX) → "emission" (7h, point
+      d'exécution réel) ;
+    - actif NON continu (indices cash, VIX) → "ouverture" (ouverture de marché).
+
+    Réutilise `mesure_ouverture.actif_group` (source de vérité unique, zéro liste
+    en dur). None si la fiche/groupe est introuvable (on n'étiquette alors rien).
+    """
+    fiche = fiches.get(getattr(m, "fiche_key", "")) if fiches else None
+    if not fiche:
+        return None
+    try:
+        import mesure_ouverture as _mo  # noqa: PLC0415
+        groupe = _mo.actif_group(fiche)
+    except Exception:  # noqa: BLE001
+        return None
+    if groupe is None:
+        return None
+    return "emission" if groupe == "continu" else "ouverture"
+
+
 def build_audit_veille_24h(
     now: datetime,
     bulletins_dir: Path = BULLETINS_DIR,
@@ -3722,19 +3745,23 @@ def build_audit_veille_24h(
     lines.append(f"**{n_vrai} ✅ / {n_faux} ❌** ({periode}{suffixe_tronque})")
     lines.append("")
 
+    fiches_for_tag = load_fiches()
     for _, m in retained:
         ok = m.outcome == OUTCOME_VRAI
         icon = "✅" if ok else "❌"
         verdict = "VRAI" if ok else "FAUX"
-        # Étiquette « mesure v1 » sur les calls mesurés AVANT le cutover ouverture
-        # (prix_reference_source != "ouverture" → référence = prix d'émission,
-        # corrigée depuis). Rend identifiables les « Argent −16,6 % » d'avant-
-        # cutover. Champ EXISTANT du measures-log (zéro invention) ; absent → pas
+        # Étiquette « référence dégradée » : la référence de mesure n'est PAS la
+        # source canonique du groupe de l'actif (fix L027). Canonique :
+        #   - continu      → émission 7h (point d'exécution réel)
+        #   - non continu  → ouverture de marché (CAC 9h / US 15h30)
+        # Si la source réelle diffère (fallback faute de données), on le signale.
+        # Champ EXISTANT du measures-log (zéro invention) ; absent → pas
         # d'étiquette (on n'affirme rien sur une provenance inconnue).
         src = getattr(m, "prix_reference_source", None)
+        canonique = _source_canonique_attendue(m, fiches_for_tag)
         v1_tag = (
-            " `[mesure v1 — réf. prix d'émission, corrigée depuis]`"
-            if (src is not None and src != "ouverture")
+            " `[référence dégradée — source non canonique]`"
+            if (src is not None and canonique is not None and src != canonique)
             else ""
         )
         lines.append(

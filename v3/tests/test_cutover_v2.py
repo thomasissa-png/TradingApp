@@ -110,14 +110,18 @@ def test_registre_reel_contient_les_actifs_reset():
     # continus (nasdaq ^IXIC, sp500 ^GSPC, cac40 ^FCHI, vix ^VIX) ne sont PAS
     # touchés (cash fermé à 7h → close J-1 = dernier prix réel) → restent au 11/06.
     reg = sv.load_ref_changed()
-    # 8 actifs CONTINUS reset au 15/06 (VOLET C — prix le plus frais).
+    # Cutover 2026-06-16 (source = Twelve natif XAU/XAG/XBR) : or/argent/Brent
+    # avancent du 15/06 au 16/06 (le niveau spot diffère du future → signal change).
+    assert reg.get("BZ=F") == date(2026, 6, 16)   # petrole (XBR/USD natif)
+    assert reg.get("SI=F") == date(2026, 6, 16)   # argent (XAG/USD natif)
+    assert reg.get("GC=F") == date(2026, 6, 16)   # or (XAU/USD natif)
+    # 5 autres CONTINUS reset au 15/06 (VOLET C — prix le plus frais), INCHANGÉS :
+    # Twelve ne sert pas leur future au bon niveau → yfinance conservé, pas de
+    # changement de source le 16/06.
     assert reg.get("CC=F") == date(2026, 6, 15)   # cacao
-    assert reg.get("BZ=F") == date(2026, 6, 15)   # petrole
-    assert reg.get("SI=F") == date(2026, 6, 15)   # argent
     assert reg.get("KC=F") == date(2026, 6, 15)   # cafe
     assert reg.get("ZW=F") == date(2026, 6, 15)   # ble
     assert reg.get("HG=F") == date(2026, 6, 15)   # cuivre
-    assert reg.get("GC=F") == date(2026, 6, 15)   # or
     assert reg.get("EUR=X") == date(2026, 6, 15)  # eurusd (FX, continu)
     # 4 actifs NON continus : inchangés au 11/06 (marché cash fermé à 7h).
     assert reg.get("^IXIC") == date(2026, 6, 11)  # nasdaq

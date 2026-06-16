@@ -286,3 +286,15 @@ règle, NI le kill-criterion.
 **Visibilité (VOLET B).** Sous la « Sélection du jour », un drapeau ⚠️ signale un actif continu qui **bouge à contre-sens** de la conclusion depuis la dernière clôture vue (`shadow_gap_overnight` ≥ 0,8 % et de sens opposé). Anti-bruit : gap ≈ 0 ou aligné → rien.
 
 **Reset : 8 actifs continus au 2026-06-15** (or `GC=F`, argent `SI=F`, pétrole `BZ=F`, cuivre `HG=F`, cacao `CC=F`, café `KC=F`, blé `ZW=F`, EUR/USD `EUR=X`). Leur `ref_changed` avance **2026-06-11 → 2026-06-15** (justification gravée dans CHANGELOG.md, comme l'exige le `_doc` du registre) : le signal change quand le prix frais est intégré. **3e reset des continus — coût assumé, vrai défaut corrigé.** Les non-continus (`^GSPC`, `^IXIC`, `^FCHI`, `^VIX`) gardent leur `ref_changed` 2026-06-11. La règle de sélection (WR tradable ≥ 70 % / N ≥ 15, 24h-only) reste **inchangée** ; les poids/seuils des fiches ne sont **pas** touchés. 
+
+---
+
+## Addendum — 2026-06-16 : or/argent/Brent servis par le symbole Twelve natif (fin du fallback yfinance caché)
+
+**Constat (sondage live API Twelve, clé réelle).** Les futures Yahoo `GC=F`/`SI=F`/`BZ=F` renvoient **404** sur Twelve `/time_series`. Le système les obtenait jusqu'ici via un **fallback yfinance silencieux** — angle mort de provenance. Twelve sert ces actifs **uniquement sous leurs symboles spot natifs**, vérifiés au bon niveau : or `XAU/USD` (close 4326 ≈ niveau système ~4325), argent `XAG/USD` (~70), Brent `XBR/USD` (~83).
+
+**Changement (présentation/source, pas de scoring).** La couche de traduction `market_data._TICKER_MAP` interroge désormais Twelve sous `XAU/USD`, `XAG/USD`, `XBR/USD` pour le **prix ET l'historique** → Twelve devient la **source unique** de ces 3 actifs (le fallback yfinance n'est plus déclenché puisque Twelve répond). Le **`ticker_principal` des fiches reste `GC=F`/`SI=F`/`BZ=F`** (identifiant interne stable, L023) — seul le symbole INTERROGÉ change.
+
+**Reset.** Le niveau spot diffère légèrement du future → z-scores/momentum bougent → **le signal change**. `ref_changed` de `GC=F`, `SI=F`, `BZ=F` avance **2026-06-15 → 2026-06-16** (`ref-changed.json`, append-only). **Cuivre/cacao/café/blé : INCHANGÉS** — Twelve ne sert PAS ces futures au bon niveau (`XCU/USD`, `COCOA`, `COFFEE`, `WHEAT` = 404 ; ETF au mauvais niveau écartés, zéro invention) → ils gardent yfinance et leur `ref_changed` 2026-06-15. La règle de sélection (WR tradable ≥ 70 % / N ≥ 15, 24h-only) et **aucun poids ni seuil** ne sont touchés.
+
+**Provenance.** Chaque cycle logge désormais la source réellement utilisée par symbole (`twelve_native` / `yfinance_fallback` / `stooq_fallback`) dans `criteres-health.md` (bloc « Provenance des prix ») — fin de l'angle mort.

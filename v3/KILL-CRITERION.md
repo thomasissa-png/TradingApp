@@ -193,3 +193,12 @@ momentum v3 aux points de retournement (forward-test J+60).
 **Changement de signal (VOLET A).** Pour les actifs **continus** (or, argent, pétrole, cuivre, cacao, café, blé, EUR/USD ; source `mesure_ouverture.actif_group`), les critères de niveau/momentum/RSI intègrent désormais le **prix temps réel plus frais que `close[-1]`** quand il est disponible (fin de l'angle mort overnight/week-end démontré le 15/06 sur l'or). Dégradation sûre : prix frais absent/périmé → comportement actuel exact (zéro invention).
 
 **Impact kill-criterion.** Le kill-criterion (WR tradable < seuil sur N suffisant, 24h-only) **reste inchangé dans sa formule**. Seule la **référence de mesure** des 8 cellules continues change → leur `ref_changed` avance à **2026-06-15** (`ref-changed.json`, append-only, justifié CHANGELOG). Ces cellules repartent **N=0 au 15/06** (3e reset des continus — coût assumé). Conséquence sur N≥15 à J+60 (= 2026-08-14) : fenêtre utile raccourcie pour ces 8 actifs — issue valide, pas un échec. Les non-continus (`^GSPC`, `^IXIC`, `^FCHI`, `^VIX`) conservent leur historique depuis le 11/06. **Aucun poids ni seuil de fiche n'est touché.**
+
+
+---
+
+## Addendum — 2026-06-16 : or/argent/Brent servis par le symbole Twelve natif
+
+**Changement de source.** Or/argent/Brent sont désormais interrogés chez Twelve sous leurs symboles spot natifs `XAU/USD`/`XAG/USD`/`XBR/USD` (les futures Yahoo `GC=F`/`SI=F`/`BZ=F` renvoient 404 sur Twelve → un fallback yfinance caché servait la donnée jusqu'ici). Twelve devient la source unique de ces 3 actifs.
+
+**Impact kill-criterion.** La **formule** du kill-criterion (WR tradable < seuil sur N suffisant, 24h-only) reste **inchangée**. Seule la **référence de mesure** des 3 cellules (or, argent, Brent) change — le niveau spot diffère légèrement du future → leur `ref_changed` avance à **2026-06-16** (`ref-changed.json`, append-only, justifié CHANGELOG). Ces cellules repartent **N=0 au 16/06**. Conséquence sur N≥15 à J+60 (= 2026-08-15) : fenêtre utile raccourcie pour ces 3 actifs — issue valide, pas un échec. **Cuivre/cacao/café/blé inchangés** (Twelve ne sert pas ces futures au bon niveau → yfinance conservé, `ref_changed` 2026-06-15). Les non-continus et tous les autres actifs conservent leur historique. **Aucun poids ni seuil de fiche n'est touché.**

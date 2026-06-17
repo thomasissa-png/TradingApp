@@ -1,9 +1,14 @@
-"""VOLET C — cutover : ref-changed.json contient les actifs continus au 15/06.
+"""Cutover des actifs continus dans ref-changed.json.
 
-Vérifie que les 8 actifs continus touchés par VOLET A (or, argent, pétrole,
-cuivre, cacao, café, blé, EUR/USD) ont leur `ref_changed` avancé au 2026-06-15
-avec le motif « prix le plus frais », et que les NON continus (S&P/Nasdaq/CAC/
-VIX) gardent leur référence 2026-06-11 (inchangée).
+Historique des resets continus :
+  - 15/06 : prix le plus frais (angle mort overnight/week-end) — 3e reset
+  - 16/06 : source Twelve natif XAU/XAG/XBR (or/argent/Brent)
+  - 17/06 : fix L027 — référence de mesure 24h = ÉMISSION 7h (point d'exécution
+            réel) au lieu de l'OUVERTURE 8h Paris. 4e reset des continus.
+
+Ce module vérifie l'ÉTAT COURANT du registre après le fix L027 : les 8 continus
+(or, argent, pétrole, cuivre, cacao, café, blé, EUR/USD) sont tous reset au
+2026-06-17, et les NON continus (S&P/Nasdaq/CAC/VIX) gardent leur 2026-06-11.
 """
 
 from __future__ import annotations
@@ -15,32 +20,31 @@ REF_CHANGED = Path(__file__).resolve().parents[1] / "data" / "ref-changed.json"
 
 _CONTINUS = ["GC=F", "SI=F", "BZ=F", "HG=F", "CC=F", "KC=F", "ZW=F", "EUR=X"]
 _NON_CONTINUS = ["^GSPC", "^IXIC", "^FCHI", "^VIX"]
-# Cutover 2026-06-16 (source = Twelve natif XAU/XAG/XBR) : or/argent/Brent
-# avancent du 15/06 au 16/06. Les 5 autres continus restent au 15/06 (Twelve ne
-# sert pas leur future au bon niveau → yfinance conservé, pas de changement de source).
-_NATIVE_16_06 = {"GC=F", "SI=F", "BZ=F"}
+# Fix L027 (16/06, GO mesure Thomas) : les 8 continus sont reset au 1er bulletin
+# sous la nouvelle sémantique = 2026-06-17.
+_CUTOVER_L027 = "2026-06-17"
 
 
 def _load():
     return json.loads(REF_CHANGED.read_text(encoding="utf-8"))["ref_changed"]
 
 
-def test_continus_resets_au_15_06():
+def test_continus_resets_au_17_06_fix_l027():
     rc = _load()
     for ticker in _CONTINUS:
         assert ticker in rc, f"{ticker} absent du registre"
-        attendu = "2026-06-16" if ticker in _NATIVE_16_06 else "2026-06-15"
-        assert rc[ticker]["ref_changed"] == attendu, (
-            f"{ticker} devrait être reset au {attendu}"
+        assert rc[ticker]["ref_changed"] == _CUTOVER_L027, (
+            f"{ticker} devrait être reset au {_CUTOVER_L027} (fix L027)"
         )
 
 
-def test_continus_motif_prix_frais():
+def test_continus_motif_l027():
     rc = _load()
     for ticker in _CONTINUS:
         motif = rc[ticker]["motif"].lower()
-        assert "prix le plus frais" in motif or "angle mort" in motif, (
-            f"{ticker} : motif 15/06 manquant"
+        assert "l027" in motif, f"{ticker} : motif fix L027 manquant"
+        assert "emission 7h" in motif, (
+            f"{ticker} : la nouvelle référence (émission 7h) doit être documentée"
         )
 
 
@@ -48,7 +52,7 @@ def test_non_continus_inchanges():
     rc = _load()
     for ticker in _NON_CONTINUS:
         assert rc[ticker]["ref_changed"] == "2026-06-11", (
-            f"{ticker} (non continu) ne doit PAS être reset au 15/06"
+            f"{ticker} (non continu) ne doit PAS être reset par le fix L027"
         )
 
 

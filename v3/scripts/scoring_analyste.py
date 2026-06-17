@@ -103,6 +103,21 @@ EPSILON_CARRY: float = 0.05
 # toucher la direction. Mesure inchangée : la cellule reste LONG/SHORT.
 NEUTRAL_BAND: float = 0.30
 
+# ---------------------------------------------------------------------------
+# GARDE-FOU CONVICTION vs COUVERTURE (« confiant ET aveugle » — Thomas 16/06)
+# ---------------------------------------------------------------------------
+# Cas réel cacao 16/06 : SHORT « forte » affiché alors que coverage=41% ET le
+# critère de POIDS MAX de la fiche (« Arrivées ports » poids 9) était n/a. Le
+# système était confiant tout en étant aveugle à son driver structurel principal.
+# Règle : une conviction ne peut PAS être « forte » si (a) coverage < ce seuil
+# ET (b) le critère non-gate de poids maximal de la fiche est absent (n/a). Dans
+# ce cas la conviction est dégradée en « fragile (couverture insuffisante) ».
+# La DIRECTION (LONG/SHORT) reste INCHANGÉE (jamais neutre) — seul le LIBELLÉ de
+# conviction change, comme les autres dégradations de `_conviction_cell`.
+# Distinct du palier confidence "faible" (coverage<COVERAGE_OK) : ce garde-fou
+# cible le cas spécifique « confiance haute MALGRÉ le driver max manquant ».
+CONVICTION_COVERAGE_MIN: float = 0.50
+
 # Mono-critère dominant (K1 — audit trio bulletin 03/06). SHADOW decision-log only :
 # détecte si UN SEUL critère fournit > 50% du |score| (somme des |contributions|).
 # Sert à MESURER le sur-poids (ex. VIX régime qui flippe le S&P à lui seul). Pas
@@ -1696,7 +1711,7 @@ def _top_driver(r: "ActifResult", h: str) -> Tuple[str, str]:
         if key > best:
             best = key
             best_cle = getattr(c, "cle_courante", "") or ""
-            best_nom = c.nom
+            best_nom = _nom_critere(c)  # libellé dynamique (net IA vs thème)
     return best_cle, best_nom
 
 
@@ -1734,7 +1749,7 @@ def detect_mono_critere_dominant(
         somme_abs += a
         if a > best_abs:
             best_abs = a
-            best_nom = c.nom
+            best_nom = _nom_critere(c)  # libellé dynamique (net IA vs thème)
     if somme_abs <= 0.0 or best_nom is None:
         return False, None
     if best_abs > MONO_CRITERE_RATIO * somme_abs:
@@ -1801,6 +1816,23 @@ def build_top3_block(results: List["ActifResult"]) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
+def _max_weight_critere_is_na(r: "ActifResult") -> bool:
+    """True si le critère NON-GATE de poids maximal de la fiche est absent (n/a).
+
+    Sert au garde-fou conviction (16/06) : un actif dont le driver de poids le
+    plus fort manque ne peut pas porter une conviction « forte » à couverture
+    insuffisante. Les gates (sans poids numérique) et les critères présents sont
+    ignorés du test. Aucun critère non-gate → False (rien à invalider).
+    """
+    non_gate = [c for c in r.criteres if not c.is_gate]
+    if not non_gate:
+        return False
+    poids_max = max(abs(c.poids) for c in non_gate)
+    # Le(s) critère(s) à poids max : n/a si TOUS les porteurs du poids max sont absents.
+    porteurs_max = [c for c in non_gate if abs(c.poids) == poids_max]
+    return all(c.is_na for c in porteurs_max)
+
+
 def _conviction_cell(r: "ActifResult", h: str, seuil: float) -> str:
     """Libellé EXPLICITE de conviction d'une cellule (audit UX 2026-06-11 :
     « forte »/« faible » binaire illisible — « faible » sur un score de 13 semble
@@ -1833,6 +1865,17 @@ def _conviction_cell(r: "ActifResult", h: str, seuil: float) -> str:
         return "fragile (1 seul critère)"
     if r.incoherence_inter_horizons:
         return "zigzag horizons"
+    # GARDE-FOU « confiant ET aveugle » (Thomas 16/06) : pas de « forte » si la
+    # couverture est insuffisante (< CONVICTION_COVERAGE_MIN) ET que le critère
+    # de poids MAX de la fiche est n/a. La direction reste notée (LONG/SHORT) ;
+    # seule la conviction est dégradée. Inséré AVANT le palier « forte » pour le
+    # court-circuiter ; n'affecte ni le score ni la conclusion (libellé only).
+    if (
+        score >= seuil
+        and r.coverage < CONVICTION_COVERAGE_MIN
+        and _max_weight_critere_is_na(r)
+    ):
+        return "fragile (couverture insuffisante)"
     if score >= seuil:
         return "forte"
     # |score| entre NEUTRAL_BAND et seuil, sans drapeau : ancien « faible »
@@ -2212,6 +2255,121 @@ def _catalyseurs_j0_high(now: datetime) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Chantier ③ (16/06, Thomas) — DÉTECTEUR « CHOC D'OFFRE » CACAO en SHADOW.
+# ---------------------------------------------------------------------------
+# PROBLÈME résolu : le 16/06 le marché price un CHOC D'OFFRE cacao (El Niño /
+# récolte 2026-27 sous la normale / cherelles / maladies) = HAUSSIER, mais la
+# SYNTHÈSE NET DeepSeek a renvoyé baissier (bruit de demande dominant) → le vrai
+# signal d'offre a été NOYÉ. Ce détecteur capte SÉPARÉMENT le récit d'OFFRE
+# PROSPECTIVE haussier, pour qu'il ne soit plus dilué dans le net.
+#
+# POURQUOI SHADOW (poids 0, L015) — IMPÉRATIF :
+#   (a) ÉVITER LE DOUBLE-AMORTISSEMENT (L013) : la synthèse net IA (slot
+#       maladies_cabosses + eudr) PORTE DÉJÀ une partie du signal offre. Activer
+#       ce détecteur EN PLUS, sans décider comment il REMPLACE ou COMPLÈTE le
+#       net, double-compterait le même récit. Il faut d'abord trancher la
+#       méthodo (cf. point ouvert handoff) AVANT de câbler une contribution.
+#   (b) CALIBRER SUR DU RÉEL (mesurer avant d'agir) : on observe d'abord la
+#       FRÉQUENCE et la JUSTESSE du détecteur au decision-log avant de lui
+#       donner un poids. Le bulletin reste INCHANGÉ (test-verrou conclusions).
+#
+# CRITÈRE D'ACTIVATION FUTUR (sur preuve, à valider Thomas) : promouvoir en
+# critère pondéré seulement si, sur ≥ N cycles où shadow_choc_offre.detected,
+# la direction HAUSSIER offre a un meilleur win-rate cacao que la synthèse net
+# seule — ET après décision méthodo de remplacement/complément (anti-L013).
+#
+# ZÉRO INVENTION : events-log absent / aucune news offre → detected=False,
+# would_be_contrib=0.0, conclusion inchangée.
+
+# Mots-clés OFFRE HAUSSIÈRE cacao (offre↓ = prix↑). Réutilise/étend les
+# long_keywords du triplet maladies_cabosses_cacao + le récit prospectif raté
+# le 16/06 (météo/El Niño/récolte/cherelles/ICCO). En minuscules, match substr.
+SHADOW_CHOC_OFFRE_CACAO_KEYWORDS: Tuple[str, ...] = (
+    "el nino", "el niño", "el-nino",
+    "drought west africa", "sécheresse", "harmattan",
+    "poor harvest", "récolte sous", "crop shortfall", "below average crop",
+    "cherelle", "cherelles", "flower failure",
+    "black pod", "swollen shoot", "pod borer", "cocoa disease", "maladie cacao",
+    "cocoa deficit", "supply deficit", "icco deficit", "production deficit",
+    "supply shock", "choc d'offre", "tight supply cocoa",
+)
+# Mots-clés de DÉMENTI / détente (annulent un signal offre haussier).
+SHADOW_CHOC_OFFRE_CACAO_NEGATORS: Tuple[str, ...] = (
+    "good harvest", "bumper crop", "récolte saine", "healthy cocoa harvest",
+    "surplus", "outbreak contained", "favorable weather", "rain returns",
+)
+
+
+def compute_shadow_choc_offre_cacao(
+    events: Optional[List[dict]] = None,
+    now: Optional[datetime] = None,
+    lookback_jours: int = 30,
+) -> Dict[str, Any]:
+    """Détecteur SHADOW (poids 0) du récit de CHOC D'OFFRE cacao haussier.
+
+    Scanne les events récents (≤ lookback_jours) pour des mots-clés d'OFFRE
+    PROSPECTIVE haussière (météo/El Niño/récolte/maladie/déficit), DÉCOUPLÉ de
+    la synthèse net DeepSeek. Retourne un dict tracé tel quel au decision-log :
+
+      {"detected": bool,            # ≥1 event offre haussier net (après démentis)
+       "direction": +1|0,          # +1 = offre↓ haussier ; 0 si rien/neutralisé
+       "n_events": int,            # nb d'events offre haussiers retenus
+       "negators": int,            # nb d'events de démenti/détente vus
+       "keywords": List[str],      # mots-clés déclencheurs (dédupliqués, ≤8)
+       "would_be_contrib": float}  # contribution SI activé (poids 0 → 0.0 ici)
+
+    `would_be_contrib` est laissé à 0.0 (poids 0, shadow) : la contribution
+    réelle ne sera fixée qu'à l'activation, après décision méthodo anti-L013.
+    Zéro invention : events None/vides → detected=False, direction=0.
+    """
+    now = now or datetime.now(timezone.utc)
+    if events is None:
+        try:
+            import triggers_classifier as _tc  # lazy, cohérent avec le module
+            events = _tc.parse_events_log()
+        except Exception:  # noqa: BLE001 — events indispo → shadow vide (zéro invention)
+            events = []
+    hits: List[str] = []
+    negators = 0
+    for ev in events or []:
+        try:
+            dt = ev.get("_canonical_dt") or ev.get("_dt")
+            if isinstance(dt, datetime):
+                age = (now - dt).total_seconds() / 86400.0
+                if age > lookback_jours or age < -2:  # tolère léger futur (cf. C9)
+                    continue
+            blob = " ".join(
+                str(ev.get(k, "") or "") for k in ("L1", "L2", "trigger", "cours", "news_zone")
+            ).lower()
+            if not blob.strip():
+                continue
+            # Ne scanne que les events à pertinence cacao (cours/zone) pour éviter
+            # qu'un « el nino » café/sucre pollue le détecteur cacao.
+            is_cacao = ("cocoa" in blob or "cacao" in blob
+                        or "ci" in str(ev.get("news_zone", "")).lower()
+                        or "gh" in str(ev.get("news_zone", "")).lower())
+            if not is_cacao:
+                continue
+            if any(neg in blob for neg in SHADOW_CHOC_OFFRE_CACAO_NEGATORS):
+                negators += 1
+                continue
+            for kw in SHADOW_CHOC_OFFRE_CACAO_KEYWORDS:
+                if kw in blob and kw not in hits:
+                    hits.append(kw)
+        except Exception:  # noqa: BLE001 — un event malformé ne casse pas le scan
+            continue
+    detected = len(hits) > 0
+    return {
+        "detected": detected,
+        "direction": 1 if detected else 0,
+        "n_events": len(hits),
+        "negators": negators,
+        "keywords": hits[:8],
+        "would_be_contrib": 0.0,  # SHADOW poids 0 — aucune contribution au score
+    }
+
+
 def compute_shadow_capteurs(
     fiches: Dict[str, dict],
     prix_emission: Optional[Dict[str, float]] = None,
@@ -2502,7 +2660,7 @@ def _top_explication(r: "ActifResult", h: str) -> str:
         if ctr is None or abs(ctr) <= 0.0:
             continue
         is_news = c.source_track.startswith("ia") or c.source_track == "keyword"
-        contribs.append((abs(ctr), c.nom, float(ctr), is_news))
+        contribs.append((abs(ctr), _nom_critere(c), float(ctr), is_news))
     if not contribs:
         return ""
     # Tri |contribution| desc, départage déterministe par nom pour stabilité.
@@ -2643,6 +2801,46 @@ TYPE_NORM_LABELS: Dict[str, str] = {
 def _label_type_norm(type_norm: str) -> str:
     """Libellé humain d'un type de normalisation ; retombe sur le brut si inconnu."""
     return TYPE_NORM_LABELS.get(type_norm, type_norm)
+
+
+# Libellé affiché quand un créneau news PORTE la direction NETTE (synthèse
+# DeepSeek du corpus de l'actif), par opposition à sa détection mots-clés
+# thématique. Voir _nom_affiche.
+SYNTHESE_NET_LABEL = "Synthèse news (net, IA)"
+
+# source_track qui signifient « ce créneau porte le net IA » (synthèse
+# directionnelle DeepSeek du corpus). Toute autre valeur (keyword, calendrier,
+# ia_conflict, none, "", absent) = le créneau est en mode thématique → on
+# affiche son nom de fiche tel quel (cf. triggers_classifier).
+SYNTHESE_NET_TRACKS = frozenset({"ia_synthese", "ia_synthese_faible"})
+
+
+def _nom_affiche(nom: str, source_track: str) -> str:
+    """Libellé DYNAMIQUE d'un critère news, honnête dans ses 2 modes.
+
+    Un créneau news « porteur du net » (cf. SYNTHESE_NET_CARRIER dans
+    triggers_classifier) est à double casquette : tantôt il porte la DIRECTION
+    NETTE du corpus (synthèse DeepSeek, source_track ∈ SYNTHESE_NET_TRACKS),
+    tantôt il retombe sur sa DÉTECTION MOTS-CLÉS thématique (source_track
+    "keyword" ou autre). Aucun NOM FIXE n'est honnête dans les 2 modes — d'où
+    le libellé calculé AU RENDU :
+
+    - source_track porte le net → « Synthèse news (net, IA) ».
+    - sinon (keyword, calendrier, conflit, absent, critère non-news) → `nom`
+      de fiche tel quel (comportement legacy, jamais de crash).
+
+    PUR AFFICHAGE : n'altère ni cle_courante, ni signe, ni poids, ni score
+    (L023). Se dégrade proprement si source_track manquant/inconnu.
+    """
+    track = (source_track or "").strip().lower()
+    if track in SYNTHESE_NET_TRACKS:
+        return SYNTHESE_NET_LABEL
+    return nom
+
+
+def _nom_critere(c: "CritereResult") -> str:
+    """Raccourci : libellé dynamique d'un CritereResult (lit son source_track)."""
+    return _nom_affiche(c.nom, getattr(c, "source_track", "") or "")
 
 
 # Encart statique « Comment lire ce tableau » (reco-wording §5). Inséré une
@@ -3045,7 +3243,7 @@ def render_bulletin(
             if c.is_gate and c.gate_active:
                 lu = "⚑ **" + lu + " ACTIF**"
             lines.append(
-                f"| {c.nom} | {lu} | {valeur_brute_str} | {vn} | {poids} | {sens} | "
+                f"| {_nom_critere(c)} | {lu} | {valeur_brute_str} | {vn} | {poids} | {sens} | "
                 f"{ctr['24h']} | {ctr['7j']} | {ctr['1m']} |"
             )
         if r.tie_break_notes:
@@ -3079,9 +3277,9 @@ def render_bulletin(
                 # pas la redondance générique « (valeur absente) ».
                 note = c.note or ""
                 detail = "" if note.strip() in ("n/a (valeur absente)", "") else f" — {note}"
-                lines.append(f"- n/a : {c.nom} (poids {c.poids:g}){detail}")
+                lines.append(f"- n/a : {_nom_critere(c)} (poids {c.poids:g}){detail}")
             for c in gates_actifs:
-                lines.append(f"- ⚑ GATE actif : {c.nom} — {c.note}")
+                lines.append(f"- ⚑ GATE actif : {_nom_critere(c)} — {c.note}")
             if n_mineurs:
                 lines.append(
                     f"- _(+{n_mineurs} critère{'s' if n_mineurs > 1 else ''} "
@@ -3432,6 +3630,22 @@ def build_decision_log_records(
                 selection_extra["shadow_gap_overnight"] = cap.get(
                     "shadow_gap_overnight"
                 )
+                # Chantier ③ — détecteur « choc d'offre » cacao en SHADOW (poids 0,
+                # L015). Tracé au decision-log, AUCUN impact score/conclusion (cf.
+                # compute_shadow_choc_offre_cacao + test-verrou conclusions). Calculé
+                # UNIQUEMENT pour cacao (récit d'offre prospective spécifique) ; les
+                # autres actifs n'ont pas ce champ (zéro bruit). Best-effort : toute
+                # anomalie events-log → detected=False (zéro invention).
+                if r.fiche_key == "cacao":
+                    try:
+                        selection_extra["shadow_choc_offre"] = (
+                            compute_shadow_choc_offre_cacao(now=now)
+                        )
+                    except Exception:  # noqa: BLE001
+                        selection_extra["shadow_choc_offre"] = {
+                            "detected": False, "direction": 0, "n_events": 0,
+                            "negators": 0, "keywords": [], "would_be_contrib": 0.0,
+                        }
             records.append({
                 "bulletin_date": bulletin_date,
                 "generated_at": generated_at,
@@ -3591,6 +3805,29 @@ def load_conviction_map(
     return result
 
 
+def _source_canonique_attendue(m, fiches: Dict[str, dict]) -> Optional[str]:
+    """Source de référence CANONIQUE attendue pour la mesure `m` (fix L027).
+
+    - actif CONTINU (or, argent, métaux, commodities, FX) → "emission" (7h, point
+      d'exécution réel) ;
+    - actif NON continu (indices cash, VIX) → "ouverture" (ouverture de marché).
+
+    Réutilise `mesure_ouverture.actif_group` (source de vérité unique, zéro liste
+    en dur). None si la fiche/groupe est introuvable (on n'étiquette alors rien).
+    """
+    fiche = fiches.get(getattr(m, "fiche_key", "")) if fiches else None
+    if not fiche:
+        return None
+    try:
+        import mesure_ouverture as _mo  # noqa: PLC0415
+        groupe = _mo.actif_group(fiche)
+    except Exception:  # noqa: BLE001
+        return None
+    if groupe is None:
+        return None
+    return "emission" if groupe == "continu" else "ouverture"
+
+
 def build_audit_veille_24h(
     now: datetime,
     bulletins_dir: Path = BULLETINS_DIR,
@@ -3722,19 +3959,23 @@ def build_audit_veille_24h(
     lines.append(f"**{n_vrai} ✅ / {n_faux} ❌** ({periode}{suffixe_tronque})")
     lines.append("")
 
+    fiches_for_tag = load_fiches()
     for _, m in retained:
         ok = m.outcome == OUTCOME_VRAI
         icon = "✅" if ok else "❌"
         verdict = "VRAI" if ok else "FAUX"
-        # Étiquette « mesure v1 » sur les calls mesurés AVANT le cutover ouverture
-        # (prix_reference_source != "ouverture" → référence = prix d'émission,
-        # corrigée depuis). Rend identifiables les « Argent −16,6 % » d'avant-
-        # cutover. Champ EXISTANT du measures-log (zéro invention) ; absent → pas
+        # Étiquette « référence dégradée » : la référence de mesure n'est PAS la
+        # source canonique du groupe de l'actif (fix L027). Canonique :
+        #   - continu      → émission 7h (point d'exécution réel)
+        #   - non continu  → ouverture de marché (CAC 9h / US 15h30)
+        # Si la source réelle diffère (fallback faute de données), on le signale.
+        # Champ EXISTANT du measures-log (zéro invention) ; absent → pas
         # d'étiquette (on n'affirme rien sur une provenance inconnue).
         src = getattr(m, "prix_reference_source", None)
+        canonique = _source_canonique_attendue(m, fiches_for_tag)
         v1_tag = (
-            " `[mesure v1 — réf. prix d'émission, corrigée depuis]`"
-            if (src is not None and src != "ouverture")
+            " `[référence dégradée — source non canonique]`"
+            if (src is not None and canonique is not None and src != canonique)
             else ""
         )
         lines.append(

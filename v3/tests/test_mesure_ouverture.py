@@ -133,7 +133,10 @@ def test_stamp_twelve_ko_ticker_absent(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# CA-M4 — le 24h utilise prix-ouverture comme référence
+# CA-M4 / fix L027 — référence du 24h selon le groupe de marché
+#   - NON continu (indices cash, VIX) → prix-OUVERTURE de marché (inchangé)
+#   - CONTINU (or, FX, métaux, commodities) → prix d'ÉMISSION 7h (point
+#     d'exécution réel ; l'ouverture 8h pouvait tomber au milieu d'un mouvement)
 # ---------------------------------------------------------------------------
 
 def _write_bulletin_7h(bulletins_dir: Path, bdate: date, actif: str, conc: str, score: float):
@@ -148,7 +151,43 @@ def _write_bulletin_7h(bulletins_dir: Path, bdate: date, actif: str, conc: str, 
     return p
 
 
-def test_24h_utilise_prix_ouverture_pas_emission(tmp_path):
+def test_24h_non_continu_utilise_prix_ouverture(tmp_path):
+    """Indice cash (CAC, NON continu) : la référence reste l'OUVERTURE de marché.
+
+    Le fix L027 est SCOPÉ aux continus — un indice fermé à 7h garde sa logique
+    d'ouverture (9h CAC), un prix d'émission serait un prix de nuit.
+    """
+    bdate = date(2026, 6, 8)
+    today = jr.compute_echeance(bdate, "24h")
+    bulletins = tmp_path / "bulletins"
+    prix_emis = tmp_path / "prix-emission"
+    prix_ouv = tmp_path / "prix-ouverture"
+    _write_bulletin_7h(bulletins, bdate, "CAC 40", "LONG", 1.5)
+
+    # Émission (7h, marché fermé) = 3500 ; ouverture réelle 9h = 3400.
+    prix_emis.mkdir()
+    (prix_emis / f"{bdate.isoformat()}-07h.json").write_text(json.dumps({"^FCHI": 3500.0}))
+    prix_ouv.mkdir()
+    (prix_ouv / f"{bdate.isoformat()}.json").write_text(json.dumps({"^FCHI": 3400.0}))
+
+    measures, _ = jr.measure(
+        today=today, bulletins_dir=bulletins, prix_emission_dir=prix_emis,
+        prix_ouverture_dir=prix_ouv, fiches={"cac40": FICHE_CAC},
+        fetch_price=lambda t: 3460.0,  # clôture
+    )
+    m24 = [m for m in measures if m.horizon == "24h"][0]
+    # Référence = OUVERTURE 3400 (pas l'émission 3500) — inchangé pour un indice.
+    assert m24.prix_emission == 3400.0
+    assert m24.prix_reference_source == "ouverture"
+    assert m24.outcome == jr.OUTCOME_VRAI  # 3400 → 3460 = +1.76 % LONG
+
+
+def test_24h_continu_utilise_prix_emission_pas_ouverture(tmp_path):
+    """Continu (or) : la référence est l'ÉMISSION 7h, PAS l'ouverture 8h (fix L027).
+
+    L'ouverture stampée à 8h peut tomber au milieu d'un mouvement déjà entamé
+    depuis l'émission 7h → mesurer depuis 8h tronque le mouvement jugé.
+    """
     bdate = date(2026, 6, 8)
     today = jr.compute_echeance(bdate, "24h")
     bulletins = tmp_path / "bulletins"
@@ -156,11 +195,12 @@ def test_24h_utilise_prix_ouverture_pas_emission(tmp_path):
     prix_ouv = tmp_path / "prix-ouverture"
     _write_bulletin_7h(bulletins, bdate, "Or", "LONG", 1.5)
 
-    # Émission (7h, marché fermé) = 3500 ; ouverture réelle = 3400.
+    # Émission 7h (point d'exécution) = 3400 ; ouverture 8h (après un début de
+    # mouvement) = 3450. La référence DOIT être l'émission 3400.
     prix_emis.mkdir()
-    (prix_emis / f"{bdate.isoformat()}-07h.json").write_text(json.dumps({"GC=F": 3500.0}))
+    (prix_emis / f"{bdate.isoformat()}-07h.json").write_text(json.dumps({"GC=F": 3400.0}))
     prix_ouv.mkdir()
-    (prix_ouv / f"{bdate.isoformat()}.json").write_text(json.dumps({"GC=F": 3400.0}))
+    (prix_ouv / f"{bdate.isoformat()}.json").write_text(json.dumps({"GC=F": 3450.0}))
 
     measures, _ = jr.measure(
         today=today, bulletins_dir=bulletins, prix_emission_dir=prix_emis,
@@ -168,32 +208,58 @@ def test_24h_utilise_prix_ouverture_pas_emission(tmp_path):
         fetch_price=lambda t: 3460.0,  # clôture
     )
     m24 = [m for m in measures if m.horizon == "24h"][0]
-    # Référence = OUVERTURE 3400 (pas l'émission 3500).
+    # Référence = ÉMISSION 3400 (pas l'ouverture 3450).
     assert m24.prix_emission == 3400.0
-    assert m24.prix_reference_source == "ouverture"
+    assert m24.prix_reference_source == "emission"
     # 3400 → 3460 = +1.76 % (LONG, seuil 0.5 %) → VRAI.
     assert m24.outcome == jr.OUTCOME_VRAI
 
 
 # ---------------------------------------------------------------------------
-# CA-M5 — fallback émission si ouverture absente (+ WARNING)
+# CA-M5 / fix L027 — fallback de référence si la source primaire est absente
 # ---------------------------------------------------------------------------
 
-def test_fallback_emission_si_ouverture_absente(tmp_path, caplog):
+def test_fallback_ouverture_si_emission_absente_continu(tmp_path, caplog):
+    """Continu, émission absente → fallback OUVERTURE (référence dégradée, WARNING)."""
     bdate = date(2026, 6, 8)
     today = jr.compute_echeance(bdate, "24h")
     bulletins = tmp_path / "bulletins"
-    prix_emis = tmp_path / "prix-emission"
-    prix_ouv = tmp_path / "prix-ouverture"  # vide → fallback
+    prix_emis = tmp_path / "prix-emission"  # vide → fallback
+    prix_ouv = tmp_path / "prix-ouverture"
     _write_bulletin_7h(bulletins, bdate, "Or", "LONG", 1.5)
     prix_emis.mkdir()
-    (prix_emis / f"{bdate.isoformat()}-07h.json").write_text(json.dumps({"GC=F": 3400.0}))
+    prix_ouv.mkdir()
+    (prix_ouv / f"{bdate.isoformat()}.json").write_text(json.dumps({"GC=F": 3400.0}))
 
     import logging
     with caplog.at_level(logging.WARNING):
         measures, _ = jr.measure(
             today=today, bulletins_dir=bulletins, prix_emission_dir=prix_emis,
             prix_ouverture_dir=prix_ouv, fiches={"or": FICHE_OR},
+            fetch_price=lambda t: 3460.0,
+        )
+    m24 = [m for m in measures if m.horizon == "24h"][0]
+    assert m24.prix_emission == 3400.0
+    assert m24.prix_reference_source == "ouverture"
+    assert any("fallback ouverture" in r.message for r in caplog.records)
+
+
+def test_fallback_emission_si_ouverture_absente_non_continu(tmp_path, caplog):
+    """Non continu (CAC), ouverture absente → fallback ÉMISSION (inchangé, CA-M5)."""
+    bdate = date(2026, 6, 8)
+    today = jr.compute_echeance(bdate, "24h")
+    bulletins = tmp_path / "bulletins"
+    prix_emis = tmp_path / "prix-emission"
+    prix_ouv = tmp_path / "prix-ouverture"  # vide → fallback
+    _write_bulletin_7h(bulletins, bdate, "CAC 40", "LONG", 1.5)
+    prix_emis.mkdir()
+    (prix_emis / f"{bdate.isoformat()}-07h.json").write_text(json.dumps({"^FCHI": 3400.0}))
+
+    import logging
+    with caplog.at_level(logging.WARNING):
+        measures, _ = jr.measure(
+            today=today, bulletins_dir=bulletins, prix_emission_dir=prix_emis,
+            prix_ouverture_dir=prix_ouv, fiches={"cac40": FICHE_CAC},
             fetch_price=lambda t: 3460.0,
         )
     m24 = [m for m in measures if m.horizon == "24h"][0]
@@ -218,12 +284,13 @@ def test_filtre_7h_reconnaissance_creneaux():
 def test_seul_7h_compte_dans_kpi(tmp_path):
     """3 bulletins le même jour → seul le 7h donne une mesure NOTÉE (N_brut=1).
 
-    Date POST-cutover (GC=F/Or est reset au 2026-06-16 depuis le cutover « source
-    = Twelve natif XAU/USD ») : on date le bulletin au 2026-06-16 pour que
-    l'observation entre bien dans le KPI v2 et que le test isole son objet réel
-    (filtre 7h vs 12h/18h, CA-M6b), sans interférence de l'enforcement cutover.
+    Date POST-cutover (GC=F/Or est reset au 2026-06-17 depuis le cutover « fix
+    L027 — référence continus = émission 7h ») : on date le bulletin au 2026-06-17
+    pour que l'observation entre bien dans le KPI v2 et que le test isole son objet
+    réel (filtre 7h vs 12h/18h, CA-M6b), sans interférence de l'enforcement cutover.
+    Or étant un continu, la référence est l'ÉMISSION 7h (fix L027) → on la stampe.
     """
-    bdate = date(2026, 6, 16)
+    bdate = date(2026, 6, 17)
     today = jr.compute_echeance(bdate, "24h")
     bulletins = tmp_path / "bulletins"
     prix_ouv = tmp_path / "prix-ouverture"
@@ -239,6 +306,8 @@ def test_seul_7h_compte_dans_kpi(tmp_path):
     prix_ouv.mkdir()
     (prix_ouv / f"{bdate.isoformat()}.json").write_text(json.dumps({"GC=F": 3400.0}))
     prix_emis.mkdir()
+    # Continu → référence = émission 7h (fix L027).
+    (prix_emis / f"{bdate.isoformat()}-07h.json").write_text(json.dumps({"GC=F": 3400.0}))
 
     measures, kpis = jr.measure(
         today=today, bulletins_dir=bulletins, prix_emission_dir=prix_emis,

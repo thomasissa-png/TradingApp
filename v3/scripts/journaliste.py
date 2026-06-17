@@ -1622,29 +1622,74 @@ def _extract_price_dated(raw: Any) -> Tuple[Optional[float], Optional[date]]:
         return (None, None)
 
 
+def _is_continu_fiche(fiche: Optional[dict]) -> bool:
+    """True si la fiche est un actif du groupe CONTINU (cote 24/7).
+
+    Réutilise la source de vérité `mesure_ouverture.actif_group` (famille +
+    overrides config). Aucune liste en dur (lecon L023). Dégradation sûre :
+    import KO ou fiche bancale → False (= comportement non-continu = ouverture).
+    """
+    if not fiche:
+        return False
+    try:
+        from mesure_ouverture import actif_group  # noqa: PLC0415
+        return actif_group(fiche) == "continu"
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _resolve_prix_reference(
     ticker: str,
     bdate: date,
     prix_emis: Dict[str, float],
     prix_ouverture_dir: Path,
+    fiche: Optional[dict] = None,
 ) -> Tuple[Optional[float], Optional[str]]:
-    """Résout le prix de RÉFÉRENCE d'une cellule (refonte CA-M4/M5, Q3).
+    """Résout le prix de RÉFÉRENCE d'une cellule (refonte CA-M4/M5, Q3 ; fix L027).
 
-    Priorité : prix d'OUVERTURE du jour de décision (`prix-ouverture/{bdate}.json`)
-    → cohérent ouverture→clôture pour 24h ET ouverture J0→ouverture J+N pour 7j/1m.
-    Fallback : prix d'ÉMISSION bulletin si l'ouverture est absente, avec WARNING
-    (transition + jours où Twelve KO à l'ouverture). Zéro invention : si ni l'un
-    ni l'autre → (None, None) → le Journaliste marquera suivi-interrompu.
+    Le point de référence dépend du GROUPE de marché de l'actif :
 
+    - **Actifs CONTINUS** (or, argent, pétrole, cuivre, cacao, café, blé, EUR/USD —
+      cotés 24/7) : référence = **prix d'ÉMISSION du bulletin 7h**, le moment où
+      Thomas lit et peut agir (un continu cote en continu à 7h ⇒ prix live valide).
+      C'est l'alignement L021 « mesurer depuis le point d'EXÉCUTION réel ».
+      Fix L027 : l'ancienne « ouverture » stampée à 8h Paris pouvait tomber AU
+      MILIEU d'un mouvement déjà entamé depuis 7h → le 24h mesuré depuis ce point
+      tardif classait des calls perdants en « NC » (cas or 15/06 : open 4215→close
+      4309 +2,2 %, SHORT perdant classé NC car réf 8h=4308 APRÈS le rallye).
+      La source reste étiquetée `"emission"` (auditable, prix_reference_source).
+      Fallback si émission absente : ouverture (référence dégradée, WARNING).
+
+    - **Actifs NON continus** (indices cash CAC/S&P/Nasdaq, VIX — fermés à 7h) :
+      INCHANGÉ. Référence = prix d'OUVERTURE du marché (CAC 9h, US 15h30), car à
+      7h ces marchés sont fermés et un prix d'émission serait un prix de nuit.
+      Fallback : émission si l'ouverture est absente, avec WARNING (CA-M5).
+
+    Zéro invention : si ni l'un ni l'autre → (None, None) → suivi-interrompu.
     Retourne (prix, source) avec source ∈ {"ouverture", "emission", None}.
     """
     from mesure_ouverture import load_prix_ouverture  # noqa: PLC0415
 
+    p_emis = prix_emis.get(ticker)
     prix_ouv = load_prix_ouverture(bdate, prix_ouverture_dir)
     p_ouv = prix_ouv.get(ticker)
+
+    if _is_continu_fiche(fiche):
+        # Continu : émission 7h (point d'exécution réel) d'abord (fix L027).
+        if p_emis is not None:
+            return (p_emis, "emission")
+        if p_ouv is not None:
+            logger.warning(
+                "prix d'émission absent pour continu %s @ %s — fallback ouverture "
+                "(référence dégradée, fix L027)",
+                ticker, bdate.isoformat(),
+            )
+            return (p_ouv, "ouverture")
+        return (None, None)
+
+    # Non continu : ouverture de marché d'abord (inchangé, CA-M4/M5).
     if p_ouv is not None:
         return (p_ouv, "ouverture")
-    p_emis = prix_emis.get(ticker)
     if p_emis is not None:
         logger.warning(
             "prix d'ouverture absent pour %s @ %s — fallback prix d'émission "
@@ -1827,9 +1872,12 @@ def measure(
                 )
                 measures.append(m)
                 continue
-            # Référence = prix d'OUVERTURE du jour de décision (fallback émission).
+            # Référence selon le groupe de marché (fix L027) :
+            #   - continu  → prix d'ÉMISSION 7h (point d'exécution réel)
+            #   - non-continu → prix d'OUVERTURE de marché (CAC 9h / US 15h30)
             p_ref, ref_source = _resolve_prix_reference(
                 ticker, cell.bulletin_date, prix_emis, prix_ouverture_dir,
+                fiche=fiche,
             )
             # C5 invariant #3 — on récupère prix ET date du tick courant pour
             # armer réellement le verrou look-ahead (date du tick < émission →

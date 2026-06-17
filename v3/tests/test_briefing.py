@@ -126,7 +126,10 @@ def test_group_by_actif(events_log: Path, today: date):
 
 def test_build_briefing_contient_sections(events_log: Path, today: date):
     md = briefing.build_briefing(events_log, today=today)
-    assert md.startswith("## Briefing du jour")
+    # PARTIE A (16/06) : le briefing s'ouvre désormais sur l'intro « ## Décor du
+    # jour » (décor factuel + top news), puis la section « ## Briefing du jour ».
+    assert md.startswith("## Décor du jour")
+    assert "## Briefing du jour" in md
     assert "events analysés" in md
     assert "### Pétrole" in md
     assert "### S&P 500" in md

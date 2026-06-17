@@ -92,17 +92,33 @@ criteres:
     effet_long: "S'élargit (squeeze NY)"
     effet_short: "Se resserre"
 
+  # NOM RÉCONCILIÉ 16/06 (libellé dynamique, Thomas) : ce slot est à DOUBLE
+  # CASQUETTE (cf. SYNTHESE_NET_CARRIER, triggers_classifier) —
+  #   • quand la synthèse DeepSeek du corpus cacao est forte → il PORTE la
+  #     direction NETTE de l'actif (source_track=ia_synthese / ia_synthese_faible) ;
+  #   • quand elle est faible/absente → il retombe sur sa DÉTECTION MOTS-CLÉS
+  #     thématique propre (source_track=keyword) : maladie des cabosses.
+  # Aucun NOM FIXE n'est honnête dans les 2 modes. Le NOM DE FICHE ci-dessous est
+  # désormais son VRAI thème keyword — « Maladies des cabosses » — cohérent avec
+  # signe +1 (maladie = OFFRE↓ = HAUSSIER). Le libellé « Synthèse news (net, IA) »
+  # est appliqué DYNAMIQUEMENT au rendu (scoring_analyste._nom_affiche) quand
+  # source_track montre que le créneau porte le net — il n'est donc plus figé en
+  # dur ici (sinon FAUX en mode keyword). Résultat : mode net → « Synthèse news
+  # (net) → baissier » (cohérent) ; mode keyword → « Maladies des cabosses →
+  # haussier » (cohérent). cle_courante / signe / poids INCHANGÉS (L023, zéro
+  # modif silencieuse). Le vrai signal d'offre prospective arrive en SHADOW via
+  # shadow_choc_offre (chantier ③) — séparé de cette synthèse.
   - id: 8
     nom: "Maladies des cabosses (impact récolte)"
     source: "events-log"
     cle_courante: "maladies_cabosses"
-    normalisation: "triplet"     # +1 outbreak 30j / 0 / -1 aucun
+    normalisation: "triplet"     # +1 net haussier / 0 / -1 net baissier (DeepSeek) OU +1 keyword maladie
     cap: 1.0
     signe: 1
     poids: 4
     pertinence: { "24h": 0.2, "7j": 0.5, "1m": 0.9 }
-    effet_long: "Outbreak 30j"
-    effet_short: "Aucun"
+    effet_long: "Maladie des cabosses (offre amputée) OU corpus news net haussier"
+    effet_short: "Pas de maladie / corpus news net baissier"
 
   - id: 9
     nom: "Taux de change franc CFA et cédi ghanéen"

@@ -603,9 +603,10 @@ def test_audit_veille_titre_et_synthese(tmp_path, monkeypatch):
     assert "le 2026-06-08" in txt
 
 
-def test_audit_veille_etiquette_v1(tmp_path, monkeypatch):
-    """Bloc 2 : un call dont la référence n'est PAS l'ouverture (fallback prix
-    d'émission) porte l'étiquette « mesure v1 — réf. prix d'émission »."""
+def test_audit_veille_continu_emission_pas_etiquette_degradee(tmp_path, monkeypatch):
+    """Fix L027 : un CONTINU (Pétrole) mesuré depuis l'émission 7h est la source
+    CANONIQUE → AUCUNE étiquette « référence dégradée ». L'émission est désormais
+    la bonne référence des continus (point d'exécution réel)."""
     import journaliste as j
     now = datetime(2026, 6, 9, 12, 0)
     bdate = (now - timedelta(days=1)).date()
@@ -615,8 +616,7 @@ def test_audit_veille_etiquette_v1(tmp_path, monkeypatch):
     bid, _ = _ecrire_bulletin_veille(bulletins, bdate, conclusion="LONG")
     _ecrire_decision_log(log_dir, bdate, confidence="normale", score_pm1=1.5)
     prix_dir.mkdir()
-    # Pas de prix-ouverture → measure retombe sur le prix d'émission
-    # (prix_reference_source == "emission" ≠ "ouverture") → étiquette v1.
+    # Continu (BZ=F) mesuré depuis émission → source canonique, pas de tag.
     (prix_dir / f"{bid}.json").write_text('{"BZ=F": 100.0}', encoding="utf-8")
     monkeypatch.setattr(j, "PRIX_EMISSION_DIR", prix_dir)
     monkeypatch.setattr(j, "DECISION_LOG_DIR", log_dir)
@@ -627,7 +627,49 @@ def test_audit_veille_etiquette_v1(tmp_path, monkeypatch):
         prix_emission_dir=prix_dir,
     )
     txt = "\n".join(lines)
-    assert "[mesure v1 — réf. prix d'émission, corrigée depuis]" in txt
+    assert "référence dégradée" not in txt
+
+
+def test_audit_veille_non_continu_emission_etiquette_degradee(tmp_path, monkeypatch):
+    """Fix L027 : un NON continu (CAC) mesuré depuis l'émission (fallback faute
+    d'ouverture) porte l'étiquette « référence dégradée — source non canonique »
+    (sa source canonique est l'ouverture de marché 9h)."""
+    import journaliste as j
+    now = datetime(2026, 6, 9, 12, 0)
+    bdate = (now - timedelta(days=1)).date()
+    bulletins = tmp_path / "bulletins"
+    log_dir = tmp_path / "decision-log"
+    prix_dir = tmp_path / "prix-emission"
+    bid = f"{bdate.isoformat()}-07h"
+    bulletins.mkdir(parents=True)
+    (bulletins / f"bulletin-{bid}.md").write_text(
+        f"# Bulletin — {bdate.isoformat()}\n\n## Matrice\n\n"
+        "| Actif | 24h | 7j | 1m |\n|---|---|---|---|\n"
+        "| CAC 40 | LONG (+1.50) | LONG (+2.00) | LONG (+3.00) |\n",
+        encoding="utf-8",
+    )
+    log_dir.mkdir(parents=True)
+    import json as _json
+    (log_dir / f"{bdate.isoformat()}-1600.jsonl").write_text(
+        _json.dumps({
+            "bulletin_date": bdate.isoformat(), "actif": "CAC 40",
+            "horizon": "24h", "confidence": "normale", "score_pm1": 1.5,
+        }) + "\n",
+        encoding="utf-8",
+    )
+    prix_dir.mkdir()
+    # Pas de prix-ouverture → non-continu retombe sur l'émission (dégradé) → tag.
+    (prix_dir / f"{bid}.json").write_text('{"^FCHI": 100.0}', encoding="utf-8")
+    monkeypatch.setattr(j, "PRIX_EMISSION_DIR", prix_dir)
+    monkeypatch.setattr(j, "DECISION_LOG_DIR", log_dir)
+    monkeypatch.setattr("criteres_calculator.fetch_twelve_price", lambda t: 105.0)
+
+    lines = sa.build_audit_veille_24h(
+        now=now, bulletins_dir=bulletins, decision_log_dir=log_dir,
+        prix_emission_dir=prix_dir,
+    )
+    txt = "\n".join(lines)
+    assert "référence dégradée" in txt
 
 
 def test_audit_veille_exclut_faible_carry_news(tmp_path, monkeypatch):

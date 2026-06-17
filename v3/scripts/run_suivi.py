@@ -12,7 +12,7 @@ Rapport COURT (Thomas lit en 2 min). Pour chaque position du Briefing 7h du jour
   CONTRE le call. DRAPEAU-SUGGESTION, JAMAIS UN ORDRE.
 - Marchés US à 12h : pas encore ouverts (ouverture 15h30 Paris) → affichés
   explicitement « pas encore ouvert » (CA-S, correction M-H). 1er statut US au 18h.
-- News à impact depuis le matin (court).
+- Contexte news du Briefing 7h (NON réactualisé : pas de ré-ingestion, court).
 
 Garde-fous (non négociables) :
 - WIN RATE ONLY — aucune valeur monétaire (€/$/gain/perte). Le % de mouvement est OK.
@@ -28,11 +28,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sys
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, time, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger("run_suivi")
@@ -57,6 +58,13 @@ MAX_MARKDOWN_LINES = 50
 
 # Nombre max de news affichées dans le bloc « news à impact » (suivi = court).
 MAX_NEWS = 3
+
+# Nombre max de news FRAÎCHES (bloc « Actus du jour ») — suivi reste court.
+MAX_NEWS_FRAICHES = 3
+
+# Heure de référence (Paris) du rapport précédent par créneau : 12h récolte depuis
+# 07h du jour (Briefing matin), 18h récolte depuis 12h du jour (suivi midi).
+SEUIL_HEURE_PRECEDENTE = {REPORT_12H: 7, REPORT_18H: 12}
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +93,12 @@ class SuiviRapport:
     report_type: str               # "12h" / "18h"
     lignes: List[SuiviLigne] = field(default_factory=list)
     news: List[str] = field(default_factory=list)
+    # PARTIE B — actus FRAÎCHES du jour (récolte RSS légère depuis le créneau
+    # précédent). `news_fraiches` = lignes markdown prêtes ; `news_fraiches_indispo`
+    # = True si le fetch RSS a échoué (dégradation propre, distinct du cas « vide »).
+    news_fraiches: List[str] = field(default_factory=list)
+    news_fraiches_indispo: bool = False
+    contexte_frais: str = ""
     markdown: str = ""
 
 
@@ -361,17 +375,40 @@ def news_a_impact(
     return out
 
 
+# source_track signifiant « ce créneau news porte la direction NETTE IA »
+# (synthèse DeepSeek du corpus). Doit rester aligné avec
+# scoring_analyste.SYNTHESE_NET_TRACKS / SYNTHESE_NET_LABEL.
+_SYNTHESE_NET_TRACKS = frozenset({"ia_synthese", "ia_synthese_faible"})
+_SYNTHESE_NET_LABEL = "Synthèse news (net, IA)"
+
+
+def _nom_affiche_news(nom: str, source_track: str) -> str:
+    """Libellé DYNAMIQUE d'un critère news lu depuis le decision-log.
+
+    Miroir de scoring_analyste._nom_affiche : si le créneau porte le net IA
+    (source_track ∈ _SYNTHESE_NET_TRACKS) → « Synthèse news (net, IA) », sinon
+    le nom de fiche tel quel. PUR AFFICHAGE, se dégrade proprement si
+    source_track absent (vieux decision-logs → nom legacy, jamais de crash).
+    """
+    if (source_track or "").strip().lower() in _SYNTHESE_NET_TRACKS:
+        return _SYNTHESE_NET_LABEL
+    return nom
+
+
 def _dominant_news_critere(criteres: List[dict]) -> Optional[tuple]:
     """Critère news à plus forte |contribution| dans une cellule. (nom, sens) ou None.
 
     On considère « news » un critère de type triplet ou dont la source vient des
-    events-log. Zéro invention : si rien ne matche → None.
+    events-log. Zéro invention : si rien ne matche → None. Le `nom` retourné est
+    le libellé DYNAMIQUE (cf. _nom_affiche_news) : « Synthèse news (net, IA) »
+    quand le créneau porte le net, son thème de fiche sinon.
     """
     best = None
     best_abs = 0.0
     for c in criteres:
         type_norm = (c.get("type_norm") or "").lower()
-        source = (c.get("source_track") or c.get("cle") or "").lower()
+        track = (c.get("source_track") or "")
+        source = (track or c.get("cle") or "").lower()
         nom = (c.get("nom") or "").strip()
         is_news = type_norm == "triplet" or "event" in source or "news" in source
         if not is_news or not nom:
@@ -383,8 +420,177 @@ def _dominant_news_critere(criteres: List[dict]) -> Optional[tuple]:
         if abs(contrib) > best_abs:
             best_abs = abs(contrib)
             sens = "haussier" if contrib > 0 else ("baissier" if contrib < 0 else "neutre")
-            best = (nom, sens)
+            best = (_nom_affiche_news(nom, track), sens)
     return best
+
+
+# ---------------------------------------------------------------------------
+# PARTIE B — Actus FRAÎCHES du jour (récolte RSS légère, zéro DeepSeek)
+# ---------------------------------------------------------------------------
+# Le suivi 12h/18h refetch les MÊMES flux RSS que le pipeline 7h (chemin
+# `news_collector.collect_rss_light`, déjà filtré finance via la whitelist des
+# 12 actifs), garde les titres POSTÉRIEURS au rapport précédent (12h → depuis 07h ;
+# 18h → depuis 12h), les dédoublonne contre ce qui a DÉJÀ été montré (Contexte 7h
+# + titres frais déjà affichés au 12h), et n'en garde que le top 1-3 par fraîcheur.
+# ZÉRO appel DeepSeek (titres seuls). ZÉRO écriture dans la DB de dédup. Best-effort :
+# flux KO/timeout → dégradation propre (`news_fraiches_indispo`), JAMAIS de crash.
+
+
+def _normalize_titre(titre: str) -> str:
+    """Clé de dédup d'un titre : minuscule, espaces réduits, ponctuation marginale ôtée."""
+    t = re.sub(r"\s+", " ", (titre or "").strip().lower())
+    return t.strip(" .,;:!?\"'()[]")
+
+
+def _seuil_news_utc(report_type: str, now: datetime) -> datetime:
+    """Seuil de fraîcheur (UTC tz-aware) = heure du rapport précédent, le jour de `now`.
+
+    12h → 07h00 Paris du jour ; 18h → 12h00 Paris du jour. Converti en UTC pour
+    comparer aux `NewsItem.published` (toujours UTC, GATE C9). DST géré par ZoneInfo
+    (jamais d'offset codé en dur).
+    """
+    heure = SEUIL_HEURE_PRECEDENTE.get(report_type, 7)
+    seuil_paris = datetime.combine(now.date(), time(hour=heure), tzinfo=PARIS_TZ)
+    return seuil_paris.astimezone(timezone.utc)
+
+
+def _titres_deja_vus(news_7h: List[str], snapshot_titres: List[str]) -> set:
+    """Set normalisé des titres DÉJÀ montrés (Contexte 7h + frais affichés au 12h).
+
+    `news_7h` = lignes markdown du bloc Contexte 7h (on en extrait le texte) ;
+    `snapshot_titres` = titres frais persistés par le suivi précédent (12h).
+    """
+    seen: set = set()
+    for ligne in news_7h:
+        # Lignes type "- **Actif** : Titre → biais ..." → on garde le texte normalisé entier.
+        seen.add(_normalize_titre(ligne))
+    for t in snapshot_titres:
+        seen.add(_normalize_titre(t))
+    return seen
+
+
+def recolte_news_fraiches(
+    report_type: str,
+    now: datetime,
+    deja_vus: set,
+    max_news: int = MAX_NEWS_FRAICHES,
+    collect_light: Optional[Callable[[], list]] = None,
+) -> tuple:
+    """Récolte les titres RSS FRAIS depuis le créneau précédent. (lignes, titres, indispo).
+
+    Returns:
+        (lignes_markdown, titres_bruts, indispo) :
+        - lignes_markdown : List[str] prêtes à afficher (top 1-3 NOUVEAUX titres).
+        - titres_bruts : List[str] des titres retenus (pour persistance dédup 18h).
+        - indispo : bool — True si le fetch RSS a échoué (dégradation propre, à
+          distinguer du cas « 0 news fraîche » où indispo=False).
+
+    Best-effort intégral : toute exception du fetch → ([], [], True). Zéro DeepSeek,
+    zéro écriture DB. Filtre : published >= seuil, dédup contre `deja_vus` + interne,
+    tri fraîcheur desc.
+    """
+    if collect_light is None:
+        try:
+            from news_collector import collect_rss_light as _cl  # noqa: PLC0415
+            collect_light = _cl
+        except Exception as e:  # noqa: BLE001 — module indispo → dégradation propre
+            logger.warning("recolte_news_fraiches: import collect_rss_light KO: %s", e)
+            return [], [], True
+
+    try:
+        items = collect_light()
+    except Exception as e:  # noqa: BLE001 — fetch RSS KO/timeout → dégradation propre
+        logger.warning("recolte_news_fraiches: fetch RSS KO: %s — dégradation propre", e)
+        return [], [], True
+    if items is None:
+        return [], [], True
+
+    seuil = _seuil_news_utc(report_type, now)
+    frais = []
+    for it in items:
+        pub = getattr(it, "published", None)
+        titre = (getattr(it, "title", "") or "").strip()
+        if not titre or not isinstance(pub, datetime):
+            continue
+        # Normalise en UTC tz-aware avant comparaison (robustesse si source naïve).
+        if pub.tzinfo is None:
+            pub = pub.replace(tzinfo=timezone.utc)
+        else:
+            pub = pub.astimezone(timezone.utc)
+        if pub < seuil:
+            continue  # antérieur au rapport précédent → pas « frais »
+        frais.append((pub, titre, getattr(it, "source", "")))
+
+    # Tri fraîcheur desc (le plus récent d'abord), puis dédup contre déjà-vus + interne.
+    frais.sort(key=lambda x: x[0], reverse=True)
+    lignes: List[str] = []
+    titres: List[str] = []
+    vus_local = set(deja_vus)
+    for _pub, titre, source in frais:
+        key = _normalize_titre(titre)
+        if key in vus_local:
+            continue
+        vus_local.add(key)
+        affiche = titre if len(titre) <= 180 else titre[:177].rstrip() + "..."
+        src = f" ({source})" if source else ""
+        lignes.append(f"- {affiche}{src}")
+        titres.append(titre)
+        if len(lignes) >= max_news:
+            break
+    return lignes, titres, False
+
+
+def _ligne_contexte_frais(
+    report_type: str, news_fraiches: List[str], indispo: bool
+) -> str:
+    """1 ligne factuelle de contexte réactualisé en tête du suivi.
+
+    Style FACTUEL (décor, pas d'avis). Trois cas honnêtes :
+    - flux KO → « Actus du jour indisponibles (flux injoignable). »
+    - rien de frais → « Rien de neuf depuis {Xh}. »
+    - news fraîche(s) → « Du neuf depuis {Xh} : N actu(s) fraîche(s) ci-dessous. »
+    """
+    heure_prec = SEUIL_HEURE_PRECEDENTE.get(report_type, 7)
+    label = f"{heure_prec}h"
+    if indispo:
+        return "Actus du jour indisponibles (flux injoignable)."
+    if not news_fraiches:
+        return f"Rien de neuf depuis {label}."
+    n = len(news_fraiches)
+    s = "s" if n > 1 else ""
+    return f"Du neuf depuis {label} : {n} actu{s} fraîche{s} ci-dessous."
+
+
+def _snapshot_titres_path(date_j: date, report_type: str, base_dir: Path) -> Path:
+    return base_dir / f"{date_j.isoformat()}-{report_type}-titres.json"
+
+
+def save_titres_frais_snapshot(
+    date_j: date, report_type: str, titres: List[str], base_dir: Path = SUIVI_DIR
+) -> Path:
+    """Persiste les titres frais affichés (clé dédup pour le suivi suivant).
+
+    Cache de PRÉSENTATION (n'alimente PAS measures-log/performance — CA-S6). Le 18h
+    lit ce fichier pour ne pas réafficher un titre déjà montré au 12h.
+    """
+    base_dir.mkdir(parents=True, exist_ok=True)
+    p = _snapshot_titres_path(date_j, report_type, base_dir)
+    p.write_text(json.dumps(list(titres), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return p
+
+
+def load_titres_frais_snapshot(
+    date_j: date, report_type: str, base_dir: Path = SUIVI_DIR
+) -> List[str]:
+    """Lit les titres frais d'un suivi précédent. [] si absent/illisible (zéro invention)."""
+    p = _snapshot_titres_path(date_j, report_type, base_dir)
+    if not p.exists():
+        return []
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return [str(t) for t in data] if isinstance(data, list) else []
 
 
 # ---------------------------------------------------------------------------
@@ -402,6 +608,7 @@ def build_suivi(
     fiches: Optional[Dict[str, dict]] = None,
     fetch_price: Optional[Any] = None,
     config: Optional[dict] = None,
+    collect_light: Optional[Callable[[], list]] = None,
 ) -> SuiviRapport:
     """Construit le rapport de suivi 12h/18h (R2/R3).
 
@@ -520,11 +727,34 @@ def build_suivi(
     rapport.news = news_a_impact(
         date_j, [li.actif for li in rapport.lignes], decision_log_dir
     )
+
+    # PARTIE B — actus FRAÎCHES du jour (récolte RSS légère, best-effort, zéro DeepSeek).
+    # Dédup contre : (1) le Contexte 7h affiché ci-dessus, (2) les titres frais déjà
+    # montrés au 12h (snapshot, lu seulement au 18h). Best-effort total : une erreur
+    # ne doit jamais casser le suivi (le suivi reste fonctionnel hors-ligne).
+    snapshot_titres = (
+        load_titres_frais_snapshot(date_j, REPORT_12H, suivi_dir)
+        if report_type == REPORT_18H else []
+    )
+    deja_vus = _titres_deja_vus(rapport.news, snapshot_titres)
+    try:
+        lignes_frais, titres_frais, indispo = recolte_news_fraiches(
+            report_type, now, deja_vus, collect_light=collect_light
+        )
+    except Exception as e:  # noqa: BLE001 — garde-fou ultime : jamais de crash sur la récolte
+        logger.warning("build_suivi: récolte news fraîches KO: %s — dégradation propre", e)
+        lignes_frais, titres_frais, indispo = [], [], True
+    rapport.news_fraiches = lignes_frais
+    rapport.news_fraiches_indispo = indispo
+    rapport.contexte_frais = _ligne_contexte_frais(report_type, lignes_frais, indispo)
+
     rapport.markdown = _render_markdown(rapport)
 
     # Persiste les deltas du 12h pour le suivi 18h (cache de présentation only).
     if report_type == REPORT_12H:
         save_delta_snapshot(date_j, REPORT_12H, deltas_now, suivi_dir)
+        # Persiste aussi les titres frais affichés au 12h → dédup au 18h.
+        save_titres_frais_snapshot(date_j, REPORT_12H, titres_frais, suivi_dir)
     return rapport
 
 
@@ -537,6 +767,11 @@ def _render_markdown(r: SuiviRapport) -> str:
     # Briefing — le suivi était en H2).
     L.append(f"# Suivi {h} — {r.date_j.isoformat()} {heure}")
     L.append("")
+
+    # PARTIE B — 1 ligne de contexte réactualisée (factuelle, décor), en tête.
+    if r.contexte_frais:
+        L.append(f"_{r.contexte_frais}_")
+        L.append("")
 
     if h == REPORT_12H:
         L.append("### Note sur les marchés US")
@@ -586,9 +821,11 @@ def _render_markdown(r: SuiviRapport) -> str:
             )
     L.append("")
 
-    # News à impact depuis le matin (court).
-    src = "7h" if h == REPORT_12H else "12h"
-    L.append(f"### News à impact depuis {src}")
+    # Contexte news du Briefing 7h (NON réactualisé — fix libellé 16/06, Thomas).
+    # Le suivi NE ré-ingère PAS les news : ces lignes proviennent du decision-log
+    # 7h du jour (cf. news_a_impact). L'ancien titre « News à impact depuis 7h/12h »
+    # impliquait à tort une réactualisation continue → libellé honnête.
+    L.append("### Contexte news (bulletin 7h, non réactualisé)")
     if r.news:
         L.extend(r.news[:MAX_NEWS])
         # [C-S1 audit visuel 12/06] : les news du suivi proviennent du même
@@ -598,7 +835,20 @@ def _render_markdown(r: SuiviRapport) -> str:
             L.append("")
             L.append("_(mêmes news que les suivis précédents — source : Briefing 7h.)_")
     else:
-        L.append(f"Pas de news impactante depuis {src}.")
+        L.append("Aucune news impactante dans le Briefing 7h.")
+    L.append("")
+
+    # PARTIE B — bloc « Actus du jour » : titres FRAIS récoltés depuis le créneau
+    # précédent (RSS léger, zéro DeepSeek). CLAIREMENT distinct du Contexte 7h
+    # ci-dessus (matin figé) — libellé honnête sur la fenêtre de fraîcheur.
+    heure_prec = SEUIL_HEURE_PRECEDENTE.get(h, 7)
+    L.append(f"### Actus du jour (depuis {heure_prec}h)")
+    if r.news_fraiches_indispo:
+        L.append("Actus du jour indisponibles (flux injoignable).")
+    elif r.news_fraiches:
+        L.extend(r.news_fraiches[:MAX_NEWS_FRAICHES])
+    else:
+        L.append(f"Pas de news fraîche notable depuis {heure_prec}h.")
     L.append("")
 
     # Suggestions de sortie (drapeaux — Thomas décide).
@@ -693,6 +943,9 @@ __all__ = [
     "save_delta_snapshot",
     "load_delta_snapshot",
     "news_a_impact",
+    "recolte_news_fraiches",
+    "save_titres_frais_snapshot",
+    "load_titres_frais_snapshot",
     "build_suivi",
     "write_suivi",
     "main",

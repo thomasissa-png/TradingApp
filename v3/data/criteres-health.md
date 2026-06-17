@@ -1,8 +1,8 @@
 # Santé des critères
 
-_Cycle : 2026-06-16 05:24 UTC_
+_Cycle : 2026-06-17 05:23 UTC_
 
-**Synthèse** : 38 motifs de skip distincts, 49 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
+**Synthèse** : 39 motifs de skip distincts, 49 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 
 | Occurrences | Motif | Détail (cause exacte) |
 |---:|---|---|
@@ -11,8 +11,8 @@ _Cycle : 2026-06-16 05:24 UTC_
 | 3 | fresh_price_refreshed | `CC=F` |
 | 3 | fresh_price_refreshed | `KC=F` |
 | 2 | fresh_price_refreshed | `HG=F` |
-| 2 | Open-Meteo injoignable (récents) | `6.8,-5.3:net_error` |
 | 1 | CBOE non câblé (Put/Call sans CSV public) | `put_call_ratio_cboe_5j` |
+| 1 | composite_meteo_dead | `meteo_bresil_minas_gerais` |
 | 1 | composite_no_subsource | `demande_pv_mining_strikes` |
 | 1 | composite_partial | `hf_positioning_flux_options` |
 | 1 | fresh_price_refreshed | `BZ=F` |
@@ -23,6 +23,7 @@ _Cycle : 2026-06-16 05:24 UTC_
 | 1 | Source linéaire non programmatique | `brent_term_structure_m1m2` |
 | 1 | Source linéaire non programmatique | `fedwatch_proba` |
 | 1 | Source linéaire non programmatique | `term_structure_m1_m3` |
+| 1 | Open-Meteo injoignable (récents) | `-19.9,-43.9:net_error` |
 | 1 | no_breadth_data | `breadth_cac_ma50` |
 | 1 | Aucun trigger classifié (triplet) | `tension_politique_fr` |
 | 1 | Twelve : série vide | `USDGHS=X` |
@@ -44,3 +45,9 @@ _Cycle : 2026-06-16 05:24 UTC_
 | 1 | Source z-score non programmatique | `stocks_ice_arabica_certifies_20j` |
 | 1 | Source z-score non programmatique | `usd_cfa_usd_cedi` |
 | 1 | Source z-score non programmatique | `usda_wasde_stocks_to_use` |
+
+## Provenance des prix (source réellement utilisée ce cycle)
+
+| N | source | symboles |
+|---:|---|---|
+| 26 | twelve_native | BZ=F, CC=F, CL=F, EUR=X, EURUSD=X, EWQ, GC=F, GLD, HG=F, HYG, KC=F, QQQ, QQQE, RSP, SI=F, SLV, SOXX, SPY, USDBRL=X, USDJPY=X, ZW=F, ^FCHI, ^GSPC, ^IXIC, ^RUT, ^VIX |

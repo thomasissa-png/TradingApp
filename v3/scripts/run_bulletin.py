@@ -97,6 +97,41 @@ def insert_briefing_after_synthese(bulletin_path: Path, briefing_md: str) -> boo
     return True
 
 
+# Pied de bulletin (« --- » + « _Analyste version … _ ») : on insère « News par
+# actif » JUSTE AVANT lui pour que la section finale technique reste en dernier.
+_FOOTER_ANCHOR_RE = re.compile(r"\n---\n\n_Analyste version", re.MULTILINE)
+
+
+def append_news_par_actif(bulletin_path: Path, news_md: str) -> bool:
+    """Insère/remplace « ## News par actif » en fin de bulletin (avant le pied).
+
+    Idempotent : un bloc existant (re-run) est d'abord retiré. Placement : juste
+    avant le pied technique « --- / _Analyste version_ » s'il existe, sinon en
+    toute fin. Best-effort — ne casse jamais le bulletin.
+    """
+    if not bulletin_path.exists():
+        logger.warning("bulletin introuvable : %s", bulletin_path)
+        return False
+    content = bulletin_path.read_text(encoding="utf-8")
+    # Retrait d'un bloc existant (re-run) jusqu'au prochain ## ou fin de fichier.
+    existing = re.compile(r"## News par actif\n.*?(?=\n## |\n---\n|\Z)", re.DOTALL)
+    if existing.search(content):
+        content = existing.sub("", content, count=1)
+        content = re.sub(r"\n{3,}", "\n\n", content)
+
+    block = news_md.rstrip() + "\n"
+    m = _FOOTER_ANCHOR_RE.search(content)
+    if m:
+        insert_at = m.start()
+        new_content = (
+            content[:insert_at].rstrip() + "\n\n" + block + content[insert_at:].lstrip("\n")
+        )
+    else:
+        new_content = content.rstrip() + "\n\n" + block
+    bulletin_path.write_text(new_content, encoding="utf-8")
+    return True
+
+
 def main() -> int:
     now = datetime.now(ZoneInfo("Europe/Paris"))
     logger.info("=== Bulletin runner (%s Europe/Paris) ===", now.isoformat())
@@ -167,17 +202,25 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         logger.warning("decision-log KO (non bloquant) : %s", e)
 
-    # Étape 2bis — Briefing du jour (synthèse news à impact, déterministe, zéro
-    # LLM). Best-effort : si échec, le bulletin reste valide.
-    # #5 (audit design) : on insère le Briefing APRÈS la Synthèse des décisions
-    # (avant "## Flips vs veille"), pas après le H1 — la grille directionnelle
-    # passe devant le contexte news.
+    # Étape 2bis — Briefing du jour (déterministe, zéro LLM). Best-effort.
+    # P6 — « Décor du jour » (INTRO factuelle : catalyseur attendu + thèmes + top
+    # news) est désormais inséré EN TÊTE (après H1+méta, avant « Sélection du
+    # jour »). Plus de bloc « ## Briefing du jour » per-actif redondant.
     try:
         briefing_md = briefing.build_briefing(today=now.date())
-        insert_briefing_after_synthese(out_path, briefing_md)
-        logger.info("Briefing du jour inséré dans le bulletin (après la Synthèse)")
+        briefing.prepend_to_bulletin(out_path, briefing_md)
+        logger.info("Décor du jour inséré en tête du bulletin")
     except Exception as e:  # noqa: BLE001
-        logger.warning("briefing KO (non bloquant) : %s", e)
+        logger.warning("décor du jour KO (non bloquant) : %s", e)
+
+    # P7 — « News par actif » EN FIN de bulletin : events news par actif
+    # (12 actifs, ordre canonique) du corpus matin. Best-effort.
+    try:
+        news_md = briefing.build_news_par_actif(today=now.date())
+        append_news_par_actif(out_path, news_md)
+        logger.info("News par actif ajoutées en fin de bulletin")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("news par actif KO (non bloquant) : %s", e)
 
     # Étape 3 — stamp des prix d'émission de CE bulletin (pour mesure ultérieure
     # par le Journaliste). Clé par IDENTITÉ de bulletin (créneau) et non par

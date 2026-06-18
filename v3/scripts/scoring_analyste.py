@@ -1963,6 +1963,8 @@ def build_a_jouer_block(
             "px_str": px_str,
             "driver_cle": driver_cle,
             "driver_nom": driver_nom,
+            # P3 — « Porté par » enrichi : nom complet + valeur + sens + contrib.
+            "driver_detail": _driver_detail(r, H),
         }))
 
     # Tri |note| décroissant, déterministe (l'actif départage les ex æquo).
@@ -1988,13 +1990,15 @@ def build_a_jouer_block(
             return lines
         for d in cells:
             cle, nom = d["driver_cle"], d["driver_nom"]
+            detail = d.get("driver_detail") or "—"
             if not nom:
                 porte = "—"
             else:
                 marker = ""
                 if cle and (cle, d["direction"]) in shared:
                     marker = SHARED_DRIVERS_SYMBOL_LOCAL + " "
-                porte = marker + _truncate_driver(nom)
+                # P3 — nom COMPLET non tronqué + valeur + sens + contribution.
+                porte = marker + detail
             lines.append(
                 f"| {d['actif']} | {d['direction']} | {d['note_str']} | "
                 f"{d['conv']} | {d['flags_str']} | {porte} | {d['px_str']} |"
@@ -2004,21 +2008,9 @@ def build_a_jouer_block(
     jouables_shared = _shared_groups(jouables_cells)
 
     out: List[str] = ["## 🎯 À jouer aujourd'hui (24h)", ""]
-    out.append(
-        "_Les 12 cellules à 24h (horizon de trade), triées par force de note. "
-        "« Conviction » = force du score ET absence de contestation (forte = note "
-        "≥ seuil sans drapeau ; sinon le libellé dit POURQUOI : molle, contestée, "
-        "fragile ou zigzag). « À éviter » = quasi coin-flip (⚪), quasi-neutre (≈) "
-        "ou données insuffisantes (🚫). Les drapeaux de prudence (◧ ⚠️ ↯ …) restent "
-        "dans « Jouables » — prudence, pas exclusion. Prix de réf. = prix "
-        "d'émission stampé (— si pas encore disponible)._"
-    )
-    out.append(
-        "_« Porté par » = le critère qui pèse le plus dans la note ; "
-        f"{SHARED_DRIVERS_SYMBOL_LOCAL} = plusieurs lignes reposent sur le même "
-        "driver (jouer ces lignes = multiplier le levier sur UN signal)._"
-    )
-    out.append("")
+    # P4 — la pédagogie (Conviction, À éviter, « Porté par », ⚭) est désormais
+    # expliquée UNE SEULE fois dans « ## Comment lire les scores » (fin de
+    # bulletin). Ici, la section ne garde que son titre + tableaux.
     header = "| Actif | Direction | Note | Conviction | Drapeaux | Porté par | Prix de réf. |"
     sep = "|---|---|---|---|---|---|---|"
     # [H-B1 audit visuel 12/06] : guider l'œil dans « Jouables » — séparer les
@@ -2163,6 +2155,8 @@ def compute_selection_du_jour(
             "note": r.scores.get(H, 0.0),
             "driver_cle": driver_cle,
             "driver_nom": driver_nom,
+            # P3 — « Porté par » enrichi (nom complet + valeur + sens + contrib).
+            "driver_detail": _driver_detail(r, H),
             "coverage": r.coverage,
         })
 
@@ -2518,14 +2512,9 @@ def build_selection_du_jour_block(
     selection, ecartees = compute_selection_du_jour(results, seuil_conviction)
 
     out: List[str] = ["## 🎯 Sélection du jour — max 3", ""]
-    out.append(
-        "_Les meilleurs paris 24h du jour : (1) **signal fort**, (2) **données "
-        "suffisantes** sur l'actif, (3) **chaque type de marché représenté une "
-        "seule fois** (deux lignes portées par le même moteur — ex. taux/dollar — "
-        "comptent pour un seul pari, on garde la plus forte), (4) **3 maximum**. "
-        "Moins de 3 — voire zéro — est normal : on ne force jamais un pari._"
-    )
-    out.append("")
+    # P2 — la méthodologie de sélection (4 règles) est désormais expliquée UNE
+    # SEULE fois dans la section « ## Comment lire les scores » (fin de bulletin).
+    # Ici, la section ne garde que son titre + tableau.
 
     if not selection:
         out.append(
@@ -2541,7 +2530,10 @@ def build_selection_du_jour_block(
     out.append(sep)
     for s in selection:
         note_str = f"{s['note']:+.2f}"
-        porte = _truncate_driver(s["driver_nom"]) if s["driver_nom"] else "—"
+        # P3 — « Porté par » enrichi (nom complet + valeur + sens + contribution).
+        porte = s.get("driver_detail") or (
+            _truncate_driver(s["driver_nom"]) if s["driver_nom"] else "—"
+        )
         px = prix_reference.get(s["fiche_key"])
         px_str = f"{px:g}" if isinstance(px, (int, float)) else "—"
         out.append(
@@ -2602,6 +2594,50 @@ def _truncate_driver(nom: str) -> str:
     if espace >= DRIVER_NAME_MAX_LEN // 2:
         coupe = coupe[:espace].rstrip()
     return coupe + "…"
+
+
+def _driver_detail(r: "ActifResult", h: str) -> str:
+    """« Porté par » ENRICHI (P3) — détail scannable du driver dominant.
+
+    Format cible (concis) : `nom COMPLET (val X, sens Y) → contribue ±Z.ZZ`.
+    - nom COMPLET : libellé trader NON tronqué (lisibilité — P3).
+    - val X : valeur brute du critère (même source que la colonne « Valeur
+      actuelle » du détail), « — » si absente.
+    - sens Y : `normal` / `inversé` (même sémantique que la colonne « Sens »).
+    - contribue ±Z.ZZ : contribution signée du critère sur l'horizon h (même
+      source que la colonne « Effet {h} »).
+
+    Le driver = critère au plus fort |effet| sur l'horizon (logique `_top_driver`
+    inchangée — PUR AFFICHAGE, zéro modif du calcul). Retourne "—" si aucun
+    contributeur réel. Best-effort : toute valeur manquante → dégradation propre.
+    """
+    cle, _nom = _top_driver(r, h)
+    if not cle and not _nom:
+        return "—"
+    # Retrouver le CritereResult correspondant au driver (par cle puis nom).
+    cible: Optional["CritereResult"] = None
+    for c in r.criteres:
+        if c.is_gate or c.is_na:
+            continue
+        ctr = c.contributions.get(h)
+        if ctr is None or abs(ctr) <= 0.0:
+            continue
+        if (getattr(c, "cle_courante", "") or "") == cle and _nom_critere(c) == _nom:
+            cible = c
+            break
+    if cible is None:
+        # Fallback : on n'a que le nom (zéro invention au-delà du nom).
+        return _nom or "—"
+    nom = _nom_critere(cible)
+    val = _fmt_raw(cible.valeur_brute)
+    sens = "normal" if cible.signe == 1 else "inversé"
+    contrib = cible.contributions.get(h, 0.0)
+    parts = []
+    if val != "—":
+        parts.append(f"val {val}")
+    parts.append(f"sens {sens}")
+    ctx = ", ".join(parts)
+    return f"{nom} ({ctx}) → contribue {contrib:+.2f}"
 
 
 def _synthese_paris_partages(
@@ -2724,18 +2760,16 @@ def build_top_multi_horizons_block(
         out.append("_Aucune conviction à couverture suffisante ce cycle._")
         out.append("")
         return out
-    out.append(
-        "_Les meilleures convictions tous horizons confondus, avec leurs "
-        "drapeaux : une note forte portée par 1 seul critère (◧) ou divergente "
-        "(↯) reste à lire avec prudence. Ces convictions peuvent recouper les "
-        "lignes 24h de « À jouer » ci-dessus (mêmes actifs, autres horizons)._"
-    )
-    out.append("")
+    # P5 — la pédagogie (◧ / ↯, recoupement avec « À jouer ») est expliquée UNE
+    # SEULE fois dans « ## Comment lire les scores » (fin de bulletin).
     now_for_flags = datetime.now(timezone.utc)
     for r, h in selected:
         conc = r.conclusions.get(h, "")
         score = r.scores.get(h, 0.0)
-        raison = _critere_dominant(r, h)
+        # P3 — driver enrichi (nom complet + valeur + sens + contribution).
+        raison = _driver_detail(r, h)
+        if raison == "—":
+            raison = ""
         flags = _compute_cell_risk_flags(r, h, now_for_flags)
         if conc in ("LONG", "SHORT"):
             if abs(score) < 0.05:
@@ -2877,6 +2911,65 @@ DETAIL_TABLE_GLOSSARY_LINES: List[str] = [
 ]
 
 
+def build_comment_lire_block(flags_present: set) -> List[str]:
+    """Section « ## Comment lire les scores » (P2/P4/P5) — TOUTE la pédagogie, UNE fois.
+
+    Regroupe les explications jusque-là dispersées et répétées dans les sections
+    du jour (Sélection / À jouer / Top convictions) + la légende des symboles + la
+    définition de « Note ». Les sections du jour ne gardent désormais que leur
+    titre + tableau ; cette section porte la pédagogie une seule fois, en fin de
+    bulletin. PUR RENDU — aucun changement de score/mesure.
+
+    `flags_present` : set des symboles réellement présents dans CE bulletin
+    (légende contextuelle, comme avant). Best-effort, dégradation propre.
+    """
+    out: List[str] = ["## Comment lire les scores", ""]
+
+    out.append("### Sélection du jour")
+    out.append(
+        "_Les meilleurs paris 24h du jour : (1) **signal fort**, (2) **données "
+        "suffisantes** sur l'actif, (3) **chaque type de marché représenté une "
+        "seule fois** (deux lignes portées par le même moteur — ex. taux/dollar — "
+        "comptent pour un seul pari, on garde la plus forte), (4) **3 maximum**. "
+        "Moins de 3 — voire zéro — est normal : on ne force jamais un pari._"
+    )
+    out.append("")
+
+    out.append("### À jouer aujourd'hui (24h)")
+    out.append(
+        "_Les 12 cellules à 24h (horizon de trade), triées par force de note. "
+        "« Conviction » = force du score ET absence de contestation (forte = note "
+        "≥ seuil sans drapeau ; sinon le libellé dit POURQUOI : molle, contestée, "
+        "fragile ou zigzag). « À éviter » = quasi coin-flip (⚪), quasi-neutre (≈) "
+        "ou données insuffisantes (🚫). Les drapeaux de prudence (◧ ⚠️ ↯ …) restent "
+        "dans « Jouables » — prudence, pas exclusion. Prix de réf. = prix "
+        "d'émission stampé (— si pas encore disponible)._"
+    )
+    out.append(
+        "_« Porté par » = le critère qui pèse le plus dans la note, avec sa valeur, "
+        "son sens (normal / inversé) et sa contribution chiffrée signée ; "
+        f"{SHARED_DRIVERS_SYMBOL_LOCAL} = plusieurs lignes reposent sur le même "
+        "driver (jouer ces lignes = multiplier le levier sur UN signal)._"
+    )
+    out.append("")
+
+    out.append("### Top convictions multi-horizons")
+    out.append(
+        "_Les meilleures convictions tous horizons confondus, avec leurs "
+        "drapeaux : une note forte portée par 1 seul critère (◧) ou divergente "
+        "(↯) reste à lire avec prudence. Ces convictions peuvent recouper les "
+        "lignes 24h de « À jouer » (mêmes actifs, autres horizons)._"
+    )
+    out.append("")
+
+    # Légende des symboles + définition de « Note » (déplacées depuis la synthèse).
+    out.append("### Symboles et Note")
+    out.append("")
+    out.append(_build_legende(flags_present))
+    out.append("")
+    return out
+
+
 def render_bulletin(
     results: List[ActifResult],
     veille_conclusions: Dict[str, Dict[str, str]],
@@ -2898,7 +2991,13 @@ def render_bulletin(
     # PIED de bulletin (section --- finale discrète) pour ne plus polluer la vue
     # de décision. La ligne « Généré » reste (utile pour dater le run).
     lines.append(f"- Généré : {now.isoformat()}")
-    lines.append(f"- Fraîcheur : {freshness_msg}")
+    # P1 — la ligne « Fraîcheur » ne s'affiche QUE s'il y a un PROBLÈME (données
+    # périmées / red line). Quand tout va bien (« fraîcheur OK … »), elle pollue la
+    # méta chaque jour sans rien apporter → on la masque. La détection repose sur
+    # la convention de check_freshness : message OK = commence par « fraîcheur OK ».
+    _fresh_ok = (freshness_msg or "").strip().lower().startswith("fraîcheur ok")
+    if not _fresh_ok:
+        lines.append(f"- ⚠️ Fraîcheur : {freshness_msg}")
     # --- Régime extrême : annonce UNE fois (anti-bruit #5.1) ---------------
     # Si le gate est actif sur (quasi) tous les actifs, on l'annonce ici une
     # seule fois plutôt que de répéter ⚑ sur 12 lignes de la table. Le ⚑ par
@@ -3171,14 +3270,22 @@ def render_bulletin(
             c = detail_cells[r.nom]
             synth_lines.append(f"| {r.nom} | {c[0]} | {c[1]} | {c[2]} |")
     synth_lines.append("")
-    synth_lines.append(_build_legende(flags_present))
-    synth_lines.append("")
+    # P2/P4/P5 — la légende des symboles + la définition de « Note » sont
+    # désormais dans « ## Comment lire les scores » (fin de bulletin), une seule
+    # fois. La synthèse ne garde que titre + table(s).
     # On insère la synthèse juste après le H1 + métadonnée (avant Surveillance).
     # `lines` contient déjà : H1, métadonnée, "", surveillance..., biais, flips.
     # → on la place après la dernière ligne de méta (Fraîcheur / régime extrême).
+    # Anchor de fin de méta : dernière ligne de méta présente. « Généré » est
+    # toujours là ; « Fraîcheur » peut être masquée (P1) → on retombe sur Généré.
     _meta_end = 0
     for i, ln in enumerate(lines):
-        if ln.startswith("- Fraîcheur") or ln.startswith("- ⚠️ Régime extrême"):
+        if (
+            ln.startswith("- Généré")
+            or ln.startswith("- ⚠️ Fraîcheur")
+            or ln.startswith("- Fraîcheur")
+            or ln.startswith("- ⚠️ Régime extrême")
+        ):
             _meta_end = i + 1
     # Bloc 1 (audit UX 10/06) — « 🎯 À jouer aujourd'hui (24h) » remplace/absorbe
     # l'ancien « Top 3 convictions du jour » (qui mélangeait les horizons et
@@ -3195,6 +3302,11 @@ def render_bulletin(
         + build_top_multi_horizons_block(results, _shared_summary)
     )
     lines = lines[:_meta_end] + [""] + head_block + synth_lines + lines[_meta_end:]
+
+    # P2/P4/P5 — « ## Comment lire les scores » : TOUTE la pédagogie, une seule
+    # fois, juste avant le détail. Les sections du jour (ci-dessus) ne gardent
+    # que titre + tableau.
+    lines.extend(build_comment_lire_block(flags_present))
 
     lines.append("## Détail par actif")
     lines.append("")
@@ -4112,6 +4224,17 @@ def run(
         shadow_capteurs_for_render = compute_shadow_capteurs(
             fiches, prix_emission=prix_emission_live,
         )
+        # P9 — BUG WIRING : au run 7h le stamp n'existe pas encore (posé APRÈS par
+        # run_bulletin) → `prix_reference` vide → colonne « Prix de réf. » = « — ».
+        # Or `prix_emission_live` (fetch live, déjà construit ci-dessus pour les
+        # capteurs shadow) PORTE les prix. Si `prix_reference` est vide, on
+        # l'alimente depuis le live via le MÊME mapping ticker→fiche_key que le
+        # stamp. Best-effort, jamais de crash, zéro invention (vrais prix).
+        if not prix_reference and prix_emission_live:
+            for key, fiche in fiches.items():
+                ticker = fiche.get("ticker_principal")
+                if ticker and ticker in prix_emission_live:
+                    prix_reference[key] = prix_emission_live[ticker]
     except Exception as e:  # noqa: BLE001
         logger.warning("capteurs shadow (drapeau contre-sens) indispo : %s", e)
 

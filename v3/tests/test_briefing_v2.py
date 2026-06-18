@@ -76,7 +76,8 @@ def test_sort_by_materiality(log_v2, today):
 
 
 def test_briefing_renders_high_first(log_v2, today):
-    md = briefing.build_briefing(log_v2, today=today)
+    # P7 — le détail per-actif (tri, flèches, tags) vit dans build_news_par_actif.
+    md = briefing.build_news_par_actif(log_v2, today=today)
     # Le high "airstrikes" doit apparaître AVANT le low "low-key signal"
     idx_high = md.index("airstrikes")
     idx_low = md.index("low-key signal")
@@ -84,19 +85,19 @@ def test_briefing_renders_high_first(log_v2, today):
 
 
 def test_briefing_includes_arrow_long(log_v2, today):
-    md = briefing.build_briefing(log_v2, today=today)
+    md = briefing.build_news_par_actif(log_v2, today=today)
     # Flèche ↑ doit apparaître pour BRENT (LONG)
     assert "↑" in md
 
 
 def test_briefing_includes_arrow_short(log_v2, today):
-    md = briefing.build_briefing(log_v2, today=today)
+    md = briefing.build_news_par_actif(log_v2, today=today)
     # Flèche ↓ doit apparaître pour SP500 (SHORT)
     assert "↓" in md
 
 
 def test_briefing_marks_high_materiality(log_v2, today):
-    md = briefing.build_briefing(log_v2, today=today)
+    md = briefing.build_news_par_actif(log_v2, today=today)
     # Tag [high] doit apparaître sur les events high matérialité
     assert "[high]" in md
 
@@ -124,7 +125,7 @@ def test_briefing_legacy_no_arrow(tmp_path, today):
 """
     p = tmp_path / "log.md"
     p.write_text(legacy_only, encoding="utf-8")
-    md = briefing.build_briefing(p, today=today)
+    md = briefing.build_news_par_actif(p, today=today)
     assert "### Pétrole" in md
     assert "legacy event" in md
     # Pas de flèche directionnelle
@@ -134,7 +135,7 @@ def test_briefing_legacy_no_arrow(tmp_path, today):
 
 def test_briefing_v2_groups_via_ia_asset(log_v2, today):
     """Un event avec impacts BRENT:... mais cours='BRENT' doit être groupé sous 'Pétrole'."""
-    md = briefing.build_briefing(log_v2, today=today)
+    md = briefing.build_news_par_actif(log_v2, today=today)
     assert "### Pétrole" in md
     assert "### S&P 500" in md
 

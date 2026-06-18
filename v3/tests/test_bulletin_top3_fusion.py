@@ -556,11 +556,15 @@ def test_a_jouer_pas_de_synthese_si_aucun_groupe():
 
 
 def test_a_jouer_note_intro_porte_par():
-    """La note d'intro explique « Porté par » et le symbole ⚭."""
-    r = _actif_nomme("Argent", "taux_reels", "Taux réels", 8.0)
-    txt = "\n".join(sa.build_a_jouer_block([r], NOW))
+    """P4 — l'explication « Porté par » + ⚭ vit désormais dans « Comment lire les
+    scores » (consolidée une fois), plus dans le bloc « À jouer »."""
+    txt = "\n".join(sa.build_comment_lire_block(set()))
     assert "« Porté par »" in txt
     assert "même\ndriver" in txt or "même driver" in txt
+    # La section « À jouer » ne porte plus la pédagogie (titre + tableau only).
+    r = _actif_nomme("Argent", "taux_reels", "Taux réels", 8.0)
+    a_jouer = "\n".join(sa.build_a_jouer_block([r], NOW))
+    assert "« Porté par »" not in a_jouer
 
 
 def test_truncate_driver_nom_long():
@@ -629,12 +633,17 @@ def test_flips_bruit_drapeau():
 # ===========================================================================
 
 def test_metadata_en_pied_pas_en_tete():
-    """Version Analyste + hash en PIED (après ---), plus en tête ; Fraîcheur en tête."""
+    """Version Analyste + hash en PIED (après ---), plus en tête.
+
+    P1 — la ligne « Fraîcheur » est MASQUÉE quand tout va bien (« fraîcheur OK »)
+    pour ne plus polluer la méta ; elle ne réapparaît qu'en cas de problème.
+    """
     r = _actif_24h("Fort", 8.0)
     b = sa.render_bulletin([r], {}, NOW, "abcd1234", "fraîcheur OK")
-    # En-tête : Généré + Fraîcheur, PAS de « Analyste version » / « Fiches hash ».
+    # En-tête : Généré, PAS de « Fraîcheur » (OK → masquée), ni Analyste/Hash.
     tete = b.split("## 🎯 À jouer aujourd'hui (24h)")[0]
-    assert "- Fraîcheur" in tete
+    assert "- Généré" in tete
+    assert "Fraîcheur" not in tete
     assert "Analyste version" not in tete
     assert "Fiches hash" not in tete
     # Pied : section --- + métadonnées techniques.
@@ -732,11 +741,17 @@ def test_conviction_priorite_contestee_avant_fragile():
 
 
 def test_a_jouer_libelle_explicite_dans_table():
-    """Le tableau « À jouer » affiche le libellé explicite, pas « faible »."""
+    """Le tableau « À jouer » affiche un libellé de conviction EXPLICITE, jamais le
+    libellé binaire « faible ». La fiche mono-critère ci-dessous rend « fragile »
+    (un seul critère) — un libellé explicite valide. (P4 : la pédagogie qui
+    contenait le mot « forte » a migré vers « Comment lire les scores ».)"""
     fort = _actif_24h("Fort", 8.0)
     block = sa.build_a_jouer_block([fort], NOW, seuil_conviction=SEUIL)
     txt = "\n".join(block)
-    assert "forte" in txt
+    # Un des libellés explicites doit apparaître dans une cellule du tableau.
+    assert any(lib in txt for lib in (
+        "forte", "fragile", "contestée", "molle", "zigzag",
+    ))
     assert "| faible |" not in txt  # plus de libellé binaire « faible »
 
 

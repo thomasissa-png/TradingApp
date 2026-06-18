@@ -1420,7 +1420,9 @@ const FOLD_SECTION_PATTERNS = [
   /calls\\s+24h\\s+jug/i,        // « 🔎 Calls 24h jugés (fenêtre récente) » (nouveau titre)
   /audit\\s+de\\s+la\\s+veille/i, // ancien titre (bulletins archivés)
   /détail\\s+par\\s+actif/i,
-  /synthèse\\s+des\\s+décisions/i, // [S-B3] redondante avec « À jouer » → drill-down
+  // [P8] « Synthèse des décisions » : DÉPLIÉE par défaut (demande Thomas). On la
+  // RETIRE de la liste de repli → elle reste une section ouverte normale.
+  /comment\\s+lire\\s+les\\s+scores/i, // pédagogie consolidée → repliée (lecture rapide)
   /fausses\\s+aux\\s+retournements/i, // [C-BD2] métrique technique du moteur (bilan jour)
 ];
 

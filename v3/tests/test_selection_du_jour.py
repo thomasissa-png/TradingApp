@@ -173,11 +173,15 @@ def test_bloc_tableau_et_ecartee(monkeypatch):
         [fort, faible], _NOW, prix_reference={"or": 2400.0},
     )
     texte = "\n".join(lignes)
-    assert "| Or | LONG | +0.90 | Fed | 2400 |" in texte
+    # P3 — « Porté par » enrichi : nom complet + valeur + sens + contribution.
+    assert "| Or | LONG | +0.90 | Fed (val 1, sens normal) → contribue +0.40 | 2400 |" in texte
     assert "écartée : Argent — même pari (drv_macro) que Or" in texte
-    # Intro : les 4 règles en clair (dédup par FAMILLE de drivers).
-    assert "**signal fort**" in texte
-    assert "chaque type de marché représenté une seule fois" in texte
+    # P2 — les 4 règles de sélection sont désormais dans « Comment lire les
+    # scores » (consolidées une fois), plus dans le bloc « Sélection du jour ».
+    assert "**signal fort**" not in texte
+    pedago = "\n".join(sa.build_comment_lire_block(set()))
+    assert "**signal fort**" in pedago
+    assert "chaque type de marché représenté une seule fois" in pedago
 
 
 def test_bloc_avertissement_catalyseur_j0(monkeypatch):
@@ -469,4 +473,8 @@ def test_selection_motif_famille_affiche_dans_bloc(monkeypatch):
     )
     texte = "\n".join(sa.build_selection_du_jour_block([argent, eurusd], _NOW))
     assert "écartée : EUR/USD — même pari (taux/dollar) que Argent" in texte
-    assert "chaque type de marché représenté une seule fois" in texte
+    # P2 — la règle « chaque type de marché représenté une seule fois » est
+    # désormais expliquée dans « Comment lire les scores » (une seule fois).
+    assert "chaque type de marché représenté une seule fois" not in texte
+    pedago = "\n".join(sa.build_comment_lire_block(set()))
+    assert "chaque type de marché représenté une seule fois" in pedago

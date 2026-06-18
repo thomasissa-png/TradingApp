@@ -88,7 +88,10 @@ def test_build_briefing_no_duplicate_news_in_section(tmp_path: Path):
         f"| 2026-05-29 | Indices | CAC 40 | {title} | CAC 40 (^FCHI) | intraday | 1 | cnbc_top | EU | macro |  |\n",
         encoding="utf-8",
     )
-    md = briefing.build_briefing(events_path=log, today=date(2026, 5, 29))
+    # P6/P7 — le détail per-actif est désormais rendu par build_news_par_actif
+    # (section « ## News par actif » en fin de bulletin), plus par build_briefing
+    # (qui ne porte que le « Décor du jour »). La dédup intra-actif y est testée.
+    md = briefing.build_news_par_actif(events_path=log, today=date(2026, 5, 29))
     assert md.count(title) == 1
 
 

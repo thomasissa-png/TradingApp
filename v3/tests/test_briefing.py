@@ -125,12 +125,19 @@ def test_group_by_actif(events_log: Path, today: date):
 # ---------------------------------------------------------------------------
 
 def test_build_briefing_contient_sections(events_log: Path, today: date):
+    # P6 — build_briefing ne porte plus que l'intro « ## Décor du jour » (le
+    # détail per-actif est passé à build_news_par_actif). On vérifie l'intro ici.
     md = briefing.build_briefing(events_log, today=today)
-    # PARTIE A (16/06) : le briefing s'ouvre désormais sur l'intro « ## Décor du
-    # jour » (décor factuel + top news), puis la section « ## Briefing du jour ».
     assert md.startswith("## Décor du jour")
-    assert "## Briefing du jour" in md
     assert "events analysés" in md
+    # Mention de la fenêtre 48h
+    assert "48h" in md or "fenêtre" in md.lower()
+
+
+def test_build_news_par_actif_contient_sections(events_log: Path, today: date):
+    # P7 — le détail per-actif vit désormais dans « ## News par actif » (fin).
+    md = briefing.build_news_par_actif(events_log, today=today)
+    assert md.startswith("## News par actif")
     assert "### Pétrole" in md
     assert "### S&P 500" in md
     assert "### EUR/USD" in md
@@ -138,11 +145,11 @@ def test_build_briefing_contient_sections(events_log: Path, today: date):
     # Format puce : [zone] trigger (source)
     assert "[Moyen-Orient]" in md
     assert "(cnbc_top)" in md
-    # Mention de la fenêtre 48h
-    assert "48h" in md or "fenêtre" in md.lower()
+    # Un actif sans news affiche « — aucune actualité » (P7).
+    assert "— aucune actualité" in md
 
 
-def test_build_briefing_aucun_event(tmp_path: Path, today: date):
+def test_build_news_par_actif_aucun_event(tmp_path: Path, today: date):
     log = tmp_path / "events-log.md"
     log.write_text(
         "| date | L1 | L2 | trigger | cours | latence | R | source | "
@@ -151,15 +158,16 @@ def test_build_briefing_aucun_event(tmp_path: Path, today: date):
         "| 2026-05-29 |  |  | Filler |  |  | 1 | s |  | other |  |\n",
         encoding="utf-8",
     )
-    md = briefing.build_briefing(log, today=today)
-    assert "Aucun event marquant" in md
-    assert "## Briefing du jour" in md
+    md = briefing.build_news_par_actif(log, today=today)
+    # Aucun event à impact → chaque actif affiche « — aucune actualité ».
+    assert "— aucune actualité" in md
+    assert "## News par actif" in md
 
 
-def test_build_briefing_pas_de_fichier(tmp_path: Path, today: date):
-    md = briefing.build_briefing(tmp_path / "absent.md", today=today)
-    assert "## Briefing du jour" in md
-    assert "Aucun event marquant" in md
+def test_build_news_par_actif_pas_de_fichier(tmp_path: Path, today: date):
+    md = briefing.build_news_par_actif(tmp_path / "absent.md", today=today)
+    assert "## News par actif" in md
+    assert "— aucune actualité" in md
 
 
 # ---------------------------------------------------------------------------
@@ -190,11 +198,13 @@ def test_prepend_to_bulletin_apres_titre(tmp_path: Path, events_log: Path, today
     ok = briefing.prepend_to_bulletin(bull, md)
     assert ok is True
     new_content = bull.read_text(encoding="utf-8")
-    # Le briefing doit apparaître APRÈS le titre H1 et AVANT la matrice
+    # P6 — le Décor doit apparaître APRÈS le titre H1 + la méta, AVANT la 1re
+    # section (« ## Matrice » ici).
     idx_titre = new_content.index("# Bulletin Analyste")
-    idx_briefing = new_content.index("## Briefing du jour")
+    idx_meta = new_content.index("- Généré")
+    idx_decor = new_content.index("## Décor du jour")
     idx_matrice = new_content.index("## Matrice")
-    assert idx_titre < idx_briefing < idx_matrice
+    assert idx_titre < idx_meta < idx_decor < idx_matrice
     # Le détail par actif reste intact (en fin)
     assert "## Détail par actif" in new_content
     assert "### Pétrole\nligne détail" in new_content
@@ -207,12 +217,12 @@ def test_prepend_to_bulletin_idempotent(tmp_path: Path, events_log: Path, today:
     briefing.prepend_to_bulletin(bull, md)
     briefing.prepend_to_bulletin(bull, md)  # re-run
     content = bull.read_text(encoding="utf-8")
-    # Un seul bloc Briefing (le 2e remplace le 1er)
-    assert content.count("## Briefing du jour") == 1
+    # Un seul bloc Décor (le 2e remplace le 1er)
+    assert content.count("## Décor du jour") == 1
     # La matrice n'est pas dupliquée
     assert content.count("## Matrice") == 1
 
 
 def test_prepend_to_bulletin_fichier_absent(tmp_path: Path):
-    ok = briefing.prepend_to_bulletin(tmp_path / "absent.md", "## Briefing du jour\n")
+    ok = briefing.prepend_to_bulletin(tmp_path / "absent.md", "## Décor du jour\n")
     assert ok is False

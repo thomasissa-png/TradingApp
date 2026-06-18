@@ -442,11 +442,16 @@ def build_intro_block(
     groups: Dict[str, List[Dict[str, str]]],
     today: date,
     now: Optional[datetime] = None,
+    n_total: Optional[int] = None,
 ) -> List[str]:
     """Bloc « Décor du jour » : intro factuelle 1-2 phrases + top 1-3 news.
 
     DÉTERMINISTE (zéro LLM). Sources : catalyseurs J0 (calendrier statique) +
     thèmes dominants + top news (events réels). Retourne des lignes markdown.
+
+    HONNÊTETÉ (P6) : à 7h le résultat d'un catalyseur (ex. FOMC) n'existe pas →
+    l'intro l'ANNONCE comme « attendu aujourd'hui » (catalyseur), JAMAIS un
+    résultat. `n_total` (optionnel) = nb d'events analysés, affiché en pied.
     """
     from datetime import datetime as _dt
     now = now or _dt.combine(today, _dt.min.time())
@@ -456,9 +461,11 @@ def build_intro_block(
 
     if cats:
         cat_str = ", ".join(cats)
-        phrase_cat = f"Catalyseur(s) du jour : {cat_str}."
+        # P6 — HONNÊTETÉ : « attendu(s) aujourd'hui » = annonce d'un catalyseur,
+        # jamais un résultat (à 7h le résultat FOMC n'existe pas encore).
+        phrase_cat = f"Catalyseur(s) attendu(s) aujourd'hui : {cat_str}."
     else:
-        phrase_cat = "Pas de catalyseur majeur identifié au calendrier."
+        phrase_cat = "Pas de catalyseur majeur attendu au calendrier."
     if themes:
         phrase_themes = f"Thèmes news dominants ce matin : {', '.join(themes)}."
     else:
@@ -475,6 +482,12 @@ def build_intro_block(
         lines.extend(top)
     else:
         lines.append("- Pas d'actualité à fort impact ce matin.")
+    if n_total is not None:
+        lines.append("")
+        lines.append(
+            f"_{n_total} events analysés, {len(impactful)} à impact "
+            f"(fenêtre {FRESHNESS_HOURS}h jusqu'au {today:%Y-%m-%d})._"
+        )
     lines.append("")
     return lines
 
@@ -502,47 +515,18 @@ def build_briefing(
     groups = group_by_actif(impactful)
 
     lines: List[str] = []
-    # Bloc A — « Décor du jour » : intro factuelle + top 1-3 news, EN TÊTE du
-    # Briefing (avant la synthèse des events par actif). Déterministe, best-effort.
+    # P6 — « Décor du jour » : INTRO factuelle (catalyseur FOMC + thèmes + top
+    # news), EN TÊTE du bulletin. Le bloc « ## Briefing du jour » per-actif (qui
+    # affichait « 0 à impact / Aucun event marquant », redondant avec le détail
+    # news) est SUPPRIMÉ : le détail par actif est désormais rendu UNE SEULE FOIS
+    # en fin de bulletin via « ## News par actif » (build_news_par_actif).
+    # Déterministe, best-effort — l'intro ne casse jamais le briefing.
     try:
-        lines.extend(build_intro_block(impactful, groups, today, now))
+        lines.extend(build_intro_block(
+            impactful, groups, today, now, n_total=len(all_events)
+        ))
     except Exception as e:  # noqa: BLE001 — l'intro ne doit jamais casser le briefing
         logger.warning("Intro « décor du jour » non rendue : %s", e)
-    lines.append("## Briefing du jour")
-    lines.append("")
-    lines.append(
-        f"_{len(all_events)} events analysés, {len(impactful)} à impact "
-        f"(fenêtre {FRESHNESS_HOURS}h jusqu'au {today:%Y-%m-%d})._"
-    )
-    lines.append("")
-
-    if not impactful:
-        lines.append("- Aucun event marquant sur la fenêtre.")
-        lines.append("")
-        return "\n".join(lines)
-
-    # Ordre : les 12 actifs dans l'ordre canonique, puis 'Autres' à la fin
-    ordre_actifs = []
-    seen = set()
-    for actif, _, _ in TICKER_TO_ACTIF:
-        if actif not in seen:
-            ordre_actifs.append(actif)
-            seen.add(actif)
-    ordre_actifs.append("Autres")
-
-    for actif in ordre_actifs:
-        evs = groups.get(actif)
-        if not evs:
-            continue
-        # Tri intra-actif : materiality desc puis date desc, puis dédup des
-        # news identiques (même titre + source) AU SEIN de l'actif.
-        evs_sorted = _dedup_news_in_actif(_sort_by_materiality_then_date(evs))
-        lines.append(f"### {actif}")
-        for ev in evs_sorted[:max_par_actif]:
-            lines.append(_puce(ev, actif_label=actif))
-        if len(evs_sorted) > max_par_actif:
-            lines.append(f"- _(+{len(evs_sorted) - max_par_actif} autres events sur cet actif)_")
-        lines.append("")
 
     # --- Santé des sources (visible dans le briefing de base) ---
     # Best-effort : si source_monitor indispo ou source-health.md absent, on
@@ -561,6 +545,80 @@ def build_briefing(
 
 
 # ---------------------------------------------------------------------------
+# « News par actif » (P7) — section EN FIN de bulletin
+# ---------------------------------------------------------------------------
+# Pour chacun des 12 actifs (ordre canonique), liste les events news du corpus
+# matin qui le concernent : date / source / titre + sens d'impact déjà qualifié
+# (↑/↓/→ via _direction_arrow_for). RÉUTILISE `group_by_actif` (events groupés
+# par actif). Actif sans news → « — aucune actualité ». ZÉRO invention : seuls de
+# vrais events de l'events-log sont rendus. Déterministe, best-effort.
+
+
+def build_news_par_actif(
+    events_path: Path = EVENTS_LOG,
+    today: Optional[date] = None,
+    max_par_actif: int = 3,
+) -> str:
+    """Construit le bloc markdown '## News par actif' (P7), placé EN FIN.
+
+    Args:
+        events_path: chemin vers events-log.md
+        today: date du run (default = today)
+        max_par_actif: nombre max de puces par actif
+
+    Returns:
+        Markdown du bloc (sans trailing newline superflu).
+    """
+    today = today or date.today()
+    all_events = parse_events(events_path)
+    impactful = filter_recent_impactful(all_events, today)
+    groups = group_by_actif(impactful)
+
+    lines: List[str] = ["## News par actif", ""]
+    lines.append(
+        f"_Actualités à impact des dernières {FRESHNESS_HOURS}h, groupées par "
+        f"actif (la flèche en tête de puce donne le sens d'impact déjà qualifié : "
+        f"haussier / baissier / neutre). Ordre canonique des 12 actifs._"
+    )
+    lines.append("")
+
+    # Ordre canonique des 12 actifs (dédup en préservant l'ordre).
+    ordre_actifs: List[str] = []
+    seen: set = set()
+    for actif, _, _ in TICKER_TO_ACTIF:
+        if actif not in seen:
+            ordre_actifs.append(actif)
+            seen.add(actif)
+
+    for actif in ordre_actifs:
+        lines.append(f"### {actif}")
+        evs = groups.get(actif)
+        if not evs:
+            lines.append("- — aucune actualité")
+            lines.append("")
+            continue
+        evs_sorted = _dedup_news_in_actif(_sort_by_materiality_then_date(evs))
+        for ev in evs_sorted[:max_par_actif]:
+            lines.append(_puce(ev, actif_label=actif))
+        if len(evs_sorted) > max_par_actif:
+            lines.append(
+                f"- _(+{len(evs_sorted) - max_par_actif} autres events sur cet actif)_"
+            )
+        lines.append("")
+
+    # Events hors univers (Autres) — informatif, jamais rattaché à un actif suivi.
+    autres = groups.get("Autres")
+    if autres:
+        autres_sorted = _dedup_news_in_actif(_sort_by_materiality_then_date(autres))
+        lines.append("### Autres (hors univers suivi)")
+        for ev in autres_sorted[:max_par_actif]:
+            lines.append(_puce(ev, actif_label="Autres"))
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+# ---------------------------------------------------------------------------
 # Insertion dans le bulletin
 # ---------------------------------------------------------------------------
 
@@ -569,11 +627,11 @@ TITRE_RE = re.compile(r"^(#\s+Bulletin[^\n]*\n)", re.MULTILINE)
 
 
 def prepend_to_bulletin(bulletin_path: Path, briefing_md: str) -> bool:
-    """Insère `briefing_md` juste après le titre H1 du bulletin.
+    """Insère `briefing_md` (Décor du jour) après le H1 + la méta, AVANT la
+    première section « ## … » (P6 — Décor en tête, après les lignes de méta).
 
-    Si le bulletin contient déjà un bloc '## Briefing du jour' (re-run), on le
-    remplace. Si le titre est introuvable, on préfixe le briefing en tête du
-    fichier (best-effort).
+    Si un bloc « ## Décor du jour » existe déjà (re-run), on le remplace. Si le
+    titre H1 est introuvable, on préfixe en tête (best-effort).
 
     Retourne True si écrit, False si rien à faire (fichier absent).
     """
@@ -582,29 +640,37 @@ def prepend_to_bulletin(bulletin_path: Path, briefing_md: str) -> bool:
         return False
     content = bulletin_path.read_text(encoding="utf-8")
 
-    # Si un briefing existe déjà, le retirer pour le remplacer.
-    # Le bloc briefing inclut "## Briefing du jour" + (optionnel) "## Santé des sources".
+    # Si un Décor existe déjà, le retirer pour le remplacer. Le bloc inclut
+    # « ## Décor du jour » + (optionnel) « ## Santé des sources » accolée.
     existing_re = re.compile(
-        r"## Briefing du jour\n.*?(?=\n## |\Z)",
+        r"## Décor du jour\n.*?(?=\n## |\Z)",
         re.DOTALL,
     )
     if existing_re.search(content):
         content = existing_re.sub("", content, count=1)
-        # Idem pour la section "## Santé des sources" (si elle suivait immédiatement)
         sante_re = re.compile(
             r"## Santé des sources\n.*?(?=\n## |\Z)",
             re.DOTALL,
         )
         content = sante_re.sub("", content, count=1)
-        # nettoyage des doubles sauts résiduels après suppression
         content = re.sub(r"\n{3,}", "\n\n", content)
 
     block = briefing_md.rstrip() + "\n\n"
 
     m = TITRE_RE.search(content)
     if m:
-        insert_at = m.end()
-        new_content = content[:insert_at] + "\n" + block + content[insert_at:]
+        # P6 — insérer APRÈS la méta : on cible le 1er « ## » qui suit le H1 et on
+        # insère juste avant lui. Fallback : juste après le H1 si pas de « ## ».
+        first_h2 = re.search(r"^## ", content[m.end():], re.MULTILINE)
+        if first_h2:
+            insert_at = m.end() + first_h2.start()
+            new_content = (
+                content[:insert_at].rstrip() + "\n\n" + block
+                + content[insert_at:].lstrip("\n")
+            )
+        else:
+            insert_at = m.end()
+            new_content = content[:insert_at] + "\n" + block + content[insert_at:]
     else:
         new_content = block + content
 

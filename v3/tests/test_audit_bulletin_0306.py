@@ -87,7 +87,11 @@ def test_regime_news_affichage_sans_contradiction_de_signe():
     r.coverage = 0.35
 
     b = sa.render_bulletin([r], {}, NOW, "h", "ok")
-    synth = b.split("## Synthèse des décisions")[1].split("## Détail")[0]
+    # P2/P4/P5 — la pédagogie (qui contient les symboles ≈/⚪ en toutes lettres)
+    # vit désormais dans « ## Comment lire les scores », inséré ENTRE la Synthèse
+    # et le Détail. On borne donc la tranche Synthèse à cette nouvelle section
+    # pour ne tester QUE la table de synthèse (pas la légende).
+    synth = b.split("## Synthèse des décisions")[1].split("## Comment lire les scores")[0]
     # La direction LONG apparaît, le chiffre quant est étiqueté explicitement.
     assert "[quant -0.64]" in synth
     assert "📰 régime news" in synth
@@ -113,7 +117,11 @@ def test_bande_quasi_neutre_drapeau_mais_conclusion_inchangee():
     r.confidence = {h: "normale" for h in sa.HORIZONS}
 
     b = sa.render_bulletin([r], {}, NOW, "h", "ok")
-    synth = b.split("## Synthèse des décisions")[1].split("## Détail")[0]
+    # P2/P4/P5 — la pédagogie (qui contient les symboles ≈/⚪ en toutes lettres)
+    # vit désormais dans « ## Comment lire les scores », inséré ENTRE la Synthèse
+    # et le Détail. On borne donc la tranche Synthèse à cette nouvelle section
+    # pour ne tester QUE la table de synthèse (pas la légende).
+    synth = b.split("## Synthèse des décisions")[1].split("## Comment lire les scores")[0]
     assert "≈" in synth  # drapeau quasi-neutre présent
     # Conclusion INCHANGÉE : la cellule reste SHORT avec sa note.
     assert "SHORT (-0.20)" in synth
@@ -129,7 +137,11 @@ def test_bande_quasi_neutre_exclut_coin_flip():
     r.confidence = {h: "normale" for h in sa.HORIZONS}
 
     b = sa.render_bulletin([r], {}, NOW, "h", "ok")
-    synth = b.split("## Synthèse des décisions")[1].split("## Détail")[0]
+    # P2/P4/P5 — la pédagogie (qui contient les symboles ≈/⚪ en toutes lettres)
+    # vit désormais dans « ## Comment lire les scores », inséré ENTRE la Synthèse
+    # et le Détail. On borne donc la tranche Synthèse à cette nouvelle section
+    # pour ne tester QUE la table de synthèse (pas la légende).
+    synth = b.split("## Synthèse des décisions")[1].split("## Comment lire les scores")[0]
     assert "⚪" in synth
     assert "≈" not in synth
 
@@ -143,7 +155,11 @@ def test_bande_quasi_neutre_exclut_note_forte():
     r.confidence = {h: "normale" for h in sa.HORIZONS}
 
     b = sa.render_bulletin([r], {}, NOW, "h", "ok")
-    synth = b.split("## Synthèse des décisions")[1].split("## Détail")[0]
+    # P2/P4/P5 — la pédagogie (qui contient les symboles ≈/⚪ en toutes lettres)
+    # vit désormais dans « ## Comment lire les scores », inséré ENTRE la Synthèse
+    # et le Détail. On borne donc la tranche Synthèse à cette nouvelle section
+    # pour ne tester QUE la table de synthèse (pas la légende).
+    synth = b.split("## Synthèse des décisions")[1].split("## Comment lire les scores")[0]
     assert "≈" not in synth
 
 
@@ -212,7 +228,11 @@ def test_mono_critere_affiche_en_matrice():
     )
     r.nom = "SP"
     b = sa.render_bulletin([r], {}, NOW, "h", "ok")
-    synth = b.split("## Synthèse des décisions")[1].split("## Détail")[0]
+    # P2/P4/P5 — la pédagogie (qui contient les symboles ≈/⚪ en toutes lettres)
+    # vit désormais dans « ## Comment lire les scores », inséré ENTRE la Synthèse
+    # et le Détail. On borne donc la tranche Synthèse à cette nouvelle section
+    # pour ne tester QUE la table de synthèse (pas la légende).
+    synth = b.split("## Synthèse des décisions")[1].split("## Comment lire les scores")[0]
     # Le drapeau ◧ apparaît dans la matrice ET dans la légende.
     assert "◧" in synth
     assert "mono-critère dominant" in b  # légende

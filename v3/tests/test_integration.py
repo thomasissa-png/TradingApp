@@ -48,7 +48,9 @@ def test_briefing_on_real_eventslog_is_fast():
     md = bf.build_briefing(today=date.today())
     dt = time.time() - t
     assert dt < 8.0, f"build_briefing trop lent ({dt:.1f}s) — regex catastrophique ?"
-    assert "Briefing du jour" in md
+    # P6 — build_briefing produit désormais le « Décor du jour » (intro), plus
+    # le bloc « Briefing du jour » per-actif (déplacé vers build_news_par_actif).
+    assert "Décor du jour" in md
 
 
 def test_long_malformed_line_does_not_hang(tmp_path):

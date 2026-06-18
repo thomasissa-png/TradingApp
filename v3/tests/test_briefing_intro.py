@@ -67,7 +67,8 @@ def test_intro_avec_catalyseur(monkeypatch, today, now_fixed, tmp_path):
     lines = briefing.build_intro_block(impactful, groups, today, now_fixed)
     txt = "\n".join(lines)
     assert "Décor du jour" in txt
-    assert "Catalyseur(s) du jour : CPI US, FOMC." in txt
+    # P6 — HONNÊTETÉ : « attendu(s) aujourd'hui » (catalyseur), jamais un résultat.
+    assert "Catalyseur(s) attendu(s) aujourd'hui : CPI US, FOMC." in txt
 
 
 def test_intro_sans_catalyseur(monkeypatch, today, now_fixed, tmp_path):
@@ -76,7 +77,7 @@ def test_intro_sans_catalyseur(monkeypatch, today, now_fixed, tmp_path):
     impactful = briefing.filter_recent_impactful(briefing.parse_events(p), today)
     groups = briefing.group_by_actif(impactful)
     txt = "\n".join(briefing.build_intro_block(impactful, groups, today, now_fixed))
-    assert "Pas de catalyseur majeur identifié au calendrier." in txt
+    assert "Pas de catalyseur majeur attendu au calendrier." in txt
 
 
 def test_catalyseurs_j0_noms_tolerant(monkeypatch):
@@ -152,17 +153,20 @@ def test_build_briefing_contient_intro_et_section(monkeypatch, today, tmp_path):
     monkeypatch.setattr(briefing, "_catalyseurs_j0_noms", lambda now: ["CPI US"])
     p = _events(tmp_path, FIXTURE_V2)
     md = briefing.build_briefing(events_path=p, today=today)
-    assert "## Décor du jour" in md          # PARTIE A (intro)
-    assert "## Briefing du jour" in md        # section legacy non régressée
-    assert "Catalyseur(s) du jour : CPI US." in md
+    assert "## Décor du jour" in md          # P6 — intro en tête
+    # P6 — plus de bloc « ## Briefing du jour » : la santé des sources clôt le
+    # briefing ; le détail per-actif est dans build_news_par_actif.
+    assert "## Briefing du jour" not in md
+    assert "Catalyseur(s) attendu(s) aujourd'hui : CPI US." in md
 
 
 def test_intro_ne_casse_pas_si_helper_leve(monkeypatch, today, tmp_path):
-    # build_intro_block qui lève → le briefing garde quand même sa section legacy.
+    # build_intro_block qui lève → le briefing reste valide (santé des sources).
     def boom(*a, **k):
         raise RuntimeError("intro KO")
 
     monkeypatch.setattr(briefing, "build_intro_block", boom)
     p = _events(tmp_path, FIXTURE_V2)
     md = briefing.build_briefing(events_path=p, today=today)
-    assert "## Briefing du jour" in md
+    # Le briefing ne crashe pas et produit au moins la santé des sources.
+    assert "## Santé des sources" in md or "Santé des sources" in md

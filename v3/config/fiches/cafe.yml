@@ -12,17 +12,33 @@ seuils_reussite_pct:
   "1m": 7.0
 
 criteres:
+  # FIX SIGNE (18/06) — même bug que le cacao. Ce critère est SYMÉTRIQUE :
+  # l'intention déclarée (effet_long « Gel imminent OU sécheresse persistante »)
+  # dit que les DEUX extrêmes climatiques menacent l'offre = HAUSSIER ; les pluies
+  # normales/abondantes = baissier. MAIS l'ancienne impl. (`composite` qui ne câblait
+  # en réalité QUE l'anomalie de précipitations via fetch_open_meteo_anomaly, puis
+  # `norm = z/div` + `signe:1`) était une ligne DROITE : plus de pluie = haussier,
+  # SÉCHERESSE = baissier → à CONTRE-SENS (poussait le café SHORT en sécheresse).
+  # Corrigé par `normalisation: zscore_abs` (« écart à la normale dans les 2 sens »,
+  # basé sur |z|, réutilise le mécanisme cacao zscore_abs_normalisee via _handle_meteo —
+  # la clé est déjà dans METEO_CRITERIA). zscore_centre=0 ; signe=+1 (norm>0=haussier).
+  # ⚠️ La dimension GEL (Tmin<4°C) reste NON câblée : le composite ne l'utilisait
+  # déjà PAS (seule la pluie était lue) → ce fix ne la régresse pas, mais le gel
+  # reste un CHANTIER DATA SÉPARÉ (cf. handoff). cle_courante/poids INCHANGÉS (L023).
   - id: 1
-    nom: "Météo Brésil — risque gel et sécheresse (Minas Gerais)"
-    source: "NOAA / météo + check T min"
+    nom: "Météo Brésil — écart à la normale (sécheresse OU excès, Minas Gerais)"
+    source: "NOAA / météo (précipitations ; T min non câblée)"
     cle_courante: "meteo_bresil_minas_gerais"
-    normalisation: "composite"   # zscore 60j précipitations + check T min<4°C — valeur pré-normalisée fournie
+    normalisation: "zscore_abs"   # |z| précipitations 60j : sécheresse OU excès = haussier
+    zscore_window: 60
+    zscore_div: 2
+    zscore_centre: 0.0            # déviation jugée « normale » (en z) ; 0 = neutre au centre
     cap: 1.0
-    signe: 1
+    signe: 1                      # +1 : norm>0 (écart à la normale) => HAUSSIER
     poids: 11
     pertinence: { "24h": 0.5, "7j": 1.0, "1m": 1.0 }
-    effet_long: "Gel imminent OU sécheresse persistante"
-    effet_short: "Pluies normales/abondantes"
+    effet_long: "Sécheresse persistante OU pluies excessives (écart à la normale)"
+    effet_short: "Pluies normales/abondantes (proche de la climatologie)"
 
   - id: 2
     nom: "Stocks d'Arabica certifiés (tendance 20 jours)"

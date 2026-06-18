@@ -1197,7 +1197,12 @@ def test_meteo_routing_all_zones(monkeypatch, now_fixed, cle, lat, lon):
 
 
 def test_meteo_bresil_minas_composite_coords(monkeypatch, now_fixed):
-    """meteo_bresil_minas_gerais (composite) → coords -19.9/-43.9."""
+    """meteo_bresil_minas_gerais (composite) → coords -19.9/-43.9.
+
+    NB (fix 18/06) : la FICHE café est passée en `normalisation: zscore_abs` (météo
+    symétrique, cf. test_meteo_cafe_ble_zscore_abs.py). Ce test pilote le handler
+    `_handle_composite` en dur — conservé pour non-régression du handler composite
+    (toujours présent), mais ce N'EST PLUS le chemin emprunté par la fiche café."""
     captured = []
     def fake_get(url, params=None, timeout=15):
         captured.append(dict(params or {}))
@@ -1485,7 +1490,14 @@ def test_composite_meteo_bresil_emet_valeur_normalisee(monkeypatch, now_fixed):
     `valeur_normalisee` côté criteres_calculator.
 
     Combiné au fix de normalise(), ce critère — auparavant jeté en silence — est
-    désormais récupéré dans le score (couverture en hausse pour le café)."""
+    désormais récupéré dans le score (couverture en hausse pour le café).
+
+    ⚠️ NB (fix 18/06) : ce test pilote le handler `_handle_composite` en dur et
+    vérifie l'ancienne normalisation LINÉAIRE (`z/div` → sécheresse z<0 = -0.141
+    BAISSIÈRE). C'était précisément le BUG DE SIGNE. La FICHE café est désormais en
+    `zscore_abs` (sécheresse = haussière, cf. test_meteo_cafe_ble_zscore_abs.py) ;
+    on conserve ce test pour la non-régression du handler composite (toujours
+    présent pour d'autres clés), mais il ne décrit PLUS le café réel."""
     monkeypatch.setenv("TWELVE_DATA_API_KEY", "fake")
     # Anomalie pluie brute (z) renvoyée par Open-Meteo.
     monkeypatch.setattr(cc, "fetch_open_meteo_anomaly", lambda lat, lon, days=60: -0.282)

@@ -64,11 +64,21 @@ def test_aucun_acronyme_source_dans_les_noms():
 
 
 def test_ble_noaa_traduit():
-    """La fiche blé ne contient plus « NOAA » mais le libellé clair de sécheresse."""
+    """La fiche blé ne contient plus « NOAA » et porte un libellé clair sur les
+    précipitations des plaines US.
+
+    NB (fix 18/06) : le nom a été rendu HONNÊTE vis-à-vis de la donnée réelle —
+    l'ancien « Sécheresse dans les plaines céréalières US » sous-entendait un indice
+    de sécheresse alors que la donnée injectée est une anomalie de PRÉCIPITATIONS
+    signée (sécheresse OU excès). Le critère est désormais symétrique (zscore_abs)."""
     data = yaml.safe_load((FICHES_DIR / "ble.yml").read_text(encoding="utf-8"))
-    noms = [c["nom"] for c in data["criteres"]]
+    par_cle = {c["cle_courante"]: c["nom"] for c in data["criteres"]}
+    noms = list(par_cle.values())
     assert all("NOAA" not in n for n in noms)
-    assert "Sécheresse dans les plaines céréalières US" in noms
+    nom_drought = par_cle["noaa_drought_midwest_plains"]
+    assert "plaines céréalières US" in nom_drought
+    # Libellé honnête : reflète l'écart à la normale (les 2 extrêmes), pas « sécheresse » seule.
+    assert "écart à la normale" in nom_drought.lower()
 
 
 def test_cot_traduit_en_gros_speculateurs():

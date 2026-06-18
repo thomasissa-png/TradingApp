@@ -26,19 +26,35 @@ criteres:
     effet_long: "Ratio baisse (offre serrée)"
     effet_short: "Ratio monte (oversupply)"
 
+  # FIX LABEL↔DONNÉE + SIGNE (18/06). Le label disait « drought, z>+1 = LONG » MAIS
+  # la donnée RÉELLEMENT injectée (clé dans METEO_CRITERIA → fetch_open_meteo_anomaly)
+  # n'est PAS un indice de sécheresse : c'est une anomalie de PRÉCIPITATIONS signée
+  # (z>0 = PLUS de pluie que la normale, z<0 = sécheresse). L'ancien `zscore`+`signe:1`
+  # rendait donc « z>+1 = LONG » alors que z>+1 = excès de pluie (pas sécheresse) — le
+  # label « drought » était faux et le signe ne décrivait pas la sécheresse.
+  # LECTURE AGRONOMIQUE RETENUE = SYMÉTRIQUE (comme cacao) : sur les plaines à blé US
+  # (HRW/SRW), la SÉCHERESSE (z<0, stress hydrique) ET les EXCÈS de pluie (z>0 :
+  # inondation, maladies fongiques, qualité dégradée, récolte retardée) menacent tous
+  # deux la récolte = HAUSSIER ; précipitations proches de la normale = baissier. D'où
+  # `normalisation: zscore_abs` (|z|, réutilise zscore_abs_normalisee via _handle_meteo).
+  # cle_courante INCHANGÉE (L023 — clé d'agrégation stable) ; nom/effets rendus honnêtes.
+  # ⚠️ ZÉRO cutover sur la valeur du jour : z courant = +0.30 (>0) → |z|/div ≡ z/div,
+  # valeur normalisée IDENTIQUE → direction blé du jour INCHANGÉE. Seul le côté sécheresse
+  # (z<0), jusqu'ici compté baissier à tort, devient haussier.
   - id: 2
-    nom: "Sécheresse dans les plaines céréalières US"
-    source: "NOAA US Drought Monitor"
+    nom: "Écart à la normale des précipitations — plaines céréalières US (sécheresse OU excès)"
+    source: "Open-Meteo (anomalie précipitations vs climato 5 ans)"
     cle_courante: "noaa_drought_midwest_plains"
-    normalisation: "zscore"
+    normalisation: "zscore_abs"
     zscore_window: 60
     zscore_div: 2
+    zscore_centre: 0.0           # déviation jugée « normale » (en z) ; 0 = neutre au centre
     cap: 1.0
-    signe: 1                     # direct : >40% drought (z>+1) => LONG
+    signe: 1                     # +1 : norm>0 (écart à la normale) => HAUSSIER
     poids: 9
     pertinence: { "24h": 0.3, "7j": 1.0, "1m": 1.0 }
-    effet_long: ">40% drought (z>+1)"
-    effet_short: "<10% (z<-1)"
+    effet_long: "Sécheresse (précip < normale) OU excès de pluie (inondation/qualité)"
+    effet_short: "Précipitations proches de la normale"
 
   - id: 3
     nom: "Tensions géopolitiques en mer Noire"

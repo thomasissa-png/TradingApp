@@ -966,6 +966,12 @@ class Measure:
     # le decision-log de la date d'émission → news_driven reste None.
     news_driven: Optional[bool] = None
     news_rationale: Optional[str] = None  # synthese_rationale du critère news dominant, court
+    # Provenance news QUANTIFIÉE (mesure de justesse news vs quant — additif, zéro
+    # impact signal). `ratio_news` = |news|/|quant| en %, tel qu'exposé par le
+    # decision-log d'émission. None si decision-log d'émission introuvable / champ
+    # absent (cas pré-instrumentation). Persisté dans measures-log pour permettre
+    # le suivi séparé news/quant PAR HORIZON sans recalcul à la volée.
+    ratio_news: Optional[float] = None
     # C7 LOT 6 — Mesure flip vs continuation :
     # is_flip = True si la conclusion (actif×horizon) a CHANGÉ vs le bulletin
     # immédiatement précédent (même cellule). False = continuation. None = pas
@@ -1563,6 +1569,57 @@ def load_news_driven_map(
     return result
 
 
+def load_ratio_news_map(
+    bulletin_date: date,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+) -> Dict[Tuple[str, str], float]:
+    """Retrouve par cellule (actif, horizon) la valeur `ratio_news` à l'émission.
+
+    Jumeau quantitatif de `load_news_driven_map` : même balayage du decision-log
+    de la date d'émission (dernier run du jour gagne), mais on remonte le float
+    `ratio_news` (|news|/|quant| en %) pour mesure SÉPARÉE news vs quant.
+
+    Best-effort, zéro invention : decision-log absent, fichier illisible, ou
+    `ratio_news` absent/non numérique → la cellule n'apparaît pas dans le map
+    (la Measure correspondante gardera `ratio_news=None`). Ne JAMAIS crasher :
+    cette fonction est purement additive (mesure-only).
+    """
+    result: Dict[Tuple[str, str], float] = {}
+    if not decision_log_dir.exists():
+        return result
+    prefix = bulletin_date.isoformat()
+    files = sorted(decision_log_dir.glob(f"{prefix}-*.jsonl"))
+    if not files:
+        return result
+    for fp in files:
+        try:
+            with fp.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(rec, dict):
+                        continue
+                    if rec.get("bulletin_date") != prefix:
+                        continue
+                    actif = rec.get("actif")
+                    horizon = rec.get("horizon")
+                    if not actif or horizon not in HORIZONS:
+                        continue
+                    rn = rec.get("ratio_news")
+                    if isinstance(rn, bool) or not isinstance(rn, (int, float)):
+                        continue
+                    result[(str(actif), str(horizon))] = float(rn)
+        except OSError as e:
+            logger.warning("decision-log illisible (ratio_news) %s : %s", fp, e)
+            continue
+    return result
+
+
 def _extract_price_dated(raw: Any) -> Tuple[Optional[float], Optional[date]]:
     """Normalise un retour `fetch_price` hétérogène en (prix, date_du_tick).
 
@@ -1844,6 +1901,12 @@ def measure(
             bdate,
             decision_log_dir=sys.modules[__name__].DECISION_LOG_DIR,
         )
+        # Map quantitatif parallèle (mesure-only) : ratio_news par cellule à
+        # l'émission. Sans effet sur news_map (tag binaire) ni sur le scoring.
+        ratio_news_map = load_ratio_news_map(
+            bdate,
+            decision_log_dir=sys.modules[__name__].DECISION_LOG_DIR,
+        )
         for cell in cells:
             # n'inclure que les horizons échus à `today`.
             # Utiliser compute_echeance (et non un +N calendaire local) pour
@@ -1901,6 +1964,9 @@ def measure(
             nd = news_map.get((cell.actif_name, cell.horizon))
             if nd is not None:
                 m.news_driven, m.news_rationale = nd
+            # ratio_news quantifié (additif, None si decision-log d'émission
+            # introuvable ou champ absent — zéro invention).
+            m.ratio_news = ratio_news_map.get((cell.actif_name, cell.horizon))
             # C7 LOT 6 — Tag is_flip (None si pas de bulletin précédent).
             m.is_flip = _compute_is_flip(cell, bpath)
             measures.append(m)
@@ -2805,6 +2871,13 @@ def measure_to_record(m: Measure) -> Dict[str, Any]:
         "realized_pct": m.delta_pct,
         "is_flip": m.is_flip,
         "echeance": m.echeance.isoformat(),
+        # Provenance news QUANTIFIÉE (mesure de justesse news vs quant — additif,
+        # zéro impact signal). `news_driven` (bool) et `ratio_news` (% à
+        # l'émission) sont JOINTS depuis le decision-log d'émission. None si
+        # decision-log introuvable / cellule pré-instrumentation. Permet de
+        # suivre le win-rate news SÉPARÉ du quant, par horizon, sans recalcul.
+        "news_driven": m.news_driven,
+        "ratio_news": m.ratio_news,
         # Refonte CA-M4/M5 — provenance du prix de référence ("ouverture" cible,
         # "emission" fallback, None si indispo). Permet de vérifier en audit que
         # le 24h post-refonte utilise bien l'ouverture, pas le prix à 7h.

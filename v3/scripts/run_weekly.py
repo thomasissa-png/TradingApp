@@ -554,7 +554,103 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     )
     L.append("")
 
+    # --- Justesse des news vs quant (informatif, mesure-only) ---
+    # Vue LÉGÈRE : win-rate news-driven vs quant-pures PAR HORIZON, même garde-fou
+    # N<15 → « en chauffe ». Lecture seule de measures-log (+ fallback decision-log
+    # pour les mesures pré-instrumentation). N'influence AUCUNE proposition Manager.
+    L.append("### Justesse des news vs quant (informatif)")
+    L.append("")
+    L.append(
+        "> Mesure SÉPARÉE de la justesse des calls *dominés par les news* "
+        "(`ratio_news` > 50 % à l'émission) vs les calls *quant-purs*, par horizon. "
+        "Informatif uniquement — n'alimente aucune proposition. Garde-fou : "
+        f"N < {_NEWS_MIN_N} ⇒ « en chauffe », jamais présenté comme significatif."
+    )
+    L.append("")
+    try:
+        nq = _news_vs_quant_winrate()
+        L.append("| Horizon | News-driven | Quant-pures |")
+        L.append("|---|---|---|")
+        for h in ("24h", "7j", "1m"):
+            L.append(f"| {h} | {_fmt_news_cell(nq[h]['news'])} | {_fmt_news_cell(nq[h]['quant'])} |")
+        L.append("")
+        L.append(
+            "> Rapport détaillé (semaine par semaine, verdict) : "
+            "`v3/audit/news-winrate-mesure.md`."
+        )
+    except Exception as e:  # noqa: BLE001 — vue informative best-effort, jamais bloquante
+        logger.warning("vue news vs quant KO (non bloquant) : %s", e)
+        L.append("> Vue indisponible ce run (lecture measures-log/decision-log).")
+    L.append("")
+
     return "\n".join(L)
+
+
+# Garde-fou honnêteté partagé avec le rapport backfill (cohérence du seuil).
+_NEWS_MIN_N = 15
+_NEWS_RATIO_THRESHOLD_PCT = 50.0
+
+
+def _fmt_news_cell(b: Tuple[int, int]) -> str:
+    """Formate (vrai, faux) en win-rate avec garde-fou N<_NEWS_MIN_N."""
+    vrai, faux = b
+    n = vrai + faux
+    if n == 0:
+        return "— (0 jugé)"
+    wr = 100.0 * vrai / n
+    if n < _NEWS_MIN_N:
+        return f"{wr:.0f}% [N={n} — en chauffe]"
+    return f"{wr:.0f}% [N={n}]"
+
+
+def _news_vs_quant_winrate() -> Dict[str, Dict[str, Tuple[int, int]]]:
+    """Win-rate news-driven vs quant-pures par horizon, depuis measures-log.
+
+    Pour chaque mesure jugée (VRAI/FAUX), classe la cellule news/quant via le
+    champ persisté `ratio_news` (forward) ; à défaut via jointure decision-log
+    d'émission (load_ratio_news_map). NC exclus. Best-effort, lecture seule.
+    """
+    import journaliste as jr  # noqa: PLC0415
+
+    measures_log = ROOT / "data" / "measures-log.jsonl"
+    out: Dict[str, Dict[str, Tuple[int, int]]] = {
+        h: {"news": (0, 0), "quant": (0, 0)} for h in ("24h", "7j", "1m")
+    }
+    if not measures_log.exists():
+        return out
+    ratio_cache: Dict[str, Dict[Tuple[str, str], float]] = {}
+
+    def _add(h: str, g: str, win: bool) -> None:
+        v, f = out[h][g]
+        out[h][g] = (v + (1 if win else 0), f + (0 if win else 1))
+
+    for line in measures_log.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        outcome = r.get("outcome")
+        h = r.get("horizon")
+        if outcome not in ("VRAI", "FAUSSE") or h not in out:
+            continue
+        rn = r.get("ratio_news")
+        if not isinstance(rn, (int, float)) or isinstance(rn, bool):
+            bd = r.get("bulletin_date")
+            if bd not in ratio_cache:
+                try:
+                    from datetime import date as _date  # noqa: PLC0415
+                    ratio_cache[bd] = jr.load_ratio_news_map(_date.fromisoformat(bd))
+                except Exception:  # noqa: BLE001
+                    ratio_cache[bd] = {}
+            rn = ratio_cache[bd].get((r.get("actif"), h))
+        if not isinstance(rn, (int, float)) or isinstance(rn, bool):
+            continue  # inconnu (pré-instrumentation) → exclu de la comparaison
+        g = "news" if rn > _NEWS_RATIO_THRESHOLD_PCT else "quant"
+        _add(h, g, outcome == "VRAI")
+    return out
 
 
 def _interp_conviction(taux: Optional[float], n: int, forte: bool) -> str:

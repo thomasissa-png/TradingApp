@@ -121,17 +121,22 @@ criteres:
     effet_short: "S'élargit (z>+1)"
 
   - id: 8
-    nom: "Météo Vietnam — précipitations (Robusta)"
+    nom: "Météo Vietnam — écart à la normale (sécheresse OU excès, Robusta)"
     source: "NOAA / météo"
     cle_courante: "meteo_vietnam_robusta"
-    normalisation: "zscore"
+    # FIX SIGNE (18/06, verdict panel experts) : SYMÉTRIQUE — sécheresse OU excès de
+    # pluie nuisent au robusta vietnamien (Dak Lak : séchage des cerises, qualité,
+    # floraison) => offre↓ => HAUSSIER ; pluies normales = baissier. Confirmé marché
+    # (Bloomberg/Reuters nov. 2025). zscore_centre=0 + valeur du jour z≈0 => zéro cutover.
+    normalisation: "zscore_abs"  # |z| précipitations 60j : sécheresse OU excès = haussier
     zscore_window: 60            # précipitations
     zscore_div: 2
+    zscore_centre: 0.0           # déviation jugée « normale » (en z) ; 0 = neutre au centre
     cap: 1.0
-    signe: -1                    # inversé : sécheresse (z<-1 précip) => LONG
+    signe: 1                     # +1 : norm>0 (écart à la normale) => HAUSSIER
     poids: 4
     pertinence: { "24h": 0.2, "7j": 0.6, "1m": 0.9 }
-    effet_long: "Sécheresse"
+    effet_long: "Sécheresse OU excès de pluie (séchage/qualité robusta)"
     effet_short: "Pluies normales"
 
   # Critère tendance-prix v3 — correctif famille trend-following (audit 10/06,

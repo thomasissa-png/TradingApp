@@ -16,6 +16,7 @@ Red lines :
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import logging
 import os
@@ -357,6 +358,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FICHES_DIR = ROOT / "config" / "fiches"
 CRITERES_FILE = ROOT / "data" / "criteres-courants.md"
 BULLETINS_DIR = ROOT / "data" / "bulletins"
+RAISONS_DRIVERS_FILE = ROOT / "config" / "raisons-drivers.yml"
 
 
 # ---------------------------------------------------------------------------
@@ -2640,6 +2642,183 @@ def _driver_detail(r: "ActifResult", h: str) -> str:
     return f"{nom} ({ctx}) → contribue {contrib:+.2f}"
 
 
+# ---------------------------------------------------------------------------
+# « Raison principale » par cellule (Synthèse des décisions) — PUR RENDU
+# ---------------------------------------------------------------------------
+# Driver dominant = critère au plus fort CONTRIBUTION DANS LE SENS de la
+# conclusion nette (PAS le plus fort |effet| brut). Règle d'or de l'audit
+# `/tmp/audit-marche-raisons.md` : si le critère de plus fort |effet| CONTREDIT
+# la direction nette (cas S&P 7j LONG porté par crédit+taux 10a malgré taux réels
+# baissiers dominants en |effet|), on prend le plus fort contributeur QUI VA dans
+# le sens de la conclusion — jamais une raison à contre-sens.
+#
+# Déterministe, zéro LLM, zéro réseau. La raison est RECALCULÉE à chaque run
+# depuis les drivers courants (aucun état stocké) → se met à jour « au fur et à
+# mesure » et persiste tant que le driver dominant ne change pas.
+
+# Convention de signe DOUTEUSE (audit point 5) : phrase neutre forcée.
+_RAISON_DRIVERS_DOUTEUX: set = {"meteo_cacao_cote_ivoire_ghana"}
+
+# Quasi-neutre → on n'invente PAS de direction (audit : VIX 7j/1m, CAC).
+_RAISON_QUASI_NEUTRE = "quasi-neutre — pas de driver franc"
+
+
+@functools.lru_cache(maxsize=1)
+def _load_raisons_drivers() -> Dict[str, Dict[str, Dict[str, str]]]:
+    """Charge `config/raisons-drivers.yml` (mémoïsé). Best-effort : si le fichier
+    est absent/illisible, retourne une biblio vide → fallback nom canonique."""
+    try:
+        with RAISONS_DRIVERS_FILE.open("r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+    except Exception:  # noqa: BLE001 (best-effort, jamais de crash de rendu)
+        return {"drivers": {}, "prefixes": {}}
+    return {
+        "drivers": data.get("drivers", {}) or {},
+        "prefixes": data.get("prefixes", {}) or {},
+        "aliases": data.get("aliases", {}) or {},
+    }
+
+
+def _resolve_cle_canonique(cle: str) -> str:
+    """Résout une clé RÉELLE du pipeline vers sa clé canonique de biblio via les
+    `aliases`. Retourne la clé inchangée si pas d'alias. Sert aussi à détecter le
+    driver « douteux » (meteo_cacao) après résolution."""
+    if not cle:
+        return cle
+    return _load_raisons_drivers()["aliases"].get(cle, cle)
+
+
+def _raison_phrases_for_cle(cle: str) -> Optional[Dict[str, str]]:
+    """Retourne le dict de phrases (`phrase_long`/`phrase_short`/`phrase_neutre`)
+    pour une `cle_courante`, ou None si la clé n'est pas dans la biblio.
+
+    Ordre : alias (clé réelle → canonique) → exact → PRÉFIXE (clés à suffixe
+    d'actif type `momentum_prix_20j_petrole`). L'exact prime sur le préfixe.
+    """
+    if not cle:
+        return None
+    biblio = _load_raisons_drivers()
+    canon = _resolve_cle_canonique(cle)
+    drivers = biblio["drivers"]
+    if canon in drivers:
+        return drivers[canon]
+    # Préfixes : le plus long préfixe correspondant gagne (déterminisme).
+    prefixes = biblio["prefixes"]
+    best_pref = ""
+    for pref in prefixes:
+        if canon.startswith(pref) and len(pref) > len(best_pref):
+            best_pref = pref
+    if best_pref:
+        return prefixes[best_pref]
+    return None
+
+
+def _driver_dominant_net(
+    r: "ActifResult", h: str, direction: str
+) -> Tuple[str, str, float]:
+    """Critère au plus fort contributeur DANS LE SENS de `direction` (LONG/SHORT).
+
+    LONG → max contribution positive. SHORT → contribution la plus négative
+    (max |c| parmi les c<0). Exclut gates et n/a. Départage ex æquo par nom
+    (déterministe). Retourne `(cle_courante, nom, contribution_signée)`, ou
+    `("", "", 0.0)` si aucun contributeur ne va dans le sens de la conclusion.
+    """
+    veut_positif = direction == "LONG"
+    best_key: Tuple[float, str] = (-1.0, "")  # (|contrib dans le sens|, nom)
+    best_cle = ""
+    best_nom = ""
+    best_ctr = 0.0
+    for c in r.criteres:
+        if c.is_gate or c.is_na:
+            continue
+        ctr = c.contributions.get(h)
+        if ctr is None:
+            continue
+        # Garde uniquement les contributeurs qui POUSSENT dans le sens net.
+        if veut_positif and ctr <= 0.0:
+            continue
+        if (not veut_positif) and ctr >= 0.0:
+            continue
+        key = (abs(ctr), c.nom)
+        if key > best_key:
+            best_key = key
+            best_cle = getattr(c, "cle_courante", "") or ""
+            best_nom = _nom_critere(c)
+            best_ctr = ctr
+    return best_cle, best_nom, best_ctr
+
+
+def _raison_cellule(r: "ActifResult", h: str) -> str:
+    """Raison principale DÉTERMINISTE d'une cellule (actif × horizon).
+
+    Règles (audit `/tmp/audit-marche-raisons.md`) :
+      1. Direction absente / INSUFFISANT / carry / news-régime sans note franche,
+         ou |note| < NEUTRAL_BAND → « quasi-neutre — pas de driver franc »
+         (ne JAMAIS inventer de direction — cf. VIX 7j/1m, CAC, S&P 1m).
+      2. Sinon driver dominant = plus fort contributeur DANS LE SENS de la
+         conclusion nette (jamais le |effet| brut à contre-sens — cas S&P 7j).
+      3. Phrase de la biblio selon le SIGNE de la contribution + contribution
+         chiffrée (ex. « taux réels US élevés … (−7.8) »).
+      4. `meteo_cacao` (signe douteux) → phrase NEUTRE, pas de direction assénée.
+      5. Gates (⚑ FOMC) jamais cités (exclus par `is_gate`).
+      6. Fallback : pas d'entrée biblio → nom canonique (legacy). Aucun
+         contributeur dans le sens → « — ». Jamais de crash.
+    """
+    direction = r.conclusions.get(h, "")
+    score = r.scores.get(h, 0.0)
+    # (1) Quasi-neutre : on ne raconte pas de direction.
+    if direction not in ("LONG", "SHORT") or abs(score) < NEUTRAL_BAND:
+        return _RAISON_QUASI_NEUTRE
+    # (2) Driver porteur NET (jamais à contre-sens de la conclusion).
+    cle, nom, ctr = _driver_dominant_net(r, h, direction)
+    if not cle and not nom:
+        return "—"
+    phrases = _raison_phrases_for_cle(cle)
+    contrib_str = f" ({ctr:+.1f})"
+    # (6) Fallback : driver hors biblio → nom canonique (comportement legacy).
+    if phrases is None:
+        return f"{nom}{contrib_str}" if nom else "—"
+    # (4) Convention de signe douteuse → phrase neutre (pas de direction).
+    #     On teste la clé canonique (post-alias) pour couvrir les clés réelles.
+    if _resolve_cle_canonique(cle) in _RAISON_DRIVERS_DOUTEUX:
+        phrase = phrases.get("phrase_neutre") or phrases.get(
+            "phrase_long" if ctr > 0 else "phrase_short", ""
+        )
+    else:
+        # (3) Phrase selon le SIGNE de la contribution (effet observé).
+        phrase = phrases.get("phrase_long" if ctr > 0 else "phrase_short", "")
+    if not phrase:
+        return f"{nom}{contrib_str}" if nom else "—"
+    return f"{phrase}{contrib_str}"
+
+
+def build_raisons_block(results: List["ActifResult"]) -> List[str]:
+    """Bloc compact « raison principale » PAR ACTIF, sous la grille de Synthèse.
+
+    Un bloc par actif (12), 3 horizons sur une ligne scannable :
+      **Or** — 24h : taux réels élevés (SHORT) · 7j : … · 1m : …
+
+    PUR RENDU : recalculé à chaque run depuis les drivers courants. La direction
+    (LONG/SHORT) est rappelée entre parenthèses ; quasi-neutre → pas de direction.
+    """
+    lines: List[str] = []
+    lines.append("**Raison principale par cellule** _(driver dominant courant, dans le sens de la décision — recalculé à chaque run)_")
+    lines.append("")
+    for r in results:
+        morceaux: List[str] = []
+        for h in HORIZONS:
+            raison = _raison_cellule(r, h)
+            direction = r.conclusions.get(h, "")
+            score = r.scores.get(h, 0.0)
+            if direction in ("LONG", "SHORT") and abs(score) >= NEUTRAL_BAND:
+                morceaux.append(f"{h} : {raison} _({direction})_")
+            else:
+                morceaux.append(f"{h} : {raison}")
+        lines.append(f"- **{r.nom}** — " + " · ".join(morceaux))
+    lines.append("")
+    return lines
+
+
 def _synthese_paris_partages(
     cells: List[Dict[str, str]],
     shared: Dict[Tuple[str, str], int],
@@ -3270,6 +3449,9 @@ def render_bulletin(
             c = detail_cells[r.nom]
             synth_lines.append(f"| {r.nom} | {c[0]} | {c[1]} | {c[2]} |")
     synth_lines.append("")
+    # Raison principale par cellule — bloc compact PAR ACTIF sous la grille
+    # (la grille est déjà large → lisibilité). PUR RENDU, recalculé à chaque run.
+    synth_lines.extend(build_raisons_block(results))
     # P2/P4/P5 — la légende des symboles + la définition de « Note » sont
     # désormais dans « ## Comment lire les scores » (fin de bulletin), une seule
     # fois. La synthèse ne garde que titre + table(s).

@@ -3469,6 +3469,19 @@ def build_decision_log_records(
     for r in results:
         for h in HORIZONS:
             contribs: List[Dict[str, Any]] = []
+            # --- SHADOW persistance (mesure « news vit tant que le quant ne la
+            #     dément pas ») : on pré-calcule le quant_total de la cellule AVANT
+            #     la boucle critères pour pouvoir poser, par critère news, les flags
+            #     observationnels persist_shadow_*. SOURCE DE VÉRITÉ = news_cap_info
+            #     (même valeur que celle réinjectée plus bas par compute_news_bias).
+            #     PUR AJOUT DE CHAMPS — aucun impact direction/score/conclusion.
+            _cap_h_shadow = r.news_cap_info.get(h, {}) if r.news_cap_info else {}
+            _quant_total_shadow = float(_cap_h_shadow.get("quant_total_pm1", 0.0))
+            _sq_shadow = (
+                1 if _quant_total_shadow > 1e-6
+                else (-1 if _quant_total_shadow < -1e-6 else 0)
+            )
+            _PERSIST_SHADOW_HARD_DROP_DAYS = 30.0  # filet d'âge actuel (régime témoin)
             for c in r.criteres:
                 if c.is_gate or c.is_na:
                     continue
@@ -3550,6 +3563,55 @@ def build_decision_log_records(
                 if c.is_denial:
                     contrib_entry["is_denial"] = True
                     contrib_entry["denial_keyword"] = c.denial_keyword
+                # --- SHADOW persistance (FLAG-ONLY, additif) -------------------
+                # Mesure « news vit tant que le quant ne la dément pas » vs le
+                # régime témoin « hard-drop 30j ». Posé UNIQUEMENT sur les critères
+                # news (ia*/keyword). PUR AJOUT OBSERVATIONNEL : aucun de ces champs
+                # n'est lu par le scoring/conclusion/mesure — ils s'accumuleront aux
+                # prochains runs réels pour trancher empiriquement (cf.
+                # v3/audit/persistance-shadow-mesure.md).
+                _is_news_crit = (
+                    c.source_track.startswith("ia") or c.source_track == "keyword"
+                )
+                if _is_news_crit:
+                    # direction effective de la news = signe de sa contribution
+                    # (fallback : signe brut du critère si contribution nulle).
+                    _contrib_h = c.contributions.get(h, 0.0)
+                    _sn_shadow = (
+                        1 if _contrib_h > 0
+                        else (-1 if _contrib_h < 0 else int(c.signe or 0))
+                    )
+                    _age_days = float(c.freshness_days or 0.0)
+                    # quant_disconfirms : le quant de la cellule est de signe opposé
+                    # à la direction de cette news (le quant dément déjà la news).
+                    _quant_disconfirms = (
+                        _sq_shadow != 0 and _sn_shadow != 0 and _sn_shadow == -_sq_shadow
+                    )
+                    # persist_shadow_alive : sous « persist-until-quant-confirms »,
+                    # ce critère survivrait au-delà de 30j SSI le quant le confirme
+                    # encore (ne le dément pas). En-deçà de 30j → vivant de toute
+                    # façon (les deux régimes coïncident).
+                    if _age_days < _PERSIST_SHADOW_HARD_DROP_DAYS:
+                        _persist_alive = True
+                    else:
+                        _persist_alive = not _quant_disconfirms
+                    # persist_shadow_blocks_flip : la news, sous persistance, resterait
+                    # une voix vivante au-delà de 30j ALORS QUE le régime témoin 30j
+                    # l'aurait DROP (≥30j) — et elle est DÉCISIVE pour la cellule
+                    # (|contrib news| ≥ |quant_total|), donc son maintien peut figer la
+                    # conclusion là où le drop l'aurait laissée suivre le quant.
+                    # Conditions : âge ≥ 30j (le régime 30j la tue) ; vivante sous
+                    # persistance (quant ne la dément pas) ; magnitude news ≥ quant
+                    # (elle pèse assez pour tenir la conclusion). FLAG-ONLY.
+                    _persist_blocks_flip = (
+                        _age_days >= _PERSIST_SHADOW_HARD_DROP_DAYS
+                        and _persist_alive
+                        and abs(_contrib_h) >= abs(_quant_total_shadow)
+                    )
+                    contrib_entry["persist_shadow_age_days"] = round(_age_days, 3)
+                    contrib_entry["quant_disconfirms"] = bool(_quant_disconfirms)
+                    contrib_entry["persist_shadow_alive"] = bool(_persist_alive)
+                    contrib_entry["persist_shadow_blocks_flip"] = bool(_persist_blocks_flip)
                 contribs.append(contrib_entry)
             # --- Observabilité ratio_news (Point 4 plan horizon) ----------
             # FACTORISÉ (ticket D) : on dérive bias/ratio via compute_news_bias —

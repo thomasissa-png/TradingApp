@@ -580,6 +580,21 @@ def normalise(critere: dict, raw: Any) -> Tuple[Optional[float], str]:
             return _clip(vn, cap), f"{type_norm} (pré-calculé)"
         return None, f"n/a ({type_norm} : valeur_normalisee absente)"
 
+    # Zscore_abs : normalisation SYMÉTRIQUE « écart à la normale dans les 2 sens »
+    # (cacao météo : sécheresse OU excès = haussier). La valeur_normalisee est
+    # pré-calculée en amont par criteres_calculator (_handle_meteo via
+    # zscore_abs_normalisee) ; le scoring la consomme telle quelle, exactement
+    # comme zscore/composite. Le signe +1 de la fiche reste appliqué en aval
+    # (norm>0 = haussier).
+    if type_norm == "zscore_abs":
+        if valeur_norm_precalc is not None:
+            try:
+                vn = float(valeur_norm_precalc)
+            except (TypeError, ValueError):
+                return None, "n/a (zscore_abs : valeur_normalisee non numérique)"
+            return _clip(vn, cap), "zscore_abs (écart normale, pré-calculé)"
+        return None, "n/a (zscore_abs : valeur_normalisee absente)"
+
     return None, f"n/a (type de normalisation inconnu : {type_norm!r})"
 
 
@@ -756,6 +771,49 @@ def coverage_pct(coverage: float) -> int:
     """
     pct = int(round(max(0.0, min(1.0, coverage)) * 100))
     return pct
+
+
+def compute_note_normalisee(
+    criteres: "List[CritereResult]", note_brute: float, horizon: str,
+) -> Optional[float]:
+    """Intensité COMPARABLE entre actifs = note brute ÷ Σ|poids effectif couvert|.
+
+    PROBLÈME (audit Analyst) : la note (score) est une SOMME BRUTE de contributions
+    `valeur_norm × poids × pertinence`. Sa magnitude dépend du NOMBRE et du POIDS des
+    critères réellement disponibles → « Cacao +6,45 » et « CAC +0,61 » ne sont PAS
+    comparables entre actifs (un actif à 6 critères forts couverts pèse mécaniquement
+    plus qu'un actif à 2 critères faibles). À l'intérieur d'un actif c'est bon ;
+    ENTRE actifs c'est trompeur.
+
+    FIX (PUR AFFICHAGE, INFORMATIF) : on ramène la note à une échelle ~[-1, +1] en
+    divisant par le poids effectif MAXIMAL atteignable sur les critères COUVERTS de
+    cette cellule (actif × horizon) :
+
+        note_norm = note_brute / Σ ( |poids| × pertinence[horizon] )   sur critères
+                    non-gate, non-momentum, valeur_norm disponible (= « couverts »).
+
+    Comme |valeur_norm| ≤ cap = 1, chaque contribution est bornée par
+    |poids| × pertinence, donc note_norm ∈ [-1, +1] : intensité comparable entre
+    actifs indépendamment du nombre de critères actifs.
+
+    DÉGRADATION PROPRE : aucun critère couvert (dénominateur ≤ 0) → None (le rendu
+    affiche « — »). Le momentum-prix est EXCLU comme dans `compute_coverage`
+    (toujours présent → gonflerait artificiellement le dénominateur).
+
+    RED LINE : n'altère NI la note brute, NI la direction, NI la sélection. Purement
+    une seconde lecture (intensité), jamais décisionnelle.
+    """
+    denom = 0.0
+    for c in criteres:
+        if c.is_gate or c.is_na or c.valeur_norm is None:
+            continue
+        if c.cle_courante.startswith("momentum_prix_"):
+            continue
+        pert = float(c.pertinence.get(horizon, 0.0)) if c.pertinence else 0.0
+        denom += abs(float(c.poids)) * pert
+    if denom <= 0:
+        return None
+    return float(note_brute) / denom
 
 
 def derniere_direction_valide(
@@ -3795,6 +3853,36 @@ def render_bulletin(
     # Raison principale par cellule — bloc compact PAR ACTIF sous la grille
     # (la grille est déjà large → lisibilité). PUR RENDU, recalculé à chaque run.
     synth_lines.extend(build_raisons_block(results, now))
+    # ── Intensité comparable entre actifs (INFORMATIF, pur affichage) ─────────
+    # (B) Audit Analyst : la Note brute n'est PAS comparable d'un actif à l'autre
+    # (sa magnitude dépend du nombre/poids de critères couverts). On affiche EN PLUS
+    # une « intensité comparable » = note ÷ Σ|poids effectif couvert| ∈ ~[-1, +1].
+    # RED LINE : INFORMATIF uniquement. La Sélection du jour et toute la décision
+    # restent sur la NOTE BRUTE (inchangées). Dégradation propre : « — » si 0 critère
+    # couvert. Le tri/décision sur cette colonne serait une décision SÉPARÉE.
+    # NB : section H2 DISTINCTE (pas H3 sous la Synthèse) → la grille de décision
+    # « ## Synthèse des décisions » reste la seule table de DIRECTIONS. Cette table
+    # d'intensité ne porte aucun drapeau directionnel : elle ne doit pas être lue
+    # comme une cellule de grille (les parsers de flags s'arrêtent au prochain « ## »).
+    synth_lines.append("")
+    synth_lines.append("## Intensité comparable entre actifs (informatif)")
+    synth_lines.append("")
+    synth_lines.append(
+        "_Note brute ÷ Σ|poids couvert| → échelle commune ~−1..+1, comparable D'UN "
+        "ACTIF À L'AUTRE (la note brute ne l'est pas, sa magnitude dépend du nombre de "
+        "critères actifs). **Informatif** : la Sélection et les décisions restent sur "
+        "la note brute. « — » = aucun critère couvert._"
+    )
+    synth_lines.append("")
+    synth_lines.append("| Actif | 24h | 7j | 1m |")
+    synth_lines.append("|---|---|---|---|")
+    for r in results:
+        intens_cells: List[str] = []
+        for h in HORIZONS:
+            nn = compute_note_normalisee(r.criteres, r.scores[h], h)
+            intens_cells.append("—" if nn is None else f"{nn:+.2f}")
+        synth_lines.append(f"| {r.nom} | {intens_cells[0]} | {intens_cells[1]} | {intens_cells[2]} |")
+    synth_lines.append("")
     # P2/P4/P5 — la légende des symboles + la définition de « Note » sont
     # désormais dans « ## Comment lire les scores » (fin de bulletin), une seule
     # fois. La synthèse ne garde que titre + table(s).

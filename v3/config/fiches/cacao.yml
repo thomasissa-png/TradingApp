@@ -12,19 +12,31 @@ seuils_reussite_pct:
   "1m": 10.0
 
 criteres:
+  # FIX SIGNE (18/06) : ce critère est SYMÉTRIQUE — les DEUX extrêmes (sécheresse
+  # harmattan z<0 OU pluies excessives z>0) menacent l'offre = HAUSSIER ; les
+  # pluies normales (z≈0) = baissier. L'ancienne impl. `zscore`+`signe:1` était une
+  # ligne DROITE (plus de pluie = haussier, SÉCHERESSE = baissier) → à CONTRE-SENS
+  # de l'intention (poussait le cacao SHORT en sécheresse). Corrigé par
+  # `normalisation: zscore_abs` (« écart à la normale dans les 2 sens », basé sur
+  # |z| : plus on s'éloigne de la normale — sécheresse OU excès — plus c'est
+  # haussier ; normal ≈ neutre). zscore_centre=0 → ZÉRO cutover : pour z>0 (cas
+  # actuel, pluies au-dessus de la normale) |z|/div ≡ z/div, la valeur normalisée
+  # et donc la direction cacao du jour sont INCHANGÉES. Le fix ne change QUE le
+  # côté sécheresse (z<0), désormais haussier au lieu de baissier.
   - id: 1
     nom: "Météo Côte d'Ivoire + Ghana (pluies, 30 jours)"
     source: "NOAA / météo"
     cle_courante: "meteo_ci_ghana_precip_30j"
-    normalisation: "zscore"
+    normalisation: "zscore_abs"
     zscore_window: 60
     zscore_div: 2
+    zscore_centre: 0.0           # déviation jugée « normale » (en z) ; 0 = zéro cutover
     cap: 1.0
-    signe: 1
+    signe: 1                     # +1 : norm>0 (= écart à la normale) => HAUSSIER
     poids: 11
     pertinence: { "24h": 0.3, "7j": 0.9, "1m": 0.7 }
-    effet_long: "Sécheresse harmattan OU pluies excessives"
-    effet_short: "Pluies normales"
+    effet_long: "Sécheresse harmattan OU pluies excessives (écart à la normale)"
+    effet_short: "Pluies normales (proche de la climatologie)"
 
   - id: 2
     nom: "Arrivées de cacao dans les ports ivoiriens (20 jours)"

@@ -1642,6 +1642,37 @@ def compute_zscore_normalisee(value: float, history: List[float], *, zscore_div:
     return max(-cap, min(cap, norm))
 
 
+def zscore_abs_normalisee(z: float, *, zscore_div: float, cap: float,
+                          centre: float = 0.0) -> float:
+    """Normalisation SYMÉTRIQUE « écart à la normale dans les 2 sens ».
+
+    Pour un critère dont les DEUX extrêmes (z très positif OU très négatif) ont le
+    MÊME effet directionnel (cf. cacao : sécheresse harmattan OU pluies excessives
+    = supply à risque = HAUSSIER ; pluies normales = baissier), une normalisation
+    linéaire `z/div` (signe +1) est À CONTRE-SENS : elle pousse SHORT en sécheresse
+    (z<0). Ce helper règle ce bug en pénalisant l'ÉCART à la normale, pas le sens :
+
+        norm = clip( (|z| - centre) / div ,  -cap, +cap )
+
+    Propriétés (avec `signe: +1` dans la fiche → norm>0 = haussier) :
+      - |z| grand (sécheresse OU excès) → norm POSITIVE → HAUSSIER (intention) ;
+      - z ≈ 0 (normal) → norm = -centre/div → NEUTRE (centre=0) ou légèrement
+        BAISSIER (centre>0 : amplitude de déviation considérée « normale ») ;
+      - `centre` est le seuil de déviation jugé « normal » exprimé en z (défaut 0,
+        pour zéro cutover : à centre=0 et z=z_courant, |z|/div ≡ z/div quand z>0,
+        donc la valeur normalisée des jours au-dessus de la normale est INCHANGÉE).
+
+    `zscore_div`, `cap` et `centre` viennent de la fiche (clés zscore_div / cap /
+    zscore_centre). Déterministe, zéro invention.
+    """
+    if not math.isfinite(z) or zscore_div == 0:
+        # Cohérence avec compute_zscore_normalisee : entrée non exploitable → 0
+        # n'est PAS retourné ici (le caller décide du n/a). On clippe défensivement.
+        return 0.0
+    norm = (abs(float(z)) - float(centre)) / float(zscore_div)
+    return max(-cap, min(cap, norm))
+
+
 def zscore_from_series(series: List[float], *, zscore_div: float, cap: float,
                        label: str = "") -> Optional[Tuple[float, float]]:
     """Helper : retourne (valeur=dernier point, valeur_normalisee) à partir d'une série brute.
@@ -2690,7 +2721,16 @@ def _handle_meteo(cle: str, crit: dict, ts: str) -> Optional[dict]:
         return None
     cap = float(crit.get("cap", 1.0))
     div = float(crit.get("zscore_div", 2.0))
-    norm = max(-cap, min(cap, z / div))
+    type_norm = crit.get("normalisation")
+    if type_norm == "zscore_abs":
+        # Critère météo SYMÉTRIQUE (cacao : sécheresse OU excès = haussier ;
+        # normal = baissier). On pénalise l'écart à la normale, pas le sens —
+        # fix du bug de signe (signe linéaire poussait SHORT en sécheresse).
+        centre = float(crit.get("zscore_centre", 0.0))
+        norm = zscore_abs_normalisee(z, zscore_div=div, cap=cap, centre=centre)
+    else:
+        # Météo LINÉAIRE historique (signe directionnel porté par la fiche).
+        norm = max(-cap, min(cap, z / div))
     return {"valeur": z, "valeur_normalisee": norm,
             "valeur_ponderee": norm, "ts": ts}
 
@@ -2972,6 +3012,15 @@ def build_critere_value(
     in_window = is_in_activation_window(cle, now, triggers_cfg, fiche_key)
     if in_window is False:
         return {"valeur_normalisee": 0.0, "ts": ts, "note": "hors fenêtre"}
+
+    # Normalisation SYMÉTRIQUE « écart à la normale » (zscore_abs) — météo à
+    # double extrême (cacao : sécheresse OU excès = haussier). Routée vers le
+    # handler météo qui applique zscore_abs_normalisee (fix du bug de signe).
+    if type_norm == "zscore_abs":
+        if cle in METEO_CRITERIA:
+            return _handle_meteo(cle, crit, ts)
+        SKIP_COUNTER[f"zscore_abs_unmapped:{cle}"] += 1
+        return None
 
     # Numérique (zscore / lineaire)
     if type_norm == "zscore":

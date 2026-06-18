@@ -446,3 +446,220 @@ def test_n2_garde_detail_quand_drivers_differents():
     joined = "\n".join(lines)
     assert "24h : semi-conducteurs" in joined        # 24h détaillé (driver distinct)
     assert "7j/1m : même driver" in joined           # 7j/1m regroupés (taux réels)
+
+
+# ===========================================================================
+# B2-EXACT — VERROU ANTI-DIVERGENCE : drapeaux(raison) == drapeaux(grille Synthèse)
+# ===========================================================================
+# Audit round 2 (9/10) : la raison passait par `_compute_cell_risk_flags` (jeu de
+# prédicats parallèle) avec un `now` distinct de la grille → VIX 24h portait ⌛ en
+# trop, Pétrole 24h un ⌛ faux. Désormais la raison ET la grille tirent leurs
+# drapeaux de prudence de l'UNIQUE `_synthese_cell_risk_flags` au MÊME `now`.
+# Ce verrou re-rend un VRAI bulletin (render_bulletin), parse la grille de Synthèse
+# ET le bloc « Raison principale », et exige l'égalité cellule par cellule.
+
+import re as _re
+
+# Symboles STRUCTURELS de la grille jamais portés par la raison (hors périmètre
+# « prudence ») : à retirer de la cellule de grille avant comparaison.
+_FLAGS_STRUCTURELS = {"⚑", "≈", "⚪", "🚫"}
+# Tous les symboles de prudence possibles (ordre indifférent pour l'extraction).
+_FLAGS_PRUDENCE = ["📰", "⏸", "⚠️", "◧", "↯", "⇄", "⇆", "⌛", "⊘"]
+
+
+def _prudence_from_grid_cell(cell: str) -> List[str]:
+    """Extrait, DANS L'ORDRE, les symboles de prudence rendus dans une cellule de
+    la grille de Synthèse (en ignorant le texte « régime news (54%) », « maintenu »,
+    les chiffres et les symboles structurels ⚑/≈/⚪)."""
+    out: List[str] = []
+    for ch in cell:
+        if ch in _FLAGS_STRUCTURELS:
+            continue
+        if ch in _FLAGS_PRUDENCE and (not out or out[-1] != ch):
+            out.append(ch)
+    return out
+
+
+def _prudence_from_raison_segment(seg: str) -> List[str]:
+    """Extrait, dans l'ordre, les symboles de prudence d'un segment de raison
+    (« 24h : … 📰 ↯ _(SHORT)_ »)."""
+    out: List[str] = []
+    for ch in seg:
+        if ch in _FLAGS_PRUDENCE and (not out or out[-1] != ch):
+            out.append(ch)
+    return out
+
+
+def _parse_bulletin_flags(md: str):
+    """Retourne deux dicts {(actif, horizon): [symboles]} : l'un depuis la grille
+    « ## Synthèse des décisions », l'autre depuis le bloc « Raison principale »."""
+    lines = md.splitlines()
+    grid: Dict[tuple, List[str]] = {}
+    raison: Dict[tuple, List[str]] = {}
+    in_synth = False
+    for ln in lines:
+        if ln.startswith("## Synthèse des décisions"):
+            in_synth = True
+            continue
+        if in_synth and ln.startswith("## "):
+            in_synth = False
+        # Lignes de grille : « | Actif | c24 | c7j | c1m | »
+        if in_synth and ln.startswith("| ") and " | " in ln and not ln.startswith("| Actif"):
+            cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+            if len(cells) == 4 and cells[0] not in ("", "---"):
+                actif = cells[0]
+                for h, cell in zip(sa.HORIZONS, cells[1:]):
+                    grid[(actif, h)] = _prudence_from_grid_cell(cell)
+        # Bloc raison : « - **Actif** — 24h : … · 7j : … · 1m : … »
+        m = _re.match(r"- \*\*(.+?)\*\* — (.+)$", ln)
+        if m:
+            actif = m.group(1)
+            body = m.group(2)
+            for seg in body.split(" · "):
+                hm = _re.match(r"\s*(24h|7j|1m)(?:/(?:24h|7j|1m))* : (.+)$", seg)
+                if not hm:
+                    continue
+                # Cas regroupé « 7j/1m : … » → applique aux deux horizons du groupe.
+                hzs = _re.findall(r"(24h|7j|1m)", seg.split(" : ", 1)[0])
+                syms = _prudence_from_raison_segment(seg)
+                for h in hzs:
+                    raison[(actif, h)] = syms
+    return grid, raison
+
+
+def _make_news_weighted_short(nom: str, h: str, *, event_date: str = "",
+                              divergence: bool = False) -> sa.ActifResult:
+    """Cellule SHORT news-pondérée (📰) — reproduit VIX/Pétrole 24h de la grille."""
+    crit = [
+        _crit_full("Tendance 20j", f"momentum_prix_20j_{nom.lower()}", {h: -3.30},
+                   event_date=event_date),
+        _crit_full("Driver news", f"news_{nom.lower()}", {h: -2.50},
+                   source_track="ia_synthese", event_date=event_date),
+    ]
+    scores = {hz: (-3.30 if hz == h else 0.0) for hz in sa.HORIZONS}
+    conc = {hz: ("SHORT" if hz == h else sa.CONCLUSION_INSUFFISANT) for hz in sa.HORIZONS}
+    return _actif_full(
+        nom, crit, scores, conc,
+        scores_pond={hz: (-1.63 if hz == h else 0.0) for hz in sa.HORIZONS},
+        conclusions_pond={hz: ("SHORT" if hz == h else "") for hz in sa.HORIZONS},
+        news_cap_info={h: {"news_total_pm1": -5.0, "quant_total_pm1": -3.3}},
+        divergence_quant_news={hz: (divergence and hz == h) for hz in sa.HORIZONS},
+    )
+
+
+# `now` = bulletin (2026-06-17 07h). Un event du 17/06 n'est PAS encore already-priced
+# en 24h à cette date → AUCUN ⌛ (c'était le bug : à J+1 il le devenait).
+_NOW_BULLETIN = datetime(2026, 6, 17, 7, 0, tzinfo=timezone.utc)
+
+
+def test_b2_exact_vix_24h_pas_de_deja_cote():
+    """VIX 24h (event du 17/06, pas encore already-priced en 24h au 17/06) :
+    PAS de ⌛ — ni dans la grille, ni dans la raison ; et grille == raison."""
+    r = _make_news_weighted_short("VIX", "24h", event_date="2026-06-17T00:00:00+00:00")
+    md = sa.render_bulletin([r], {}, _NOW_BULLETIN, "h", "ok")
+    grid, raison = _parse_bulletin_flags(md)
+    assert "⌛" not in grid[("VIX", "24h")], grid[("VIX", "24h")]
+    assert "⌛" not in raison[("VIX", "24h")], raison[("VIX", "24h")]
+    assert "📰" in raison[("VIX", "24h")]
+    # Égalité stricte grille ↔ raison (le verrou anti-divergence).
+    assert raison[("VIX", "24h")] == grid[("VIX", "24h")]
+
+
+def test_b2_exact_petrole_24h_pas_de_deja_cote():
+    """Pétrole 24h (event du 17/06) : PAS de ⌛, 📰 présent, grille == raison."""
+    r = _make_news_weighted_short("Pétrole (Brent)", "24h",
+                                  event_date="2026-06-17T00:00:00+00:00")
+    md = sa.render_bulletin([r], {}, _NOW_BULLETIN, "h", "ok")
+    grid, raison = _parse_bulletin_flags(md)
+    assert "⌛" not in grid[("Pétrole (Brent)", "24h")]
+    assert "⌛" not in raison[("Pétrole (Brent)", "24h")]
+    assert "📰" in raison[("Pétrole (Brent)", "24h")]
+    assert raison[("Pétrole (Brent)", "24h")] == grid[("Pétrole (Brent)", "24h")]
+
+
+def test_b2_exact_event_anterieur_garde_le_deja_cote():
+    """Non-régression : un event du 16/06 EST already-priced en 24h au 17/06 →
+    ⌛ présent dans la grille ET dans la raison (le verrou ne sur-corrige pas)."""
+    r = _make_news_weighted_short("Café (Arabica)", "24h",
+                                  event_date="2026-06-16T00:00:00+00:00")
+    md = sa.render_bulletin([r], {}, _NOW_BULLETIN, "h", "ok")
+    grid, raison = _parse_bulletin_flags(md)
+    assert "⌛" in grid[("Café (Arabica)", "24h")]
+    assert "⌛" in raison[("Café (Arabica)", "24h")]
+
+
+def test_b2_exact_balayage_grille_egale_raison():
+    """VERROU GÉNÉRAL : sur un bulletin multi-actifs/horizons, pour CHAQUE cellule
+    directionnelle, les drapeaux de prudence de la raison == ceux de la grille."""
+    actifs = [
+        _make_news_weighted_short("VIX", "24h", event_date="2026-06-17T00:00:00+00:00"),
+        _make_news_weighted_short("Pétrole (Brent)", "24h",
+                                  event_date="2026-06-17T00:00:00+00:00", divergence=True),
+        _make_news_weighted_short("Café (Arabica)", "24h",
+                                  event_date="2026-06-16T00:00:00+00:00"),
+    ]
+    # Un actif quant pur multi-horizons (mono-critère → ◧) pour couvrir ◧.
+    crit = [_crit("Taux 2 ans", "spread_taux_2y_us_de",
+                  {"24h": -8.0, "7j": -14.0, "1m": -14.0})]
+    eurusd = _actif("EUR/USD", crit,
+                    {"24h": -8.18, "7j": -14.17, "1m": -13.85},
+                    {"24h": "SHORT", "7j": "SHORT", "1m": "SHORT"})
+    actifs.append(eurusd)
+
+    md = sa.render_bulletin(actifs, {}, _NOW_BULLETIN, "h", "ok")
+    grid, raison = _parse_bulletin_flags(md)
+    # Chaque cellule directionnelle présente dans la raison doit matcher la grille.
+    checked = 0
+    for key, raison_syms in raison.items():
+        assert key in grid, f"cellule {key} absente de la grille"
+        assert raison_syms == grid[key], (
+            f"DIVERGENCE {key} : raison={raison_syms} != grille={grid[key]}"
+        )
+        checked += 1
+    assert checked >= 6  # au moins 6 cellules directionnelles balayées
+
+
+# ===========================================================================
+# N3 — chiffres HOMOGÈNES dans un groupe (jamais note pondérée + effet brut mêlés)
+# ===========================================================================
+
+def test_n3_groupe_chiffres_homogenes_nasdaq():
+    """Nasdaq 7j (news-pondéré : « −2.1 pondéré, brut −1.5 ») et 1m (effet brut
+    « −7.2 ») ont une sémantique de chiffre DIFFÉRENTE → on NE les regroupe PAS
+    (sinon « −2.1 pondéré, brut −1.5 / −7.2 » mêlerait note pondérée et effet)."""
+    crit = [
+        _crit_full("Taux réels US", "taux_10y_us_reels_tips",
+                   {"7j": -1.50, "1m": -7.20}),
+    ]
+    r = _actif_full(
+        "Nasdaq", crit,
+        {"24h": 0.0, "7j": -1.50, "1m": -7.20},
+        {"24h": sa.CONCLUSION_INSUFFISANT, "7j": "SHORT", "1m": "SHORT"},
+        # 7j news-pondéré (📰), 1m non → sémantique de chiffre différente.
+        scores_pond={"7j": -2.10, "1m": -7.20},
+        conclusions_pond={"7j": "SHORT", "1m": ""},
+        news_cap_info={"7j": {"news_total_pm1": -3.0, "quant_total_pm1": -1.5}},
+    )
+    joined = "\n".join(sa.build_raisons_block([r], _NOW_BULLETIN))
+    # JAMAIS la parenthèse hétérogène mêlant pondéré et effet brut.
+    assert "-2.1 pondéré, brut -1.5 / -7.2" not in joined
+    # 7j garde sa sémantique pondérée homogène, 1m sa sémantique d'effet, séparés.
+    assert "-2.1 pondéré, brut -1.5" in joined
+    assert "(-7.2)" in joined
+
+
+def test_n3_groupe_homogene_reste_groupe():
+    """Non-régression N2 : deux horizons de MÊME sémantique (effet brut tous deux)
+    et même driver RESTENT regroupés (le verrou N3 ne casse pas les groupes sains)."""
+    crit = [
+        _crit("Taux réels US", "taux_10y_us_reels_tips",
+              {"24h": -3.91, "7j": -7.80, "1m": -7.80}),
+    ]
+    r = _actif(
+        "Or", crit,
+        {"24h": -7.82, "7j": -10.07, "1m": -8.59},
+        {"24h": "SHORT", "7j": "SHORT", "1m": "SHORT"},
+    )
+    joined = "\n".join(sa.build_raisons_block([r], _NOW_BULLETIN))
+    assert "24h/7j/1m : même driver" in joined
+    assert "(-3.9 / -7.8 / -7.8)" in joined

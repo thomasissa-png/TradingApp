@@ -2643,6 +2643,102 @@ def _driver_detail(r: "ActifResult", h: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# SOURCE DE VÉRITÉ UNIQUE des drapeaux de prudence d'une cellule de Synthèse
+# ---------------------------------------------------------------------------
+# Cette fonction calcule la chaîne EXACTE de drapeaux de prudence rendue dans la
+# colonne d'une cellule de la table « ## Synthèse des décisions », dans le MÊME
+# ORDRE. La grille (render_bulletin) ET la couche « raison » (`_raison_flags_suffix`)
+# l'appellent — c'est l'unique calcul, avec le MÊME `now`. Plus de divergence
+# possible (cf. audit round 2 : VIX 24h portait ⌛ en trop, Pétrole 24h un ⌛ faux,
+# parce que la raison passait par `_compute_cell_risk_flags` avec un `now` différent
+# et un jeu de prédicats parallèle).
+#
+# PÉRIMÈTRE : drapeaux de PRUDENCE uniquement, dans l'ordre de rendu de la grille
+#   📰 (news-dominant OU régime news) · ⏸ (carry) · ⚠️ (conf. faible) ·
+#   ◧ (mono-critère) · ↯ (divergence q↔n) · ⇄ (contre-momentum) ·
+#   ⇆ (incohérence inter-horizons) · ⌛ (déjà-coté) · ⊘ (démenti).
+# EXCLUS volontairement (qualificatifs structurels, jamais portés par la raison) :
+#   ⚑ (gate régime — bruit global), ≈ / ⚪ (bandes de neutralité), (tb) / [quant…].
+# INSUFFISANT (🚫) : cellule sans direction → aucun drapeau de prudence (liste vide).
+def _synthese_cell_risk_flags(
+    r: "ActifResult", h: str, now: datetime
+) -> List[str]:
+    """Liste ordonnée des symboles de prudence de la cellule de Synthèse (h).
+
+    Réplique EXACTE des prédicats de la grille (render_bulletin), au même `now`.
+    C'est l'unique source : la grille et la raison consomment cette liste.
+    Déterministe ; best-effort sur l'already-priced (jamais de crash de rendu).
+    """
+    import triggers_classifier as _tc_classifier  # noqa: F401 (import paresseux)
+
+    conc = r.conclusions.get(h, "")
+    if conc == CONCLUSION_INSUFFISANT:
+        return []  # 🚫 : pas de drapeau de prudence (cellule non directionnelle)
+
+    confidence = r.confidence.get(h, "normale")
+    flags: List[str] = []
+
+    # 📰 news-dominant (ratio > 0.5) OU 📰 régime news — même test que la grille.
+    cap_info = r.news_cap_info.get(h, {}) if r.news_cap_info else {}
+    n_tot = abs(float(cap_info.get("news_total_pm1", 0.0)))
+    q_tot = abs(float(cap_info.get("quant_total_pm1", 0.0)))
+    is_news = (n_tot / (q_tot + 1e-9)) > NEWS_DOMINANT_RATIO
+    is_news_regime = r.is_news_regime.get(h, False)
+    if is_news or is_news_regime:
+        flags.append("📰")
+
+    # ⏸ carry / ⚠️ conf. faible — exclusifs entre eux et avec le régime news
+    # (la grille pose conf_flag UNIQUEMENT hors carry ET hors régime news).
+    if r.is_carry.get(h, False):
+        flags.append("⏸")
+    elif (not is_news_regime) and confidence == "faible":
+        flags.append("⚠️")
+
+    # ◧ mono-critère dominant (fragilité d'une direction actée)
+    if detect_mono_critere_dominant(r, h)[0]:
+        flags.append("◧")
+    # ↯ divergence quant↔news
+    if r.divergence_quant_news.get(h, False):
+        flags.append("↯")
+    # ⇄ contre-momentum
+    if r.contre_momentum.get(h, False):
+        flags.append("⇄")
+    # ⇆ incohérence inter-horizons (1 par actif, répété sur chaque cellule)
+    if r.incoherence_inter_horizons:
+        flags.append("⇆")
+
+    # ⌛ déjà-coté / ⊘ démenti — même balayage que la grille, au MÊME `now`.
+    ap_present = False
+    denial_present = False
+    for c in r.criteres:
+        if c.is_gate or c.is_na:
+            continue
+        if c.is_denial:
+            denial_present = True
+        if c.event_date and not ap_present:
+            try:
+                _cdt = datetime.fromisoformat(c.event_date)
+            except ValueError:
+                _cdt = None
+            if _cdt is not None:
+                try:
+                    _ap, _ = _tc_classifier.compute_already_priced_for_horizon(
+                        _cdt, h, now=now,
+                    )
+                except Exception:  # noqa: BLE001 — best-effort rendu
+                    _ap = False
+                if _ap:
+                    ap_present = True
+        if ap_present and denial_present:
+            break
+    if ap_present:
+        flags.append("⌛")
+    if denial_present:
+        flags.append("⊘")
+    return flags
+
+
+# ---------------------------------------------------------------------------
 # « Raison principale » par cellule (Synthèse des décisions) — PUR RENDU
 # ---------------------------------------------------------------------------
 # Driver dominant = critère au plus fort CONTRIBUTION DANS LE SENS de la
@@ -2678,38 +2774,28 @@ _RAISON_FORCE_SEUIL_DEFAUT: float = 0.6  # fallback si bilan_jour KO (cf. À jou
 
 
 def _raison_flags_suffix(r: "ActifResult", h: str, now: Optional[datetime] = None) -> str:
-    """B2 — suffixe de drapeaux de prudence HÉRITÉS de la cellule de Synthèse.
+    """B2-EXACT — suffixe de drapeaux de prudence HÉRITÉS de la cellule de Synthèse.
 
-    Source de vérité UNIQUE : `_compute_cell_risk_flags` (les MÊMES drapeaux que
-    ceux rendus dans la table de Synthèse). On ne recalcule rien : la raison ne
-    peut PAS affirmer plus que le système n'autorise. On ajoute aussi le 📰
-    news-dominant (drapeau de la table, hors `_compute_cell_risk_flags` quand la
-    cellule n'est pas en régime news) — cf. B3.
+    SOURCE DE VÉRITÉ UNIQUE : `_synthese_cell_risk_flags` — EXACTEMENT la même
+    fonction (et le même `now`) que celle dont la grille « ## Synthèse des
+    décisions » tire ses drapeaux de prudence par cellule. La raison ne peut donc
+    JAMAIS diverger de la colonne (audit round 2 : VIX 24h portait ⌛ en trop,
+    Pétrole 24h un ⌛ faux — causé par un calcul parallèle `_compute_cell_risk_flags`
+    avec un `now` distinct ; supprimé). Pour TOUTE cellule :
+    drapeaux(raison) == drapeaux(table Synthèse), au symbole et à l'ordre près.
 
-    Retourne une chaîne « ↯ ⌛ » préfixée d'un espace (ou "" si aucun drapeau).
-    Déterministe ; ne lève jamais (best-effort sur l'horloge).
+    Retourne une chaîne « 📰 ⌛ » préfixée d'un espace (ou "" si aucun drapeau).
+    `now` DOIT être le `now` du bulletin (l'already-priced ⌛ est sensible au temps) ;
+    en l'absence, on retombe sur l'horloge (best-effort). Ne lève jamais.
     """
     now = now or datetime.now(timezone.utc)
     try:
-        flags = _compute_cell_risk_flags(r, h, now)
+        flags = _synthese_cell_risk_flags(r, h, now)
     except Exception:  # noqa: BLE001 — best-effort rendu, jamais de crash
         flags = []
-    flags = list(flags)
-    # 📰 news-dominant : présent dans la table dès que abs(news)/abs(quant) > 0.5,
-    # même hors régime news. `_compute_cell_risk_flags` ne le pose qu'en régime
-    # news → on complète ici pour hériter du 📰 de la colonne (B3).
-    if SURVEILLANCE_FLAGS["news_regime"] not in flags and _cell_is_news_weighted(r, h):
-        flags.append(SURVEILLANCE_FLAGS["news_regime"])
     if not flags:
         return ""
-    # Déduplication en préservant l'ordre (un même symbole ne s'affiche qu'une fois).
-    seen: set = set()
-    ordered: List[str] = []
-    for f in flags:
-        if f not in seen:
-            seen.add(f)
-            ordered.append(f)
-    return " " + " ".join(ordered)
+    return " " + " ".join(flags)
 
 
 def _cell_is_news_weighted(r: "ActifResult", h: str) -> bool:
@@ -2996,7 +3082,9 @@ def _raison_cellule(r: "ActifResult", h: str, now: Optional[datetime] = None) ->
     return f"{corps}{sep}{chiffre}{suffixe}"
 
 
-def build_raisons_block(results: List["ActifResult"]) -> List[str]:
+def build_raisons_block(
+    results: List["ActifResult"], now: Optional[datetime] = None
+) -> List[str]:
     """Bloc compact « raison principale » PAR ACTIF, sous la grille de Synthèse.
 
     Un bloc par actif (12), 3 horizons sur une ligne scannable :
@@ -3004,38 +3092,50 @@ def build_raisons_block(results: List["ActifResult"]) -> List[str]:
 
     PUR RENDU : recalculé à chaque run depuis les drivers courants. La direction
     (LONG/SHORT) est rappelée entre parenthèses ; quasi-neutre → pas de direction.
+
+    `now` : DOIT être le `now` du bulletin pour que les drapeaux ⌛ (already-priced,
+    sensibles au temps) hérités soient IDENTIQUES à ceux de la grille de Synthèse.
+    En l'absence (appel hors render_bulletin), on retombe sur l'horloge.
     """
-    now = datetime.now(timezone.utc)
+    now = now or datetime.now(timezone.utc)
     lines: List[str] = []
     lines.append("**Raison principale par cellule** _(driver dominant courant, dans le sens de la décision — recalculé à chaque run)_")
     lines.append("")
     for r in results:
-        # Décompose chaque horizon en (corps, chiffre, suffixe, direction franche?).
-        parts: List[Tuple[str, str, str, str]] = []  # (corps, chiffre, suffixe, direction|"")
+        # Décompose chaque horizon en (corps, chiffre, suffixe, direction, sémantique chiffre).
+        # 5ᵉ champ `nw` (news-weighted) — N3 : la sémantique du chiffre DIFFÈRE selon
+        # qu'il est news-pondéré (« note pondérée ») ou non (« effet du driver »). On
+        # ne regroupe PAS deux horizons de sémantique différente (sinon une parenthèse
+        # mélangerait note pondérée et effet brut — cas Nasdaq 7j pondéré vs 1m effet).
+        parts: List[Tuple[str, str, str, str, bool]] = []  # (corps, chiffre, suffixe, dir, nw)
         for h in HORIZONS:
             corps, chiffre, suffixe = _raison_parts(r, h, now)
             direction = r.conclusions.get(h, "")
             score = r.scores.get(h, 0.0)
             dir_label = direction if (direction in ("LONG", "SHORT") and abs(score) >= NEUTRAL_BAND) else ""
-            parts.append((corps, chiffre, suffixe, dir_label))
+            nw = _cell_is_news_weighted(r, h)
+            parts.append((corps, chiffre, suffixe, dir_label, nw))
 
         # N2 — regroupe les horizons CONSÉCUTIFS au MÊME corps (même driver/phrase)
         # ET même direction franche. Garde le détail quand les drivers DIFFÈRENT.
         morceaux: List[str] = []
         i = 0
         while i < len(HORIZONS):
-            corps, _chiffre, _suffixe, dir_label = parts[i]
+            corps, _chiffre, _suffixe, dir_label, nw = parts[i]
             # Cellule non-franche (quasi-neutre / —) : jamais regroupée, rendu simple.
             if corps in (_RAISON_QUASI_NEUTRE, "—"):
                 morceaux.append(f"{HORIZONS[i]} : {corps}")
                 i += 1
                 continue
-            # Étend le groupe tant que le corps ET la direction sont identiques.
+            # Étend le groupe tant que le corps, la direction ET la SÉMANTIQUE du
+            # chiffre (news-pondéré vs effet brut, N3) sont identiques — sinon une
+            # parenthèse de groupe mélangerait note pondérée et effet de driver.
             j = i + 1
             while (
                 j < len(HORIZONS)
                 and parts[j][0] == corps
                 and parts[j][3] == dir_label
+                and parts[j][4] == nw
                 and corps not in (_RAISON_QUASI_NEUTRE, "—")
             ):
                 j += 1
@@ -3694,7 +3794,7 @@ def render_bulletin(
     synth_lines.append("")
     # Raison principale par cellule — bloc compact PAR ACTIF sous la grille
     # (la grille est déjà large → lisibilité). PUR RENDU, recalculé à chaque run.
-    synth_lines.extend(build_raisons_block(results))
+    synth_lines.extend(build_raisons_block(results, now))
     # P2/P4/P5 — la légende des symboles + la définition de « Note » sont
     # désormais dans « ## Comment lire les scores » (fin de bulletin), une seule
     # fois. La synthèse ne garde que titre + table(s).

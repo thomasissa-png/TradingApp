@@ -1,6 +1,6 @@
 # Santé des critères
 
-_Cycle : 2026-06-17 05:23 UTC_
+_Cycle : 2026-06-18 05:23 UTC_
 
 **Synthèse** : 39 motifs de skip distincts, 49 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 
@@ -24,6 +24,7 @@ _Cycle : 2026-06-17 05:23 UTC_
 | 1 | Source linéaire non programmatique | `fedwatch_proba` |
 | 1 | Source linéaire non programmatique | `term_structure_m1_m3` |
 | 1 | Open-Meteo injoignable (récents) | `-19.9,-43.9:net_error` |
+| 1 | Open-Meteo injoignable (récents) | `12.7,108.1:net_error` |
 | 1 | no_breadth_data | `breadth_cac_ma50` |
 | 1 | Aucun trigger classifié (triplet) | `tension_politique_fr` |
 | 1 | Twelve : série vide | `USDGHS=X` |
@@ -44,7 +45,6 @@ _Cycle : 2026-06-17 05:23 UTC_
 | 1 | Source z-score non programmatique | `spread_oat_bund_stress_ez` |
 | 1 | Source z-score non programmatique | `stocks_ice_arabica_certifies_20j` |
 | 1 | Source z-score non programmatique | `usd_cfa_usd_cedi` |
-| 1 | Source z-score non programmatique | `usda_wasde_stocks_to_use` |
 
 ## Provenance des prix (source réellement utilisée ce cycle)
 

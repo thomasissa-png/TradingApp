@@ -649,6 +649,12 @@ class CritereResult:
     # FLAG ONLY : NE change PAS la conclusion ni le score (mode shadow — on mesure).
     is_denial: bool = False
     denial_keyword: str = ""
+    # C8c — rumeur/non-confirmé : news structurelle qui DEVRAIT être rétrogradée
+    # en verbal (reco Newstrader). FLAG ONLY : nature/coef/score/conclusion
+    # INCHANGÉS. nature_proposee = "verbal", rumor_reason traçable.
+    nature_shadow_downgrade: bool = False
+    nature_proposee: str = ""
+    rumor_reason: str = ""
 
 
 @dataclass
@@ -1043,6 +1049,10 @@ def score_actif(
         # Lot 5 C8b — defaults
         _is_denial: bool = False
         _denial_keyword: str = ""
+        # C8c — defaults (rumeur/non-confirmé shadow)
+        _nature_shadow_downgrade: bool = False
+        _nature_proposee: str = ""
+        _rumor_reason: str = ""
         if isinstance(raw, dict):
             mat = str(raw.get("materiality", "") or "")
             rel = str(raw.get("reliability", "") or "")
@@ -1074,6 +1084,10 @@ def score_actif(
             # Lot 5 C8b — démenti / correction (FLAG-ONLY).
             _is_denial = bool(raw.get("is_denial"))
             _denial_keyword = str(raw.get("denial_keyword", "") or "")
+            # C8c — rumeur/non-confirmé sur structurel (FLAG-ONLY).
+            _nature_shadow_downgrade = bool(raw.get("nature_shadow_downgrade"))
+            _nature_proposee = str(raw.get("nature_proposee", "") or "")
+            _rumor_reason = str(raw.get("rumor_reason", "") or "")
         criteres_res.append(
             CritereResult(
                 id=crit.get("id"),
@@ -1107,6 +1121,9 @@ def score_actif(
                 sign_conflict_details=list(_sign_conflict_details),
                 is_denial=_is_denial,
                 denial_keyword=_denial_keyword,
+                nature_shadow_downgrade=_nature_shadow_downgrade,
+                nature_proposee=_nature_proposee,
+                rumor_reason=_rumor_reason,
             )
         )
 
@@ -4176,6 +4193,12 @@ def build_decision_log_records(
                 if c.is_denial:
                     contrib_entry["is_denial"] = True
                     contrib_entry["denial_keyword"] = c.denial_keyword
+                # C8c — rumeur/non-confirmé sur structurel (FLAG-ONLY shadow).
+                # Tracé zéro bruit (ajout seulement si True). nature_proposee=verbal.
+                if c.nature_shadow_downgrade:
+                    contrib_entry["nature_shadow_downgrade"] = True
+                    contrib_entry["nature_proposee"] = c.nature_proposee
+                    contrib_entry["rumor_reason"] = c.rumor_reason
                 # --- SHADOW persistance (FLAG-ONLY, additif) -------------------
                 # Mesure « news vit tant que le quant ne la dément pas » vs le
                 # régime témoin « hard-drop 30j ». Posé UNIQUEMENT sur les critères

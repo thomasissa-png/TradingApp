@@ -274,6 +274,105 @@ def detect_denial(text: str) -> Tuple[bool, str]:
             return True, kw
     return False, ""
 
+
+# ---------------------------------------------------------------------------
+# C8c — Détection « rumeur / non-confirmé » sur une news classée structurel
+# (FLAG-ONLY, mode shadow — reco Newstrader n°2)
+# ---------------------------------------------------------------------------
+# PROBLÈME (audit Newstrader, cas réel accord US-Iran 16-17/06) : l'IA classe
+# trop de news fraîches/non signées en « structurel » (COEF_NATURE 0.8/1.0/1.0
+# → tient jusqu'à 1m). Une rumeur, une déclaration non engageante ou un projet
+# « en pourparlers » NE DEVRAIT PAS peser sur 7j/1m. Résultat : flip-flop
+# (Brent SHORT *et* LONG le même jour sur des news quasi identiques).
+#
+# RÈGLE DÉTERMINISTE (zéro réseau, zéro LLM) : une news classée
+# `nature == "structurel"` qui est en réalité NON CONFIRMÉE devrait être
+# rétrogradée en `verbal` (COEF_NATURE 0.3/0.2/0.1 → s'éteint vite). Deux
+# signaux de non-confirmation, OR logique :
+#   (a) `reliability` ∈ {rumor, reported} (≠ confirmed) — champ déjà extrait ;
+#   (b) le texte matche un MARQUEUR DE RUMEUR / NON-ENGAGEMENT (liste fermée,
+#       word-bounded via _phrase_matches, FR + EN).
+#
+# FLAG ONLY : ni la `nature`, ni le coef_nature, ni le score, ni la conclusion
+# ne sont modifiés. On pose `nature_shadow_downgrade=True`,
+# `nature_proposee="verbal"`, `rumor_reason` (reliability:<x> / keyword:<kw>),
+# exactement comme `is_denial` est tracé sans neutraliser. On MESURE d'abord.
+#
+# Anti-faux-positifs : mêmes règles que les keywords directionnels — chaque
+# marqueur est word-bounded ; les marqueurs multi-token (« in talks »,
+# « sources say », « en pourparlers ») n'arment que si tous les tokens sont
+# présents. Aucun marqueur n'est substring d'un mot courant fréquent (« may »
+# mono-token bound ne matche pas « maybe » → « maybe » = token distinct).
+RUMOR_NATURE_TARGET: str = "structurel"     # seule nature concernée par la règle
+RUMOR_NATURE_PROPOSED: str = "verbal"       # rétrogradation proposée (shadow)
+# reliability qui, sur un structurel, déclenche la rétrogradation proposée.
+# « confirmed » NE déclenche jamais (signal signé/engageant).
+RUMOR_UNCONFIRMED_RELIABILITY: Set[str] = {"rumor", "reported"}
+
+RUMOR_KEYWORDS: Tuple[str, ...] = (
+    # EN — non-engagement / non signé
+    "rumor",
+    "rumored",
+    "reportedly",
+    "in talks",          # multi-token AND
+    "proposed",
+    "could",
+    "weighs",
+    "weighing",
+    "considering",
+    "draft",
+    "pending",
+    "unconfirmed",
+    "sources say",       # multi-token AND
+    "alleged",
+    "allegedly",
+    "mulls",
+    "mulling",
+    "set to",            # multi-token AND (intention, non acté)
+    # FR — non-engagement / non confirmé
+    "en pourparlers",    # multi-token AND
+    "envisage",
+    "envisagerait",
+    "pourrait",
+    "rumeur",
+    "non confirme",      # multi-token AND (accents strippés)
+    "selon des sources",  # multi-token AND
+)
+
+
+def detect_rumor_downgrade(ev: dict) -> Tuple[bool, str]:
+    """C8c — La news structurelle est-elle en réalité non confirmée ?
+
+    Retourne (should_downgrade, reason). `should_downgrade=True` signifie que
+    la nature `structurel` DEVRAIT être rétrogradée en `verbal` (shadow).
+
+    Déclenche SI ET SEULEMENT SI `nature == "structurel"` ET au moins un de :
+      - `reliability` ∈ RUMOR_UNCONFIRMED_RELIABILITY (rumor/reported) ;
+      - un marqueur RUMOR_KEYWORDS matche le texte (word-bounded).
+
+    `reason` est traçable : "reliability:reported", "keyword:in talks", ou les
+    deux concaténés "reliability:rumor+keyword:rumeur".
+
+    Zéro modification : pure fonction d'observation. Une news non-structurelle,
+    ou structurelle ET `reliability == "confirmed"` ET sans marqueur → (False, "").
+    """
+    if (ev.get("nature") or "").strip().lower() != RUMOR_NATURE_TARGET:
+        return False, ""
+    reasons: List[str] = []
+    rel = (ev.get("reliability") or "").strip().lower()
+    if rel in RUMOR_UNCONFIRMED_RELIABILITY:
+        reasons.append(f"reliability:{rel}")
+    text_norm = _norm(_event_text(ev))
+    if text_norm:
+        for kw in RUMOR_KEYWORDS:
+            if _phrase_matches(text_norm, kw):
+                reasons.append(f"keyword:{kw}")
+                break
+    if not reasons:
+        return False, ""
+    return True, "+".join(reasons)
+
+
 # ---------------------------------------------------------------------------
 # A1 — Contribution fantôme (shadow) des events exclus → T1 mesurable
 # ---------------------------------------------------------------------------
@@ -928,6 +1027,15 @@ def parse_events_log(path: Path = EVENTS_LOG) -> List[dict]:
         if is_denial:
             ev["is_denial"] = True
             ev["denial_keyword"] = denial_kw
+        # C8c — Rumeur/non-confirmé sur structurel (FLAG-ONLY, mode shadow).
+        # Pose nature_shadow_downgrade=True + nature_proposee="verbal" + raison.
+        # NE modifie PAS ev["nature"] : la note réelle reste inchangée. Pur ajout
+        # observationnel tracé dans le decision-log (miroir de is_denial).
+        should_dg, rumor_reason = detect_rumor_downgrade(ev)
+        if should_dg:
+            ev["nature_shadow_downgrade"] = True
+            ev["nature_proposee"] = RUMOR_NATURE_PROPOSED
+            ev["rumor_reason"] = rumor_reason
         events.append(ev)
     events.sort(key=lambda e: e["_dt"], reverse=True)
 
@@ -1490,6 +1598,11 @@ def _resolve_triplet_impl(
                 if best_ev.get("is_denial"):
                     synth_meta["is_denial"] = True
                     synth_meta["denial_keyword"] = best_ev.get("denial_keyword", "")
+                # C8c — propage le flag rumeur/non-confirmé (FLAG-ONLY shadow).
+                if best_ev.get("nature_shadow_downgrade"):
+                    synth_meta["nature_shadow_downgrade"] = True
+                    synth_meta["nature_proposee"] = best_ev.get("nature_proposee", "")
+                    synth_meta["rumor_reason"] = best_ev.get("rumor_reason", "")
             return val_signed, synth_meta
         # Conviction faible OU direction NEUTRAL → niveau 2 : critère news = 0.
         # Le prix tranchera via les critères numériques de la cellule.
@@ -1583,6 +1696,11 @@ def _resolve_triplet_impl(
             if ev_ref.get("is_denial"):
                 m["is_denial"] = True
                 m["denial_keyword"] = ev_ref.get("denial_keyword", "")
+            # C8c — flag rumeur/non-confirmé (zéro bruit : ajout SEULEMENT si True).
+            if ev_ref.get("nature_shadow_downgrade"):
+                m["nature_shadow_downgrade"] = True
+                m["nature_proposee"] = ev_ref.get("nature_proposee", "")
+                m["rumor_reason"] = ev_ref.get("rumor_reason", "")
             return m
         if ia_long and not ia_short:
             return 1, _meta_from(ia_long)
@@ -1670,6 +1788,11 @@ def _resolve_triplet_impl(
         if ev_ref.get("is_denial"):
             m["is_denial"] = True
             m["denial_keyword"] = ev_ref.get("denial_keyword", "")
+        # C8c — flag rumeur/non-confirmé (zéro bruit : ajout SEULEMENT si True).
+        if ev_ref.get("nature_shadow_downgrade"):
+            m["nature_shadow_downgrade"] = True
+            m["nature_proposee"] = ev_ref.get("nature_proposee", "")
+            m["rumor_reason"] = ev_ref.get("rumor_reason", "")
         return m
 
     if last_long is None and last_short is None:
@@ -1896,6 +2019,12 @@ def classify_all_with_meta(
                 if meta.get("is_denial"):
                     entry["is_denial"] = True
                     entry["denial_keyword"] = meta.get("denial_keyword", "")
+                # --- C8c — flag rumeur/non-confirmé (propagation au scoring) --
+                # Zéro bruit : ajout SEULEMENT si True (cohérent is_denial).
+                if meta.get("nature_shadow_downgrade"):
+                    entry["nature_shadow_downgrade"] = True
+                    entry["nature_proposee"] = meta.get("nature_proposee", "")
+                    entry["rumor_reason"] = meta.get("rumor_reason", "")
                 # A1 — shadow_contrib_exclu agrégé pour cette cellule
                 # (alimenté par _candidates_for sur les events deja_cote/stale/repost).
                 # Lecture sur la PAIRE (actif_key, cle YAML), car le stash est

@@ -2968,6 +2968,12 @@ def build_critere_value(
                     p2_meta["sign_conflict_details"] = entry.get(
                         "sign_conflict_details", []
                     )
+                # C8c — rumeur/non-confirmé sur structurel (FLAG-ONLY shadow) :
+                # propagation au raw pour traçabilité decision-log + mesure.
+                if entry.get("nature_shadow_downgrade"):
+                    p2_meta["nature_shadow_downgrade"] = True
+                    p2_meta["nature_proposee"] = entry.get("nature_proposee", "")
+                    p2_meta["rumor_reason"] = entry.get("rumor_reason", "")
             else:
                 val = int(entry)
                 mat = ""

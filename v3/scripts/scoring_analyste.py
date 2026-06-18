@@ -2662,6 +2662,76 @@ _RAISON_DRIVERS_DOUTEUX: set = {"meteo_cacao_cote_ivoire_ghana"}
 # Quasi-neutre → on n'invente PAS de direction (audit : VIX 7j/1m, CAC).
 _RAISON_QUASI_NEUTRE = "quasi-neutre — pas de driver franc"
 
+# B1 — co-driver news co-dominant : un 2ᵉ driver dont le |effet| atteint au moins
+# (1 − RAISON_CODRIVER_TOL) fois celui du driver principal ET qui porte la news
+# (source_track "ia*"/"keyword") est MENTIONNÉ dans la raison (sinon on masque un
+# driver news décisif — cas Pétrole 7j : momentum −5.6 vs OPEC+ −5.4). 15 % de
+# tolérance (≈ quasi-égalité) — aligné avec le brief d'audit.
+RAISON_CODRIVER_TOL: float = 0.15
+
+# N1 — repère d'actionnabilité (lentille Spéculateur). On RÉUTILISE la force de
+# conviction déjà calculée pour la colonne « Conviction » de « À jouer »
+# (`_conviction_cell`) : on n'ajoute le repère QUE sur une cellule franche
+# (|note| ≥ NEUTRAL_BAND) et seulement si la force est exploitable (≠ "—").
+# Quasi-neutre → pas de force (reste « pas de driver franc »).
+_RAISON_FORCE_SEUIL_DEFAUT: float = 0.6  # fallback si bilan_jour KO (cf. À jouer)
+
+
+def _raison_flags_suffix(r: "ActifResult", h: str, now: Optional[datetime] = None) -> str:
+    """B2 — suffixe de drapeaux de prudence HÉRITÉS de la cellule de Synthèse.
+
+    Source de vérité UNIQUE : `_compute_cell_risk_flags` (les MÊMES drapeaux que
+    ceux rendus dans la table de Synthèse). On ne recalcule rien : la raison ne
+    peut PAS affirmer plus que le système n'autorise. On ajoute aussi le 📰
+    news-dominant (drapeau de la table, hors `_compute_cell_risk_flags` quand la
+    cellule n'est pas en régime news) — cf. B3.
+
+    Retourne une chaîne « ↯ ⌛ » préfixée d'un espace (ou "" si aucun drapeau).
+    Déterministe ; ne lève jamais (best-effort sur l'horloge).
+    """
+    now = now or datetime.now(timezone.utc)
+    try:
+        flags = _compute_cell_risk_flags(r, h, now)
+    except Exception:  # noqa: BLE001 — best-effort rendu, jamais de crash
+        flags = []
+    flags = list(flags)
+    # 📰 news-dominant : présent dans la table dès que abs(news)/abs(quant) > 0.5,
+    # même hors régime news. `_compute_cell_risk_flags` ne le pose qu'en régime
+    # news → on complète ici pour hériter du 📰 de la colonne (B3).
+    if SURVEILLANCE_FLAGS["news_regime"] not in flags and _cell_is_news_weighted(r, h):
+        flags.append(SURVEILLANCE_FLAGS["news_regime"])
+    if not flags:
+        return ""
+    # Déduplication en préservant l'ordre (un même symbole ne s'affiche qu'une fois).
+    seen: set = set()
+    ordered: List[str] = []
+    for f in flags:
+        if f not in seen:
+            seen.add(f)
+            ordered.append(f)
+    return " " + " ".join(ordered)
+
+
+def _cell_is_news_weighted(r: "ActifResult", h: str) -> bool:
+    """True si la cellule est NEWS-PONDÉRÉE (📰) : abs(news)/abs(quant) > 0.5 ET
+    le pondéré DIFFÈRE du brut (la décision est réellement tempérée par les news).
+
+    Réutilise EXACTEMENT le test de la table de Synthèse (news_cap_info +
+    pond_differe). Sert à B3 (chiffre pondéré) et au 📰 hérité (B2).
+    """
+    cap_info = r.news_cap_info.get(h, {}) if r.news_cap_info else {}
+    n_tot = abs(float(cap_info.get("news_total_pm1", 0.0)))
+    q_tot = abs(float(cap_info.get("quant_total_pm1", 0.0)))
+    is_news = (n_tot / (q_tot + 1e-9)) > NEWS_DOMINANT_RATIO
+    if not is_news:
+        return False
+    conc_p = r.conclusions_pond.get(h, "")
+    score_p = r.scores_pond.get(h, 0.0)
+    score = r.scores.get(h, 0.0)
+    conc = r.conclusions.get(h, "")
+    pond_differe = bool(conc_p) and (conc_p != conc or abs(score_p - score) >= 0.005)
+    return pond_differe
+
 
 @functools.lru_cache(maxsize=1)
 def _load_raisons_drivers() -> Dict[str, Dict[str, Dict[str, str]]]:
@@ -2748,7 +2818,154 @@ def _driver_dominant_net(
     return best_cle, best_nom, best_ctr
 
 
-def _raison_cellule(r: "ActifResult", h: str) -> str:
+def _codriver_news_codominant(
+    r: "ActifResult", h: str, direction: str, best_cle: str, best_ctr: float
+) -> Tuple[str, float]:
+    """B1 — repère un 2ᵉ driver NEWS co-dominant à mentionner dans la raison.
+
+    Cherche, parmi les contributeurs qui poussent DANS LE SENS de `direction`
+    (hors le driver principal `best_cle`), un critère news (source_track "ia*" /
+    "keyword") dont le |effet| atteint au moins (1 − RAISON_CODRIVER_TOL) × |best_ctr|.
+    Cas type : Pétrole 7j SHORT — momentum −5.6 (principal) vs OPEC+ −5.4 (news,
+    quasi-égal) → on ne masque pas OPEC+.
+
+    Retourne `(cle_courante, contribution_signée)` du co-driver, ou `("", 0.0)`.
+    Déterministe : à |effet| égal, départage par nom (via le tri implicite).
+    """
+    if not best_cle or abs(best_ctr) <= 0.0:
+        return "", 0.0
+    veut_positif = direction == "LONG"
+    seuil = abs(best_ctr) * (1.0 - RAISON_CODRIVER_TOL)
+    best_co: Tuple[float, str] = (-1.0, "")
+    best_co_cle = ""
+    best_co_ctr = 0.0
+    for c in r.criteres:
+        if c.is_gate or c.is_na:
+            continue
+        cle = getattr(c, "cle_courante", "") or ""
+        if cle == best_cle:
+            continue
+        src = getattr(c, "source_track", "") or ""
+        is_news = src.startswith("ia") or src == "keyword"
+        if not is_news:
+            continue
+        ctr = c.contributions.get(h)
+        if ctr is None:
+            continue
+        if veut_positif and ctr <= 0.0:
+            continue
+        if (not veut_positif) and ctr >= 0.0:
+            continue
+        if abs(ctr) < seuil:
+            continue
+        key = (abs(ctr), c.nom)
+        if key > best_co:
+            best_co = key
+            best_co_cle = cle
+            best_co_ctr = ctr
+    return best_co_cle, best_co_ctr
+
+
+def _raison_force_suffix(r: "ActifResult", h: str) -> str:
+    """N1 — repère d'actionnabilité (lentille Spéculateur) sur cellule FRANCHE.
+
+    Réutilise la force déjà calculée pour la colonne « Conviction » de « À jouer »
+    (`_conviction_cell`) — ne réinvente RIEN. On ne pose le repère que sur une
+    direction franche (|note| ≥ NEUTRAL_BAND) ; quasi-neutre → pas de force.
+
+    Retourne « [conviction forte] » / « [conviction molle (score faible)] » etc.,
+    préfixé d'un espace, ou "" si la force n'est pas exploitable ("—").
+    """
+    direction = r.conclusions.get(h, "")
+    if direction not in ("LONG", "SHORT"):
+        return ""
+    if abs(r.scores.get(h, 0.0)) < NEUTRAL_BAND:
+        return ""
+    try:
+        seuil = _raison_force_seuil()
+    except Exception:  # noqa: BLE001
+        seuil = _RAISON_FORCE_SEUIL_DEFAUT
+    force = _conviction_cell(r, h, seuil)
+    if not force or force == "—":
+        return ""
+    return f" [conviction {force}]"
+
+
+@functools.lru_cache(maxsize=1)
+def _raison_force_seuil() -> float:
+    """Seuil de conviction « forte » (même source que « À jouer »). Mémoïsé."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import bilan_jour as _bj
+        return float(_bj._load_score_fort_seuil())
+    except Exception:  # noqa: BLE001 — défaut documenté si bilan_jour KO
+        return _RAISON_FORCE_SEUIL_DEFAUT
+
+
+def _raison_parts(
+    r: "ActifResult", h: str, now: Optional[datetime] = None
+) -> Tuple[str, str, str]:
+    """Décompose la raison d'une cellule en (corps_sans_chiffre, chiffre, suffixes).
+
+    Sert au regroupement N2 (`build_raisons_block`) : deux horizons fusionnent
+    SSI leur `corps_sans_chiffre` est identique. Le `chiffre` (par horizon) et les
+    `suffixes` (force N1 + drapeaux B2, par horizon) restent distincts.
+
+    Retourne :
+      - corps  : phrase driver + éventuel « + co-driver (news) » (SANS chiffre),
+                 ou _RAISON_QUASI_NEUTRE / "—".
+      - chiffre: « (+5.1) » ou « (+1.0 pondéré, brut +2.9) », ou "".
+      - suffixe: « [conviction forte] ↯ ⌛ », ou "".
+    """
+    direction = r.conclusions.get(h, "")
+    score = r.scores.get(h, 0.0)
+    if direction not in ("LONG", "SHORT") or abs(score) < NEUTRAL_BAND:
+        return _RAISON_QUASI_NEUTRE, "", ""
+    cle, nom, ctr = _driver_dominant_net(r, h, direction)
+    if not cle and not nom:
+        return "—", "", ""
+
+    news_weighted = _cell_is_news_weighted(r, h)
+    if news_weighted:
+        score_p = r.scores_pond.get(h, score)
+        chiffre = f"({score_p:+.1f} pondéré, brut {score:+.1f})"
+    else:
+        chiffre = f"({ctr:+.1f})"
+
+    phrases = _raison_phrases_for_cle(cle)
+    if phrases is None:
+        corps = nom if nom else "—"
+    else:
+        if _resolve_cle_canonique(cle) in _RAISON_DRIVERS_DOUTEUX:
+            phrase = phrases.get("phrase_neutre") or phrases.get(
+                "phrase_long" if ctr > 0 else "phrase_short", ""
+            )
+        else:
+            phrase = phrases.get("phrase_long" if ctr > 0 else "phrase_short", "")
+        corps = phrase if phrase else (nom if nom else "—")
+
+    if corps == "—":
+        return "—", "", ""
+
+    co_cle, co_ctr = _codriver_news_codominant(r, h, direction, cle, ctr)
+    if co_cle:
+        co_phrases = _raison_phrases_for_cle(co_cle)
+        co_label = ""
+        if co_phrases is not None and _resolve_cle_canonique(co_cle) not in _RAISON_DRIVERS_DOUTEUX:
+            co_label = co_phrases.get("phrase_long" if co_ctr > 0 else "phrase_short", "")
+        if not co_label:
+            for c in r.criteres:
+                if (getattr(c, "cle_courante", "") or "") == co_cle:
+                    co_label = _nom_critere(c)
+                    break
+        if co_label:
+            corps = f"{corps} + {co_label} (news)"
+
+    suffixe = f"{_raison_force_suffix(r, h)}{_raison_flags_suffix(r, h, now)}"
+    return corps, chiffre, suffixe
+
+
+def _raison_cellule(r: "ActifResult", h: str, now: Optional[datetime] = None) -> str:
     """Raison principale DÉTERMINISTE d'une cellule (actif × horizon).
 
     Règles (audit `/tmp/audit-marche-raisons.md`) :
@@ -2763,33 +2980,20 @@ def _raison_cellule(r: "ActifResult", h: str) -> str:
       5. Gates (⚑ FOMC) jamais cités (exclus par `is_gate`).
       6. Fallback : pas d'entrée biblio → nom canonique (legacy). Aucun
          contributeur dans le sens → « — ». Jamais de crash.
+      B1. Co-driver NEWS co-dominant (≥85 % du driver principal) mentionné.
+      B2. Drapeaux de prudence HÉRITÉS de la cellule de Synthèse (↯ ⌛ ◧ ⚠️ 📰…).
+      B3. Quand la cellule est NEWS-PONDÉRÉE (📰), le chiffre cité est la NOTE
+          PONDÉRÉE de la colonne (brut→pondéré), jamais la contribution brute du
+          critère seule (qui contredirait visuellement la note de la colonne).
+      N1. Repère d'actionnabilité (force de conviction) sur cellule franche.
+
+    Source UNIQUE : `_raison_parts` (mêmes données que le regroupement N2).
     """
-    direction = r.conclusions.get(h, "")
-    score = r.scores.get(h, 0.0)
-    # (1) Quasi-neutre : on ne raconte pas de direction.
-    if direction not in ("LONG", "SHORT") or abs(score) < NEUTRAL_BAND:
-        return _RAISON_QUASI_NEUTRE
-    # (2) Driver porteur NET (jamais à contre-sens de la conclusion).
-    cle, nom, ctr = _driver_dominant_net(r, h, direction)
-    if not cle and not nom:
-        return "—"
-    phrases = _raison_phrases_for_cle(cle)
-    contrib_str = f" ({ctr:+.1f})"
-    # (6) Fallback : driver hors biblio → nom canonique (comportement legacy).
-    if phrases is None:
-        return f"{nom}{contrib_str}" if nom else "—"
-    # (4) Convention de signe douteuse → phrase neutre (pas de direction).
-    #     On teste la clé canonique (post-alias) pour couvrir les clés réelles.
-    if _resolve_cle_canonique(cle) in _RAISON_DRIVERS_DOUTEUX:
-        phrase = phrases.get("phrase_neutre") or phrases.get(
-            "phrase_long" if ctr > 0 else "phrase_short", ""
-        )
-    else:
-        # (3) Phrase selon le SIGNE de la contribution (effet observé).
-        phrase = phrases.get("phrase_long" if ctr > 0 else "phrase_short", "")
-    if not phrase:
-        return f"{nom}{contrib_str}" if nom else "—"
-    return f"{phrase}{contrib_str}"
+    corps, chiffre, suffixe = _raison_parts(r, h, now)
+    if corps in (_RAISON_QUASI_NEUTRE, "—"):
+        return corps
+    sep = " " if chiffre else ""
+    return f"{corps}{sep}{chiffre}{suffixe}"
 
 
 def build_raisons_block(results: List["ActifResult"]) -> List[str]:
@@ -2801,19 +3005,58 @@ def build_raisons_block(results: List["ActifResult"]) -> List[str]:
     PUR RENDU : recalculé à chaque run depuis les drivers courants. La direction
     (LONG/SHORT) est rappelée entre parenthèses ; quasi-neutre → pas de direction.
     """
+    now = datetime.now(timezone.utc)
     lines: List[str] = []
     lines.append("**Raison principale par cellule** _(driver dominant courant, dans le sens de la décision — recalculé à chaque run)_")
     lines.append("")
     for r in results:
-        morceaux: List[str] = []
+        # Décompose chaque horizon en (corps, chiffre, suffixe, direction franche?).
+        parts: List[Tuple[str, str, str, str]] = []  # (corps, chiffre, suffixe, direction|"")
         for h in HORIZONS:
-            raison = _raison_cellule(r, h)
+            corps, chiffre, suffixe = _raison_parts(r, h, now)
             direction = r.conclusions.get(h, "")
             score = r.scores.get(h, 0.0)
-            if direction in ("LONG", "SHORT") and abs(score) >= NEUTRAL_BAND:
-                morceaux.append(f"{h} : {raison} _({direction})_")
+            dir_label = direction if (direction in ("LONG", "SHORT") and abs(score) >= NEUTRAL_BAND) else ""
+            parts.append((corps, chiffre, suffixe, dir_label))
+
+        # N2 — regroupe les horizons CONSÉCUTIFS au MÊME corps (même driver/phrase)
+        # ET même direction franche. Garde le détail quand les drivers DIFFÈRENT.
+        morceaux: List[str] = []
+        i = 0
+        while i < len(HORIZONS):
+            corps, _chiffre, _suffixe, dir_label = parts[i]
+            # Cellule non-franche (quasi-neutre / —) : jamais regroupée, rendu simple.
+            if corps in (_RAISON_QUASI_NEUTRE, "—"):
+                morceaux.append(f"{HORIZONS[i]} : {corps}")
+                i += 1
+                continue
+            # Étend le groupe tant que le corps ET la direction sont identiques.
+            j = i + 1
+            while (
+                j < len(HORIZONS)
+                and parts[j][0] == corps
+                and parts[j][3] == dir_label
+                and corps not in (_RAISON_QUASI_NEUTRE, "—")
+            ):
+                j += 1
+            if j - i >= 2:
+                # Groupe : « 24h/7j/1m : même driver — <corps> (c1 / c2 / c3) (DIR) ».
+                hz = "/".join(HORIZONS[i:j])
+                chiffres = " / ".join(parts[k][1].strip("() ") for k in range(i, j))
+                # Drapeaux/force : on prend ceux du PREMIER horizon du groupe (les
+                # cellules d'un même driver partagent leurs drapeaux structurels) ;
+                # si un horizon du groupe porte un suffixe DIFFÉRENT, on le détaille.
+                suffixes = {parts[k][2] for k in range(i, j)}
+                suff = parts[i][2] if len(suffixes) == 1 else ""
+                dir_str = f" _({dir_label})_" if dir_label else ""
+                morceaux.append(f"{hz} : même driver — {corps} ({chiffres}){suff}{dir_str}")
+                i = j
             else:
-                morceaux.append(f"{h} : {raison}")
+                # Pas de regroupement : rendu détaillé de l'horizon.
+                sep = " " if _chiffre else ""
+                dir_str = f" _({dir_label})_" if dir_label else ""
+                morceaux.append(f"{HORIZONS[i]} : {corps}{sep}{_chiffre}{_suffixe}{dir_str}")
+                i += 1
         lines.append(f"- **{r.nom}** — " + " · ".join(morceaux))
     lines.append("")
     return lines

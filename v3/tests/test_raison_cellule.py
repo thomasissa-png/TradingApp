@@ -164,7 +164,11 @@ def test_fallback_nom_canonique_hors_config():
     crit = [_crit("Critère exotique XYZ", "driver_inconnu_hors_biblio", {h: +2.50})]
     r = _actif("Actif X", crit, {h: +2.50}, {h: "LONG"})
     raison = sa._raison_cellule(r, h)
-    assert raison == "Critère exotique XYZ (+2.5)"
+    # Le corps + chiffre restent le fallback nom canonique ; N1 (force) + B2 (◧
+    # mono-critère, seul critère porteur) s'ajoutent désormais (enrichissement 10/10).
+    assert raison.startswith("Critère exotique XYZ (+2.5)")
+    assert "◧" in raison  # mono-critère hérité de la cellule
+    assert "[conviction" in raison  # repère d'actionnabilité N1
 
 
 def test_donnee_absente_tiret():
@@ -236,3 +240,209 @@ def test_build_block_structure():
     assert "**Or**" in joined
     assert "24h :" in joined and "7j :" in joined and "1m :" in joined
     assert "_(SHORT)_" in joined  # direction rappelée sur la cellule franche
+
+
+# ===========================================================================
+# Helpers enrichis (drapeaux, news-pondération, source_track) pour B1/B2/B3.
+# ===========================================================================
+
+def _crit_full(
+    nom: str,
+    cle: str,
+    contribs: Dict[str, float],
+    *,
+    signe: int = 1,
+    source_track: str = "",
+    is_denial: bool = False,
+    event_date: str = "",
+) -> sa.CritereResult:
+    c = _crit(nom, cle, contribs, signe=signe)
+    c.source_track = source_track
+    c.is_denial = is_denial
+    c.event_date = event_date
+    return c
+
+
+def _actif_full(
+    nom: str,
+    criteres: List[sa.CritereResult],
+    scores: Dict[str, float],
+    conclusions: Dict[str, str],
+    *,
+    scores_pond: Optional[Dict[str, float]] = None,
+    conclusions_pond: Optional[Dict[str, str]] = None,
+    news_cap_info: Optional[Dict[str, Dict[str, float]]] = None,
+    divergence_quant_news: Optional[Dict[str, bool]] = None,
+    confidence: Optional[Dict[str, str]] = None,
+) -> sa.ActifResult:
+    r = _actif(nom, criteres, scores, conclusions)
+    if scores_pond is not None:
+        r.scores_pond = dict(scores_pond)
+    if conclusions_pond is not None:
+        r.conclusions_pond = dict(conclusions_pond)
+    if news_cap_info is not None:
+        r.news_cap_info = {h: dict(v) for h, v in news_cap_info.items()}
+    if divergence_quant_news is not None:
+        r.divergence_quant_news = dict(divergence_quant_news)
+    if confidence is not None:
+        r.confidence = dict(confidence)
+    return r
+
+
+# ---------------------------------------------------------------------------
+# B2 — héritage des drapeaux de prudence (la raison ne dit pas plus que le système)
+# ---------------------------------------------------------------------------
+
+def test_b2_nasdaq_24h_herite_divergence_et_deja_cote():
+    """Nasdaq 24h LONG news-pondéré : la raison hérite ↯ (divergence) ET ⌛
+    (déjà coté, event news du 16/06 vu en 24h) ET 📰 (news-pondéré)."""
+    h = "24h"
+    now = datetime(2026, 6, 17, 7, 23, tzinfo=timezone.utc)
+    crit = [
+        _crit_full("Tendance semi-conducteurs", "sox_trend_5j", {h: +4.20}),
+        _crit_full(
+            "Sentiment IA/méga-caps", "sentiment_ia_megacaps", {h: +1.34},
+            source_track="ia_synthese", event_date="2026-06-16T00:00:00+00:00",
+        ),
+    ]
+    r = _actif_full(
+        "Nasdaq", crit, {h: +2.86}, {h: "LONG"},
+        scores_pond={h: +1.01}, conclusions_pond={h: "LONG"},
+        news_cap_info={h: {"news_total_pm1": 3.2, "quant_total_pm1": -0.34}},
+        divergence_quant_news={h: True},
+    )
+    raison = sa._raison_cellule(r, h, now)
+    assert "↯" in raison        # divergence héritée
+    assert "⌛" in raison        # déjà coté hérité
+    assert "📰" in raison        # news-pondéré hérité (B3)
+
+
+# ---------------------------------------------------------------------------
+# B3 — chiffre pondéré (pas brut) quand 📰 : jamais de contradiction avec la note
+# ---------------------------------------------------------------------------
+
+def test_b3_nasdaq_24h_chiffre_pondere_pas_brut():
+    """La raison ne doit PAS afficher « +4.2 » seul (contradiction avec la note
+    pondérée +1.01 de la colonne) : elle cite la note pondérée (brut→pondéré)."""
+    h = "24h"
+    now = datetime(2026, 6, 17, 7, 23, tzinfo=timezone.utc)
+    crit = [
+        _crit_full("Tendance semi-conducteurs", "sox_trend_5j", {h: +4.20}),
+        _crit_full(
+            "Sentiment IA/méga-caps", "sentiment_ia_megacaps", {h: +1.34},
+            source_track="ia_synthese",
+        ),
+    ]
+    r = _actif_full(
+        "Nasdaq", crit, {h: +2.86}, {h: "LONG"},
+        scores_pond={h: +1.01}, conclusions_pond={h: "LONG"},
+        news_cap_info={h: {"news_total_pm1": 3.2, "quant_total_pm1": -0.34}},
+    )
+    raison = sa._raison_cellule(r, h, now)
+    assert "+1.0 pondéré" in raison       # note pondérée de la colonne
+    assert "brut +2.9" in raison          # brut montré comme la colonne
+    assert "(+4.2)" not in raison         # JAMAIS le brut du driver seul
+
+
+# ---------------------------------------------------------------------------
+# B1 — co-driver news co-dominant mentionné (Pétrole 7j)
+# ---------------------------------------------------------------------------
+
+def test_b1_petrole_7j_codriver_opec_news():
+    """Pétrole 7j SHORT : momentum −5.6 (principal) vs OPEC+ −5.4 (news, quasi-
+    égal) → la raison DOIT mentionner OPEC+ (news), pas masquer ce co-driver."""
+    h = "7j"
+    now = datetime(2026, 6, 17, 7, 23, tzinfo=timezone.utc)
+    crit = [
+        _crit_full("Tendance Brent 20j", "momentum_prix_20j_petrole", {h: -5.63}),
+        _crit_full(
+            "Politique OPEC+", "opec_production_policy", {h: -5.40},
+            source_track="ia_synthese",
+        ),
+        _crit_full(
+            "Tension Moyen-Orient", "tension_geopol_moyen_orient", {h: -4.20},
+            source_track="ia_synthese",
+        ),
+    ]
+    r = _actif_full(
+        "Pétrole (Brent)", crit, {h: -15.88}, {h: "SHORT"},
+        scores_pond={h: -10.31}, conclusions_pond={h: "SHORT"},
+        news_cap_info={h: {"news_total_pm1": -9.6, "quant_total_pm1": -6.28}},
+    )
+    raison = sa._raison_cellule(r, h, now)
+    assert "tendance 20 jours baissière" in raison      # driver principal (momentum)
+    assert "OPEC+" in raison                            # co-driver news B1
+    assert "(news)" in raison                           # étiqueté news
+    assert "📰" in raison                                # news-pondéré hérité
+
+
+# ---------------------------------------------------------------------------
+# N1 — repère d'actionnabilité (force) sur cellule franche
+# ---------------------------------------------------------------------------
+
+def test_n1_force_presente_sur_cellule_franche():
+    """Cellule franche (|note| ≥ seuil) sans drapeau → conviction « forte »
+    présente dans la raison (lentille Spéculateur)."""
+    h = "24h"
+    crit = [
+        _crit("Taux réels US", "taux_10y_us_reels_tips", {h: -3.91}),
+        _crit("Géopolitique", "tension_geopolitique", {h: -3.50}),
+        _crit("Variation taux 10a", "variation_taux_10y_5j", {h: -3.00}),
+    ]
+    r = _actif("Or", crit, {h: -7.82}, {h: "SHORT"})
+    raison = sa._raison_cellule(r, h)
+    assert "[conviction forte]" in raison
+
+
+def test_n1_pas_de_force_sur_quasi_neutre():
+    """Quasi-neutre → pas de force assénée (reste « pas de driver franc »)."""
+    h = "7j"
+    crit = [_crit("Structure de vol", "vix_term_structure", {h: -8.00})]
+    r = _actif("VIX", crit, {h: +0.07}, {h: "LONG"})
+    raison = sa._raison_cellule(r, h)
+    assert raison == sa._RAISON_QUASI_NEUTRE
+    assert "conviction" not in raison
+
+
+# ---------------------------------------------------------------------------
+# N2 — regroupement des horizons au MÊME driver
+# ---------------------------------------------------------------------------
+
+def test_n2_regroupe_horizons_meme_driver():
+    """Or : 24h/7j/1m portés par le MÊME driver (taux réels) → 1 puce regroupée
+    « même driver — … (−3.9 / −7.8 / −7.8) » au lieu de 3 répétitions."""
+    crit = [
+        _crit("Taux réels US", "taux_10y_us_reels_tips",
+              {"24h": -3.91, "7j": -7.80, "1m": -7.80}),
+    ]
+    r = _actif(
+        "Or", crit,
+        {"24h": -7.82, "7j": -10.07, "1m": -8.59},
+        {"24h": "SHORT", "7j": "SHORT", "1m": "SHORT"},
+    )
+    lines = sa.build_raisons_block([r])
+    joined = "\n".join(lines)
+    assert "24h/7j/1m : même driver" in joined
+    assert "(-3.9 / -7.8 / -7.8)" in joined
+    # Une SEULE occurrence de la phrase (pas 3 répétitions).
+    assert joined.count("l'or/les sans-rendement coûtent à porter") == 1
+
+
+def test_n2_garde_detail_quand_drivers_differents():
+    """Nasdaq : drivers DIFFÉRENTS par horizon (semi-conducteurs en 24h, taux
+    réels en 7j/1m) → on NE regroupe PAS le 24h ; 7j/1m (même driver) regroupés."""
+    crit = [
+        _crit("Tendance semi-conducteurs", "sox_trend_5j",
+              {"24h": +4.20, "7j": 0.0, "1m": 0.0}),
+        _crit("Taux réels US", "taux_10y_us_reels_tips",
+              {"24h": -2.0, "7j": -7.20, "1m": -7.20}),
+    ]
+    r = _actif(
+        "Nasdaq", crit,
+        {"24h": +2.86, "7j": -1.50, "1m": -3.42},
+        {"24h": "LONG", "7j": "SHORT", "1m": "SHORT"},
+    )
+    lines = sa.build_raisons_block([r])
+    joined = "\n".join(lines)
+    assert "24h : semi-conducteurs" in joined        # 24h détaillé (driver distinct)
+    assert "7j/1m : même driver" in joined           # 7j/1m regroupés (taux réels)

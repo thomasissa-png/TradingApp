@@ -58,22 +58,11 @@ TICKER_TO_ACTIF: List[Tuple[str, str, List[str]]] = [
     ("EUR/USD", "EUR=X", ["eur/usd", "eurusd", "eur usd"]),
 ]
 
-# Ligne du tableau events-log (markdown) — schéma legacy 11 cols
-ROW_RE = re.compile(
-    r"^\|\s*(?P<date>[^|]*?)\s*\|\s*(?P<l1>[^|]*?)\s*\|\s*(?P<l2>[^|]*?)\s*\|"
-    r"\s*(?P<trigger>[^|]*?)\s*\|\s*(?P<cours>[^|]*?)\s*\|\s*(?P<latence>[^|]*?)\s*\|"
-    r"\s*(?P<r>[^|]*?)\s*\|\s*(?P<source>[^|]*?)\s*\|\s*(?P<zone>[^|]*?)\s*\|"
-    r"\s*(?P<cat>[^|]*?)\s*\|\s*(?P<pat>[^|]*?)\s*\|\s*$"
-)
-
-# Ligne v2 directionnelle — 14 cols (legacy + impacts|materiality|reliability)
-ROW_RE_V2 = re.compile(
-    r"^\|\s*(?P<date>[^|]*?)\s*\|\s*(?P<l1>[^|]*?)\s*\|\s*(?P<l2>[^|]*?)\s*\|"
-    r"\s*(?P<trigger>[^|]*?)\s*\|\s*(?P<cours>[^|]*?)\s*\|\s*(?P<latence>[^|]*?)\s*\|"
-    r"\s*(?P<r>[^|]*?)\s*\|\s*(?P<source>[^|]*?)\s*\|\s*(?P<zone>[^|]*?)\s*\|"
-    r"\s*(?P<cat>[^|]*?)\s*\|\s*(?P<pat>[^|]*?)\s*\|\s*(?P<impacts>[^|]*?)\s*\|"
-    r"\s*(?P<materiality>[^|]*?)\s*\|\s*(?P<reliability>[^|]*?)\s*\|\s*$"
-)
+# NB : le parsing de l'events-log se fait désormais PAR POSITION (split sur '|' +
+# index de colonne nommée, cf. `_COLS_BY_INDEX` / `parse_events`). Les anciennes
+# regex « ancrées en fin de ligne » (ROW_RE / ROW_RE_V2) ont été retirées : elles
+# supposaient materiality|reliability comme 2 dernières colonnes, ce qui n'est plus
+# vrai depuis l'ajout de event_id|canonical_date|nature en queue (format 19 cols).
 
 # Poids matérialité pour tri (high > medium > low > "")
 _MAT_RANK = {"high": 3, "medium": 2, "low": 1, "": 0}
@@ -113,42 +102,62 @@ def _parse_date(s: str) -> Optional[date]:
         return None
 
 
+# Schéma de colonnes par POSITION (le seul ordre stable observé dans l'events-log).
+# Les 3 formats historiques partagent le MÊME ordre, ils ne diffèrent que par le
+# nombre de colonnes en QUEUE :
+#   - legacy 11 cols : date..pattern_id
+#   - v2     14 cols : + impacts|materiality|reliability
+#   - v3     19 cols : + event_id|canonical_date|nature|<vide>|<vide>
+# On parse donc par INDEX de colonne nommée (pas par regex ancré en fin de ligne)
+# pour être robuste à TOUT ajout de colonne futur : on lit chaque champ à sa
+# position fixe et on IGNORE les colonnes en trop. Aucune supposition « en fin de
+# ligne » → materiality/reliability restent lues même si d'autres colonnes suivent.
+_COLS_BY_INDEX = [
+    "date", "l1", "l2", "trigger", "cours", "latence", "r", "source",
+    "zone", "cat", "pat", "impacts", "materiality", "reliability",
+    "event_id", "canonical_date", "nature",
+]
+# Nb minimal de colonnes pour qu'une ligne soit un event exploitable (legacy).
+_MIN_COLS = 11
+
+
 def parse_events(events_path: Path) -> List[Dict[str, str]]:
     """Parse events-log.md. Retourne la liste des events bruts (dicts).
 
-    Rétro-compat : essaie d'abord le format v2 (14 cols : + impacts|materiality|
-    reliability). Si non-matching → fallback legacy 11 cols (impacts/materiality/
-    reliability resteront vides).
+    Parsing PAR POSITION (index de colonne nommée), robuste à tous les formats
+    historiques ET futurs :
+      - legacy 11 cols : impacts/materiality/reliability resteront vides ;
+      - v2     14 cols : + impacts|materiality|reliability ;
+      - v3     19 cols : + event_id|canonical_date|nature|<vides>.
+    On lit chaque champ à son index fixe et on ignore les colonnes en trop. Ne
+    suppose JAMAIS que materiality/reliability sont en fin de ligne (le schéma a
+    évolué : event_id/canonical_date/nature viennent désormais APRÈS).
     """
     if not events_path.exists():
         logger.warning("events-log introuvable : %s", events_path)
         return []
     # Parsing par split sur '|' (O(n), zéro backtracking regex). Les '|' internes
     # aux champs sont déjà échappés en '/' par le collector, donc le split est sûr.
-    v2_cols = ["date", "l1", "l2", "trigger", "cours", "latence", "r",
-               "source", "zone", "cat", "pat", "impacts", "materiality", "reliability"]
-    legacy_cols = v2_cols[:11]
     events: List[Dict[str, str]] = []
     for raw_line in events_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line.startswith("|"):
             continue
         parts = [p.strip() for p in line.strip("|").split("|")]
-        if len(parts) == 14:
-            d = dict(zip(v2_cols, parts))
-        elif len(parts) == 11:
-            d = dict(zip(legacy_cols, parts))
-        else:
+        # Trop court pour être un event (séparateur, ligne tronquée) → skip.
+        if len(parts) < _MIN_COLS:
             continue
+        # Lecture par index nommé : chaque champ à sa position, colonnes en trop
+        # ignorées, colonnes manquantes (format court) → "".
+        d = {
+            name: (parts[i] if i < len(parts) else "")
+            for i, name in enumerate(_COLS_BY_INDEX)
+        }
         # skip header/separator rows
         first = d["date"].strip().lower()
         if first in HEADER_TOKENS or first.startswith(":---") or first.startswith("---"):
             continue
         ev = {k: (v or "").strip() for k, v in d.items()}
-        # Garantir présence des champs v2 même sur format legacy
-        ev.setdefault("impacts", "")
-        ev.setdefault("materiality", "")
-        ev.setdefault("reliability", "")
         events.append(ev)
     return events
 

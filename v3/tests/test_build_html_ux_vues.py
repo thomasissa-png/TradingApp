@@ -155,7 +155,7 @@ def test_bandeau_mode_test_hors_du_main():
     sur TOUTES les vues, pas seulement le bulletin."""
     html = bh.render_html([], 0)
     assert "context-banner" in html
-    assert "MODE TEST" in html
+    assert "Mode test" in html
     # Le bandeau précède l'ouverture du <main> (donc commun à toutes les vues).
     idx_banner = html.index("context-banner")
     idx_main = html.index("<main")

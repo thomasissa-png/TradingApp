@@ -149,13 +149,12 @@ def test_html_grisage_et_badge_niveau():
 
 
 def test_html_bandeau_contexte_present():
-    """P0-B : bandeau contexte 3 lignes permanent (système, mode shadow, métrique)."""
+    """P0-B : bandeau contexte compact permanent (avertissement mode test/shadow)."""
     html = _render_sample_html()
     assert "context-banner" in html
-    assert "MODE TEST" in html
+    assert "Mode test" in html
     assert "shadow" in html.lower()
-    assert "win rate" in html.lower()
-    assert "12 actifs" in html
+    assert "non validé" in html
 
 
 def test_html_header_gate_pas_flip():

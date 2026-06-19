@@ -889,9 +889,7 @@ def render_html(
 </header>
 <div class="context-banner" role="note" aria-label="Contexte du système">
   <div class="context-inner">
-    <span class="ctx-line">12 actifs × 3 horizons — une direction <strong>LONG</strong> ou <strong>SHORT</strong> par cellule · 5 rapports par jour de bourse.</span>
-    <span class="ctx-line ctx-shadow"><strong>MODE TEST (shadow)</strong> : aucune cellule n'est validée pour le réel — règle de sélection au 08/08 (WR tradable ≥&nbsp;70&nbsp;%, N&nbsp;≥&nbsp;15).</span>
-    <span class="ctx-line ctx-metric">Seule métrique suivie : le <strong>win rate</strong> (la direction était-elle juste&nbsp;?).</span>
+    <span class="ctx-line ctx-shadow">⚠️ <strong>Mode test</strong> — non validé pour le réel · go-live 08/08 (WR&nbsp;≥&nbsp;70&nbsp;%, N&nbsp;≥&nbsp;15)</span>
   </div>
 </div>
 <div class="sidebar-overlay" id="sidebar-overlay"></div>

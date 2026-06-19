@@ -71,7 +71,7 @@ jobs:
         with:
           fetch-depth: 50
 
-      - name: Guard — jour de bourse NO-OP (week-end + fériés) + redondance intra-créneau
+      - name: Guard — NO-OP seulement si TOUS marchés fermés (week-end + fériés globaux) + redondance intra-créneau
         id: guard
         env:
           # Input booléen exposé seulement sur workflow_dispatch (vide sinon).
@@ -80,31 +80,37 @@ jobs:
           # ===================================================================
           # TABLE DE VÉRITÉ  (déclencheur × jour × force → run ?)
           # -------------------------------------------------------------------
-          #   déclencheur            jour          force  → run ?  pourquoi
-          #   schedule               lun-ven ouvré   —    → OUI*   jour de bourse (*sauf doublon ×3)
-          #   schedule               sam/dim         —    → NON    week-end : marchés fermés
-          #   schedule               jour férié      —    → NON    férié de marché : prix figés ← FIX
-          #   dispatch (VPS)         lun-ven ouvré  false → OUI    jour de bourse (driver réel)
-          #   dispatch (VPS)         sam/dim        false → NON    week-end : marchés fermés
-          #   dispatch (VPS)         jour férié     false → NON    férié de marché : prix figés ← FIX
-          #   dispatch (force)       férié/we       true  → OUI    échappatoire humaine (bypass)
-          #   push RUN-CYCLE.txt     férié/we        —    → OUI    échappatoire humaine (bypass)
+          #   déclencheur            jour              force  → run ?  pourquoi
+          #   schedule               lun-ven ouvré       —    → OUI*   ≥1 marché ouvert (*sauf doublon ×3)
+          #   schedule               férié US-only       —    → OUI    Euronext + continus cotent ← FIX 19/06
+          #   schedule               férié GLOBAL        —    → NON    Noël/Nouvel An : tout fermé
+          #   schedule               sam/dim             —    → NON    week-end : tout fermé
+          #   dispatch (VPS)         lun-ven ouvré      false → OUI    ≥1 marché ouvert (driver réel)
+          #   dispatch (VPS)         férié US-only      false → OUI    Euronext + continus cotent ← FIX 19/06
+          #   dispatch (VPS)         férié GLOBAL/we    false → NON    tout fermé
+          #   dispatch (force)       fermé total        true  → OUI    échappatoire humaine (bypass)
+          #   push RUN-CYCLE.txt     fermé total         —    → OUI    échappatoire humaine (bypass)
           #
-          # « jour férié » = calculé AUTO par la lib `holidays` (NYSE XNYS +
-          # Euronext XECB) pour l'année courante via is_trading_day → couvre
-          # 2026/2027/2028… sans maintenance. La logique de la table est
-          # inchangée ; seule la SOURCE des fériés devient automatique.
+          # FIX (19/06/2026) : la garde TOURNE désormais tant qu'AU MOINS UN marché
+          # de l'univers est ouvert (is_any_market_open), au lieu de NO-OP dès qu'un
+          # seul est fermé (is_trading_day = NYSE OU Euronext fermé). L'univers est
+          # majoritairement continu (or, pétrole, EUR/USD, cacao, café, blé…) + CAC
+          # (Euronext) : un férié US-only (Juneteenth, Memorial Day…) ferme le NYSE
+          # mais 9 actifs/12 cotent. NO-OP COMPLET seulement si TOUT est fermé.
+          # Fériés = calculés AUTO par la lib `holidays` (XNYS + XECB) → multi-année
+          # sans maintenance ; fallback socle statique si lib KO.
           #
           # Principe : la coupure s'applique à TOUS les déclencheurs AUTOMATIQUES
-          # (schedule ET workflow_dispatch sans force = le cas du VPS) dès que la
-          # bourse est FERMÉE (week-end OU férié de marché). Ces jours-là les
-          # prix sont figés à la dernière clôture → bulletin sur prix morts +
-          # mesures 24h dégénérées (« +0.0% ») qui polluent le shadow. Seul un
-          # FORÇAGE EXPLICITE (force=true / push RUN-CYCLE.txt) bypass la garde.
+          # (schedule ET workflow_dispatch sans force = le cas du VPS) UNIQUEMENT
+          # quand TOUS les marchés de l'univers sont fermés (week-end OU férié
+          # GLOBAL Noël/Nouvel An). Ces jours-là tous les prix sont figés à la
+          # dernière clôture → bulletin sur prix morts + mesures 24h dégénérées.
+          # Un férié US-only laisse Euronext + continus ouverts ⇒ on TOURNE.
+          # Seul un FORÇAGE EXPLICITE (force=true / push RUN-CYCLE.txt) bypass.
           #
-          # « Jour de bourse ouvert » = is_trading_day(d) de v3/scripts/journaliste.py
-          # (SOURCE DE VÉRITÉ UNIQUE : not week-end and not _is_market_holiday).
-          # FÉRIÉS AUTO : _is_market_holiday calcule les fériés via la lib
+          # « ≥1 marché ouvert » = is_any_market_open(d) de v3/scripts/journaliste.py
+          # (SOURCE DE VÉRITÉ UNIQUE : not week-end and (XNYS|XECB|continu ouvert)).
+          # FÉRIÉS AUTO : _is_market_holiday / _market_closed calculent les fériés via la lib
           # `holidays` (NYSE XNYS + Euronext XECB) pour l'année testée → valable
           # 2026/2027/2028… sans maintenance manuelle. On installe donc la lib
           # (pure-python, ~2s) AVANT l'appel ci-dessous, car la garde tourne AVANT
@@ -128,8 +134,8 @@ jobs:
           #     Marchés actions fermés sam/dim ET jours fériés → prix figés à la
           #     dernière clôture. Un run produirait un bulletin sur prix morts et
           #     des mesures 24h dégénérées, polluant les stats. On délègue le
-          #     verdict « jour de bourse ouvert » à is_trading_day (calendrier
-          #     unique NYSE ∪ Euronext de journaliste.py — aucune date recopiée ici).
+          #     verdict « ≥1 marché ouvert » à is_any_market_open (calendrier
+          #     unique NYSE ∪ Euronext ∪ continus de journaliste.py — aucune date recopiée ici).
           today_paris=$(TZ='Europe/Paris' date +%Y-%m-%d)  # AAAA-MM-JJ heure de Paris
           # Fériés AUTO : la lib `holidays` est la source primaire de
           # _is_market_holiday (XNYS + XECB, toute année). On l'installe ici (la
@@ -139,20 +145,26 @@ jobs:
           # robuste et ne bloque jamais un jour ouvré normal.
           pip install -q holidays || echo "pip install holidays a échoué → fallback socle statique MARKET_HOLIDAYS."
           # On passe le code via `-c` (pas de heredoc indenté : l'indentation YAML
-          # casserait l'indentation Python). `is_trading_day` = SOURCE DE VÉRITÉ
-          # UNIQUE (réutilise _is_market_holiday). exit 0 = bourse ouverte (on
-          # continue) ; exit 1 = fermée (NO-OP plus bas).
+          # casserait l'indentation Python). `is_any_market_open` = SOURCE DE VÉRITÉ
+          # UNIQUE (réutilise _market_closed). exit 0 = ≥1 marché ouvert (on
+          # continue) ; exit 1 = tout fermé (NO-OP plus bas).
           export TODAY_PARIS="$today_paris"
-          if ! python3 -c "import os, sys; sys.path.insert(0, 'v3/scripts'); from journaliste import is_trading_day; from datetime import date; y, m, d = (int(x) for x in os.environ['TODAY_PARIS'].split('-')); sys.exit(0 if is_trading_day(date(y, m, d)) else 1)"; then
-            # is_trading_day == False : week-end OU férié de marché → NO-OP.
+          if ! python3 -c "import os, sys; sys.path.insert(0, 'v3/scripts'); from journaliste import is_any_market_open; from datetime import date; y, m, d = (int(x) for x in os.environ['TODAY_PARIS'].split('-')); sys.exit(0 if is_any_market_open(date(y, m, d)) else 1)"; then
+            # is_any_market_open == False : TOUS les marchés fermés (week-end OU
+            # férié GLOBAL type Noël/Nouvel An où NYSE + Euronext + continus sont
+            # tous fermés) → NO-OP COMPLET. Un férié US-ONLY (Juneteenth, Memorial
+            # Day…) ne tombe PAS ici : Euronext + continus (or/pétrole/EUR/CAC…)
+            # cotent ⇒ is_any_market_open=True ⇒ on TOURNE (le bulletin couvre les
+            # actifs ouverts ; la mesure 24h skippe par actif ceux dont le marché
+            # est fermé, cf. OUTCOME_MARCHE_FERME dans journaliste.py).
             dow=$(TZ='Europe/Paris' date +%u)  # 1=lundi … 6=samedi, 7=dimanche
             if [ "$dow" -ge 6 ]; then
               raison="week-end (jour=$dow)"
             else
-              raison="férié de marché ${today_paris}"
+              raison="férié GLOBAL ${today_paris} (toutes places fermées)"
             fi
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Marchés fermés : ${raison}, Europe/Paris + déclenchement automatique (${GITHUB_EVENT_NAME}) → NO-OP."
+            echo "Tous marchés fermés : ${raison}, Europe/Paris + déclenchement automatique (${GITHUB_EVENT_NAME}) → NO-OP."
             exit 0
           fi
 

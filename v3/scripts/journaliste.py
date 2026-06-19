@@ -329,6 +329,97 @@ def is_partial_holiday(d: date) -> bool:
     return not (nyse_closed and euronext_closed)
 
 
+# ---------------------------------------------------------------------------
+# Périmètre d'ouverture multi-marchés (fix « férié US-only » 2026-06-19)
+# ---------------------------------------------------------------------------
+# L'univers (12 actifs) est majoritairement CONTINU (or, argent, pétrole,
+# cuivre, cacao, café, blé, EUR/USD) + 1 indice EU (CAC 40, Euronext) + 3 liés
+# US (S&P, Nasdaq, VIX, NYSE). Un férié US-only (Juneteenth, Memorial Day,
+# Thanksgiving, Labor Day…) ferme le NYSE mais PAS Euronext NI les continus →
+# 9 actifs sur 12 cotent. L'ancienne garde `is_trading_day` (NYSE OU Euronext
+# fermé ⇒ NO-OP total) supprimait alors TOUT le briefing à tort (~8×/an).
+#
+# Groupe de marché → calendrier de référence (réutilise actif_group de
+# mesure_ouverture, AUCUNE liste d'actifs en dur — leçon L023) :
+#   - "us"      → XNYS (NYSE)
+#   - "eu"      → XECB (Euronext / TARGET)
+#   - "continu" → ouvert tous les jours de semaine, fermé seulement le week-end
+#                 OU un férié GLOBAL (les deux places fermées : Noël, Nouvel An,
+#                 Vendredi saint commun). Pas de calendrier dédié dans la lib
+#                 pour les futures/FX → on dérive « fermé continu ⇔ week-end ou
+#                 (XNYS fermé ET XECB fermé) ».
+_GROUP_MARKET_CODE: Dict[str, str] = {"us": "XNYS", "eu": "XECB"}
+
+
+def _continu_closed(d: date) -> bool:
+    """True si les marchés CONTINUS (futures, FX) sont fermés le jour `d`.
+
+    Les continus cotent ~24/5 : fermés le week-end, et seulement sur les très
+    rares fériés GLOBAUX où NYSE ET Euronext ferment simultanément (Noël 25/12,
+    Nouvel An 01/01, Vendredi saint commun). Un férié propre à UNE seule place
+    (US-only ou EU-only) ne ferme PAS les continus. Dégradation sûre : si la lib
+    `holidays` est absente, `_market_closed` retombe sur l'union statique → un
+    férié de l'union compte fermé pour les deux ⇒ on sur-ferme les continus
+    seulement les jours déjà fériés quelque part (conservateur, jamais un jour
+    ouvré normal ne devient fermé à tort).
+    """
+    if d.weekday() >= 5:
+        return True
+    return _market_closed(d, "XNYS") and _market_closed(d, "XECB")
+
+
+def is_market_open_for(group: Optional[str], d: date) -> bool:
+    """True si le marché du GROUPE (`us` / `eu` / `continu`) est OUVERT le jour `d`.
+
+    Sert à la fois (a) au périmètre de mesure par actif — ne pas juger un call
+    dont le marché était fermé sur la fenêtre (prix figés ⇒ mesure dégénérée),
+    et (b) à `is_any_market_open` (garde de run).
+
+    - "us"      ouvert ⇔ NYSE (XNYS) ouvert ce jour
+    - "eu"      ouvert ⇔ Euronext (XECB) ouvert ce jour
+    - "continu" ouvert ⇔ pas week-end et pas férié global (cf. `_continu_closed`)
+    - None / groupe inconnu → False (zéro invention : l'appelant skippe / SKIP mesure)
+
+    Pur, déterministe, aucun accès réseau (la lib `holidays` est lue en local,
+    fallback socle statique). Week-end → toujours fermé pour tous les groupes.
+    """
+    if group is None:
+        return False
+    if group == "continu":
+        return not _continu_closed(d)
+    code = _GROUP_MARKET_CODE.get(group)
+    if code is None:
+        return False
+    return not _market_closed(d, code)
+
+
+def is_any_market_open(d: date) -> bool:
+    """True si AU MOINS UN marché de l'univers est ouvert le jour `d`.
+
+    Nouvelle garde de run (remplace `is_trading_day` dans cycle.yml) : le cycle
+    doit TOURNER tant qu'au moins un marché pertinent cote, et ne faire NO-OP
+    COMPLET que si TOUT est fermé (week-end, ou férié global type Noël/Nouvel An
+    où NYSE + Euronext + continus sont tous fermés).
+
+    Concrètement : `not week-end and (XNYS ouvert OU XECB ouvert OU continus
+    ouverts)`. Comme les continus sont ouverts dès que ce n'est ni le week-end
+    ni un férié global, cette fonction est True pour TOUT jour de semaine sauf
+    les fériés globaux. Un férié US-only (Juneteenth 2026-06-19) ⇒ True (CAC +
+    continus cotent). Un samedi/dimanche ⇒ False. Noël ⇒ False.
+
+    Réutilise EXACTEMENT le calendrier existant (`_market_closed`, lib `holidays`
+    + fallback statique). Ne JAMAIS bloquer un jour ouvré ni planter : tout échec
+    de la lib retombe sur le socle statique sans exception.
+    """
+    if d.weekday() >= 5:
+        return False
+    return (
+        is_market_open_for("us", d)
+        or is_market_open_for("eu", d)
+        or is_market_open_for("continu", d)
+    )
+
+
 def compter_jours_bourse_exclus(date_debut: date, date_fin: date) -> int:
     """Compte les jours de bourse EXCLUS par férié partiel sur [date_debut, date_fin].
 
@@ -945,6 +1036,14 @@ NOTE_PREMATURE_REFUSED = (
 OUTCOME_NON_NOTE = "non-notee"
 CONCLUSION_INSUFFISANT = "INSUFFISANT"
 
+# Marché de l'actif fermé sur la fenêtre mesurée (férié US-only pour S&P/Nasdaq/
+# VIX, etc.) → prix figés à la dernière clôture. On NE juge PAS (ni VRAI/FAUSSE/
+# NC) : ce n'est pas un échec de prédiction, c'est un jour sans cotation. Distinct
+# de suivi-interrompu (panne data, retry) : ici il n'y a tout simplement RIEN à
+# mesurer ce jour-là. Exclu des KPIs comme suivi-interrompu (cf. compute_kpi /
+# is_terminal_outcome). Le retry au prochain jour ouvré du marché reprend.
+OUTCOME_MARCHE_FERME = "marche-ferme"
+
 
 @dataclass
 class Measure:
@@ -1329,7 +1428,9 @@ def compute_kpi(measures_for_cell: List[Measure]) -> CellKPI:
     # ailleurs (decision-log + parsing direct du bulletin).
     terminees = [
         m for m in measures_for_cell
-        if m.outcome != OUTCOME_INTERROMPU and m.outcome != OUTCOME_NON_NOTE
+        if m.outcome != OUTCOME_INTERROMPU
+        and m.outcome != OUTCOME_NON_NOTE
+        and m.outcome != OUTCOME_MARCHE_FERME
     ]
     window = terminees[-WINDOW:]
     kpi.n_total = len(window)
@@ -1679,6 +1780,23 @@ def _extract_price_dated(raw: Any) -> Tuple[Optional[float], Optional[date]]:
         return (None, None)
 
 
+def _actif_group_for_fiche(fiche: Optional[dict]) -> Optional[str]:
+    """Groupe de marché ("us" / "eu" / "continu") d'une fiche, ou None si inconnu.
+
+    Source de vérité unique : `mesure_ouverture.actif_group` (famille + overrides
+    config) — aucune liste d'actifs en dur (leçon L023). Dégradation sûre : fiche
+    absente, import KO ou groupe non résolu → None (l'appelant NE skippe PAS la
+    mesure ⇒ comportement historique préservé, zéro régression).
+    """
+    if not fiche:
+        return None
+    try:
+        from mesure_ouverture import actif_group  # noqa: PLC0415
+        return actif_group(fiche)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _is_continu_fiche(fiche: Optional[dict]) -> bool:
     """True si la fiche est un actif du groupe CONTINU (cote 24/7).
 
@@ -1933,6 +2051,31 @@ def measure(
                     delta_pct=None, outcome=OUTCOME_NON_NOTE,
                     note="bulletin non-7h (suivi) — exclu du win rate (CA-M6b)",
                 )
+                measures.append(m)
+                continue
+            # Fix « férié US-only » (2026-06-19) — PÉRIMÈTRE DE MESURE PAR ACTIF :
+            # si le marché de CET actif était FERMÉ le jour d'échéance (= jour de
+            # mesure), son prix courant est figé à la dernière clôture → mesurer
+            # produirait une dégénérescence (delta ≈ 0 % comparant un prix figé à
+            # lui-même). On NE juge PAS : statut OUTCOME_MARCHE_FERME (distinct de
+            # suivi-interrompu, exclu des KPIs), retry au prochain jour ouvré du
+            # marché. Ex. Juneteenth : S&P/Nasdaq/VIX (us) fermés → SKIP ; CAC (eu)
+            # + continus mesurés normalement. Groupe via actif_group (mesure_
+            # ouverture) — zéro liste d'actifs en dur. Si groupe inconnu → on NE
+            # skippe PAS (comportement historique préservé, dégradation sûre).
+            group = _actif_group_for_fiche(fiche)
+            if group is not None and not is_market_open_for(group, echeance):
+                m = Measure(
+                    cell=cell, fiche_key=fiche_key, ticker=ticker,
+                    horizon=cell.horizon, echeance=echeance,
+                    prix_emission=None, prix_courant=None, seuil_pct=None,
+                    delta_pct=None, outcome=OUTCOME_MARCHE_FERME,
+                    note=(
+                        f"marché {group} fermé le {echeance.isoformat()} "
+                        f"(férié/week-end) — non jugé, retry prochain jour ouvré"
+                    ),
+                )
+                m.is_flip = _compute_is_flip(cell, bpath)
                 measures.append(m)
                 continue
             # Référence selon le groupe de marché (fix L027) :
@@ -2590,7 +2733,9 @@ def compute_kpi_ab(measures_for_cell: List[Measure]) -> CellKPIAB:
     # Exclure NON_NOTE : pas une prédiction (gate suffisance Thomas).
     terminees = [
         m for m in measures_for_cell
-        if m.outcome != OUTCOME_INTERROMPU and m.outcome != OUTCOME_NON_NOTE
+        if m.outcome != OUTCOME_INTERROMPU
+        and m.outcome != OUTCOME_NON_NOTE
+        and m.outcome != OUTCOME_MARCHE_FERME
     ]
     window = terminees[-WINDOW:]
     brier_sum_pm1 = 0.0

@@ -270,7 +270,8 @@ def test_build_html_contains_sticky_legend_and_subnav():
     assert "table-wrap" in content, "Classe CSS table-wrap absente"
     # Sidebar : badge "dernier" sur le plus récent
     assert "badge-latest" in content, "Badge 'dernier' absent"
-    # Position sticky toujours utilisée (header + subnav)
+    # Position sticky toujours utilisée par le header (la subnav, elle, défile
+    # avec le contenu depuis qu'elle a été dé-stickée — chrome permanent réduit).
     assert "position: sticky" in content or "position:sticky" in content
 
 

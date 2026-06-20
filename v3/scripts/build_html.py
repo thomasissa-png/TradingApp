@@ -525,7 +525,7 @@ def render_html(
   .gen-meta {{ margin-top: 40px; font-size: 11px; color: var(--text-muted); text-align: right; }}
   /* Sous-navigation d'ancres intra-bulletin (seule barre sticky sous le header) */
   .subnav {{
-    position: sticky; top: 44px; z-index: 4;
+    position: static;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
     padding: 6px 20px;
@@ -900,7 +900,7 @@ def render_html(
     aside.open {{ transform: translateX(0); }}
     main {{ width: 100%; }}
     .content-inner {{ padding: 12px 14px 32px 14px; }}
-    .subnav {{ padding: 5px 12px; top: 40px; }}
+    .subnav {{ padding: 5px 12px; }}
     .subnav a {{ font-size: 11.5px; padding: 3px 8px; }}
     .subnav .subnav-label {{ width: 100%; margin-bottom: 2px; }}
     /* La subnav wrappe désormais sur ~2 lignes sous un header de 40px : on

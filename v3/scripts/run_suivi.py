@@ -44,6 +44,11 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 ROOT = SCRIPTS_DIR.parent
 SUIVI_DIR = ROOT / "data" / "suivi"
+# Refonte bilan soir S9 — persistance intraday DÉDIÉE des relevés 12h/18h de la
+# Sélection du jour (call + % favorable signé + heure), pour que le Bilan du soir
+# reconstruise le PIC sur {12h, 18h, clôture}. Cache de présentation, jamais une
+# mesure (n'alimente NI measures-log NI performance). v3/data/ jamais commité ici.
+SUIVI_TRACKING_DIR = ROOT / "data" / "suivi-tracking"
 EVENTS_LOG_DIR = ROOT / "data" / "events-log"
 
 PARIS_TZ = ZoneInfo("Europe/Paris")
@@ -666,6 +671,96 @@ def load_titres_frais_snapshot(
 
 
 # ---------------------------------------------------------------------------
+# Refonte bilan soir S9 — persistance intraday des relevés 12h/18h
+# ---------------------------------------------------------------------------
+# Le Bilan du soir doit comparer le PIC favorable atteint parmi {12h, 18h,
+# clôture}. Les % à 12h/18h ne sont connus QUE le moment du suivi → on les
+# persiste ici par actif sélectionné (call + % favorable signé + heure du
+# relevé). Idempotent : un même créneau écrase son propre bloc, sans toucher
+# l'autre. Cache de PRÉSENTATION (CA-S6 : n'alimente NI measures-log NI
+# performance). Zéro invention : un actif sans fav% calculable n'est PAS écrit.
+
+def _tracking_path(date_j: date, base_dir: Path) -> Path:
+    return base_dir / f"{date_j.isoformat()}.json"
+
+
+def save_suivi_tracking(
+    date_j: date,
+    report_type: str,
+    lignes: List["SuiviLigne"],
+    now: datetime,
+    base_dir: Path = SUIVI_TRACKING_DIR,
+) -> Optional[Path]:
+    """Persiste le relevé du créneau pour les cellules de la Sélection du jour.
+
+    Écrit `{date}.json` avec un bloc par créneau (clé "12h"/"18h") :
+        {"12h": {"<actif>": {"call": "LONG", "fav_pct": 1.0, "heure": "12h05"}}}
+    IDEMPOTENT : relit le fichier, remplace SEULEMENT le bloc du créneau courant,
+    réécrit le tout (rejouer le 12h ne touche pas le 18h, et inversement). Seules
+    les lignes `selection=True` AVEC un `fav_now` calculable sont écrites (zéro
+    invention : un actif sans relevé exploitable est absent → trou explicite côté
+    Bilan). Retourne le chemin écrit, ou None si rien à écrire (aucune sélection
+    relevable ce créneau — on n'écrase alors PAS un bloc existant).
+    """
+    bloc: Dict[str, dict] = {}
+    for li in lignes:
+        if not li.selection or li.fav_now is None:
+            continue
+        bloc[li.actif] = {
+            "call": li.call,
+            "fav_pct": li.fav_now,
+            "heure": now.strftime("%Hh%M"),
+        }
+    if not bloc:
+        return None
+    base_dir.mkdir(parents=True, exist_ok=True)
+    p = _tracking_path(date_j, base_dir)
+    data: Dict[str, Any] = {}
+    if p.exists():
+        try:
+            loaded = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data = loaded
+        except (OSError, json.JSONDecodeError):
+            data = {}
+    data[report_type] = bloc
+    p.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+def load_suivi_tracking(
+    date_j: date, base_dir: Path = SUIVI_TRACKING_DIR
+) -> Dict[str, Dict[str, dict]]:
+    """Lit `{date}.json` (relevés 12h/18h). {} si absent/illisible (zéro invention).
+
+    Forme : {"12h": {"<actif>": {"call","fav_pct","heure"}}, "18h": {...}}.
+    Les blocs/valeurs malformés sont ignorés sans crash (dégradation propre).
+    """
+    p = _tracking_path(date_j, base_dir)
+    if not p.exists():
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: Dict[str, Dict[str, dict]] = {}
+    for slot, bloc in data.items():
+        if slot not in VALID_REPORTS or not isinstance(bloc, dict):
+            continue
+        clean: Dict[str, dict] = {}
+        for actif, rec in bloc.items():
+            if isinstance(rec, dict):
+                clean[str(actif)] = rec
+        out[str(slot)] = clean
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Construction du rapport de suivi
 # ---------------------------------------------------------------------------
 
@@ -847,6 +942,15 @@ def build_suivi(
         save_delta_snapshot(date_j, REPORT_12H, deltas_now, suivi_dir)
         # Persiste aussi les titres frais affichés au 12h → dédup au 18h.
         save_titres_frais_snapshot(date_j, REPORT_12H, titres_frais, suivi_dir)
+
+    # Persiste le relevé intraday de la Sélection (call + fav% + heure) pour le
+    # Bilan du soir — aux DEUX créneaux (12h ET 18h, le Bilan reconstruit le pic
+    # sur ces points + la clôture). Best-effort : un échec ne casse jamais le
+    # suivi (cache de présentation). v3/data/ jamais commité par l'agent.
+    try:
+        save_suivi_tracking(date_j, report_type, rapport.lignes, now)
+    except Exception as e:  # noqa: BLE001 — persistance non-critique
+        logger.warning("build_suivi: save_suivi_tracking KO: %s", e)
     return rapport
 
 
@@ -887,12 +991,13 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
     L.append(
         "| Actif "
         "| <span class=\"c-full\">Call 7h</span><span class=\"c-short\">Call</span> "
+        "| <span class=\"c-full\">Prix d'entrée</span><span class=\"c-short\">Entrée</span> "
         "| <span class=\"c-full\">% vs ouv. 12h</span><span class=\"c-short\">% 12h</span> "
         "| <span class=\"c-full\">% vs ouv. 18h</span><span class=\"c-short\">% 18h</span> "
         "| Tendance "
         f"| Vendre à {hour_label} ? |"
     )
-    L.append("|---|---|---|---|---|---|")
+    L.append("|---|---|---|---|---|---|---|")
     for li in selection:
         if is_12h:
             # Au 12h : colonne 12h = favorable courant, colonne 18h = vide.
@@ -902,8 +1007,9 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
             # Au 18h : colonne 12h = favorable précédent (snapshot 12h), 18h = courant.
             col_12 = _fmt_fav(li.fav_prec)
             col_18 = _fmt_fav(li.fav_now)
+        # Prix d'entrée = prix d'ouverture (la référence du %).
         L.append(
-            f"| {li.actif} | {li.call} | {col_12} | {col_18} | "
+            f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | {col_12} | {col_18} | "
             f"{li.tendance} | **{li.vendre}** |"
         )
     L.append("")
@@ -924,7 +1030,7 @@ def _render_markdown(r: SuiviRapport) -> str:
     L: List[str] = []
     # [I-7 audit visuel 12/06] : H1 pour tous les rapports (cohérence avec le
     # Briefing — le suivi était en H2).
-    L.append(f"# Suivi {h} — {r.date_j.isoformat()} {heure}")
+    L.append(f"# Suivi {h} · {r.date_j.isoformat()} {heure}")
     L.append("")
 
     # PARTIE B — 1 ligne de contexte réactualisée (factuelle, décor), en tête.
@@ -937,7 +1043,7 @@ def _render_markdown(r: SuiviRapport) -> str:
     # TOUTES les positions 24h reste plus bas.
     L.extend(_render_selection_table(r))
 
-    L.append("### Suivi détaillé — toutes les positions 24h")
+    L.append("### Suivi détaillé : toutes les positions 24h")
     L.append("")
     if h == REPORT_12H:
         L.append("### Note sur les marchés US")
@@ -999,7 +1105,7 @@ def _render_markdown(r: SuiviRapport) -> str:
         # le signale pour éviter au lecteur de les relire comme du neuf.
         if h == REPORT_18H:
             L.append("")
-            L.append("_(mêmes news que les suivis précédents — source : Briefing 7h.)_")
+            L.append("_(mêmes news que les suivis précédents ; source : Briefing 7h.)_")
     else:
         L.append("Aucune news impactante dans le Briefing 7h.")
     L.append("")
@@ -1025,7 +1131,7 @@ def _render_markdown(r: SuiviRapport) -> str:
             L.append(
                 f"- ⚠️ **{li.actif}** ({li.call}) : {_fmt_pct(li.delta_pct)} contre "
                 f"le call (seuil {_fmt_pct(li.seuil_pct, signed=False)}). "
-                f"Sortie à envisager — drapeau, Thomas décide."
+                f"Sortie à envisager : drapeau, Thomas décide."
             )
     else:
         L.append("Aucune alerte de sortie.")
@@ -1114,6 +1220,9 @@ __all__ = [
     "recolte_news_fraiches",
     "save_titres_frais_snapshot",
     "load_titres_frais_snapshot",
+    "save_suivi_tracking",
+    "load_suivi_tracking",
+    "SUIVI_TRACKING_DIR",
     "build_suivi",
     "write_suivi",
     "main",

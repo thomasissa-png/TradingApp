@@ -945,19 +945,22 @@ def render_html(
        que la colonne « Vendre / Pas vendre » (la reco, la plus importante) reste
        visible sans scroll horizontal. Classe posée en JS sur l'en-tête signature
        « % vs ouv. 12h ». */
-    .selection-progression {{ font-size: 12px; }}
-    .selection-progression th, .selection-progression td {{ padding: 7px 6px; }}
-    /* À 390px, les 6 colonnes ne tiennent pas même resserrées. On masque la 5e
-       (« Tendance ») UNIQUEMENT sur mobile : la progression 12h→18h des deux
-       colonnes « % » porte déjà la dynamique, et la reco « Vendre / Pas vendre »
-       (la décision) doit rester visible SANS scroll. Tendance reste sur desktop
-       et dans le suivi détaillé. */
-    .selection-progression td:nth-child(5),
-    .selection-progression th:nth-child(5) {{ display: none; }}
-    /* En-têtes : version courte sur mobile (la complète prend trop de largeur et
-       repoussait la reco hors écran). */
-    .selection-progression .c-full {{ display: none; }}
-    .selection-progression .c-short {{ display: inline; }}
+    .selection-progression, .bilan-perf-table {{ font-size: 12px; }}
+    .selection-progression th, .selection-progression td,
+    .bilan-perf-table th, .bilan-perf-table td {{ padding: 7px 6px; }}
+    /* À 390px les colonnes ne tiennent pas toutes. On masque UNE colonne par table,
+       jamais une colonne « résultat ». SUIVI : masque « Tendance » (col 5) ; la
+       progression 12h/18h + la reco « Vendre ? » restent. BILAN : masque
+       l'intermédiaire « 18h » (col 4) ; la CLÔTURE (col 5, résultat final) et le
+       Pic (col 6) restent TOUJOURS visibles. */
+    .selection-progression td:nth-child(6),
+    .selection-progression th:nth-child(6) {{ display: none; }}
+    .bilan-perf-table td:nth-child(4),
+    .bilan-perf-table th:nth-child(4) {{ display: none; }}
+    /* En-têtes : version courte sur mobile (la complète prend trop de largeur) —
+       pour les DEUX tables (suivi + bilan). */
+    .selection-progression .c-full, .bilan-perf-table .c-full {{ display: none; }}
+    .selection-progression .c-short, .bilan-perf-table .c-short {{ display: inline; }}
   }}
 </style>
 </head>
@@ -1424,7 +1427,12 @@ function markSelectionTables(root) {{
     const headRow = t.querySelector('thead tr') || t.querySelector('tr');
     if (!headRow) return;
     const heads = Array.from(headRow.querySelectorAll('th, td')).map(c => (c.textContent || '').trim());
+    // Suivi : tableau « Sélection du jour — progression » (en-tête « % vs ouv. 12h »).
     if (heads.some(h => h.indexOf('% vs ouv. 12h') !== -1)) t.classList.add('selection-progression');
+    // Bilan : tableau « Performance 24h du Top 3 » (en-tête « % fav. 12h »). Classe
+    // DISTINCTE : libellés courts actifs sur mobile, mais on masque un INTERMÉDIAIRE
+    // (18h), JAMAIS la clôture (résultat final) ni le Pic.
+    if (heads.some(h => h.indexOf('% fav. 12h') !== -1)) t.classList.add('bilan-perf-table');
   }});
 }}
 

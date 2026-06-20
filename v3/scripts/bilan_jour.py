@@ -158,6 +158,46 @@ def load_conviction_map(
     return result
 
 
+def load_conviction_records(
+    bulletin_date: date,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+) -> Dict[Tuple[str, str], dict]:
+    """Mappe (actif, horizon) -> DERNIER record brut du decision-log du jour.
+
+    Comme `load_conviction_map` mais garde le record COMPLET (pas juste le niveau)
+    pour que le Bilan déduise la raison de non-sélection (selection_motif_exclusion,
+    coverage, drapeaux). Dernier record par cellule. {} si rien (zéro invention).
+    """
+    result: Dict[Tuple[str, str], dict] = {}
+    if not decision_log_dir.exists():
+        return result
+    prefix = bulletin_date.isoformat()
+    for fp in sorted(decision_log_dir.glob(f"{prefix}-*.jsonl")):
+        try:
+            with fp.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(rec, dict):
+                        continue
+                    if rec.get("bulletin_date") != prefix:
+                        continue
+                    actif = rec.get("actif")
+                    horizon = rec.get("horizon")
+                    if not actif or not horizon:
+                        continue
+                    result[(str(actif), str(horizon))] = rec
+        except OSError as e:
+            logger.warning("decision-log illisible %s : %s", fp, e)
+            continue
+    return result
+
+
 def load_selection_map(
     bulletin_date: date,
     decision_log_dir: Path = DECISION_LOG_DIR,
@@ -436,6 +476,318 @@ def win_rate_par_conviction(
 
 
 # ---------------------------------------------------------------------------
+# Refonte bilan soir S9 — 3 blocs « suivi 24h » (demande fondateur, design validé)
+# ---------------------------------------------------------------------------
+# WIN RATE ONLY : aucune valeur monétaire. Le % de mouvement (ampleur) est OK
+# (Thomas l'a demandé). Tout est DÉTERMINISTE et ZÉRO INVENTION : un point de
+# relevé absent (12h/18h non persisté) → « — » et le pic est calculé sur les
+# seuls points disponibles, le trou est signalé.
+#
+# Le mouvement directionnel signé FAVORABLE (`+` = va dans le sens du call) est
+# calculé par la fonction de vérité unique `run_suivi.fav_delta` (réutilisée :
+# zéro divergence entre suivi et bilan).
+
+# Libellés des points de relevé (heure Paris), ordonnés chronologiquement.
+PIC_POINTS = ("12h", "18h", "clôture")
+
+
+def _fav(delta_pct: Optional[float], call: str) -> Optional[float]:
+    """% directionnel signé favorable (réutilise run_suivi.fav_delta)."""
+    try:
+        from run_suivi import fav_delta  # noqa: PLC0415
+    except ImportError:  # pragma: no cover - import alternatif
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from run_suivi import fav_delta  # noqa: PLC0415
+    return fav_delta(delta_pct, call)
+
+
+@dataclass
+class PerfTop3Ligne:
+    """Performance 24h d'UNE cellule de la Sélection du jour (Bloc 1). WIN RATE ONLY."""
+    actif: str
+    call: str
+    fav_12h: Optional[float]      # % favorable signé à 12h (None = pas de relevé)
+    fav_18h: Optional[float]      # % favorable signé à 18h (None = pas de relevé)
+    fav_cloture: Optional[float]  # % favorable signé à la clôture (None = pas mesurable)
+    pic_valeur: Optional[float]   # meilleur % favorable parmi les points disponibles
+    pic_heure: Optional[str]      # heure du pic ("12h"/"18h"/"clôture") ou None
+    points_manquants: List[str]   # points de relevé absents (trou de données)
+    verdict: str                  # verdict de sortie optimale, relié aux heures
+    vendre_reco: Optional[str]    # reco réelle du suivi 18h ("Vendre"/"Pas vendre"/None)
+
+
+def _verdict_sortie(
+    fav_12h: Optional[float],
+    fav_18h: Optional[float],
+    fav_cloture: Optional[float],
+    pic_valeur: Optional[float],
+    pic_heure: Optional[str],
+) -> str:
+    """Verdict de sortie optimale RELIÉ AUX HEURES (déterministe, zéro invention).
+
+    Compare le pic (meilleur % favorable atteint) à la clôture :
+    - pic à la clôture (monté jusqu'au bout) → « tenir était le bon choix » ;
+    - pic AVANT la clôture et clôture plus basse → « sortir à {heure du pic}
+      aurait été mieux » (avec les deux valeurs) ;
+    - aucun point favorable (jamais dans notre sens) → constat honnête.
+    Si données insuffisantes pour trancher → message explicite (pas d'invention).
+    """
+    if pic_valeur is None or pic_heure is None:
+        return "Pas de point de relevé exploitable pour juger la sortie."
+    # Le pari n'est jamais passé du bon côté : aucun verrouillage n'aurait aidé.
+    if pic_valeur <= 0:
+        return (
+            f"jamais dans notre sens (meilleur point {_fmt_pct(pic_valeur)} "
+            f"à {pic_heure}) : il n'y avait rien à verrouiller."
+        )
+    if pic_heure == "clôture":
+        return (
+            f"pic {_fmt_pct(pic_valeur)} à la clôture : monté jusqu'au bout, "
+            f"tenir était le bon choix."
+        )
+    # Pic atteint AVANT la clôture : la clôture est-elle plus basse ?
+    if isinstance(fav_cloture, (int, float)):
+        if fav_cloture < pic_valeur:
+            return (
+                f"pic {_fmt_pct(pic_valeur)} à {pic_heure}, clôture "
+                f"{_fmt_pct(fav_cloture)} : sortir à {pic_heure} aurait été mieux."
+            )
+        return (
+            f"pic {_fmt_pct(pic_valeur)} à {pic_heure}, clôture stable : "
+            f"tenir n'a rien coûté."
+        )
+    # Clôture non mesurable : on dit où était le pic, sans inventer la suite.
+    return (
+        f"pic {_fmt_pct(pic_valeur)} à {pic_heure} ; clôture non mesurable "
+        f"(point manquant)."
+    )
+
+
+def compute_perf_top3(
+    measures_24h: List[Any],
+    selection_map: Dict[Tuple[str, str], bool],
+    tracking: Dict[str, Dict[str, dict]],
+    vendre_map: Optional[Dict[str, str]] = None,
+) -> List[PerfTop3Ligne]:
+    """Bloc 1 — Performance 24h des cellules de la Sélection du jour (top ≤3).
+
+    Pour chaque cellule `selection_du_jour: true` (horizon 24h) :
+    - fav 12h / 18h : lus dans `tracking` (relevés persistés par run_suivi). Le
+      call du tracking et celui du bulletin doivent concorder ; sinon le relevé
+      est ignoré (zéro invention sur un call douteux).
+    - fav clôture : calculé depuis la mesure (delta clôture vs ouverture × sens).
+    - pic = max des points DISPONIBLES, avec son heure ; points manquants tracés.
+    - verdict de sortie optimale relié aux heures (_verdict_sortie).
+    - reco réelle du suivi 18h (vendre_map) pour confronter capté / raté.
+    Tri : par actif (déterministe). Zéro point → ligne avec « — » partout.
+    """
+    vendre_map = vendre_map or {}
+    out: List[PerfTop3Ligne] = []
+    for m in measures_24h:
+        actif = m.cell.actif_name
+        if not selection_map.get((actif, m.horizon), False):
+            continue
+        call = m.cell.conclusion
+
+        def _slot_fav(slot: str) -> Optional[float]:
+            rec = (tracking.get(slot) or {}).get(actif)
+            if not isinstance(rec, dict):
+                return None
+            # Concordance de call : un relevé d'un call opposé est ignoré.
+            if str(rec.get("call", "")).upper() != str(call).upper():
+                return None
+            v = rec.get("fav_pct")
+            return float(v) if isinstance(v, (int, float)) else None
+
+        fav_12h = _slot_fav("12h")
+        fav_18h = _slot_fav("18h")
+        fav_cloture = _fav(m.delta_pct, call)
+
+        points = [("12h", fav_12h), ("18h", fav_18h), ("clôture", fav_cloture)]
+        dispo = [(h, v) for h, v in points if isinstance(v, (int, float))]
+        manquants = [h for h, v in points if not isinstance(v, (int, float))]
+        if dispo:
+            pic_heure, pic_valeur = max(dispo, key=lambda kv: kv[1])
+        else:
+            pic_heure, pic_valeur = None, None
+
+        verdict = _verdict_sortie(fav_12h, fav_18h, fav_cloture, pic_valeur, pic_heure)
+        out.append(PerfTop3Ligne(
+            actif=actif, call=call,
+            fav_12h=(round(fav_12h, 2) if fav_12h is not None else None),
+            fav_18h=(round(fav_18h, 2) if fav_18h is not None else None),
+            fav_cloture=(round(fav_cloture, 2) if fav_cloture is not None else None),
+            pic_valeur=(round(pic_valeur, 2) if pic_valeur is not None else None),
+            pic_heure=pic_heure, points_manquants=manquants, verdict=verdict,
+            vendre_reco=vendre_map.get(actif),
+        ))
+    out.sort(key=lambda x: x.actif)
+    return out
+
+
+@dataclass
+class GrosMoveAutre:
+    """Gros mouvement 24h sur un actif HORS top 3 (Bloc 2). WIN RATE ONLY."""
+    actif: str
+    call: str
+    mouvement_pct: Optional[float]   # mouvement 24h vs ouverture (signé, brut)
+    direction_juste: Optional[bool]  # le call 24h pointait-il le bon sens ?
+    raison_non_select: str           # pourquoi pas dans le top 3 (déduit des logs)
+    apprentissage: str               # 1 ligne actionnable
+
+
+def reason_non_selection(
+    actif: str,
+    record: Optional[dict],
+    score_fort_seuil: float,
+    selection_coverage_min: float,
+) -> str:
+    """Pourquoi `actif` n'est PAS dans la Sélection — DÉDUIT du decision-log.
+
+    Priorité (zéro invention) :
+    1. `selection_motif_exclusion` présent → raison EXACTE tracée par le sélecteur
+       (« hors top 3 » / « même pari (X) que Y ») : on la rend telle quelle.
+    2. Sinon, on déduit du même record : conviction non « forte » (drapeau actif
+       ou |score| sous le seuil) → critère conviction ; couverture < plancher →
+       critère couverture. Ce sont EXACTEMENT les étapes 1-2 de
+       `compute_selection_du_jour` (source unique), donc pas une invention.
+    3. Record absent / aucun critère déterminable → « raison non tracée ».
+    """
+    if not isinstance(record, dict):
+        return "raison non tracée"
+    motif = record.get("selection_motif_exclusion")
+    if isinstance(motif, str) and motif.strip():
+        return motif.strip()
+    # Déduction des étapes 1-2 du sélecteur (mêmes règles que compute_selection).
+    niveau = conviction_level(record, score_fort_seuil)
+    cov = record.get("coverage")
+    if niveau != "forte":
+        # Quel drapeau / quel critère a dégradé la conviction ?
+        if record.get("mono_critere_dominant"):
+            return "conviction non forte (mono-critère dominant)"
+        if record.get("diverge"):
+            return "conviction non forte (signaux qui divergent)"
+        if record.get("coin_flip"):
+            return "conviction non forte (quasi pile ou face)"
+        if record.get("quasi_neutre"):
+            return "conviction non forte (signal quasi neutre)"
+        return "conviction sous le seuil (pas assez tranchée)"
+    if isinstance(cov, (int, float)) and cov < selection_coverage_min:
+        return (
+            f"couverture insuffisante ({cov * 100:.0f}% < "
+            f"{selection_coverage_min * 100:.0f}% requis)"
+        )
+    # Conviction forte ET couverture OK mais non sélectionné, sans motif tracé :
+    # on ne devine pas (le cas normal est couvert par selection_motif_exclusion).
+    return "raison non tracée"
+
+
+def _apprentissage_gros_move(direction_juste: Optional[bool], raison: str) -> str:
+    """1 ligne d'apprentissage pour un gros move hors top 3 (déterministe)."""
+    if direction_juste is True:
+        if raison == "raison non tracée":
+            return "bonne direction mais pas joué : critère de sélection à revoir."
+        return f"bonne direction, écarté car {raison} : sélection peut-être trop prudente."
+    if direction_juste is False:
+        return "mauvaise direction : le call lui-même était à côté, à analyser."
+    return "direction du call indéterminée (donnée manquante)."
+
+
+def compute_gros_moves_autres(
+    measures_24h: List[Any],
+    selection_map: Dict[Tuple[str, str], bool],
+    conviction_records: Dict[Tuple[str, str], dict],
+    score_fort_seuil: float,
+    selection_coverage_min: float = 0.70,
+    gros_move_factor: float = GROS_MOVE_FACTOR,
+) -> List[GrosMoveAutre]:
+    """Bloc 2 — Gros mouvements sur les AUTRES actifs (hors top 3).
+
+    Parmi les cellules 24h NON sélectionnées dont |mouvement vs ouverture| ≥
+    `gros_move_factor` × seuil_actif (réutilise le « gros move » existant) :
+    direction du call juste ou non, raison de non-sélection (reason_non_selection),
+    apprentissage. Triés du PLUS GROS mouvement au plus petit (le plus gros = le
+    plus intéressant à jouer). Zéro invention.
+    """
+    out: List[GrosMoveAutre] = []
+    for m in measures_24h:
+        actif = m.cell.actif_name
+        if selection_map.get((actif, m.horizon), False):
+            continue  # dans le top 3 → traité au Bloc 1
+        delta = m.delta_pct
+        seuil = m.seuil_pct
+        if not isinstance(delta, (int, float)) or not isinstance(seuil, (int, float)):
+            continue
+        if abs(delta) < gros_move_factor * seuil:
+            continue  # pas un gros move
+        call = m.cell.conclusion
+        fav = _fav(delta, call)
+        direction_juste = (fav > 0) if isinstance(fav, (int, float)) else None
+        rec = conviction_records.get((actif, m.horizon))
+        raison = reason_non_selection(actif, rec, score_fort_seuil, selection_coverage_min)
+        out.append(GrosMoveAutre(
+            actif=actif, call=call, mouvement_pct=round(delta, 2),
+            direction_juste=direction_juste, raison_non_select=raison,
+            apprentissage=_apprentissage_gros_move(direction_juste, raison),
+        ))
+    out.sort(key=lambda x: abs(x.mouvement_pct), reverse=True)
+    return out
+
+
+def compute_apprentissage_jour(
+    perf_top3: List[PerfTop3Ligne],
+    gros_moves: List[GrosMoveAutre],
+) -> List[str]:
+    """Bloc 3 — Apprentissage du jour : synthèse courte, actionnable, déterministe.
+
+    Basée UNIQUEMENT sur les blocs 1-2 (zéro nouveau calcul, zéro blabla) :
+    - sorties optimales ratées (pic avant la clôture) sur la Sélection ;
+    - gros moves bonne direction mais pas joués (sélection trop prudente) ;
+    - gros moves mauvaise direction (le call était à côté) ;
+    - trous de données intraday (12h/18h non relevés) signalés honnêtement.
+    Liste vide → 1 ligne neutre (rien de notable).
+    """
+    lignes: List[str] = []
+    # Sorties ratées (pic strictement avant la clôture, avec gain positif).
+    rates = [
+        p for p in perf_top3
+        if p.pic_heure in ("12h", "18h")
+        and isinstance(p.pic_valeur, (int, float)) and p.pic_valeur > 0
+        and isinstance(p.fav_cloture, (int, float)) and p.fav_cloture < p.pic_valeur
+    ]
+    for p in rates:
+        lignes.append(
+            f"- Sortie optimale ratée sur **{p.actif}** : pic à {p.pic_heure}, "
+            f"clôture en repli. Verrouiller au pic aurait mieux payé."
+        )
+    # Sélection trop prudente : gros move bonne direction, pas joué.
+    prudents = [g for g in gros_moves if g.direction_juste is True]
+    for g in prudents:
+        lignes.append(
+            f"- Sélection trop prudente sur **{g.actif}** : "
+            f"{_fmt_pct(g.mouvement_pct)} dans le bon sens, écarté ({g.raison_non_select})."
+        )
+    # Mauvaise direction sur un gros move (le call était à côté).
+    rates_dir = [g for g in gros_moves if g.direction_juste is False]
+    for g in rates_dir:
+        lignes.append(
+            f"- Mauvaise direction sur **{g.actif}** : "
+            f"{_fmt_pct(g.mouvement_pct)} à contre-sens du call, driver à revoir."
+        )
+    # Trous de données intraday (honnêteté : zéro invention).
+    trous = [p for p in perf_top3 if p.points_manquants]
+    if trous:
+        noms = ", ".join(f"{p.actif} ({'/'.join(p.points_manquants)})" for p in trous)
+        lignes.append(
+            f"- Données intraday incomplètes : {noms}. Le pic est calculé sur les "
+            f"seuls points relevés (à compléter par les suivis 12h/18h)."
+        )
+    if not lignes:
+        lignes.append("- Rien de notable : la Sélection a suivi sa thèse, pas de gros move raté.")
+    return lignes
+
+
+# ---------------------------------------------------------------------------
 # Construction du bilan du jour
 # ---------------------------------------------------------------------------
 
@@ -465,6 +817,10 @@ class BilanJour:
     # CA-B2 : tickers EU dont la clôture est un fallback approx (spot 22h faute
     # de close officiel 17h30 — Q5 non validé). Sert au marqueur `[close approx]`.
     close_approx_tickers: set = field(default_factory=set)
+    # Refonte bilan soir S9 — 3 blocs « suivi 24h » (demande fondateur).
+    perf_top3: List[PerfTop3Ligne] = field(default_factory=list)        # Bloc 1
+    gros_moves_autres: List[GrosMoveAutre] = field(default_factory=list)  # Bloc 2
+    apprentissage: List[str] = field(default_factory=list)             # Bloc 3
     markdown: str = ""
 
 
@@ -686,9 +1042,183 @@ def build_bilan_jour(
     reversal_map = load_reversal_context_map(date_j, decision_log_dir)
     bilan.fausses_retournement = fausses_aux_retournements(measures_24h, reversal_map)
 
+    # Refonte bilan soir S9 — 3 blocs « suivi 24h » (demande fondateur).
+    # Relevés intraday persistés par run_suivi (call + fav% + heure à 12h/18h).
+    try:
+        from run_suivi import load_suivi_tracking  # noqa: PLC0415
+        tracking = load_suivi_tracking(date_j)
+    except Exception as e:  # noqa: BLE001 — relevés indispo → trous explicites
+        logger.warning("bilan soir : load_suivi_tracking KO (%s) — trous", e)
+        tracking = {}
+    # Reco réelle du suivi 18h (compute_vendre sur fav 12h→18h, source unique).
+    vendre_map = _vendre_reco_18h(tracking)
+    conv_records = load_conviction_records(date_j, decision_log_dir)
+    score_fort_seuil = _load_score_fort_seuil()
+
+    bilan.perf_top3 = compute_perf_top3(measures_24h, selection_map, tracking, vendre_map)
+    bilan.gros_moves_autres = compute_gros_moves_autres(
+        measures_24h, selection_map, conv_records, score_fort_seuil,
+    )
+    bilan.apprentissage = compute_apprentissage_jour(bilan.perf_top3, bilan.gros_moves_autres)
+
     bilan.close_approx_tickers = approx_tickers
     bilan.markdown = _render_markdown(bilan, fiches)
     return bilan
+
+
+def _vendre_reco_18h(tracking: Dict[str, Dict[str, dict]]) -> Dict[str, str]:
+    """Reco réelle « Vendre à 18h ? » par actif, recalculée depuis les relevés.
+
+    Réutilise `run_suivi.compute_vendre` (source de vérité unique, Vague A) sur le
+    couple (fav 18h, fav 12h) persisté. Le compute_vendre raisonne en delta signé
+    (et non en favorable) → on remonte le delta = fav / sens(call). band=0 ici (le
+    suivi a déjà filtré la bande neutre ; on ne ré-applique pas un seuil arbitraire,
+    on reproduit juste la décision verrou/coupe). {} si pas de relevé 18h.
+    """
+    try:
+        from run_suivi import compute_vendre, call_sign  # noqa: PLC0415
+    except ImportError:  # pragma: no cover
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from run_suivi import compute_vendre, call_sign  # noqa: PLC0415
+
+    out: Dict[str, str] = {}
+    bloc_18h = tracking.get("18h") or {}
+    bloc_12h = tracking.get("12h") or {}
+    for actif, rec18 in bloc_18h.items():
+        if not isinstance(rec18, dict):
+            continue
+        call = str(rec18.get("call", ""))
+        sign = call_sign(call)
+        fav18 = rec18.get("fav_pct")
+        if sign is None or not isinstance(fav18, (int, float)):
+            continue
+        delta18 = fav18 / sign
+        rec12 = bloc_12h.get(actif)
+        delta12 = None
+        if isinstance(rec12, dict) and isinstance(rec12.get("fav_pct"), (int, float)):
+            s12 = call_sign(str(rec12.get("call", "")))
+            if s12 is not None:
+                delta12 = rec12["fav_pct"] / s12
+        out[actif] = compute_vendre(delta18, delta12, call, 0.0)
+    return out
+
+
+def _fmt_fav_cell(v: Optional[float]) -> str:
+    """% favorable signé en cellule de tableau (« — » placeholder vide si absent)."""
+    return f"{v:+.2f}%" if isinstance(v, (int, float)) else "—"
+
+
+def _render_bloc1_perf_top3(bilan: "BilanJour") -> List[str]:
+    """Bloc 1 — Performance 24h du TOP 3 (la Sélection du jour).
+
+    Tableau favorable 12h/18h/clôture + pic horodaté, puis verdict de sortie par
+    actif (relié aux heures) confronté à la reco réelle du suivi 18h.
+    """
+    L: List[str] = []
+    L.append("### 1. Performance 24h du Top 3 (la Sélection du jour)")
+    L.append("")
+    if not bilan.perf_top3:
+        L.append("Pas de sélection conclusive aujourd'hui (aucun top 3 à noter).")
+        L.append("")
+        return L
+    # Concept du 24h (fondateur) : une position du jour est un pari d'UNE journée.
+    # À 22h, toute position encore active est clôturée (fin du 24h) au cours de
+    # clôture. La colonne « % clôture » ci-dessous est ce résultat 24h final.
+    L.append(
+        "_Concept 24h : toute position encore ouverte à 22h est clôturée (fin du "
+        "24h) au cours de clôture. La colonne « % clôture » est ce résultat final._"
+    )
+    L.append("")
+    # En-têtes % à double libellé (desktop complet / mobile court) pour garder la
+    # colonne Pic lisible sur petit écran (CSS .c-full / .c-short, comme le suivi).
+    L.append(
+        "| Actif "
+        "| <span class=\"c-full\">Call 7h</span><span class=\"c-short\">Call</span> "
+        "| <span class=\"c-full\">% fav. 12h</span><span class=\"c-short\">12h</span> "
+        "| <span class=\"c-full\">% fav. 18h</span><span class=\"c-short\">18h</span> "
+        "| <span class=\"c-full\">% fav. clôture</span><span class=\"c-short\">Clôt.</span> "
+        "| Pic |"
+    )
+    L.append("|---|---|---|---|---|---|")
+    for p in bilan.perf_top3:
+        pic = (
+            f"**{_fmt_pct(p.pic_valeur)} à {p.pic_heure}**"
+            if p.pic_valeur is not None and p.pic_heure else "—"
+        )
+        L.append(
+            f"| {p.actif} | {p.call} | {_fmt_fav_cell(p.fav_12h)} | "
+            f"{_fmt_fav_cell(p.fav_18h)} | {_fmt_fav_cell(p.fav_cloture)} | {pic} |"
+        )
+    L.append("")
+    L.append(
+        "_% favorable signé : `+` = le marché va dans le sens du call (gagne), "
+        "`-` = contre nous. Pic = meilleur % favorable atteint parmi 12h / 18h / "
+        "clôture. « — » = point non relevé (zéro invention)._"
+    )
+    L.append("")
+    # Verdict de sortie optimale par actif, confronté à la reco réelle du suivi.
+    L.append("**Sortie optimale vs reco du suivi :**")
+    for p in bilan.perf_top3:
+        if p.vendre_reco == "Vendre":
+            capte = (
+                "capté" if (p.pic_heure in ("12h", "18h")) else "sorti trop tôt ?"
+            )
+            reco_txt = f" Le suivi 18h recommandait « Vendre » ({capte})."
+        elif p.vendre_reco == "Pas vendre":
+            rate = (
+                " (le pic était avant la clôture : on a raté la sortie)"
+                if p.pic_heure in ("12h", "18h")
+                and isinstance(p.pic_valeur, (int, float)) and p.pic_valeur > 0
+                and isinstance(p.fav_cloture, (int, float)) and p.fav_cloture < p.pic_valeur
+                else ""
+            )
+            reco_txt = f" Le suivi 18h recommandait « Pas vendre »{rate}."
+        else:
+            reco_txt = " (pas de reco de suivi 18h relevée.)"
+        L.append(f"- **{p.actif}** ({p.call}) : {p.verdict}{reco_txt}")
+    L.append("")
+    return L
+
+
+def _render_bloc2_gros_moves(bilan: "BilanJour") -> List[str]:
+    """Bloc 2 — Gros mouvements sur les AUTRES assets (hors top 3) + pourquoi pas joués."""
+    L: List[str] = []
+    L.append("### 2. Gros mouvements ailleurs (hors Top 3)")
+    L.append("")
+    if not bilan.gros_moves_autres:
+        L.append(
+            "Aucun gros mouvement hors Top 3 aujourd'hui (rien d'évident qu'on aurait dû jouer)."
+        )
+        L.append("")
+        return L
+    L.append(
+        "_Du plus gros au plus petit (le plus gros = le plus intéressant à jouer)._"
+    )
+    L.append("")
+    for g in bilan.gros_moves_autres:
+        if g.direction_juste is True:
+            dir_txt = "vu, **bonne direction** mais pas joué"
+        elif g.direction_juste is False:
+            dir_txt = "**raté** : mauvaise direction du call"
+        else:
+            dir_txt = "direction indéterminée (donnée manquante)"
+        L.append(
+            f"- **{g.actif}** ({g.call}) : {_fmt_pct(g.mouvement_pct)} vs ouverture "
+            f"→ {dir_txt}. Pourquoi pas sélectionné : {g.raison_non_select}."
+        )
+        L.append(f"  - _Apprentissage : {g.apprentissage}_")
+    L.append("")
+    return L
+
+
+def _render_bloc3_apprentissage(bilan: "BilanJour") -> List[str]:
+    """Bloc 3 — Apprentissage du jour (synthèse courte, actionnable, déterministe)."""
+    L: List[str] = []
+    L.append("### 3. Apprentissage du jour")
+    L.append("")
+    L.extend(bilan.apprentissage or ["- Rien de notable aujourd'hui."])
+    L.append("")
+    return L
 
 
 def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
@@ -700,14 +1230,14 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     L: List[str] = []
     # [I-7 audit visuel 12/06] : tous les rapports commencent par un H1 (le
     # Briefing est en H1, le suivi et le bilan étaient en H2 — incohérent).
-    L.append(f"# Bilan du jour — {bilan.date_j.isoformat()}")
+    L.append(f"# Bilan du jour · {bilan.date_j.isoformat()}")
     L.append("")
     L.append(f"_Généré : {horodatage_fr(bilan.now)} (Europe/Paris)._")
     L.append("")
     # [H-BD1 audit visuel 12/06] : ligne résumé du score EN TÊTE, avant le
     # tableau détaillé — Thomas voit « j'ai eu raison combien de fois » d'un coup.
     wr_txt = (
-        f" — Win rate : {bilan.win_rate_jour:.0f}%"
+        f" · Win rate : {bilan.win_rate_jour:.0f}%"
         if bilan.win_rate_jour is not None else ""
     )
     L.append(
@@ -715,6 +1245,13 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         f"{bilan.n_vrai} ✅ / {bilan.n_fausse} ❌ / {bilan.n_nc} ⚪{wr_txt}**"
     )
     L.append("")
+
+    # Refonte bilan soir S9 (Thomas) — 3 blocs « suivi 24h » EN TÊTE, avant la
+    # mesure détaillée. WIN RATE ONLY (le % d'ampleur est OK). Zéro invention.
+    L.extend(_render_bloc1_perf_top3(bilan))
+    L.extend(_render_bloc2_gros_moves(bilan))
+    L.extend(_render_bloc3_apprentissage(bilan))
+
     L.append("### Résultat des calls 7h")
     L.append("")
     L.append("| Actif | Call 7h | Ouverture | Clôture | Delta% | Résultat | Amplitude flag |")
@@ -903,7 +1440,7 @@ def _catalyseurs_j1(now: Optional[datetime]) -> List[str]:
         actifs = ", ".join(ev.get("actifs") or []) or "marché large"
         lignes.append(
             f"- {prefixe}**{ev['date']}** {impact_mark} {ev['nom']} "
-            f"({type_label}) — actifs : {actifs}"
+            f"({type_label}) · actifs : {actifs}"
         )
     lignes.append(
         "> « ~ » = date approximative (règle de récurrence, pas une date "
@@ -954,9 +1491,17 @@ __all__ = [
     "WinRateConviction",
     "conviction_level",
     "load_conviction_map",
+    "load_conviction_records",
     "win_rate_par_conviction",
     "build_bilan_jour",
     "write_bilan_jour",
     "GROS_MOVE_FACTOR",
     "CLOSE_APPROX_MARKER",
+    # Refonte bilan soir S9 — 3 blocs « suivi 24h ».
+    "PerfTop3Ligne",
+    "GrosMoveAutre",
+    "compute_perf_top3",
+    "compute_gros_moves_autres",
+    "compute_apprentissage_jour",
+    "reason_non_selection",
 ]

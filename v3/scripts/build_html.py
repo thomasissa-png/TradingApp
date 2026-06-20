@@ -575,6 +575,24 @@ def render_html(
   main h2 {{ font-size: 20px; margin-top: 36px; padding-bottom: 6px; border-bottom: 1px solid var(--border); scroll-margin-top: 104px; }}
   main h3 {{ font-size: 16px; margin-top: 24px; scroll-margin-top: 104px; }}
   main p {{ margin: 10px 0; }}
+  /* [Refonte S9 vague 3 — encart Sélection] Carte distincte et discrète qui
+     détache l'encart « Sélection (max 3) » en tête de « Décision du jour ».
+     Cohérente avec les tokens dark-mode (bg-panel + accent). Épurée : un filet
+     accent à gauche, un fond panneau, un padding raisonnable. Ne déborde pas
+     (overflow géré par .table-wrap interne) et reste lisible sur mobile. */
+  .decision-selection {{
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 18px 0 8px;
+  }}
+  .decision-selection > h3:first-child {{ margin-top: 0; }}
+  .decision-selection .table-wrap {{ margin-bottom: 0; }}
+  @media (max-width: 640px) {{
+    .decision-selection {{ padding: 12px 12px; border-radius: 6px; }}
+  }}
   /* Wrapper de table pour scroll horizontal mobile propre */
   .table-wrap {{
     overflow-x: auto;
@@ -1358,6 +1376,36 @@ function markDenseTables(root) {{
   }});
 }}
 
+// [Refonte S9 vague 3 — encart Sélection] Enveloppe le sous-bloc « Sélection
+// (max 3) » de « Décision du jour » dans une carte .decision-selection pour le
+// détacher visuellement. On repère le <h3> dont le texte commence par
+// « Sélection » et on déplace ce h3 + tous les nœuds frères suivants JUSQU'AU
+// prochain titre (h2/h3) dans la carte. Idempotent (skip si déjà enveloppé).
+// Robuste : no-op si le h3 est absent (jour d'abstention rend quand même un h3).
+function wrapDecisionSelection(root) {{
+  if (!root) return;
+  const h3s = root.querySelectorAll('h3');
+  let target = null;
+  for (const h of h3s) {{
+    const txt = (h.textContent || '').trim().toLowerCase();
+    if (txt.indexOf('sélection') === 0 || txt.indexOf('selection') === 0) {{ target = h; break; }}
+  }}
+  if (!target) return;
+  if (target.parentElement && target.parentElement.classList.contains('decision-selection')) return;
+  const card = document.createElement('div');
+  card.className = 'decision-selection';
+  target.parentNode.insertBefore(card, target);
+  let node = target;
+  while (node) {{
+    const next = node.nextSibling;
+    // On s'arrête au prochain titre de section (le tableau « À jouer » en h3, ou
+    // un h2). Le h3 « Sélection » lui-même est inclus (premier tour de boucle).
+    if (node !== target && node.nodeType === 1 && /^H[123]$/.test(node.tagName)) break;
+    card.appendChild(node);
+    node = next;
+  }}
+}}
+
 // Tooltips natifs (attribut title) sur les symboles d'info de la matrice/synthèse.
 // Reprend les définitions de la légende du bulletin. Zéro CSS, zéro espace.
 const SYMBOL_TOOLTIPS = {{
@@ -1577,8 +1625,6 @@ const SUBNAV_LABELS = [
   [/décor/i,                          'Décor'],
   [/santé\\s+des\\s+sources/i,          'Sources'],
   [/décision\\s+du\\s+jour/i,           'Décision'],
-  [/sélection\\s+du\\s+jour/i,          'Décision'],
-  [/à\\s+jouer/i,                       'À jouer'],
   [/top\\s+swing/i,                     'Top swing'],
   [/top\\s+convictions/i,               'Top swing'],
   [/tableau\\s+de\\s+bord/i,            'Tableau de bord'],
@@ -1927,6 +1973,7 @@ function renderMarkdownInto(target, md) {{
     addSymbolTooltips(target);
     markDenseTables(target);
     wrapTables(target);
+    wrapDecisionSelection(target);
     foldSections(target);
   }} else {{
     const pre = document.createElement('pre');
@@ -2232,6 +2279,7 @@ function selectBulletin(id) {{
     addSymbolTooltips(content);
     markDenseTables(content);
     wrapTables(content);
+    wrapDecisionSelection(content);
     // [Refonte S9 — (B)1] Ordre : assignH2Ids → foldSections → buildSubnav.
     // 1) on pose les ids sur tous les <h2> (ancres stables) ; 2) foldSections
     // remplace chaque section repliée par un <details><summary> (l'h2 disparaît,

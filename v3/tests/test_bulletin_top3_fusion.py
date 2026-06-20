@@ -101,15 +101,20 @@ def test_synthese_garde_sous_table_insuffisant_separee():
 # ===========================================================================
 
 def test_top3_present_en_tete():
-    """Refonte S9 : « À jouer aujourd'hui (24h) » en tête, le panorama « Synthèse
-    des décisions » juste en dessous (décision fondateur 12/06), puis « Top swing
-    (7j / 1m) » (ex-« Top convictions multi-horizons », I10) APRÈS le panorama."""
+    """Refonte S9 vague 3 : « ## 🎯 Décision du jour » en tête (encart Sélection +
+    tableau À jouer 24h fusionnés, I11), le panorama « Synthèse des décisions »
+    plus bas (décision fondateur 12/06), puis « Top swing (7j / 1m) » (ex-« Top
+    convictions multi-horizons », I10) APRÈS le panorama."""
     res = sa.score_actif("test", _fiche(quant_poids=10), _vals(1.0))
     b = sa.render_bulletin([res], {}, NOW, "h", "ok")
-    assert "## 🎯 À jouer aujourd'hui (24h)" in b
+    assert "## 🎯 Décision du jour" in b
+    # Le tableau À jouer est désormais un sous-bloc ### de Décision du jour.
+    assert "### À jouer aujourd'hui (24h)" in b
     assert "## Top swing (7j / 1m)" in b
-    assert b.index("## 🎯 À jouer aujourd'hui (24h)") < b.index("## Synthèse des décisions")
+    assert b.index("## 🎯 Décision du jour") < b.index("## Synthèse des décisions")
     assert b.index("## Synthèse des décisions") < b.index("## Top swing (7j / 1m)")
+    # L'ancien titre ## de section « À jouer » a disparu (devenu sous-bloc ###).
+    assert "## 🎯 À jouer aujourd'hui (24h)" not in b
     # Les anciens titres exacts ont disparu (absorbé / renommé).
     assert "## 🎯 Top 3 convictions du jour" not in b
     assert "## 🎯 Top convictions multi-horizons" not in b
@@ -256,8 +261,11 @@ def test_regime_extreme_annonce_une_fois_quand_global():
     b = sa.render_bulletin(actifs, {}, NOW, "h", "ok")
     # Annonce globale présente exactement 1×
     assert b.count("Régime extrême actif sur l'ensemble du tableau") == 1
-    # ⚑ retiré de la table de synthèse (cellules)
-    synth = b.split("## Synthèse des décisions")[1].split("## ⚠️")[0]
+    # ⚑ retiré de la table de synthèse (cellules). Refonte S9 vague 3 : les
+    # alertes (⚠️ Cellules / ⚭ Drivers) sont remontées AVANT la Synthèse ; on
+    # borne donc la section Synthèse à son prochain titre ## (Top swing), pas à
+    # « ## ⚠️ » qui n'existe plus après elle.
+    synth = b.split("## Synthèse des décisions")[1].split("\n## ")[0]
     assert "⚑" not in synth
     # ⚑ conservé dans le détail par critère (où il discrimine) — le gate actif
     # est marqué « Drapeau régime ⚑ actif » dans la colonne « Comment c'est lu »
@@ -281,7 +289,8 @@ def test_regime_extreme_garde_le_drapeau_par_cellule_si_partiel():
     assert sa.regime_extreme_global(actifs) is False
     b = sa.render_bulletin(actifs, {}, NOW, "h", "ok")
     assert "Régime extrême actif sur l'ensemble du tableau" not in b
-    synth = b.split("## Synthèse des décisions")[1].split("## ⚠️")[0]
+    # Borne la section Synthèse à son prochain titre ## (cf. test ci-dessus).
+    synth = b.split("## Synthèse des décisions")[1].split("\n## ")[0]
     assert "⚑" in synth  # conservé sur la cellule de AvecGate
 
 
@@ -408,14 +417,16 @@ def _actif_24h(nom: str, score_24h: float, confidence: str = "normale") -> "sa.A
 
 
 def test_a_jouer_present_et_24h_seulement():
-    """Le bloc « À jouer aujourd'hui (24h) » est en tête, avant le panorama et le
+    """Le tableau « À jouer aujourd'hui (24h) » (sous-bloc ### de « ## 🎯 Décision
+    du jour » depuis la fusion S9 vague 3) est en tête, avant le panorama et le
     Top swing, et porte les colonnes attendues."""
     r = _actif_24h("Fort", 8.0)
     b = sa.render_bulletin([r], {}, NOW, "h", "ok")
-    assert "## 🎯 À jouer aujourd'hui (24h)" in b
+    assert "## 🎯 Décision du jour" in b
+    assert "### À jouer aujourd'hui (24h)" in b
     assert "| Actif | Direction | Note | Conviction | Drapeaux | Porté par | Prix de réf. |" in b
     assert "**Jouables**" in b and "**À éviter**" in b
-    assert b.index("## 🎯 À jouer aujourd'hui (24h)") < b.index("## Top swing (7j / 1m)")
+    assert b.index("### À jouer aujourd'hui (24h)") < b.index("## Top swing (7j / 1m)")
 
 
 def test_a_jouer_tri_note_decroissante():
@@ -642,14 +653,15 @@ def test_metadata_en_pied_pas_en_tete():
     r = _actif_24h("Fort", 8.0)
     b = sa.render_bulletin([r], {}, NOW, "abcd1234", "fraîcheur OK")
     # En-tête : Généré, PAS de « Fraîcheur » (OK → masquée), ni Analyste/Hash.
-    tete = b.split("## 🎯 À jouer aujourd'hui (24h)")[0]
+    # Refonte S9 vague 3 : la 1re section du jour est « ## 🎯 Décision du jour ».
+    tete = b.split("## 🎯 Décision du jour")[0]
     assert "- Généré" in tete
     assert "Fraîcheur" not in tete
     assert "Analyste version" not in tete
     assert "Fiches hash" not in tete
     # Pied : section --- + métadonnées techniques.
     assert "_Analyste version : v3.0.0 · Fiches hash : abcd1234_" in b
-    assert b.index("_Analyste version") > b.index("## 🎯 À jouer aujourd'hui (24h)")
+    assert b.index("_Analyste version") > b.index("## 🎯 Décision du jour")
 
 
 # ===========================================================================

@@ -142,7 +142,10 @@ def test_hb1_jouables_scinde_forte_sans_drapeau():
         _crit("Ter", "ter_or", -0.28),
     ]
     md = _render([_actif("Or", "or", -13.3, "SHORT", crits)])
-    a_jouer = md.split("## 🎯 À jouer aujourd'hui (24h)")[1].split("## ")[0]
+    # Refonte S9 vague 3 : « À jouer » est un sous-bloc ### de « Décision du jour ».
+    # On isole son contenu entre son sous-titre ### et le prochain titre ## (les
+    # alertes « Cellules à surveiller » remontées juste après).
+    a_jouer = md.split("### À jouer aujourd'hui (24h)")[1].split("\n## ")[0]
     assert "_Conviction forte : sans drapeau_" in a_jouer
 
 

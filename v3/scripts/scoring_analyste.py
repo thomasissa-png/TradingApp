@@ -1980,7 +1980,8 @@ def build_a_jouer_block(
     prix_reference: Optional[Dict[str, float]] = None,
     seuil_conviction: Optional[float] = None,
 ) -> List[str]:
-    """Construit le bloc « ## 🎯 À jouer aujourd'hui (24h) ».
+    """Construit le sous-bloc « ### À jouer aujourd'hui (24h) » de « Décision du
+    jour » (le tableau complet, sous l'encart Sélection).
 
     Tableau des 12 cellules 24h, trié par |note| décroissante, scindé en deux
     groupes : « Jouables » et « À éviter » (cf. `_cell_a_eviter`). Colonnes :
@@ -2084,7 +2085,11 @@ def build_a_jouer_block(
 
     jouables_shared = _shared_groups(jouables_cells)
 
-    out: List[str] = ["## 🎯 À jouer aujourd'hui (24h)", ""]
+    # [Refonte S9 vague 3 — fusion I11] « À jouer » n'est plus une section ## à
+    # part : c'est le second niveau de « ## 🎯 Décision du jour » (l'encart
+    # Sélection vient juste au-dessus). On émet donc un sous-titre ### et non plus
+    # un ## (un seul h2 « Décision du jour » pour toute la décision).
+    out: List[str] = ["### À jouer aujourd'hui (24h)", ""]
     # P4 — la pédagogie (Conviction, À éviter, « Porté par », ⚭) est désormais
     # expliquée UNE SEULE fois dans « ## Comment lire les scores » (fin de
     # bulletin). Ici, la section ne garde que son titre + tableaux.
@@ -2577,8 +2582,9 @@ def build_selection_du_jour_block(
     shadow_capteurs: Optional[Dict[str, Dict[str, Optional[float]]]] = None,
     fiches: Optional[Dict[str, dict]] = None,
 ) -> List[str]:
-    """Construit le bloc « ## 🎯 Sélection du jour — max 3 » (placé EN PREMIER,
-    avant « À jouer aujourd'hui »).
+    """Construit l'ouverture de « ## 🎯 Décision du jour » : le titre de section
+    puis l'encart « ### Sélection (max 3) » (les meilleurs paris, mis en valeur).
+    Le tableau complet « À jouer » (build_a_jouer_block) vient juste après.
 
     Affiche au plus SELECTION_MAX paris 24h (cf. `compute_selection_du_jour`).
     Sous le tableau : avertissement ⚠️ si un catalyseur `high` du calendrier (J0)
@@ -2588,7 +2594,13 @@ def build_selection_du_jour_block(
     prix_reference = prix_reference or {}
     selection, ecartees = compute_selection_du_jour(results, seuil_conviction)
 
-    out: List[str] = ["## 🎯 Sélection du jour (max 3)", ""]
+    # [Refonte S9 vague 3 — fusion I11] La « Sélection » et « À jouer » sont
+    # désormais réunies sous UNE section « ## 🎯 Décision du jour » : tout ce qu'il
+    # faut pour décider au même endroit. La Sélection ouvre la section comme un
+    # encart mis en valeur (sous-titre « ### Sélection (max 3) »), suivi du tableau
+    # complet « À jouer ». Le ## h2 unique porte le titre de section ; build_html
+    # détecte le « ### Sélection (max 3) » pour l'habiller en carte distincte.
+    out: List[str] = ["## 🎯 Décision du jour", "", "### Sélection (max 3)", ""]
     # P2 — la méthodologie de sélection (4 règles) est désormais expliquée UNE
     # SEULE fois dans la section « ## Comment lire les scores » (fin de bulletin).
     # Ici, la section ne garde que son titre + tableau.
@@ -3608,12 +3620,13 @@ def render_bulletin(
         )
     lines.append("")
     # --- C7 — Cellules à surveiller + cohérence biais agrégé ---------------
-    # Bloc placé APRÈS la métadonnée et AVANT "Flips vs veille" pour que
-    # Thomas voie immédiatement les cellules à risque sans scanner la matrice.
-    # Le briefing étant préfixé en tête après le H1 (briefing.prepend_to_bulletin),
-    # l'ordre final est : H1 → Briefing → Métadonnée → ⚠️ Surveillance → Biais
-    # agrégé → Flips → Matrice → Détail → Limites.
-    lines.extend(build_surveillance_block(results, now))
+    # [Refonte S9 vague 3 — I14] « Cellules à surveiller » et « Drivers macro
+    # partagés » sont des alertes de décision : on les capture ici mais on les
+    # repositionne JUSTE APRÈS le bloc « Décision du jour » (avant le panorama
+    # Synthèse). On ne les laisse donc PLUS dans le flux `lines` naturel ; elles
+    # sont ré-insérées dans le splice de tête plus bas (cf. `head_block`). Tout ce
+    # qu'il faut pour décider (Décision → alertes) reste ainsi groupé en tête.
+    surveillance_block = build_surveillance_block(results, now)
 
     # --- Reco A (audit corrélation cachée 05/06) — Drivers macro partagés ---
     # FLAG-ONLY (affichage pur). Signale quand un MÊME driver macro (par
@@ -3624,8 +3637,11 @@ def render_bulletin(
     import shared_drivers as _shared_drivers  # noqa: F401 (lazy, cf. pattern existant)
     _shared_summary = _shared_drivers.compute_shared_drivers_summary(results, HORIZONS)
     _shared_block = _shared_drivers.build_shared_drivers_block(_shared_summary)
-    if _shared_block:
-        lines.extend(_shared_block)
+    # [Refonte S9 vague 3 — I14] Comme « Cellules à surveiller », le bloc Drivers
+    # macro est une alerte de décision : on le capture sans l'injecter dans le flux
+    # `lines` naturel ; il est ré-inséré juste après « Décision du jour » dans le
+    # splice de tête (cf. `head_block`). (Inchangé : ⚭ n'entre dans la légende que
+    # si le bloc est émis — voir `flags_present` plus bas.)
 
     # Biais agrégé : ligne UNIQUE qui résume le compte de conclusions (LONG /
     # SHORT / INSUFFISANT). Le marqueur ⚠ INCOHÉRENCE n'apparaît que si le
@@ -3922,13 +3938,15 @@ def render_bulletin(
             or ln.startswith("- ⚠️ Régime extrême")
         ):
             _meta_end = i + 1
-    # Ordre du haut de bulletin (refonte S9, décision fondateur 12/06 « 2-3 bons
-    # paris/jour, pas 12 ») :
-    #   1) Décision du jour : « Sélection du jour — max 3 » EN PREMIER, puis le
-    #      tableau « À jouer aujourd'hui (24h) » (l'actionnable d'abord).
-    #   2) Le panorama « Synthèse des décisions » (Tableau de bord 12×3) JUSTE
-    #      en dessous (la vue d'ensemble en contexte, après l'actionnable).
-    #   3) « Top swing (7j / 1m) » APRÈS le panorama (il répond au swing 7j/1m,
+    # Ordre du haut de bulletin (refonte S9 vague 3, décision fondateur 12/06
+    # « 2-3 bons paris/jour, pas 12 ») — tout ce qu'il faut pour décider, groupé :
+    #   1) « ## 🎯 Décision du jour » (fusion I11) : l'encart « Sélection (max 3) »
+    #      EN PREMIER, puis le tableau complet « À jouer aujourd'hui (24h) ».
+    #   2) Les alertes de décision JUSTE en dessous (I14) : « ⚠️ Cellules à
+    #      surveiller » puis « ⚭ Drivers macro partagés ».
+    #   3) Le panorama « Synthèse des décisions » (Tableau de bord 12×3) ensuite
+    #      (la vue d'ensemble en contexte, après l'actionnable et ses alertes).
+    #   4) « Top swing (7j / 1m) » APRÈS le panorama (il répond au swing 7j/1m,
     #      une question différente du pari du jour — I10).
     head_block = (
         build_selection_du_jour_block(
@@ -3938,10 +3956,14 @@ def render_bulletin(
         + build_a_jouer_block(results, now, prix_reference=prix_reference)
         + _SHADOW_CAPTEURS_NOTE
     )
+    # I14 — alertes de décision remontées juste sous « Décision du jour », avant
+    # le panorama. surveillance_block est toujours présent (placeholder si vide) ;
+    # _shared_block ne l'est que si un driver partagé dépasse le seuil (anti-bruit).
+    alertes_block = surveillance_block + (_shared_block if _shared_block else [])
     top_swing_block = build_top_multi_horizons_block(results, _shared_summary)
     lines = (
         lines[:_meta_end] + [""]
-        + head_block + synth_lines + top_swing_block
+        + head_block + alertes_block + synth_lines + top_swing_block
         + lines[_meta_end:]
     )
 

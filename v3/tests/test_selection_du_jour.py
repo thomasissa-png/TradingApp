@@ -159,7 +159,11 @@ def test_bloc_aucune_selection_message():
     a = _actif("Or", "or", score_24h=0.4)
     lignes = sa.build_selection_du_jour_block([a], _NOW)
     texte = "\n".join(lignes)
-    assert "## 🎯 Sélection du jour (max 3)" in texte
+    # Refonte S9 vague 3 : la Sélection ouvre désormais « ## 🎯 Décision du jour »
+    # comme encart « ### Sélection (max 3) » (fusion I11). Même intention : le bloc
+    # porte bien le titre de section + le sous-titre Sélection.
+    assert "## 🎯 Décision du jour" in texte
+    assert "### Sélection (max 3)" in texte
     assert "Aucune sélection aujourd'hui" in texte
     assert "ne pas forcer" in texte
 

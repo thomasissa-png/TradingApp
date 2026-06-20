@@ -776,14 +776,15 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         )
     else:
         L.append("- WR tradable du jour : — (aucun pari tradable aujourd'hui)")
-    # WR Sélection du jour (Étage 1c) — les paris du bloc « 🎯 Sélection du jour
-    # — max 3 », mesurés comme objet dédié (VRAI/FAUSSE, NC exclus comme le WR
-    # global). « — » si aucune cellule sélectionnée n'est conclusive aujourd'hui.
+    # WR Sélection du jour (Étage 1c) : les paris de l'encart « Sélection (max 3) »
+    # en tête de « 🎯 Décision du jour » (refonte S9 vague 3), mesurés comme objet
+    # dédié (VRAI/FAUX, NC exclus comme le WR global). « — » si aucune cellule
+    # sélectionnée n'est conclusive aujourd'hui.
     s = bilan.selection
     if s.taux is not None:
         L.append(
             f"- WR Sélection du jour : {s.n_vrai_select}/{s.n_select} = "
-            f"{s.taux:.0f}% (paris du bloc « 🎯 Sélection du jour — max 3 »)"
+            f"{s.taux:.0f}% (encart « 🎯 Sélection (max 3) » de Décision du jour)"
         )
     else:
         L.append(

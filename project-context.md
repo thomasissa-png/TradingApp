@@ -4,6 +4,7 @@
 > **Repo privé** (données financières personnelles). Dernière mise à jour : 2026-06-19 (Session 8).
 > **Stade : V1 EN COURS** (mode shadow — rien émis publiquement ; go-live cible **08/08**). Reste avant V1 (max 3) : (1) **~30 j shadow forward** → WR ≥ 70 % / N ≥ 15 par cellule (jalon 08/08) ; (2) **trancher les 3 cutovers sur preuve** (persistance / rumeur→verbal / garde-fous démenti-déjà-coté) après ~2 sem. de mesure shadow ; (3) **régénérer la clé Twelve**. [Question produit « rôle des news » **TRANCHÉE 20/06 (S9)** : quant reste dominant, `NEWS_DOMINANT_RATIO` inchangé — cf. Mémo.] **Validation = SHADOW RÉEL uniquement** (décision fondateur 05/06 : le backtest n'est PAS un jalon).
 > **Source de vérité produit complète : vault Drive `Bourse/Bourse.md`** (ce fichier en est le résumé technique).
+> **🌐 PAGE LIVE (consultée par Thomas tous les jours) : https://trading.issa-capital.com/** — c'est l'interface réelle du produit. Servie via le **VPS Anya** (déploiement hors-repo ; outils MCP `VPS - débogage` : `etat_services`, `journal_deploiement`, `forcer_deploiement`). Le repo ne contient AUCUN workflow Pages/deploy : pousser `v3/data/index.html` sur `main` ne suffit pas forcément à mettre la page à jour → vérifier/forcer le déploiement VPS. Le cron `cycle.yml` régénère `index.html` à chaque run ; le VPS le sert.
 
 ## En une phrase
 

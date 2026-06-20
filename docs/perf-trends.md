@@ -7,6 +7,7 @@
 |---|---|---|---|---|---|---|---|
 | 1 | 2026-06-02 | 54 / cap≈250 | 17 (L001-L017) | 110/125 | 39/80 | @fullstack ×~8 (lots distincts) | **WARNING isolé** (M7) |
 | 2 | 2026-06-09 (proj. S4) | 125 / cap 250 | 22 (L001-L022) | 110/125 | 44/80 | agents ×~25 (autopilote refonte, livrables distincts) | **WARNING M7** (2e conséc., non bloquant) |
+| 8 | 2026-06-19 | 144 / cap 250 | 31 (L001-L031) | 110/125 | 49/80 | agents ×~15 (autopilote multi-mandats, livrables distincts) | **WARNING M7** (justifié) |
 
 **Détail Session 1** :
 - Caps : tous respectés (CLAUDE 110<125, lessons 39<80, context core 54<250). Net-zero prompts : 0 fichier de prompt (CLAUDE/agents/gates/index.html) modifié.
@@ -27,3 +28,10 @@
 - **Script `scripts/perf-trend.sh` toujours ABSENT** (gap framework persistant depuis S2) — mesure manuelle. À importer depuis Agent-Team (reco P1).
 - Note : clôture demandée « ne lance aucun agent » → pas d'audit profond délégué malgré le volume ; recommandation = **S8 = session LÉGÈRE** (fix mesure ciblé + nettoyage), pas de nouveau méga-chantier.
 - Verdict global : **PASS caps/net-zero ; WARNING M7 volume (justifié mandat, à surveiller).**
+
+**Détail Session 8 (2026-06-16→19)** :
+- Caps : tous OK (CLAUDE 110<125, lessons 49<80, context 144<250, founder-prefs 32). Net-zero prompts : **0 fichier de prompt (CLAUDE/agents/gates) modifié** → ✅. Mémo S7 archivé → `docs/project-context-archive.md` (créé).
+- **M7 WARNING (~15 invocations d'agents sur 4 jours)** — JUSTIFIÉ : mandats EXPLICITES répétés de Thomas (« termine tout en autopilote », « corrige tout », « force et corrige », « audite jusqu'à 10/10 », « applique la reco des experts »). Livrables tous DISTINCTS (L027, refonte briefing, raison 10/10, 3 instrumentations shadow, 5 météo, garde-fou férié, parser news, bandeau), **zéro retry-sur-même-échec, zéro dérive de scope**. Multi-jour = 1 session.
+- ⚠️ **Tendance M7 récurrente (S1/S2/S7/S8)** : le seuil M7>3 flagge le **STYLE de travail de Thomas** (mega-sessions autopilote à livrables distincts), pas une dérive. **Audit profond NON déclenché** : Thomas a explicitement demandé « **ne lance aucun agent** » pour cette clôture → consigne prioritaire. **Reco framework (P1)** : affiner M7 pour distinguer « retries / dérive de scope » (mauvais) de « volume mandaté à livrables distincts » (sain) — sinon le WARNING est structurel et perd sa valeur d'alarme.
+- **Script `scripts/perf-trend.sh` toujours ABSENT** (gap framework depuis S2, 4e session) — mesure manuelle. Reco : créer/importer.
+- Verdict global : **PASS caps/net-zero ; WARNING M7 (volume mandaté, audit non lançable par consigne — affiner le métrique).**

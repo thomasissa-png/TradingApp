@@ -54,7 +54,9 @@ REPORT_18H = "18h"
 VALID_REPORTS = (REPORT_12H, REPORT_18H)
 
 # Longueur max du rapport (CA-S5 : un suivi reste court, pas un bulletin).
-MAX_MARKDOWN_LINES = 50
+# Refonte suivi S9 : + tableau « Sélection du jour » en tête (≤ 3 lignes) + sa
+# note + titre du suivi détaillé → marge relevée (reste court : pas un bulletin).
+MAX_MARKDOWN_LINES = 62
 
 # Nombre max de news affichées dans le bloc « news à impact » (suivi = court).
 MAX_NEWS = 3
@@ -84,6 +86,11 @@ class SuiviLigne:
     suggestion: str                # "Hold" / "Surveiller" / "Sortie à envisager" / "—"
     seuil_pct: Optional[float]
     us_pas_ouvert: bool = False
+    # Refonte suivi S9 — tableau de progression « Sélection du jour ».
+    vendre: str = "Pas vendre"     # reco binaire (compute_vendre) : "Vendre" / "Pas vendre"
+    selection: bool = False        # True si cellule `selection_du_jour: true` du jour
+    fav_now: Optional[float] = None  # % directionnel signé favorable, créneau courant
+    fav_prec: Optional[float] = None  # % directionnel signé favorable, créneau précédent (None au 12h)
 
 
 @dataclass
@@ -218,6 +225,71 @@ def compute_suggestion(
     ):
         return "Sortie à envisager"
     return "Surveiller"
+
+
+def fav_delta(delta_pct: Optional[float], call: str) -> Optional[float]:
+    """Mouvement directionnel signé FAVORABLE : `+delta` si LONG, `−delta` si SHORT.
+
+    fav>0 = la position va dans le sens du call (gagne) ; fav<0 = contre nous.
+    None si delta absent ou call non LONG/SHORT (zéro invention).
+    """
+    sign = call_sign(call)
+    if delta_pct is None or sign is None:
+        return None
+    return delta_pct * sign
+
+
+def compute_vendre(
+    delta_now: Optional[float],
+    delta_prec: Optional[float],
+    call: str,
+    neutral_band_pct: float,
+) -> str:
+    """Reco binaire « Vendre » / « Pas vendre », orientée MAXIMISATION DU GAIN.
+
+    Source de vérité : demande fondateur (refonte suivi S9). Logique pure et
+    testable — aucune valeur monétaire, aucun ordre : un drapeau d'aide.
+
+    Soit `fav = +delta si LONG, −delta si SHORT` (fav>0 = va dans notre sens).
+    `fav_now`, `fav_prec` (None au 12h, faute de suivi précédent).
+    - |delta_now| sous la bande neutre → « Pas vendre » (rien à verrouiller).
+    - Favorable (fav_now>0) :
+        * 12h (fav_prec None) → « Pas vendre » (laisse courir, pic indétectable).
+        * 18h : si `fav_now < fav_prec` (le gain reflue = pic passé) OU signe
+          inversé (était pour nous, maintenant contre) → « Vendre » (verrouille
+          près du pic) ; sinon (gain stable ou grandit) → « Pas vendre ».
+    - Contre nous (fav_now<0) :
+        * 12h → « Pas vendre » (laisse la journée).
+        * 18h : si `fav_now < fav_prec` (ça empire) → « Vendre » (le pari ne
+          paie pas) ; si ça se redresse vers l'ouverture → « Pas vendre ».
+    - Données absentes (delta_now None, ou call non LONG/SHORT) → « Pas vendre »
+      (défaut sûr, zéro invention).
+    """
+    PAS_VENDRE = "Pas vendre"
+    VENDRE = "Vendre"
+
+    fav_now = fav_delta(delta_now, call)
+    if fav_now is None:
+        return PAS_VENDRE  # données absentes / call inconnu → défaut sûr
+    # delta_now est non-None ici (fav_now non-None ⇒ delta_now non-None).
+    if abs(delta_now) / 100.0 < neutral_band_pct:
+        return PAS_VENDRE  # sous la bande neutre : rien à verrouiller
+
+    fav_prec = fav_delta(delta_prec, call)
+    if fav_prec is None:
+        return PAS_VENDRE  # 12h (pas de précédent) : on laisse la journée
+
+    # 18h : on compare le favorable courant au favorable précédent.
+    if fav_now > 0:
+        # On gagnait / on gagne : verrouiller si le gain reflue ou s'est inversé.
+        if fav_now < fav_prec:
+            return VENDRE
+        return PAS_VENDRE
+    # fav_now < 0 (ou == 0 mais hors bande, traité comme contre nous) :
+    # le pari est contre nous → vendre seulement si ça empire vs 12h.
+    if fav_now < fav_prec:
+        return VENDRE
+    return PAS_VENDRE
 
 
 def us_trend_flag(delta_pct: Optional[float], call: str) -> str:
@@ -647,6 +719,16 @@ def build_suivi(
     ouvertures = MO.load_prix_ouverture(date_j, prix_ouverture_dir)
     cells = load_briefing_cells(date_j, bulletins_dir)
 
+    # Sélection du jour (top ≤3) : champ shadow `selection_du_jour` du
+    # decision-log du jour. Réutilise le mapping mesuré du Bilan (zéro invention :
+    # une cellule absente / false → non sélectionnée). Dégradation propre si KO.
+    try:
+        from bilan_jour import load_selection_map  # noqa: PLC0415
+        selection_map = load_selection_map(date_j, decision_log_dir)
+    except Exception as e:  # noqa: BLE001 — mapping indispo → aucune sélection (pas d'invention)
+        logger.warning("build_suivi: load_selection_map KO: %s — aucune sélection", e)
+        selection_map = {}
+
     # Snapshot du suivi précédent (12h) pour la dynamique au 18h.
     prev = load_delta_snapshot(date_j, REPORT_12H, suivi_dir) if report_type == REPORT_18H else {}
 
@@ -671,12 +753,14 @@ def build_suivi(
         us_pas_ouvert = (
             group == "us" and not MO.is_open_for_stamp("us", now, config)
         )
+        is_select = bool(selection_map.get((actif, "24h"), False))
         if us_pas_ouvert:
             rapport.lignes.append(SuiviLigne(
                 actif=actif, call=call, ouverture=None, prix_courant=None,
                 delta_pct=None, statut="🕐 pas encore ouvert", tendance="—",
                 delta_vs_prec=None, suggestion="—", seuil_pct=seuil,
-                us_pas_ouvert=True,
+                us_pas_ouvert=True, vendre="Pas vendre", selection=is_select,
+                fav_now=None, fav_prec=None,
             ))
             continue
 
@@ -714,6 +798,11 @@ def build_suivi(
         if report_type == REPORT_18H and group == "us" and delta is not None:
             tendance = us_trend_flag(delta, call)
         suggestion = compute_suggestion(delta, call, seuil, statut)
+        # Reco binaire « Vendre / Pas vendre » + % directionnels favorables signés
+        # pour le tableau de progression « Sélection du jour ».
+        vendre = compute_vendre(delta, delta_prec, call, band)
+        fav_now_v = fav_delta(delta, call)
+        fav_prec_v = fav_delta(delta_prec, call) if isinstance(delta_prec, (int, float)) else None
 
         rapport.lignes.append(SuiviLigne(
             actif=actif, call=call, ouverture=ouverture, prix_courant=prix_courant,
@@ -722,6 +811,9 @@ def build_suivi(
                            if (delta is not None and isinstance(delta_prec, (int, float)))
                            else None),
             suggestion=suggestion, seuil_pct=seuil, us_pas_ouvert=False,
+            vendre=vendre, selection=is_select,
+            fav_now=(round(fav_now_v, 2) if fav_now_v is not None else None),
+            fav_prec=(round(fav_prec_v, 2) if fav_prec_v is not None else None),
         ))
 
     rapport.news = news_a_impact(
@@ -758,6 +850,73 @@ def build_suivi(
     return rapport
 
 
+def _fmt_fav(v: Optional[float]) -> str:
+    """% directionnel signé favorable : `+` = va dans le sens du call, `−` = contre.
+
+    `—` (placeholder de cellule vide) si non calculable. Le signe `+/-` est rendu
+    par `_fmt_pct` (les signes ASCII sont conservés tels quels par marked).
+    """
+    return _fmt_pct(v)
+
+
+def _render_selection_table(r: SuiviRapport) -> List[str]:
+    """Tableau de PROGRESSION focalisé « Sélection du jour » (top ≤3), en tête.
+
+    Colonnes : Actif | Call 7h | % vs ouv. 12h | % vs ouv. 18h | Tendance |
+    Vendre / Pas vendre. Le `%` est le mouvement directionnel signé FAVORABLE
+    (`+` = va dans le sens du call, `−` = contre nous). Au 12h : seule la colonne
+    « 12h » est remplie. Au 18h : les deux. Si aucune cellule `selection_du_jour`
+    ce jour-là → « Pas de sélection aujourd'hui » (zéro invention).
+    """
+    L: List[str] = []
+    L.append("### Sélection du jour — progression")
+    L.append("")
+    selection = [li for li in r.lignes if li.selection]
+    if not selection:
+        L.append("Pas de sélection aujourd'hui.")
+        L.append("")
+        return L
+
+    is_12h = r.report_type == REPORT_12H
+    # La décision de sortie est ANCRÉE à l'heure du rapport (au prix de ce
+    # moment-là) : « Vendre à 12h » ou « Vendre à 18h ». Indispensable pour mesurer
+    # ensuite si on aurait dû sortir plus tôt (le prix de sortie dépend de l'heure).
+    hour_label = "12h" if is_12h else "18h"
+    # En-têtes % à double libellé : complet sur desktop, court sur mobile (CSS
+    # .c-full / .c-short) pour que la colonne décision reste visible sur petit écran.
+    L.append(
+        "| Actif "
+        "| <span class=\"c-full\">Call 7h</span><span class=\"c-short\">Call</span> "
+        "| <span class=\"c-full\">% vs ouv. 12h</span><span class=\"c-short\">% 12h</span> "
+        "| <span class=\"c-full\">% vs ouv. 18h</span><span class=\"c-short\">% 18h</span> "
+        "| Tendance "
+        f"| Vendre à {hour_label} ? |"
+    )
+    L.append("|---|---|---|---|---|---|")
+    for li in selection:
+        if is_12h:
+            # Au 12h : colonne 12h = favorable courant, colonne 18h = vide.
+            col_12 = _fmt_fav(li.fav_now)
+            col_18 = "—"
+        else:
+            # Au 18h : colonne 12h = favorable précédent (snapshot 12h), 18h = courant.
+            col_12 = _fmt_fav(li.fav_prec)
+            col_18 = _fmt_fav(li.fav_now)
+        L.append(
+            f"| {li.actif} | {li.call} | {col_12} | {col_18} | "
+            f"{li.tendance} | **{li.vendre}** |"
+        )
+    L.append("")
+    L.append(
+        f"_Décision datée à {hour_label} (au prix de ce rapport) : « Vendre à {hour_label} » = "
+        "sortir maintenant, « Pas vendre » = conserver. % favorable : `+` = va dans le sens du "
+        "call (gagne), `-` = contre nous. On vend pour verrouiller un avantage qui reflue ou "
+        "couper un pari qui empire ; sinon on conserve._"
+    )
+    L.append("")
+    return L
+
+
 def _render_markdown(r: SuiviRapport) -> str:
     """Markdown court du suivi (CA-S1/S5). WIN RATE ONLY — pas de matrice LONG/SHORT."""
     heure = r.now.strftime("%Hh%M")
@@ -773,6 +932,13 @@ def _render_markdown(r: SuiviRapport) -> str:
         L.append(f"_{r.contexte_frais}_")
         L.append("")
 
+    # Refonte suivi S9 (Thomas) — vue rapide en TÊTE : progression de la
+    # Sélection du jour (top ≤3) + reco Vendre/Pas vendre. Le suivi détaillé de
+    # TOUTES les positions 24h reste plus bas.
+    L.extend(_render_selection_table(r))
+
+    L.append("### Suivi détaillé — toutes les positions 24h")
+    L.append("")
     if h == REPORT_12H:
         L.append("### Note sur les marchés US")
         L.append(
@@ -793,7 +959,7 @@ def _render_markdown(r: SuiviRapport) -> str:
     # (au lieu de « Δ vs 7h » / « Δ vs 12h » — incohérence inter-rapports).
     if h == REPORT_12H:
         L.append(
-            f"| Actif | Call 7h | Ouverture | Prix {h} | Delta% | Statut | Suggestion |"
+            f"| Actif | Call 7h | Ouverture | Prix {h} | Delta% | Statut | Vendre / Pas vendre |"
         )
         L.append("|---|---|---|---|---|---|---|")
         if not r.lignes:
@@ -802,12 +968,12 @@ def _render_markdown(r: SuiviRapport) -> str:
             L.append(
                 f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | "
                 f"{_fmt_price(li.prix_courant)} | {_fmt_pct(li.delta_pct)} | "
-                f"{li.statut} | {li.suggestion} |"
+                f"{li.statut} | {li.vendre} |"
             )
     else:
         L.append(
             f"| Actif | Call 7h | Ouverture | Prix {h} | Delta% | Δ précédent | "
-            f"Tendance | Statut | Suggestion |"
+            f"Tendance | Statut | Vendre / Pas vendre |"
         )
         L.append("|---|---|---|---|---|---|---|---|---|")
         if not r.lignes:
@@ -817,7 +983,7 @@ def _render_markdown(r: SuiviRapport) -> str:
                 f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | "
                 f"{_fmt_price(li.prix_courant)} | {_fmt_pct(li.delta_pct)} | "
                 f"{_fmt_points(li.delta_vs_prec)} | {li.tendance} | {li.statut} | "
-                f"{li.suggestion} |"
+                f"{li.vendre} |"
             )
     L.append("")
 
@@ -938,6 +1104,8 @@ __all__ = [
     "compute_statut",
     "compute_tendance",
     "compute_suggestion",
+    "compute_vendre",
+    "fav_delta",
     "us_trend_flag",
     "load_briefing_cells",
     "save_delta_snapshot",

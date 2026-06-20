@@ -286,6 +286,151 @@ def test_ouverture_absente_affiche_tiret(env):
 
 
 # ---------------------------------------------------------------------------
+# Refonte suivi S9 — fav_delta + compute_vendre (fonctions pures)
+# ---------------------------------------------------------------------------
+
+def test_fav_delta_signe_favorable():
+    # LONG : favorable = +delta (monte = pour nous).
+    assert rs.fav_delta(1.0, "LONG") == pytest.approx(1.0)
+    assert rs.fav_delta(-1.0, "LONG") == pytest.approx(-1.0)
+    # SHORT : favorable = -delta (baisse = pour nous).
+    assert rs.fav_delta(-1.0, "SHORT") == pytest.approx(1.0)
+    assert rs.fav_delta(1.0, "SHORT") == pytest.approx(-1.0)
+    # Données / call absents → None (zéro invention).
+    assert rs.fav_delta(None, "LONG") is None
+    assert rs.fav_delta(1.0, "INSUFFISANT") is None
+
+
+def test_compute_vendre_neutre_sous_bande():
+    band = 0.001  # 0,1%
+    # |delta| sous la bande → Pas vendre (rien à verrouiller), même au 18h.
+    assert rs.compute_vendre(0.05, 0.04, "LONG", band) == "Pas vendre"
+    assert rs.compute_vendre(0.05, None, "SHORT", band) == "Pas vendre"
+
+
+def test_compute_vendre_donnees_absentes():
+    band = 0.001
+    # delta_now absent → Pas vendre (défaut sûr).
+    assert rs.compute_vendre(None, 0.5, "LONG", band) == "Pas vendre"
+    # call inconnu → Pas vendre.
+    assert rs.compute_vendre(1.0, 0.5, "INSUFFISANT", band) == "Pas vendre"
+
+
+def test_compute_vendre_12h_toujours_pas_vendre():
+    band = 0.001
+    # Au 12h (delta_prec None), on laisse courir, quel que soit le sens.
+    # LONG favorable (fav_now>0) → Pas vendre.
+    assert rs.compute_vendre(1.0, None, "LONG", band) == "Pas vendre"
+    # LONG contre nous (fav_now<0) → Pas vendre (laisse la journée).
+    assert rs.compute_vendre(-1.0, None, "LONG", band) == "Pas vendre"
+    # SHORT favorable (delta<0 = pour nous) → Pas vendre.
+    assert rs.compute_vendre(-1.0, None, "SHORT", band) == "Pas vendre"
+
+
+def test_compute_vendre_18h_favorable():
+    band = 0.001
+    # LONG, gain qui GRANDIT (fav_now 1.5 > fav_prec 1.0) → Pas vendre (laisse courir).
+    assert rs.compute_vendre(1.5, 1.0, "LONG", band) == "Pas vendre"
+    # LONG, gain qui REFLUE (fav_now 0.6 < fav_prec 1.0) → Vendre (pic passé).
+    assert rs.compute_vendre(0.6, 1.0, "LONG", band) == "Vendre"
+    # LONG, gain stable (égal) → Pas vendre.
+    assert rs.compute_vendre(1.0, 1.0, "LONG", band) == "Pas vendre"
+    # LONG, signe INVERSÉ (était pour nous +0.8, maintenant contre -0.5) → Vendre.
+    assert rs.compute_vendre(-0.5, 0.8, "LONG", band) == "Vendre"
+    # SHORT favorable (delta -1.5 → fav +1.5) qui grandit vs 12h (-1.0 → fav +1.0)
+    # → Pas vendre.
+    assert rs.compute_vendre(-1.5, -1.0, "SHORT", band) == "Pas vendre"
+    # SHORT favorable qui reflue (fav +0.6 < +1.0) → Vendre.
+    assert rs.compute_vendre(-0.6, -1.0, "SHORT", band) == "Vendre"
+
+
+def test_compute_vendre_18h_contre_nous():
+    band = 0.001
+    # LONG contre nous qui EMPIRE (fav -1.5 < fav -1.0) → Vendre (le pari ne paie pas).
+    assert rs.compute_vendre(-1.5, -1.0, "LONG", band) == "Vendre"
+    # LONG contre nous qui SE REDRESSE vers l'ouverture (fav -0.4 > fav -1.0) → Pas vendre.
+    assert rs.compute_vendre(-0.4, -1.0, "LONG", band) == "Pas vendre"
+    # SHORT contre nous (delta +1.5 → fav -1.5) qui empire vs 12h (delta +1.0 → fav -1.0)
+    # → Vendre.
+    assert rs.compute_vendre(1.5, 1.0, "SHORT", band) == "Vendre"
+
+
+# ---------------------------------------------------------------------------
+# Refonte suivi S9 — tableau de progression « Sélection du jour »
+# ---------------------------------------------------------------------------
+
+def _decision_log_selection(env, actifs_selectionnes):
+    """Écrit un decision-log 7h marquant `selection_du_jour: true` pour `actifs`."""
+    fp = env["dlog"] / "2026-06-08-07h.jsonl"
+    lines = []
+    for actif in ("Or", "CAC 40", "S&P 500"):
+        lines.append(json.dumps({
+            "bulletin_date": "2026-06-08", "actif": actif, "horizon": "24h",
+            "selection_du_jour": actif in actifs_selectionnes,
+        }))
+    fp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_selection_table_12h_seule_colonne_12h(env):
+    # Or + CAC 40 sélectionnés ce jour.
+    _decision_log_selection(env, {"Or", "CAC 40"})
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    # Or SHORT, baisse -1% (favorable) ; CAC 40 SHORT, baisse (favorable).
+    r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8100.0, "^GSPC": None})
+    assert _ligne(r, "Or").selection is True
+    assert _ligne(r, "S&P 500").selection is False
+    md = r.markdown
+    assert "Sélection du jour — progression" in md
+    # En-tête du tableau Sélection présent (libellés complets desktop, dans des
+    # spans à double libellé .c-full/.c-short — on vérifie les deux colonnes %).
+    assert "% vs ouv. 12h" in md and "% vs ouv. 18h" in md
+    # Décision ancrée à l'heure du rapport (ici 12h).
+    assert "Vendre à 12h ?" in md
+    # Le tableau Sélection est AVANT le suivi détaillé.
+    assert md.index("Sélection du jour — progression") < md.index("Suivi détaillé")
+    # Au 12h : colonne 18h vide (placeholder —), 12h remplie. Or SHORT baisse → favorable +.
+    or_li = _ligne(r, "Or")
+    assert or_li.fav_now is not None and or_li.fav_now > 0
+    assert or_li.fav_prec is None
+    assert or_li.vendre == "Pas vendre"  # 12h → on laisse courir
+
+
+def test_selection_table_18h_deux_colonnes_et_vendre(env):
+    _decision_log_selection(env, {"Or"})
+    # 12h : Or SHORT, baisse -1.0% → favorable +1.0.
+    _build(env, "12h", datetime(2026, 6, 8, 12, 3, tzinfo=PARIS),
+           {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
+    # 18h : Or remonte vers 3380 → delta -0.59% → favorable +0.59 < +1.0 (reflue) → Vendre.
+    r18 = _build(env, "18h", datetime(2026, 6, 8, 18, 3, tzinfo=PARIS),
+                 {"GC=F": 3380.0, "^FCHI": 8120.0, "^GSPC": 5300.0})
+    or_li = _ligne(r18, "Or")
+    assert or_li.fav_prec == pytest.approx(1.0, abs=0.05)
+    assert or_li.fav_now == pytest.approx(0.59, abs=0.05)
+    assert or_li.vendre == "Vendre"
+    assert "**Vendre**" in r18.markdown
+
+
+def test_selection_table_aucune_selection(env):
+    # Aucun decision-log → aucune sélection → message explicite (zéro invention).
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8100.0, "^GSPC": None})
+    assert "Pas de sélection aujourd'hui." in r.markdown
+    # Le suivi détaillé reste présent (toutes les positions 24h).
+    assert "Suivi détaillé" in r.markdown
+
+
+def test_selection_table_pas_de_mention_monetaire(env):
+    _decision_log_selection(env, {"Or", "CAC 40"})
+    _build(env, "12h", datetime(2026, 6, 8, 12, 3, tzinfo=PARIS),
+           {"GC=F": 3366.0, "^FCHI": 8100.0, "^GSPC": None})
+    r18 = _build(env, "18h", datetime(2026, 6, 8, 18, 3, tzinfo=PARIS),
+                 {"GC=F": 3380.0, "^FCHI": 8110.0, "^GSPC": 5300.0})
+    md = r18.markdown.lower()
+    for token in ("€", "$", "gain", "perte", "rendement", "p&l"):
+        assert token not in md, f"mention monétaire interdite : {token!r}"
+
+
+# ---------------------------------------------------------------------------
 # run_bilan : runner CLI OK (smoke)
 # ---------------------------------------------------------------------------
 

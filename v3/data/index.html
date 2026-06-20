@@ -143,28 +143,10 @@
     margin: 0 auto;
     padding: 24px 32px 48px 32px;
   }
-  /* Barre de légende sticky (toujours visible au-dessus du bulletin) */
-  /* [CH-5 audit visuel 12/06] : la légende n'est PLUS une barre sticky (elle
-     occupait ~40px permanents pour une info rarement consultée). Elle défile
-     avec le contenu après le premier coup d'œil ; la légende complète reste
-     dans le help-box repliable. Seule la subnav reste collante sous le header
-     → ~40px de chrome permanent récupérés. */
-  .legend-bar {
-    position: static;
-    background: var(--bg-panel);
-    border-bottom: 1px solid var(--border);
-    padding: 8px 20px;
-    font-size: 12.5px;
-    line-height: 1.5;
-    color: var(--text-muted);
-  }
-  .legend-bar .legend-inner {
-    max-width: 900px; margin: 0 auto;
-    display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center;
-  }
-  .legend-bar code { background: var(--code-bg); padding: 1px 4px; border-radius: 3px; font-size: 11px; }
-  .legend-bar a { color: var(--accent); text-decoration: none; }
-  .legend-bar a:hover { text-decoration: underline; }
+  /* [Refonte S9 — point #6] La barre de légende redondante (« 🟢 LONG = hausse …
+     ❓ Symboles ») a été supprimée : LONG/SHORT est évident à la lecture et les
+     symboles vivent désormais UNIQUEMENT dans le help-box « ❓ Comment lire ».
+     Plus de chrome permanent sous le header → la page respire. */
   /* Date de génération — discrète, en pied de contenu (refonte S9). */
   .gen-meta { margin-top: 40px; font-size: 11px; color: var(--text-muted); text-align: right; }
   /* Sous-navigation d'ancres intra-bulletin (seule barre sticky sous le header) */
@@ -219,13 +201,24 @@
   @media (max-width: 640px) {
     .decision-selection { padding: 12px 12px; border-radius: 6px; }
   }
-  /* Wrapper de table pour scroll horizontal mobile propre */
+  /* Wrapper de table pour scroll horizontal mobile propre. [Point #2] Indice de
+     scroll : une ombre dégradée sur le bord droit signale qu'on peut faire
+     défiler horizontalement (CSS pur, via background-attachment local + radial).
+     Disparaît une fois arrivé au bout du scroll. */
   .table-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     margin: 14px 0;
     border: 1px solid var(--border);
     border-radius: 6px;
+    background:
+      linear-gradient(to right, var(--bg-panel) 30%, rgba(255,255,255,0)),
+      linear-gradient(to left, var(--bg-panel) 30%, rgba(255,255,255,0)) 100% 0,
+      radial-gradient(farthest-side at 0 50%, rgba(15,23,42,0.18), rgba(0,0,0,0)),
+      radial-gradient(farthest-side at 100% 50%, rgba(15,23,42,0.18), rgba(0,0,0,0)) 100% 0;
+    background-repeat: no-repeat;
+    background-size: 28px 100%, 28px 100%, 14px 100%, 14px 100%;
+    background-attachment: local, local, scroll, scroll;
   }
   main table { border-collapse: collapse; margin: 0; font-size: 13.5px; width: 100%; }
   main table th, main table td {
@@ -515,7 +508,6 @@
     aside.open { transform: translateX(0); }
     main { width: 100%; }
     .content-inner { padding: 12px 14px 32px 14px; }
-    .legend-bar { padding: 6px 12px; font-size: 12px; }
     .subnav { padding: 5px 12px; top: 40px; }
     .subnav a { font-size: 11.5px; padding: 3px 8px; }
     .subnav .subnav-label { width: 100%; margin-bottom: 2px; }
@@ -524,9 +516,17 @@
     main h1 { font-size: 22px; }
     main h2 { font-size: 18px; margin-top: 28px; scroll-margin-top: 110px; }
     main h3 { font-size: 15.5px; scroll-margin-top: 110px; }
-    /* Anti-débordement horizontal : aucun mot long (URL, hash) ne pousse la page
-       au-delà du viewport. Les tables larges scrollent dans leur .table-wrap. */
-    main p, main li, main td, main th, main summary { overflow-wrap: anywhere; }
+    /* [Point #2] Anti-débordement horizontal du TEXTE EN PROSE uniquement (URL,
+       hash) : on casse les mots longs dans les paragraphes/listes/résumés. Les
+       CELLULES DE TABLEAU sont volontairement EXCLUES : casser « Arabica » en
+       « Arabi/ca » ou « -13.19 » en « -13./19 » est illisible. Les tables gèrent
+       leur largeur par scroll horizontal (.table-wrap) + nowrap par cellule. */
+    main p, main li, main summary { overflow-wrap: anywhere; }
+    /* [Point #2] Cellules de tableau : aucun mot/nombre coupé. Les tables larges
+       débordent dans .table-wrap (scroll horizontal propre, indice ci-dessous).
+       Les libellés d'actif multi-mots (« S&P 500 », « Café (Arabica) ») peuvent
+       passer à la ligne entre MOTS (normal) mais jamais à l'intérieur d'un mot. */
+    main table td, main table th { white-space: nowrap; overflow-wrap: normal; word-break: keep-all; }
     .help-box { font-size: 13px; }
     /* Tables denses (Détail par actif, 9 colonnes) : on masque sur mobile la
        3e (« Valeur actuelle »), la 4e (« Penchant ») et — [CH-6 audit visuel
@@ -568,17 +568,6 @@
     <ul id="bulletin-list"></ul>
   </aside>
   <main id="bulletin-main">
-    <div class="legend-bar" id="legend-bar">
-      <div class="legend-inner">
-        <span><span class="dir-long">🟢 LONG</span> = hausse</span>
-        <span>·</span>
-        <span><span class="dir-short">🔴 SHORT</span> = baisse</span>
-        <span>·</span>
-        <span><code>note</code> = force de conviction</span>
-        <span>·</span>
-        <span><a href="#help-box" id="legend-help-link">❓ Symboles</a></span>
-      </div>
-    </div>
     <nav class="subnav" id="subnav" aria-label="Sections du bulletin">
       <div class="subnav-inner">
         <span class="subnav-label">Sauter à :</span>
@@ -676,7 +665,7 @@
         <p id="history-empty" hidden></p>
       </section>
       <p class="gen-meta" aria-label="Date de génération de la page">
-        Page générée le <time datetime="2026-06-20T11:26:47Z">20 juin 2026 · 11h26 (UTC)</time>
+        Page générée le <time datetime="2026-06-20T12:53:06Z">20 juin 2026 · 12h53 (UTC)</time>
       </p>
     </div>
   </main>
@@ -15841,17 +15830,22 @@ function colorizeDirections(root) {
   });
 }
 
-// --- P2-A : formate une date ISO8601 en libellé FR lisible ------------------
-// "2026-06-10T07:19:06.037270+02:00" → "10 juin 2026 · 07h19 (Paris)".
-// Si la chaîne n'est pas une date ISO reconnue, renvoie la chaîne d'origine.
+// --- [Point #5] formate une date ISO8601 en libellé FR lisible --------------
+// "2026-06-19T08:08:09.816553+02:00" → "19 juin 2026, 08h08".
+// Robuste : accepte AUSSI le format FR déjà lisible émis par les scripts Python
+// (« 19 juin 2026, 08h08 ») → renvoyé tel quel. Si rien ne matche, renvoie la
+// chaîne d'origine (zéro crash, zéro invention).
 const MONTHS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
                    'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 function formatIsoHuman(iso) {
-  const m = (iso || '').match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-  if (!m) return iso;
+  const s = (iso || '').trim();
+  // Déjà au format FR lisible (émis par les scripts Python) → inchangé.
+  if (/^\d{1,2}\s+[a-zéûôî]+\s+\d{4},\s+\d{2}h\d{2}$/i.test(s)) return s;
+  const m = s.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return s;
   const d = parseInt(m[3], 10);
   const mois = MONTHS_FR[parseInt(m[2], 10) - 1] || m[2];
-  return `${d} ${mois} ${m[1]} · ${m[4]}h${m[5]} (Paris)`;
+  return `${d} ${mois} ${m[1]}, ${m[4]}h${m[5]}`;
 }
 
 // --- P1-D : déplace les métadonnées de debug vers un pied de page replié -----
@@ -16265,8 +16259,10 @@ function foldSections(root) {
     cl.remove();
   }
 
-  // [I6] « Santé des sources » : repliée par défaut, OUVERTE seulement si une
-  // anomalie est détectée (un flux « en échec » au-delà de 0, ou « muet »).
+  // [Point #4] « Santé des sources » : TOUJOURS repliée par défaut (même en cas
+  // d'anomalie — c'est du monitoring, pas une alerte de décision). Si une
+  // anomalie est détectée, on l'INDIQUE dans le summary (« ⚠️ anomalie ») mais on
+  // garde la section FERMÉE : le trader l'ouvre s'il veut le détail.
   const sante = findH2(root, /santé\s+des\s+sources/i);
   if (sante) {
     const t = sectionText(sante);
@@ -16274,9 +16270,9 @@ function foldSections(root) {
     const sm = foldOneSection(sante);
     if (sm) {
       const d = sm.closest('details.fold-section');
-      if (d) d.open = anomalie;
-      sm.textContent = anomalie ? '⚠️ Santé des sources (anomalie détectée)'
-                                : '✓ Santé des sources (tout OK)';
+      if (d) d.open = false;  // toujours fermé, anomalie ou pas
+      sm.textContent = anomalie ? 'Santé des sources ⚠️ anomalie'
+                                : 'Santé des sources ✓';
     }
   }
 
@@ -16357,36 +16353,48 @@ function slugify(s) {
     .replace(/^-+|-+$/g, '');
 }
 
-// Libellé court et LISIBLE pour la sous-nav : table de correspondance par motif
-// sur le titre du <h2>. Évite les émojis nus (🎯🎯🎯) et les doublons. Repli :
-// on retire les émojis/symboles en tête puis on prend les deux premiers mots.
+// [Point #1] Libellé court MAIS COMPLET pour la sous-nav : table de
+// correspondance par motif sur le titre du <h2>. Chaque titre `## ` connu du
+// bulletin a une entrée — des libellés courts, jamais coupés en plein mot ni en
+// plein milieu d'une phrase (l'ancien repli « 2 premiers mots » donnait
+// « Sélection du » — corrigé). L'ORDRE compte : les motifs les plus spécifiques
+// d'abord (« sélection du jour » avant un éventuel « décision du jour »).
 const SUBNAV_LABELS = [
-  [/décor/i,                          'Décor'],
-  [/santé\s+des\s+sources/i,          'Sources'],
-  [/décision\s+du\s+jour/i,           'Décision'],
+  [/décor\s+du\s+jour/i,              'Décor'],
+  [/briefing\s+du\s+jour/i,           'Briefing'],
+  [/santé\s+des\s+sources/i,          'Santé sources'],
+  [/sélection\s+du\s+jour/i,          'Sélection du jour'],
+  [/à\s+jouer\s+aujourd/i,            'À jouer'],
+  [/décision\s+du\s+jour/i,           'Décision du jour'],
+  [/top\s+convictions\s+multi/i,      'Top convictions'],
+  [/top\s+3\s+convictions/i,          'Top convictions'],
+  [/top\s+convictions/i,               'Top convictions'],
   [/top\s+swing/i,                     'Top swing'],
-  [/top\s+convictions/i,               'Top swing'],
-  [/tableau\s+de\s+bord/i,            'Tableau de bord'],
-  [/synthèse\s+des\s+décisions/i,     'Tableau de bord'],
+  [/synthèse\s+des\s+décisions/i,     'Synthèse'],
+  [/matrice/i,                         'Matrice'],
   [/intensité/i,                       'Intensité'],
-  [/cellules\s+à\s+surveiller/i,      'Surveiller'],
-  [/drivers\s+macro/i,                 'Drivers'],
+  [/cellules\s+à\s+surveiller/i,      'À surveiller'],
+  [/drivers\s+macro/i,                 'Drivers macro'],
   [/flips/i,                           'Flips'],
   [/comment\s+lire/i,                  null],   // section supprimée du flux (→ help-box)
-  [/détail\s+par\s+actif/i,           'Détail'],
-  [/limites/i,                         'Limites'],
-  [/calls\s+24h\s+jug/i,              'Calls'],
-  [/audit\s+de\s+la\s+veille/i,      'Calls'],
-  [/news\s+par\s+actif/i,             'News'],
+  [/détail\s+par\s+actif/i,           'Détail par actif'],
+  [/limites\s+du\s+jour/i,            'Limites'],
+  [/calls\s+24h\s+jug/i,              'Calls jugés'],
+  [/audit\s+de\s+la\s+veille/i,      'Calls jugés'],
+  [/bilan\s+des\s+news/i,             'Bilan news'],
+  [/news\s+par\s+actif/i,             'News par actif'],
 ];
 function subnavLabelFor(raw) {
   for (const [re, lab] of SUBNAV_LABELS) {
     if (re.test(raw)) return lab; // null → exclu (filtré en amont par buildSubnav)
   }
-  // Repli : retire émojis/symboles/espaces en tête, prend les 2 premiers mots.
-  const cleaned = raw.replace(/^[^\p{L}\p{N}]+/u, '').trim();
-  const words = cleaned.split(/[\s–\-:(]+/).filter(Boolean);
-  return words.slice(0, 2).join(' ') || raw;
+  // [Point #1] Repli SANS troncature : on retire seulement les émojis/symboles
+  // de tête et le suffixe entre parenthèses (« (fenêtre récente) ») ou après un
+  // tiret long. On garde le titre COMPLET — jamais coupé en plein mot/phrase.
+  let cleaned = raw.replace(/^[^\p{L}\p{N}]+/u, '').trim();
+  cleaned = cleaned.replace(/\s*[–—-]\s+.*$/u, '');  // retire « — max 3 », « — fenêtre… »
+  cleaned = cleaned.replace(/\s*\([^)]*\)\s*$/u, '').trim();  // retire « (…) » final
+  return cleaned || raw;
 }
 
 // Pose un id stable et prévisible sur CHAQUE <h2> du bulletin. Appelé AVANT
@@ -16625,11 +16633,9 @@ function showAuxView(sectionId, navId) {
   });
   const bc = document.getElementById('bulletin-content');
   const subnav = document.getElementById('subnav');
-  const legend = document.getElementById('legend-bar');
   const help = document.querySelector('.help-box');
   if (bc) bc.hidden = true;
   if (subnav) subnav.style.display = 'none';
-  if (legend) legend.style.display = 'none';
   if (help) help.style.display = 'none';
   clearAuxNavActive();
   const nav = document.getElementById(navId);
@@ -16652,10 +16658,8 @@ function hideAuxViews() {
     if (el) el.hidden = true;
   });
   const bc = document.getElementById('bulletin-content');
-  const legend = document.getElementById('legend-bar');
   const help = document.querySelector('.help-box');
   if (bc) bc.hidden = false;
-  if (legend) legend.style.display = '';
   if (help) help.style.display = '';
   clearAuxNavActive();
 }
@@ -17080,14 +17084,9 @@ function closeSidebarMobile() {
   const ov = document.getElementById('sidebar-overlay');
   if (ov) ov.addEventListener('click', closeSidebarMobile);
 
-  // Lien « ❓ Symboles » de la legend-bar → ouvre la help-box repliée + scrolle.
-  const helpLink = document.getElementById('legend-help-link');
-  const helpBox = document.getElementById('help-box');
-  if (helpLink && helpBox) helpLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    helpBox.open = true;
-    helpBox.scrollIntoView({behavior: 'smooth', block: 'start'});
-  });
+  // [Point #6] La barre de légende redondante (et son lien « ❓ Symboles ») a été
+  // supprimée : la help-box « ❓ Comment lire » reste accessible par son propre
+  // <summary> (cliquable, en tête de bulletin). Aucun handler à rebrancher.
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeSidebarMobile();
   });

@@ -241,8 +241,9 @@ def test_build_html_contains_color_classes_and_help_box():
 
 
 def test_build_html_contains_sticky_legend_and_subnav():
-    """Vérifie la présence de la barre de légende compacte toujours-visible
-    (sticky) et de la sous-navigation d'ancres intra-bulletin."""
+    """Vérifie que la légende des scores vit dans le help-box « Comment lire »
+    (la legend-bar redondante a été RETIRÉE — point #6 refonte) et que la
+    sous-navigation d'ancres intra-bulletin est présente."""
     script = ROOT / "scripts" / "build_html.py"
     res = subprocess.run(
         [sys.executable, str(script)],
@@ -251,8 +252,10 @@ def test_build_html_contains_sticky_legend_and_subnav():
     assert res.returncode == 0, f"build_html.py a échoué : {res.stderr}"
     out = ROOT / "data" / "index.html"
     content = out.read_text(encoding="utf-8")
-    # Barre de légende compacte toujours-visible
-    assert "legend-bar" in content, "Barre de légende compacte absente"
+    # [Point #6] La legend-bar redondante a été supprimée : la légende des scores
+    # vit désormais UNIQUEMENT dans le help-box « Comment lire les scores ».
+    assert "legend-bar" not in content, "legend-bar aurait dû être supprimée (point #6)"
+    assert "help-box" in content, "Encart help-box (légende canonique) absent"
     assert "force de conviction" in content, "Texte de légende des scores absent"
     assert "non-actionnable" in content, "Mention non-actionnable absente"
     # Sous-navigation d'ancres intra-bulletin
@@ -267,7 +270,7 @@ def test_build_html_contains_sticky_legend_and_subnav():
     assert "table-wrap" in content, "Classe CSS table-wrap absente"
     # Sidebar : badge "dernier" sur le plus récent
     assert "badge-latest" in content, "Badge 'dernier' absent"
-    # Position sticky utilisée pour la légende
+    # Position sticky toujours utilisée (header + subnav)
     assert "position: sticky" in content or "position:sticky" in content
 
 

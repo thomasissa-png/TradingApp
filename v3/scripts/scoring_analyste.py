@@ -39,6 +39,13 @@ except ImportError:  # pragma: no cover - chemin d'import alternatif
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from system_version import SYSTEM_VERSION
 
+# [Point #5] Horodatage FR lisible des lignes « Généré : … ».
+try:
+    from datetime_fr import horodatage_fr
+except ImportError:  # pragma: no cover - chemin d'import alternatif
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from datetime_fr import horodatage_fr
+
 logger = logging.getLogger("scoring_analyste")
 
 ANALYSTE_VERSION = "v3.0.0"
@@ -3169,6 +3176,23 @@ def _raison_cellule(r: "ActifResult", h: str, now: Optional[datetime] = None) ->
     return f"{corps}{sep}{chiffre}{suffixe}"
 
 
+def raison_cellule_courte(r: "ActifResult", h: str) -> str:
+    """[Point #3] Driver dominant COMPACT pour la cellule de « Synthèse des
+    décisions » (sous la direction + note). Le NOM trader court du critère
+    dominant DANS LE SENS de la conclusion (ex. « taux réels US »), PAS la phrase
+    explicative complète (qui vit dans le détail) : la grille reste scannable.
+
+    Retourne "" si la cellule est quasi-neutre / insuffisante / sans driver franc
+    (on n'écrit alors aucune raison — zéro invention). Déterministe, zéro réseau.
+    """
+    direction = r.conclusions.get(h, "")
+    score = r.scores.get(h, 0.0)
+    if direction not in ("LONG", "SHORT") or abs(score) < NEUTRAL_BAND:
+        return ""
+    _cle, nom, _ctr = _driver_dominant_net(r, h, direction)
+    return nom or ""
+
+
 def build_raisons_block(
     results: List["ActifResult"], now: Optional[datetime] = None
 ) -> List[str]:
@@ -3599,7 +3623,7 @@ def render_bulletin(
     # de l'Analyste + le hash des fiches (debug/suivi interne) sont déplacés EN
     # PIED de bulletin (section --- finale discrète) pour ne plus polluer la vue
     # de décision. La ligne « Généré » reste (utile pour dater le run).
-    lines.append(f"- Généré : {now.isoformat()}")
+    lines.append(f"- Généré : {horodatage_fr(now)}")
     # P1 — la ligne « Fraîcheur » ne s'affiche QUE s'il y a un PROBLÈME (données
     # périmées / red line). Quand tout va bien (« fraîcheur OK … »), elle pollue la
     # méta chaque jour sans rien apporter → on la masque. La détection repose sur
@@ -3855,10 +3879,19 @@ def render_bulletin(
             # Si régime news actif, le 📰 explicite "régime news" remplace le 📰
             # générique news_dominant déjà inclus dans `core` (éviter doublon 📰).
             core_out = core.replace(news_flag, "") if (regime_flag and news_flag) else core
-            cells.append(
+            cell_txt = (
                 f"{core_out}{coin_flip_flag}{neutral_band_flag}{carry_flag}{regime_flag}{conf_flag}"
                 f"{mono_flag}{div_qn_flag}{cmom_flag}{incoh_flag}{ap_flag}{denial_flag}"
             )
+            # [Point #3] Raison principale DANS la cellule (sous la direction +
+            # note) : le driver dominant courant, compact (ex. « · taux réels US »).
+            # `<br>` (HTML, rendu par marked dans les tables) → 2 lignes par cellule.
+            # Vide pour les cellules quasi-neutres/insuffisantes (aucune raison
+            # inventée). Source UNIQUE = même driver dominant que le détail.
+            raison_courte = raison_cellule_courte(r, h)
+            if raison_courte:
+                cell_txt = f"{cell_txt}<br>· {raison_courte}"
+            cells.append(cell_txt)
         detail_cells[r.nom] = cells
 
     # ── Synthèse des décisions (table UNIQUE, EN HAUT) ───────────────────────
@@ -3888,9 +3921,10 @@ def render_bulletin(
             c = detail_cells[r.nom]
             synth_lines.append(f"| {r.nom} | {c[0]} | {c[1]} | {c[2]} |")
     synth_lines.append("")
-    # Raison principale par cellule — bloc compact PAR ACTIF sous la grille
-    # (la grille est déjà large → lisibilité). PUR RENDU, recalculé à chaque run.
-    synth_lines.extend(build_raisons_block(results, now))
+    # [Point #3] La « Raison principale par cellule » est désormais DANS chaque
+    # cellule de la grille ci-dessus (sous la direction + note). Le bloc-liste
+    # redondant PAR ACTIF qui suivait a été RETIRÉ (doublon) : zéro perte d'info
+    # (la grille porte la même raison, recalculée à chaque run).
     # ── Intensité comparable entre actifs (INFORMATIF, pur affichage) ─────────
     # (B) Audit Analyst : la Note brute n'est PAS comparable d'un actif à l'autre
     # (sa magnitude dépend du nombre/poids de critères couverts). On affiche EN PLUS

@@ -24,11 +24,19 @@ from __future__ import annotations
 import glob
 import json
 import logging
+import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
+
+# [Point #5] Horodatage FR lisible de la ligne « Généré : … ».
+try:
+    from datetime_fr import horodatage_fr
+except ImportError:  # pragma: no cover - chemin d'import alternatif
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from datetime_fr import horodatage_fr
 
 logger = logging.getLogger("bilan_jour")
 
@@ -694,7 +702,7 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     # Briefing est en H1, le suivi et le bilan étaient en H2 — incohérent).
     L.append(f"# Bilan du jour — {bilan.date_j.isoformat()}")
     L.append("")
-    L.append(f"_Généré : {bilan.now.isoformat()} (Europe/Paris)._")
+    L.append(f"_Généré : {horodatage_fr(bilan.now)} (Europe/Paris)._")
     L.append("")
     # [H-BD1 audit visuel 12/06] : ligne résumé du score EN TÊTE, avant le
     # tableau détaillé — Thomas voit « j'ai eu raison combien de fois » d'un coup.

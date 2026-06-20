@@ -74,6 +74,13 @@ except ImportError:  # pragma: no cover - chemin d'import alternatif
         ref_changed_for_ticker,
     )
 
+# [Point #5] Horodatage FR lisible des lignes « Généré : … ».
+try:
+    from datetime_fr import horodatage_fr
+except ImportError:  # pragma: no cover - chemin d'import alternatif
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from datetime_fr import horodatage_fr
+
 logger = logging.getLogger("journaliste")
 
 JOURNALISTE_VERSION = "v3.1.0"
@@ -2288,7 +2295,7 @@ def render_calibration(
     lines: List[str] = []
     lines.append("# Calibration probabiliste — Reliability Diagram")
     lines.append("")
-    lines.append(f"- Généré : {now.isoformat()}")
+    lines.append(f"- Généré : {horodatage_fr(now)}")
     lines.append(f"- Méthode : ECE (Expected Calibration Error) simple, {CALIB_N_BINS} bins sur proba ∈ [0.5, 1.0]")
     lines.append(f"- proba = 0.5 + clip(|score| / {PROBA_SCALE}, 0, 0.5)  [mapping déterministe — non calibré empiriquement]")
     lines.append("")
@@ -2536,7 +2543,7 @@ def render_performance(
     # chiffre le plus important → EN TÊTE, avant les métadonnées explicatives.
     lines.append(_winrate_synthese_line(rows))
     lines.append("")
-    lines.append(f"- Généré : {now.isoformat()}")
+    lines.append(f"- Généré : {horodatage_fr(now)}")
     lines.append(f"- Journaliste version : {JOURNALISTE_VERSION}")
     lines.append(f"- Win rate = taux de bonnes directions sur les paris indépendants (N_eff)")
     lines.append(
@@ -2630,7 +2637,7 @@ def render_weekly_winrate(
     lines: List[str] = []
     lines.append(f"# Win rate — semaine {iso} ({monday.isoformat()} → {sunday.isoformat()})")
     lines.append("")
-    lines.append(f"- Généré : {now.isoformat()} (réécrit à chaque run ; figé en fin de semaine)")
+    lines.append(f"- Généré : {horodatage_fr(now)} (réécrit à chaque run ; figé en fin de semaine)")
     lines.append(f"- Win rate CUMULÉ depuis le début (seul significatif en chauffe)")
     lines.append("")
     lines.append(_winrate_synthese_line(rows))
@@ -2821,7 +2828,7 @@ def render_performance_ab(
     lines: List[str] = []
     lines.append("# Performance A/B — ±1 (baseline) vs pondéré (secondaire)")
     lines.append("")
-    lines.append(f"- Généré : {now.isoformat()}")
+    lines.append(f"- Généré : {horodatage_fr(now)}")
     lines.append(f"- Fenêtre KPI : {WINDOW} dernières conclusions terminées par cellule")
     lines.append(f"- Cible : {TARGET_TAUX:.0f}% (Bourse.md)")
     lines.append("")

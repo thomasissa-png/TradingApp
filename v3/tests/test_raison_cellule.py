@@ -490,9 +490,18 @@ def _prudence_from_raison_segment(seg: str) -> List[str]:
     return out
 
 
-def _parse_bulletin_flags(md: str):
-    """Retourne deux dicts {(actif, horizon): [symboles]} : l'un depuis la grille
-    « ## Synthèse des décisions », l'autre depuis le bloc « Raison principale »."""
+def _parse_bulletin_flags(md: str, results=None):
+    """Retourne deux dicts {(actif, horizon): [symboles]} de drapeaux de prudence.
+
+    - `grid` : lus depuis la grille « ## Synthèse des décisions » du bulletin
+      rendu (chaque cellule porte désormais AUSSI sa raison « <br>· driver »,
+      point #3 — on n'extrait ici que les drapeaux de prudence du cœur de cellule).
+    - `raison` : lus depuis `build_raisons_block(results)`, le chemin de code
+      INDÉPENDANT (`_raison_flags_suffix`) qui doit rester aligné sur la grille
+      (verrou anti-divergence B2-exact). On le calcule directement plutôt que de
+      parser un bloc « Raison principale » désormais retiré du bulletin (point #3 :
+      la raison vit dans la cellule, le bloc-liste redondant a été supprimé).
+    """
     lines = md.splitlines()
     grid: Dict[tuple, List[str]] = {}
     raison: Dict[tuple, List[str]] = {}
@@ -510,7 +519,7 @@ def _parse_bulletin_flags(md: str):
                 actif = cells[0]
                 for h, cell in zip(sa.HORIZONS, cells[1:]):
                     grid[(actif, h)] = _prudence_from_grid_cell(cell)
-        # Bloc raison : « - **Actif** : 24h : … · 7j : … · 1m : … »
+        # Bloc raison (chemin indépendant) : « - **Actif** : 24h : … · 7j : … »
         m = _re.match(r"- \*\*(.+?)\*\* : (.+)$", ln)
         if m:
             actif = m.group(1)
@@ -520,6 +529,25 @@ def _parse_bulletin_flags(md: str):
                 if not hm:
                     continue
                 # Cas regroupé « 7j/1m : … » → applique aux deux horizons du groupe.
+                hzs = _re.findall(r"(24h|7j|1m)", seg.split(" : ", 1)[0])
+                syms = _prudence_from_raison_segment(seg)
+                for h in hzs:
+                    raison[(actif, h)] = syms
+    # [Point #3] Le bloc « Raison principale » n'est plus dans le bulletin : on
+    # rejoue `build_raisons_block` (chemin de code indépendant de la grille) pour
+    # conserver le verrou anti-divergence raison ↔ grille sur ses propres lignes.
+    if results is not None:
+        raison_md = "\n".join(sa.build_raisons_block(results, _NOW_BULLETIN))
+        for ln in raison_md.splitlines():
+            m = _re.match(r"- \*\*(.+?)\*\* : (.+)$", ln)
+            if not m:
+                continue
+            actif = m.group(1)
+            body = m.group(2)
+            for seg in body.split(" · "):
+                hm = _re.match(r"\s*(24h|7j|1m)(?:/(?:24h|7j|1m))* : (.+)$", seg)
+                if not hm:
+                    continue
                 hzs = _re.findall(r"(24h|7j|1m)", seg.split(" : ", 1)[0])
                 syms = _prudence_from_raison_segment(seg)
                 for h in hzs:
@@ -557,7 +585,7 @@ def test_b2_exact_vix_24h_pas_de_deja_cote():
     PAS de ⌛ — ni dans la grille, ni dans la raison ; et grille == raison."""
     r = _make_news_weighted_short("VIX", "24h", event_date="2026-06-17T00:00:00+00:00")
     md = sa.render_bulletin([r], {}, _NOW_BULLETIN, "h", "ok")
-    grid, raison = _parse_bulletin_flags(md)
+    grid, raison = _parse_bulletin_flags(md, [r])
     assert "⌛" not in grid[("VIX", "24h")], grid[("VIX", "24h")]
     assert "⌛" not in raison[("VIX", "24h")], raison[("VIX", "24h")]
     assert "📰" in raison[("VIX", "24h")]
@@ -570,7 +598,7 @@ def test_b2_exact_petrole_24h_pas_de_deja_cote():
     r = _make_news_weighted_short("Pétrole (Brent)", "24h",
                                   event_date="2026-06-17T00:00:00+00:00")
     md = sa.render_bulletin([r], {}, _NOW_BULLETIN, "h", "ok")
-    grid, raison = _parse_bulletin_flags(md)
+    grid, raison = _parse_bulletin_flags(md, [r])
     assert "⌛" not in grid[("Pétrole (Brent)", "24h")]
     assert "⌛" not in raison[("Pétrole (Brent)", "24h")]
     assert "📰" in raison[("Pétrole (Brent)", "24h")]
@@ -583,7 +611,7 @@ def test_b2_exact_event_anterieur_garde_le_deja_cote():
     r = _make_news_weighted_short("Café (Arabica)", "24h",
                                   event_date="2026-06-16T00:00:00+00:00")
     md = sa.render_bulletin([r], {}, _NOW_BULLETIN, "h", "ok")
-    grid, raison = _parse_bulletin_flags(md)
+    grid, raison = _parse_bulletin_flags(md, [r])
     assert "⌛" in grid[("Café (Arabica)", "24h")]
     assert "⌛" in raison[("Café (Arabica)", "24h")]
 
@@ -607,7 +635,7 @@ def test_b2_exact_balayage_grille_egale_raison():
     actifs.append(eurusd)
 
     md = sa.render_bulletin(actifs, {}, _NOW_BULLETIN, "h", "ok")
-    grid, raison = _parse_bulletin_flags(md)
+    grid, raison = _parse_bulletin_flags(md, actifs)
     # Chaque cellule directionnelle présente dans la raison doit matcher la grille.
     checked = 0
     for key, raison_syms in raison.items():

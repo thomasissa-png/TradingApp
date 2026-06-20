@@ -46,6 +46,9 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+# [Point #5] Horodatage FR lisible de la ligne « Généré : … ».
+from datetime_fr import horodatage_fr  # noqa: E402 (après l'ajout au sys.path)
+
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
 BILAN_SEMAINE_DIR = ROOT / "data" / "bilan-semaine"
@@ -423,7 +426,7 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     # reste présent (lu par build_html.weekHumanTitle pour le titre humain).
     L.append(f"# Bilan semaine — {bilan.iso} ({bilan.lundi.isoformat()} → {bilan.dimanche.isoformat()})")
     L.append("")
-    L.append(f"- Généré : {bilan.now.isoformat()} (dimanche 18h Paris)")
+    L.append(f"- Généré : {horodatage_fr(bilan.now)} (dimanche 18h Paris)")
     L.append("- WIN RATE ONLY — aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.")
     L.append(
         "- WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) — inclut les jours "

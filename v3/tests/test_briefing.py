@@ -146,7 +146,7 @@ def test_build_news_par_actif_contient_sections(events_log: Path, today: date):
     assert "[Moyen-Orient]" in md
     assert "(cnbc_top)" in md
     # Un actif sans news affiche « — aucune actualité » (P7).
-    assert "— aucune actualité" in md
+    assert "_aucune actualité_" in md
 
 
 def test_build_news_par_actif_aucun_event(tmp_path: Path, today: date):
@@ -160,14 +160,14 @@ def test_build_news_par_actif_aucun_event(tmp_path: Path, today: date):
     )
     md = briefing.build_news_par_actif(log, today=today)
     # Aucun event à impact → chaque actif affiche « — aucune actualité ».
-    assert "— aucune actualité" in md
+    assert "_aucune actualité_" in md
     assert "## News par actif" in md
 
 
 def test_build_news_par_actif_pas_de_fichier(tmp_path: Path, today: date):
     md = briefing.build_news_par_actif(tmp_path / "absent.md", today=today)
     assert "## News par actif" in md
-    assert "— aucune actualité" in md
+    assert "_aucune actualité_" in md
 
 
 # ---------------------------------------------------------------------------

@@ -199,16 +199,16 @@ def test_p7_news_par_actif_rend_events_reels(tmp_path):
     assert "### Pétrole" in md
     assert "OPEC discusses output cut" in md
     assert "(reuters)" in md
-    # Un actif sans news → « — aucune actualité ».
-    assert "— aucune actualité" in md
+    # Un actif sans news → « _aucune actualité_ ».
+    assert "_aucune actualité_" in md
 
 
 def test_p7_news_par_actif_zero_invention(tmp_path):
-    # events-log vide → tous les actifs « — aucune actualité », aucun titre inventé.
+    # events-log vide → tous les actifs « _aucune actualité_ », aucun titre inventé.
     p = tmp_path / "events-log.md"
     p.write_text("# vide\n", encoding="utf-8")
     md = bf.build_news_par_actif(events_path=p, today=date(2026, 6, 17))
-    assert md.count("— aucune actualité") >= 12
+    assert md.count("_aucune actualité_") >= 12
 
 
 # ---------------------------------------------------------------------------

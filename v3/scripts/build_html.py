@@ -368,7 +368,7 @@ def render_html(
     truncated_note = ""
     if total_count > embedded:
         truncated_note = (
-            f"<span class=\"meta-note\">({embedded} sur {total_count} bulletins embarqués — "
+            f"<span class=\"meta-note\">({embedded} sur {total_count} bulletins embarqués, "
             f"les {embedded} plus récents)</span>"
         )
 
@@ -377,7 +377,7 @@ def render_html(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TradingApp v3 — Bulletins</title>
+<title>TradingApp v3 · Bulletins</title>
 <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3QgeD0nOCcgeT0nNicgd2lkdGg9JzQnIGhlaWdodD0nMjAnIHJ4PScxJyBmaWxsPSdjcmltc29uJy8+PGxpbmUgeDE9JzEwJyB5MT0nMicgeDI9JzEwJyB5Mj0nNicgc3Ryb2tlPSdjcmltc29uJyBzdHJva2Utd2lkdGg9JzInLz48bGluZSB4MT0nMTAnIHkxPScyNicgeDI9JzEwJyB5Mj0nMzAnIHN0cm9rZT0nY3JpbXNvbicgc3Ryb2tlLXdpZHRoPScyJy8+PHJlY3QgeD0nMjAnIHk9JzEyJyB3aWR0aD0nNCcgaGVpZ2h0PScxNCcgcng9JzEnIGZpbGw9J2xpbWVncmVlbicvPjxsaW5lIHgxPScyMicgeTE9JzQnIHgyPScyMicgeTI9JzEyJyBzdHJva2U9J2xpbWVncmVlbicgc3Ryb2tlLXdpZHRoPScyJy8+PGxpbmUgeDE9JzIyJyB5MT0nMjYnIHgyPScyMicgeTI9JzI4JyBzdHJva2U9J2xpbWVncmVlbicgc3Ryb2tlLXdpZHRoPScyJy8+PC9zdmc+">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
@@ -549,12 +549,13 @@ def render_html(
     padding: 6px 20px;
     font-size: 13px;
   }}
+  /* [Refonte S9 — (C)] La subnav WRAPPE proprement (PC et mobile) plutôt que de
+     scroller horizontalement : l'ensemble des pastilles (≤ ~10) tient sur 1-2
+     lignes, toujours visibles, sans geste de scroll caché. */
   .subnav .subnav-inner {{
     max-width: 900px; margin: 0 auto;
-    display: flex; flex-wrap: nowrap; gap: 4px; align-items: center;
-    overflow-x: auto; scrollbar-width: none;
+    display: flex; flex-wrap: wrap; gap: 5px 4px; align-items: center;
   }}
-  .subnav .subnav-inner::-webkit-scrollbar {{ display: none; }}
   .subnav a {{
     color: var(--accent);
     text-decoration: none;
@@ -571,8 +572,8 @@ def render_html(
   .subnav .subnav-label {{ color: var(--text-muted); font-size: 11px; margin-right: 4px; flex-shrink: 0; }}
   main h1, main h2, main h3 {{ color: var(--text); }}
   main h1 {{ font-size: 26px; border-bottom: 2px solid var(--border); padding-bottom: 10px; margin-top: 8px; }}
-  main h2 {{ font-size: 20px; margin-top: 36px; padding-bottom: 6px; border-bottom: 1px solid var(--border); scroll-margin-top: 90px; }}
-  main h3 {{ font-size: 16px; margin-top: 24px; scroll-margin-top: 90px; }}
+  main h2 {{ font-size: 20px; margin-top: 36px; padding-bottom: 6px; border-bottom: 1px solid var(--border); scroll-margin-top: 104px; }}
+  main h3 {{ font-size: 16px; margin-top: 24px; scroll-margin-top: 104px; }}
   main p {{ margin: 10px 0; }}
   /* Wrapper de table pour scroll horizontal mobile propre */
   .table-wrap {{
@@ -873,9 +874,15 @@ def render_html(
     .legend-bar {{ padding: 6px 12px; font-size: 12px; }}
     .subnav {{ padding: 5px 12px; top: 40px; }}
     .subnav a {{ font-size: 11.5px; padding: 3px 8px; }}
+    .subnav .subnav-label {{ width: 100%; margin-bottom: 2px; }}
+    /* La subnav wrappe désormais sur ~2 lignes sous un header de 40px : on
+       décale l'ancrage des titres pour qu'ils ne passent pas sous le chrome. */
     main h1 {{ font-size: 22px; }}
-    main h2 {{ font-size: 18px; margin-top: 28px; scroll-margin-top: 84px; }}
-    main h3 {{ font-size: 15.5px; scroll-margin-top: 84px; }}
+    main h2 {{ font-size: 18px; margin-top: 28px; scroll-margin-top: 110px; }}
+    main h3 {{ font-size: 15.5px; scroll-margin-top: 110px; }}
+    /* Anti-débordement horizontal : aucun mot long (URL, hash) ne pousse la page
+       au-delà du viewport. Les tables larges scrollent dans leur .table-wrap. */
+    main p, main li, main td, main th, main summary {{ overflow-wrap: anywhere; }}
     .help-box {{ font-size: 13px; }}
     /* Tables denses (Détail par actif, 9 colonnes) : on masque sur mobile la
        3e (« Valeur actuelle »), la 4e (« Penchant ») et — [CH-6 audit visuel
@@ -962,12 +969,12 @@ def render_html(
       <div id="bulletin-content">
         <p>Chargement...</p>
       </div>
-      <section id="winrate-view" hidden aria-label="Résultats — win rate par actif">
+      <section id="winrate-view" hidden aria-label="Résultats : win rate par actif">
         <h1>📈 Résultats / Win rate</h1>
-        <p class="history-intro">Le taux de bonnes directions par actif et par horizon — réécrit à chaque run. Deux mesures : le <strong>Win rate</strong> (sur les paris conclus) et le <strong>WR tradable</strong> (VRAI / VRAI+FAUSSE+non-conclusif — inclut les jours sous seuil où une position aurait quand même été prise, donc toujours ≤ Win rate).</p>
+        <p class="history-intro">Le taux de bonnes directions par actif et par horizon, réécrit à chaque run. Deux mesures : le <strong>Win rate</strong> (sur les paris conclus) et le <strong>WR tradable</strong> (VRAI / VRAI+FAUSSE+non-conclusif, qui inclut les jours sous seuil où une position aurait quand même été prise, donc toujours ≤ Win rate).</p>
         <p class="history-intro"><strong>⏳ trop peu (N/15)</strong> = il faut au moins 15 paris indépendants par cellule pour qu'un chiffre soit fiable ; en dessous, le taux affiché ne veut encore rien dire.</p>
         <div class="winrate-warmup" role="note">
-          <strong>Tout est en chauffe.</strong> Les 12 actifs ont été remis à zéro le <strong>11 juin 2026</strong> (passage en ère v2 du moteur). La mesure ouverture→clôture, 1 décision notée par jour, tourne depuis le 9 juin. Premier point de contrôle : le <strong>8 août 2026</strong> — une cellule 24h se trade alors uniquement si son WR tradable ≥&nbsp;70&nbsp;% sur ≥&nbsp;15 paris (règle de sélection gravée, mode test jusque-là).
+          <strong>Tout est en chauffe.</strong> Les 12 actifs ont été remis à zéro le <strong>11 juin 2026</strong> (passage en ère v2 du moteur). La mesure ouverture→clôture, 1 décision notée par jour, tourne depuis le 9 juin. Premier point de contrôle : le <strong>8 août 2026</strong>, une cellule 24h se trade alors uniquement si son WR tradable ≥&nbsp;70&nbsp;% sur ≥&nbsp;15 paris (règle de sélection gravée, mode test jusque-là).
         </div>
         <div id="winrate-content"></div>
         <p id="winrate-empty" hidden></p>
@@ -991,7 +998,7 @@ def render_html(
         <div id="history-winrate"></div>
         <details class="fold-section" id="history-ab-fold">
           <summary>Détail technique par cellule (calibration ±1)</summary>
-          <p class="history-intro" style="margin-top:8px;">Taux et calibration internes par cellule — secondaire, conservé pour le suivi technique.</p>
+          <p class="history-intro" style="margin-top:8px;">Taux et calibration internes par cellule (secondaire, conservé pour le suivi technique).</p>
           <div id="history-summary"></div>
         </details>
         <h2>Décision par décision</h2>
@@ -1303,7 +1310,7 @@ function renderList(activeId) {{
     // Créneau lisible : "matin/midi/soir" (b.slot) prioritaire, sinon l'heure
     // brute extraite de l'id (rétro-compat), sinon rien.
     const slotTxt = (b.slot && b.slot.length) ? b.slot : dt.time;
-    dateSpan.textContent = slotTxt ? `${{dt.short}} — ${{slotTxt}}` : dt.short;
+    dateSpan.textContent = slotTxt ? `${{dt.short}} · ${{slotTxt}}` : dt.short;
     a.appendChild(dateSpan);
     if (b.id === latestId) {{
       a.classList.add('latest');
@@ -1354,11 +1361,11 @@ function markDenseTables(root) {{
 // Tooltips natifs (attribut title) sur les symboles d'info de la matrice/synthèse.
 // Reprend les définitions de la légende du bulletin. Zéro CSS, zéro espace.
 const SYMBOL_TOOLTIPS = {{
-  '🚫': 'Données insuffisantes — actif non scoré',
-  '⏸': 'En pause — pas de décision actionnable',
-  '📰': 'News > 50% du score quant — pondéré en tête',
+  '🚫': 'Données insuffisantes : actif non scoré',
+  '⏸': 'En pause : pas de décision actionnable',
+  '📰': 'News > 50% du score quant : pondéré en tête',
   '⚑': 'Gate régime extrême actif',
-  '⚪': 'Quasi coin-flip (|score| < 0.05) — non-actionnable',
+  '⚪': 'Quasi coin-flip (|score| < 0.05) : non-actionnable',
   '⚠️': 'Divergence primaire/pondéré ou confiance faible',
   '⚠': 'Divergence primaire/pondéré ou confiance faible',
   '↯': 'Divergence quant ↔ news (signes opposés)',
@@ -1597,8 +1604,23 @@ function subnavLabelFor(raw) {{
   return words.slice(0, 2).join(' ') || raw;
 }}
 
-// Construit la sous-navigation d'ancres à partir des <h2> du bulletin.
-// Réécrit les ids des <h2> pour des ancres prévisibles et stables.
+// Pose un id stable et prévisible sur CHAQUE <h2> du bulletin. Appelé AVANT
+// foldSections : ainsi un h2 replié transfère son id à son <summary> (l'ancre
+// reste valide même une fois la section repliée).
+function assignH2Ids(root) {{
+  if (!root) return;
+  root.querySelectorAll('h2').forEach((h, i) => {{
+    const raw = (h.textContent || '').trim();
+    h.id = `sec-${{i}}-${{slugify(raw).slice(0, 40)}}`;
+  }});
+}}
+
+// Construit la sous-navigation d'ancres. [Refonte S9 — (B)1] N'affiche QUE les
+// sections VISIBLES : on appelle buildSubnav APRÈS foldSections, qui remplace
+// chaque h2 replié par un <details><summary> (l'h2 disparaît du DOM). Du coup
+// `querySelectorAll('h2')` ne renvoie plus que les sections dépliées → la
+// subnav ne pointe jamais vers une section masquée. Solution la plus simple et
+// robuste : zéro test d'état de repli, on s'appuie sur le DOM déjà transformé.
 function buildSubnav(root) {{
   const links = document.getElementById('subnav-links');
   const subnav = document.getElementById('subnav');
@@ -1612,10 +1634,10 @@ function buildSubnav(root) {{
   subnav.style.display = '';
   let lastLabel = null;
   let emitted = 0;
-  h2s.forEach((h, i) => {{
+  h2s.forEach((h) => {{
     const raw = (h.textContent || '').trim();
-    const id = `sec-${{i}}-${{slugify(raw).slice(0, 40)}}`;
-    h.id = id; // l'id est posé même si la section n'est pas dans la sous-nav.
+    const id = h.id || `sec-${{slugify(raw).slice(0, 40)}}`;
+    h.id = id; // garantit une ancre même si assignH2Ids n'a pas tourné.
     // Label court et LISIBLE. Table de correspondance (mots, jamais d'émoji nu) :
     // on reconnaît la section par un motif sur son titre, sinon repli générique.
     let label = subnavLabelFor(raw);
@@ -1741,7 +1763,7 @@ function renderHistoryTable() {{
   if (!MEASURES || MEASURES.length === 0) {{
     tbody.innerHTML = '';
     if (table) table.hidden = true;
-    if (empty) {{ empty.hidden = false; empty.textContent = 'Historique en cours de constitution — les résultats par prédiction apparaîtront ici dès la première mesure d\\'échéance.'; }}
+    if (empty) {{ empty.hidden = false; empty.textContent = 'Historique en cours de constitution : les résultats par prédiction apparaîtront ici dès la première mesure d\\'échéance.'; }}
     if (countEl) countEl.textContent = '';
     return;
   }}
@@ -1955,7 +1977,7 @@ function buildTodayView() {{
 
   const days = Object.keys(byDay).sort().reverse();
   if (days.length === 0) {{
-    if (empty) {{ empty.hidden = false; empty.textContent = "Aucun rapport pour l'instant — les briefings et suivis apparaîtront ici."; }}
+    if (empty) {{ empty.hidden = false; empty.textContent = "Aucun rapport pour l'instant : les briefings et suivis apparaîtront ici."; }}
     return;
   }}
   if (empty) empty.hidden = true;
@@ -2020,7 +2042,7 @@ function weekHumanTitle(weekly) {{
                   'août', 'septembre', 'octobre', 'novembre', 'décembre'];
     return dt.getUTCDate() + ' ' + MOIS[dt.getUTCMonth()];
   }};
-  const sem = iso ? ('Semaine ISO ' + iso[1] + ' — ') : '';
+  const sem = iso ? ('Semaine ISO ' + iso[1] + ' · ') : '';
   return sem + 'du lundi ' + fmt(lundi) + ' au vendredi ' + fmt(vendredi);
 }}
 
@@ -2032,7 +2054,7 @@ function buildWeekView() {{
   if (!WEEKLY) {{
     content.innerHTML = '';
     if (titleEl) titleEl.hidden = true;
-    if (empty) {{ empty.hidden = false; empty.textContent = 'Aucun bilan de semaine pour le moment — le premier est généré le dimanche suivant (18h), puis chaque dimanche.'; }}
+    if (empty) {{ empty.hidden = false; empty.textContent = 'Aucun bilan de semaine pour le moment : le premier est généré le dimanche suivant (18h), puis chaque dimanche.'; }}
     return;
   }}
   if (empty) empty.hidden = true;
@@ -2149,7 +2171,7 @@ function buildWinrateView() {{
     buildVerdictSequences(content);
   }} else if (empty) {{
     empty.hidden = false;
-    empty.textContent = 'Aucun résultat de win rate disponible pour le moment — les chiffres apparaîtront ici dès les premières mesures.';
+    empty.textContent = 'Aucun résultat de win rate disponible pour le moment : les chiffres apparaîtront ici dès les premières mesures.';
   }}
 }}
 
@@ -2173,7 +2195,7 @@ function appendDayFil(container, id) {{
   const LABELS = {{ '12h': '🕛 Suivi 12h', '18h': '🕕 Suivi 18h' }};
   reports.forEach(r => {{
     const isBilan = r.kind === 'bilan-jour';
-    const label = isBilan ? '🌙 Bilan du jour — 22h15' : (LABELS[r.slot] || ('Suivi ' + (r.slot || '')));
+    const label = isBilan ? '🌙 Bilan du jour · 22h15' : (LABELS[r.slot] || ('Suivi ' + (r.slot || '')));
     const rd = document.createElement('details');
     rd.className = 'day-fil-report';  // replié par défaut (pas d'attribut open)
     const rs = document.createElement('summary');
@@ -2210,11 +2232,16 @@ function selectBulletin(id) {{
     addSymbolTooltips(content);
     markDenseTables(content);
     wrapTables(content);
-    // buildSubnav AVANT foldSections : il pose les ids sur tous les <h2> ;
-    // foldSections les reprend sur le <summary> pour garder l'ancrage. Un clic
-    // sous-nav vers une section repliée l'ouvre alors (openFoldedSectionFor).
-    buildSubnav(content);
+    // [Refonte S9 — (B)1] Ordre : assignH2Ids → foldSections → buildSubnav.
+    // 1) on pose les ids sur tous les <h2> (ancres stables) ; 2) foldSections
+    // remplace chaque section repliée par un <details><summary> (l'h2 disparaît,
+    // son id passe au summary) ; 3) buildSubnav ne voit alors QUE les <h2>
+    // restants = sections VISIBLES → la sous-nav ne pointe jamais vers une
+    // section masquée. openFoldedSectionFor reste le filet pour les ancres
+    // pointant vers un summary (clic direct sur une ancre externe).
+    assignH2Ids(content);
     foldSections(content);
+    buildSubnav(content);
   }} else {{
     // Fallback : affichage brut si marked n'a pas chargé (offline)
     const pre = document.createElement('pre');
@@ -2237,7 +2264,7 @@ function selectBulletin(id) {{
   // 12 juin · 7h ».
   const dt = formatBulletinDate(b.id);
   const tt = dt.time ? ` · ${{dt.time}}` : '';
-  document.title = `Briefing — ${{dt.short}}${{tt}} · TradingApp v3`;
+  document.title = `Briefing · ${{dt.short}}${{tt}} · TradingApp v3`;
   if (mainEl) mainEl.scrollTop = 0;
 }}
 

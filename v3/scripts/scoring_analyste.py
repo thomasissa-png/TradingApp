@@ -452,7 +452,7 @@ def check_freshness(data: dict, now: Optional[datetime] = None) -> Tuple[bool, s
             f"criteres-courants PÉRIMÉ : {age_label}, dernier update={last_dt.isoformat()} "
             f"(seuil {FRESHNESS_MAX})"
         )
-    return True, f"fraîcheur OK — {age_label}"
+    return True, f"fraîcheur OK : {age_label}"
 
 
 # ---------------------------------------------------------------------------
@@ -1597,7 +1597,7 @@ def build_surveillance_block(
                 continue
             direction = r.conclusions.get(h, "")
             flags_str = " ".join(flags)
-            rows.append(f"- {r.nom} {h} — {direction} — [{flags_str}]")
+            rows.append(f"- {r.nom} {h} · {direction} · [{flags_str}]")
     if rows:
         lines.extend(rows)
     else:
@@ -1666,21 +1666,21 @@ def assert_bias_coherence(
 # Définitions courtes de chaque symbole (1 symbole = 1 ligne). Affichées
 # UNIQUEMENT si le symbole est présent dans CE bulletin (légende compacte).
 _LEGENDE_DEFS: List[Tuple[str, str]] = [
-    ("🚫", "données insuffisantes — pas de prédiction"),
-    ("⏸", "direction maintenue (carry-forward) — data partielle, dernière direction valide conservée"),
+    ("🚫", "données insuffisantes : pas de prédiction"),
+    ("⏸", "direction maintenue (carry-forward), data partielle, dernière direction valide conservée"),
     ("⚑", "gate régime extrême actif"),
-    ("📰", "news >50% du quant — pondéré en tête, brut entre parenthèses ; ou régime news (direction issue du biais news faute de couverture quant)"),
-    ("⚪", "quasi coin-flip (|score|<0.05) — non-actionnable"),
-    ("≈", "faible conviction (|note|<0.30) — quasi-neutre (direction conservée)"),
+    ("📰", "news >50% du quant : pondéré en tête, brut entre parenthèses ; ou régime news (direction issue du biais news faute de couverture quant)"),
+    ("⚪", "quasi coin-flip (|score|<0.05) : non-actionnable"),
+    ("≈", "faible conviction (|note|<0.30), quasi-neutre (direction conservée)"),
     ("⚠", "divergence primaire / pondéré"),
-    ("⚠️", "confiance faible (coverage bas ou données périmées) — direction conservée"),
+    ("⚠️", "confiance faible (coverage bas ou données périmées), direction conservée"),
     ("↯", "divergence quant ↔ news (signes opposés)"),
     ("⇄", "contre-momentum (conclusion vs RSI 14j opposés)"),
     ("⇆", "incohérence inter-horizons (zig-zag)"),
     ("⌛", "déjà coté (event hors fenêtre already-priced)"),
     ("⊘", "démenti / correction détecté sur l'event source"),
-    ("◧", "mono-critère dominant (>50% du score sur 1 seul critère) — fragilité, à lire avec prudence"),
-    ("⚭", "driver macro partagé — plusieurs cellules de même direction portées par le MÊME signal macro (faux consensus, voir bloc dédié)"),
+    ("◧", "mono-critère dominant (>50% du score sur 1 seul critère) : fragilité, à lire avec prudence"),
+    ("⚭", "driver macro partagé : plusieurs cellules de même direction portées par le MÊME signal macro (faux consensus, voir bloc dédié)"),
 ]
 
 
@@ -1707,7 +1707,7 @@ def _build_legende(flags_present: set) -> str:
         "_**Note** = somme pondérée signée des critères (signe × poids × "
         "pertinence par horizon). Plus |Note| est élevée, plus le signal est "
         "marqué ; il n'y a pas de borne fixe (l'amplitude dépend de la "
-        "couverture) — à lire avec la confiance %._"
+        "couverture), à lire avec la confiance %._"
     )
     if any_shadow:
         lines.append("")
@@ -1877,8 +1877,8 @@ def build_top3_block(results: List["ActifResult"]) -> List[str]:
         lines.append("")
         return lines
     for _abs, label, score, direction, raison in distincts[:3]:
-        suffix = f" — {raison}" if raison else ""
-        lines.append(f"- **{label} — {direction} ({score:+.2f})**{suffix}")
+        suffix = f" · {raison}" if raison else ""
+        lines.append(f"- **{label} · {direction} ({score:+.2f})**{suffix}")
     lines.append("")
     return lines
 
@@ -2108,14 +2108,14 @@ def build_a_jouer_block(
     out.append("**Jouables**")
     out.append("")
     if forte_clean:
-        out.append("_Conviction forte — sans drapeau_")
+        out.append("_Conviction forte : sans drapeau_")
         out.append("")
         out.append(header)
         out.append(sep)
         out.extend(_render_table(forte_clean, jouables_shared))
         out.append("")
     if forte_flagged:
-        out.append("_Conviction forte — avec drapeau(s) (prudence)_")
+        out.append("_Conviction forte : avec drapeau(s) (prudence)_")
         out.append("")
         out.append(header)
         out.append(sep)
@@ -2561,7 +2561,7 @@ def _build_gap_contresens_flags(
             continue
         out.append(
             f"⚠️ **{s['actif']}** bouge à contre-sens depuis la dernière clôture "
-            f"vue par le système ({gap:+.1%}) — le pari {direction} repose "
+            f"vue par le système ({gap:+.1%}) : le pari {direction} repose "
             f"peut-être sur un prix déjà dépassé."
         )
     if out:
@@ -2588,15 +2588,15 @@ def build_selection_du_jour_block(
     prix_reference = prix_reference or {}
     selection, ecartees = compute_selection_du_jour(results, seuil_conviction)
 
-    out: List[str] = ["## 🎯 Sélection du jour — max 3", ""]
+    out: List[str] = ["## 🎯 Sélection du jour (max 3)", ""]
     # P2 — la méthodologie de sélection (4 règles) est désormais expliquée UNE
     # SEULE fois dans la section « ## Comment lire les scores » (fin de bulletin).
     # Ici, la section ne garde que son titre + tableau.
 
     if not selection:
         out.append(
-            "_Aucune sélection aujourd'hui (aucune cellule ne passe les 4 règles) "
-            "— ne pas forcer._"
+            "_Aucune sélection aujourd'hui (aucune cellule ne passe les 4 règles), "
+            "ne pas forcer._"
         )
         out.append("")
         return out
@@ -2621,7 +2621,7 @@ def build_selection_du_jour_block(
     # Candidates écartées par la dédup driver (motif explicite sous le tableau).
     ecartees_dedup = [e for e in ecartees if e["motif"].startswith("même pari")]
     for e in ecartees_dedup:
-        out.append(f"_écartée : {e['actif']} — {e['motif']}._")
+        out.append(f"_écartée : {e['actif']}, {e['motif']}._")
     if ecartees_dedup:
         out.append("")
 
@@ -2643,7 +2643,7 @@ def build_selection_du_jour_block(
             if touches:
                 liste = ", ".join(touches)
                 out.append(
-                    f"⚠️ **{ev['nom']} aujourd'hui** — peut retourner ce pari "
+                    f"⚠️ **{ev['nom']} aujourd'hui** peut retourner ce pari "
                     f"({liste})."
                 )
                 emis = True
@@ -2831,7 +2831,7 @@ def _synthese_cell_risk_flags(
 _RAISON_DRIVERS_DOUTEUX: set = {"meteo_cacao_cote_ivoire_ghana"}
 
 # Quasi-neutre → on n'invente PAS de direction (audit : VIX 7j/1m, CAC).
-_RAISON_QUASI_NEUTRE = "quasi-neutre — pas de driver franc"
+_RAISON_QUASI_NEUTRE = "quasi-neutre, pas de driver franc"
 
 # B1 — co-driver news co-dominant : un 2ᵉ driver dont le |effet| atteint au moins
 # (1 − RAISON_CODRIVER_TOL) fois celui du driver principal ET qui porte la news
@@ -3174,7 +3174,7 @@ def build_raisons_block(
     """
     now = now or datetime.now(timezone.utc)
     lines: List[str] = []
-    lines.append("**Raison principale par cellule** _(driver dominant courant, dans le sens de la décision — recalculé à chaque run)_")
+    lines.append("**Raison principale par cellule** _(driver dominant courant, dans le sens de la décision, recalculé à chaque run)_")
     lines.append("")
     for r in results:
         # Décompose chaque horizon en (corps, chiffre, suffixe, direction, sémantique chiffre).
@@ -3224,7 +3224,7 @@ def build_raisons_block(
                 suffixes = {parts[k][2] for k in range(i, j)}
                 suff = parts[i][2] if len(suffixes) == 1 else ""
                 dir_str = f" _({dir_label})_" if dir_label else ""
-                morceaux.append(f"{hz} : même driver — {corps} ({chiffres}){suff}{dir_str}")
+                morceaux.append(f"{hz} : même driver, {corps} ({chiffres}){suff}{dir_str}")
                 i = j
             else:
                 # Pas de regroupement : rendu détaillé de l'horizon.
@@ -3232,7 +3232,7 @@ def build_raisons_block(
                 dir_str = f" _({dir_label})_" if dir_label else ""
                 morceaux.append(f"{HORIZONS[i]} : {corps}{sep}{_chiffre}{_suffixe}{dir_str}")
                 i += 1
-        lines.append(f"- **{r.nom}** — " + " · ".join(morceaux))
+        lines.append(f"- **{r.nom}** : " + " · ".join(morceaux))
     lines.append("")
     return lines
 
@@ -3269,7 +3269,7 @@ def _synthese_paris_partages(
             liste = actifs[0]
         lines.append(
             f"_{SHARED_DRIVERS_SYMBOL_LOCAL} Même pari : **{label}** porte "
-            f"{liste} ({direction}) — jouer plusieurs de ces lignes = "
+            f"{liste} ({direction}). Jouer plusieurs de ces lignes = "
             f"multiplier le levier sur UN driver._"
         )
     return lines
@@ -3338,13 +3338,13 @@ def build_top_multi_horizons_block(
     """
     # Réutilise la sélection canonique du Top 3 (3 actifs distincts, normale).
     raw = build_top3_block(results)
-    # raw contient le titre + lignes « - **Actif h — DIR (note)** — raison ».
+    # raw contient le titre + lignes « - **Actif h · DIR (note)** · raison ».
     # On retrouve les (actif, horizon) sélectionnés pour rattacher les drapeaux.
     selected: List[Tuple["ActifResult", str]] = []
     res_by_nom = {r.nom: r for r in results}
     import re as _re
     for ln in raw:
-        m = _re.match(r"- \*\*(.+) (24h|7j|1m) — ", ln)
+        m = _re.match(r"- \*\*(.+) (24h|7j|1m) · ", ln)
         if not m:
             continue
         nom, h = m.group(1), m.group(2)
@@ -3373,9 +3373,9 @@ def build_top_multi_horizons_block(
                 flags = ["⚪"] + flags
             elif abs(score) < NEUTRAL_BAND:
                 flags = ["≈"] + flags
-        flags_str = (" — drapeaux : " + " ".join(flags)) if flags else ""
-        suffix = f" — {raison}" if raison else ""
-        out.append(f"- **{r.nom} {h} — {conc} ({score:+.2f})**{suffix}{flags_str}")
+        flags_str = (" · drapeaux : " + " ".join(flags)) if flags else ""
+        suffix = f" · {raison}" if raison else ""
+        out.append(f"- **{r.nom} {h} · {conc} ({score:+.2f})**{suffix}{flags_str}")
         # Phrase d'explication déterministe (2 critères porteurs + ↯/📰).
         explication = _top_explication(r, h)
         if explication:
@@ -3404,7 +3404,7 @@ def build_top_multi_horizons_block(
                 out.append("")
                 out.append(
                     f"- {SHARED_DRIVERS_SYMBOL_LOCAL} {n} de ces convictions "
-                    f"reposent sur le même driver : {label} — un retournement "
+                    f"reposent sur le même driver : {label}. Un retournement "
                     f"de ce signal les fausserait ensemble."
                 )
     out.append("")
@@ -3497,10 +3497,10 @@ DETAIL_TABLE_HELP_LINES: List[str] = [
 # (reco-wording-noms-criteres.md §8). Affiché une seule fois, en pied de la
 # section « Détail par actif ». N'affecte QUE l'affichage.
 DETAIL_TABLE_GLOSSARY_LINES: List[str] = [
-    "_**Glossaire** — "
+    "_**Glossaire** : "
     "PMI : indice d'activité industrielle (>50 = expansion) · "
     "RSI : indicateur de sur-achat / sur-vente (30 = très vendu, 70+ = très acheté) · "
-    "VIX / VXN / V2X : indices de la « peur » du marché — volatilité attendue à 30 jours "
+    "VIX / VXN / V2X : indices de la « peur » du marché, volatilité attendue à 30 jours "
     "(US / Nasdaq / Europe) · "
     "SKEW / VVIX : risque de choc extrême et nervosité sur le VIX lui-même "
     "(montent avant les crises)._",
@@ -3526,9 +3526,9 @@ def build_comment_lire_block(flags_present: set) -> List[str]:
     out.append(
         "_Les meilleurs paris 24h du jour : (1) **signal fort**, (2) **données "
         "suffisantes** sur l'actif, (3) **chaque type de marché représenté une "
-        "seule fois** (deux lignes portées par le même moteur — ex. taux/dollar — "
+        "seule fois** (deux lignes portées par le même moteur, par ex. taux/dollar, "
         "comptent pour un seul pari, on garde la plus forte), (4) **3 maximum**. "
-        "Moins de 3 — voire zéro — est normal : on ne force jamais un pari._"
+        "Moins de 3 (voire zéro) est normal : on ne force jamais un pari._"
     )
     out.append("")
 
@@ -3539,8 +3539,8 @@ def build_comment_lire_block(flags_present: set) -> List[str]:
         "≥ seuil sans drapeau ; sinon le libellé dit POURQUOI : molle, contestée, "
         "fragile ou zigzag). « À éviter » = quasi coin-flip (⚪), quasi-neutre (≈) "
         "ou données insuffisantes (🚫). Les drapeaux de prudence (◧ ⚠️ ↯ …) restent "
-        "dans « Jouables » — prudence, pas exclusion. Prix de réf. = prix "
-        "d'émission stampé (— si pas encore disponible)._"
+        "dans « Jouables » : prudence, pas exclusion. Prix de réf. = prix "
+        "d'émission stampé (« — » si pas encore disponible)._"
     )
     out.append(
         "_« Porté par » = le critère qui pèse le plus dans la note, avec sa valeur, "
@@ -3580,7 +3580,7 @@ def render_bulletin(
     # Lot 5 C8a — import paresseux (cohérent avec build_decision_log_records).
     import triggers_classifier as _tc_classifier  # noqa: F401
     lines: List[str] = []
-    lines.append(f"# Bulletin Analyste — {now:%Y-%m-%d} · {now:%Hh%M} (Paris)")
+    lines.append(f"# Bulletin Analyste · {now:%Y-%m-%d} · {now:%Hh%M} (Paris)")
     lines.append("")
     # En-tête allégé (audit UX 10/06, P1-D / bloc 4) : la ligne titre garde
     # date/heure ; « Fraîcheur » reste en tête (info utile au scan). La version
@@ -3604,7 +3604,7 @@ def render_bulletin(
     if regime_global:
         lines.append(
             "- ⚠️ Régime extrême actif sur l'ensemble du tableau "
-            "(contexte géopolitique) — drapeau ⚑ non répété par cellule"
+            "(contexte géopolitique) : drapeau ⚑ non répété par cellule"
         )
     lines.append("")
     # --- C7 — Cellules à surveiller + cohérence biais agrégé ---------------
@@ -3662,7 +3662,12 @@ def render_bulletin(
                     f"- {r.nom} [{h}] : {v} → {r.conclusions[h]} "
                     f"(score {sc:+.2f}){noise_flag}"
                 )
-    lines.append("## Flips vs veille")
+    # [Refonte S9 — (B)2] Compteur « (N flips) » dans le titre quand N>0. Le titre
+    # reste préfixé par « ## Flips vs veille » (les parsers/tests s'appuient sur ce
+    # préfixe ; le suffixe est purement informatif et repris dans le <summary> HTML).
+    n_flips = len(flips)
+    titre_flips = f"## Flips vs veille ({n_flips} flip{'s' if n_flips > 1 else ''})" if n_flips else "## Flips vs veille"
+    lines.append(titre_flips)
     if flips:
         lines.extend(flips)
     else:
@@ -4025,10 +4030,10 @@ def render_bulletin(
                 # info SUPPLÉMENTAIRE (cause précise : source DEAD, stdev=0, etc.),
                 # pas la redondance générique « (valeur absente) ».
                 note = c.note or ""
-                detail = "" if note.strip() in ("n/a (valeur absente)", "") else f" — {note}"
+                detail = "" if note.strip() in ("n/a (valeur absente)", "") else f" : {note}"
                 lines.append(f"- n/a : {_nom_critere(c)} (poids {c.poids:g}){detail}")
             for c in gates_actifs:
-                lines.append(f"- ⚑ GATE actif : {_nom_critere(c)} — {c.note}")
+                lines.append(f"- ⚑ GATE actif : {_nom_critere(c)} ({c.note})")
             if n_mineurs:
                 lines.append(
                     f"- _(+{n_mineurs} critère{'s' if n_mineurs > 1 else ''} "
@@ -4770,7 +4775,7 @@ def build_audit_veille_24h(
         else f"le {d_min.isoformat()}"
     )
     suffixe_tronque = (
-        f" — {MAX_CALLS_DISPLAYED} plus récents ; historique complet dans la vue Historique"
+        f", {MAX_CALLS_DISPLAYED} plus récents ; historique complet dans la vue Historique"
         if tronque else ""
     )
     lines.append(f"**{n_vrai} ✅ / {n_faux} ❌** ({periode}{suffixe_tronque})")
@@ -4791,7 +4796,7 @@ def build_audit_veille_24h(
         src = getattr(m, "prix_reference_source", None)
         canonique = _source_canonique_attendue(m, fiches_for_tag)
         v1_tag = (
-            " `[référence dégradée — source non canonique]`"
+            " `[référence dégradée : source non canonique]`"
             if (src is not None and canonique is not None and src != canonique)
             else ""
         )

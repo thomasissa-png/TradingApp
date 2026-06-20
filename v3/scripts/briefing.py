@@ -603,7 +603,7 @@ def build_news_par_actif(
         lines.append(f"### {actif}")
         evs = groups.get(actif)
         if not evs:
-            lines.append("- — aucune actualité")
+            lines.append("- _aucune actualité_")
             lines.append("")
             continue
         evs_sorted = _dedup_news_in_actif(_sort_by_materiality_then_date(evs))

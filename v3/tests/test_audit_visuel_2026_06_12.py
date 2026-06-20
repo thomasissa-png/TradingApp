@@ -143,7 +143,7 @@ def test_hb1_jouables_scinde_forte_sans_drapeau():
     ]
     md = _render([_actif("Or", "or", -13.3, "SHORT", crits)])
     a_jouer = md.split("## 🎯 À jouer aujourd'hui (24h)")[1].split("## ")[0]
-    assert "_Conviction forte — sans drapeau_" in a_jouer
+    assert "_Conviction forte : sans drapeau_" in a_jouer
 
 
 # ---------------------------------------------------------------------------

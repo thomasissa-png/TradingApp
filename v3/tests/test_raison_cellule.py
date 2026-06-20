@@ -510,8 +510,8 @@ def _parse_bulletin_flags(md: str):
                 actif = cells[0]
                 for h, cell in zip(sa.HORIZONS, cells[1:]):
                     grid[(actif, h)] = _prudence_from_grid_cell(cell)
-        # Bloc raison : « - **Actif** — 24h : … · 7j : … · 1m : … »
-        m = _re.match(r"- \*\*(.+?)\*\* — (.+)$", ln)
+        # Bloc raison : « - **Actif** : 24h : … · 7j : … · 1m : … »
+        m = _re.match(r"- \*\*(.+?)\*\* : (.+)$", ln)
         if m:
             actif = m.group(1)
             body = m.group(2)

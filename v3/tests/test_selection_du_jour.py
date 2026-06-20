@@ -159,7 +159,7 @@ def test_bloc_aucune_selection_message():
     a = _actif("Or", "or", score_24h=0.4)
     lignes = sa.build_selection_du_jour_block([a], _NOW)
     texte = "\n".join(lignes)
-    assert "## 🎯 Sélection du jour — max 3" in texte
+    assert "## 🎯 Sélection du jour (max 3)" in texte
     assert "Aucune sélection aujourd'hui" in texte
     assert "ne pas forcer" in texte
 
@@ -175,7 +175,7 @@ def test_bloc_tableau_et_ecartee(monkeypatch):
     texte = "\n".join(lignes)
     # P3 — « Porté par » enrichi : nom complet + valeur + sens + contribution.
     assert "| Or | LONG | +0.90 | Fed (val 1, sens normal) → contribue +0.40 | 2400 |" in texte
-    assert "écartée : Argent — même pari (drv_macro) que Or" in texte
+    assert "écartée : Argent, même pari (drv_macro) que Or" in texte
     # P2 — les 4 règles de sélection sont désormais dans « Comment lire les
     # scores » (consolidées une fois), plus dans le bloc « Sélection du jour ».
     assert "**signal fort**" not in texte
@@ -472,7 +472,7 @@ def test_selection_motif_famille_affiche_dans_bloc(monkeypatch):
         driver_cle="differentiel_taux_2y_us_de", driver_nom="Écart 2Y US-DE",
     )
     texte = "\n".join(sa.build_selection_du_jour_block([argent, eurusd], _NOW))
-    assert "écartée : EUR/USD — même pari (taux/dollar) que Argent" in texte
+    assert "écartée : EUR/USD, même pari (taux/dollar) que Argent" in texte
     # P2 — la règle « chaque type de marché représenté une seule fois » est
     # désormais expliquée dans « Comment lire les scores » (une seule fois).
     assert "chaque type de marché représenté une seule fois" not in texte

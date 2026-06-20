@@ -95,7 +95,7 @@ def test_appendDayFil_labels_francais():
     html = _html()
     assert "🕛 Suivi 12h" in html
     assert "🕕 Suivi 18h" in html
-    assert "🌙 Bilan du jour — 22h15" in html
+    assert "🌙 Bilan du jour · 22h15" in html
 
 
 def test_appendDayFil_details_replie_par_defaut():

@@ -25,162 +25,162 @@
 
 drivers:
   taux_10y_us_reels_tips:
-    phrase_long: "taux réels US bas — le portage des sans-rendement redevient supportable"
-    phrase_short: "taux réels US élevés — l'or/les sans-rendement coûtent à porter"
+    phrase_long: "taux réels US bas : le portage des sans-rendement redevient supportable"
+    phrase_short: "taux réels US élevés : l'or/les sans-rendement coûtent à porter"
 
   variation_taux_10y_5j:
-    phrase_long: "taux longs US qui refluent — bouffée d'oxygène pour les actions"
-    phrase_short: "taux longs US qui montent — pression sur la valorisation actions"
+    phrase_long: "taux longs US qui refluent : bouffée d'oxygène pour les actions"
+    phrase_short: "taux longs US qui montent : pression sur la valorisation actions"
 
   vix_regime_seuils:
     phrase_long: "volatilité basse, régime risk-on porteur pour les actions"
     phrase_short: "volatilité élevée, régime risk-off pénalisant les actions"
 
   vix_niveau_absolu:
-    phrase_long: "peur de marché au plancher — pas de prime de risque à payer"
-    phrase_short: "pic de peur de marché — fuite vers la sécurité"
+    phrase_long: "peur de marché au plancher : pas de prime de risque à payer"
+    phrase_short: "pic de peur de marché : fuite vers la sécurité"
 
   vix_term_structure:
-    phrase_long: "structure de vol tendue — la couverture court terme se paie"
-    phrase_short: "structure de vol normalisée — la vol court terme se dégonfle"
+    phrase_long: "structure de vol tendue : la couverture court terme se paie"
+    phrase_short: "structure de vol normalisée : la vol court terme se dégonfle"
 
   credit_spread_hy_us:
-    phrase_long: "crédit haut rendement détendu — appétit pour le risque intact"
-    phrase_short: "crédit haut rendement qui se tend — aversion au risque"
+    phrase_long: "crédit haut rendement détendu : appétit pour le risque intact"
+    phrase_short: "crédit haut rendement qui se tend : aversion au risque"
 
   cftc_cot_nets:
-    phrase_long: "positionnement spéculatif vendeur à l'extrême — potentiel de squeeze haussier"
-    phrase_short: "positionnement spéculatif acheteur saturé — positions longues à déboucler"
+    phrase_long: "positionnement spéculatif vendeur à l'extrême : potentiel de squeeze haussier"
+    phrase_short: "positionnement spéculatif acheteur saturé : positions longues à déboucler"
 
   cftc_cot_crude_nets:
-    phrase_long: "spéculateurs pétrole nets vendeurs — risque de squeeze"
-    phrase_short: "spéculateurs pétrole nets acheteurs — surplus de longs à liquider"
+    phrase_long: "spéculateurs pétrole nets vendeurs : risque de squeeze"
+    phrase_short: "spéculateurs pétrole nets acheteurs : surplus de longs à liquider"
 
   cftc_cot_cuivre:
-    phrase_long: "positionnement spéculatif cuivre vendeur à l'extrême — potentiel de squeeze"
-    phrase_short: "positionnement spéculatif cuivre acheteur saturé — longs à déboucler"
+    phrase_long: "positionnement spéculatif cuivre vendeur à l'extrême : potentiel de squeeze"
+    phrase_short: "positionnement spéculatif cuivre acheteur saturé : longs à déboucler"
 
   ecart_taux_courts_us_de_2a:
-    phrase_long: "écart de taux courts US−Allemagne qui se referme — soutien à l'euro"
-    phrase_short: "écart de taux courts US−Allemagne large — le dollar paie mieux, euro sous pression"
+    phrase_long: "écart de taux courts US−Allemagne qui se referme : soutien à l'euro"
+    phrase_short: "écart de taux courts US−Allemagne large : le dollar paie mieux, euro sous pression"
 
   ecart_taux_longs_us_de_10a:
-    phrase_long: "écart de taux longs US−Allemagne réduit — euro soutenu"
-    phrase_short: "écart de taux longs US−Allemagne large — avantage de portage au dollar"
+    phrase_long: "écart de taux longs US−Allemagne réduit : euro soutenu"
+    phrase_short: "écart de taux longs US−Allemagne large : avantage de portage au dollar"
 
   dxy_trend_20j:
-    phrase_long: "dollar en repli — vent porteur pour les matières premières en USD"
-    phrase_short: "dollar fort — frein sur les matières premières en USD"
+    phrase_long: "dollar en repli : vent porteur pour les matières premières en USD"
+    phrase_short: "dollar fort : frein sur les matières premières en USD"
 
   usd_jpy_signal_risque:
-    phrase_long: "signal de risque USD/JPY qui se détend — euro soutenu"
-    phrase_short: "USD/JPY tendu (risk-off dollar) — pression sur l'euro"
+    phrase_long: "signal de risque USD/JPY qui se détend : euro soutenu"
+    phrase_short: "USD/JPY tendu (risk-off dollar) : pression sur l'euro"
 
   tension_geopolitique:
-    phrase_long: "escalade géopolitique — bid de valeur-refuge sur l'or"
-    phrase_short: "détente géopolitique — la prime de risque refuge se dégonfle"
+    phrase_long: "escalade géopolitique : bid de valeur-refuge sur l'or"
+    phrase_short: "détente géopolitique : la prime de risque refuge se dégonfle"
 
   tension_geopol_moyen_orient:
-    phrase_long: "escalade au Moyen-Orient — prime de risque offre sur le brut"
-    phrase_short: "détente au Moyen-Orient — la prime de risque offre retombe"
+    phrase_long: "escalade au Moyen-Orient : prime de risque offre sur le brut"
+    phrase_short: "détente au Moyen-Orient : la prime de risque offre retombe"
 
   geopol_actif_3j:
-    phrase_long: "choc géopolitique frais — pic de volatilité implicite"
-    phrase_short: "pas d'escalade géopolitique — la volatilité retombe"
+    phrase_long: "choc géopolitique frais : pic de volatilité implicite"
+    phrase_short: "pas d'escalade géopolitique : la volatilité retombe"
 
   opec_production_policy:
-    phrase_long: "OPEC+ annonce une coupe — resserrement de l'offre"
-    phrase_short: "OPEC+ relève la production / dispute interne — surplus d'offre"
+    phrase_long: "OPEC+ annonce une coupe : resserrement de l'offre"
+    phrase_short: "OPEC+ relève la production / dispute interne : surplus d'offre"
 
   eia_crude_surprise:
-    phrase_long: "tirage de stocks US surprise — demande tendue, bullish brut"
-    phrase_short: "build de stocks US surprise — offre excédentaire, bearish brut"
+    phrase_long: "tirage de stocks US surprise : demande tendue, bullish brut"
+    phrase_short: "build de stocks US surprise : offre excédentaire, bearish brut"
 
   cushing_stocks:
-    phrase_long: "stocks Cushing en baisse — demande physique WTI ferme"
-    phrase_short: "stocks Cushing en hausse — relâchement de la demande"
+    phrase_long: "stocks Cushing en baisse : demande physique WTI ferme"
+    phrase_short: "stocks Cushing en hausse : relâchement de la demande"
 
   brent_term_structure_m1m2:
-    phrase_long: "courbe brent en backwardation — demande spot forte"
-    phrase_short: "courbe brent en contango — signal d'oversupply"
+    phrase_long: "courbe brent en backwardation : demande spot forte"
+    phrase_short: "courbe brent en contango : signal d'oversupply"
 
   ratio_or_argent:
-    phrase_long: "ratio or/argent élevé — l'argent est décoté face à l'or, rattrapage attendu"
-    phrase_short: "ratio or/argent bas — l'argent est cher relativement à l'or"
+    phrase_long: "ratio or/argent élevé : l'argent est décoté face à l'or, rattrapage attendu"
+    phrase_short: "ratio or/argent bas : l'argent est cher relativement à l'or"
 
   momentum_or_5j:
-    phrase_long: "l'or monte sur 5 jours — l'argent suit son métal directeur"
-    phrase_short: "l'or recule sur 5 jours — l'argent décroche avec son métal directeur"
+    phrase_long: "l'or monte sur 5 jours : l'argent suit son métal directeur"
+    phrase_short: "l'or recule sur 5 jours : l'argent décroche avec son métal directeur"
 
   flux_etf_or_5j:
-    phrase_long: "flux entrants vers les fonds or — demande d'investissement soutenue"
-    phrase_short: "flux sortants des fonds or — désengagement des investisseurs"
+    phrase_long: "flux entrants vers les fonds or : demande d'investissement soutenue"
+    phrase_short: "flux sortants des fonds or : désengagement des investisseurs"
 
   flux_etf_argent_5j:
-    phrase_long: "flux entrants vers les fonds argent — demande d'investissement soutenue"
-    phrase_short: "flux sortants des fonds argent — désengagement des investisseurs"
+    phrase_long: "flux entrants vers les fonds argent : demande d'investissement soutenue"
+    phrase_short: "flux sortants des fonds argent : désengagement des investisseurs"
 
   ratio_cuivre_or:
-    phrase_long: "ratio cuivre/or élevé — appétit pour le risque cyclique"
-    phrase_short: "ratio cuivre/or bas — préférence défensive"
+    phrase_long: "ratio cuivre/or élevé : appétit pour le risque cyclique"
+    phrase_short: "ratio cuivre/or bas : préférence défensive"
 
   # Convention de signe DOUTEUSE (audit point 5) : on N'ASSÈNE PAS de direction.
   meteo_cacao_cote_ivoire_ghana:
-    phrase_long: "météo cacao Côte d'Ivoire/Ghana — driver dominant (convention de signe à valider)"
-    phrase_short: "météo cacao Côte d'Ivoire/Ghana — driver dominant (convention de signe à valider)"
-    phrase_neutre: "météo cacao Côte d'Ivoire/Ghana — driver dominant (convention de signe à valider)"
+    phrase_long: "météo cacao Côte d'Ivoire/Ghana : driver dominant (convention de signe à valider)"
+    phrase_short: "météo cacao Côte d'Ivoire/Ghana : driver dominant (convention de signe à valider)"
+    phrase_neutre: "météo cacao Côte d'Ivoire/Ghana : driver dominant (convention de signe à valider)"
 
   cot_options_cacao:
-    phrase_long: "positionnement cacao vendeur à l'extrême — potentiel de rebond"
+    phrase_long: "positionnement cacao vendeur à l'extrême : potentiel de rebond"
     phrase_short: "positionnement cacao acheteur saturé"
 
   momentum_cafe_arabica_20j:
-    phrase_long: "tendance café Arabica 20 jours haussière — momentum suivi"
+    phrase_long: "tendance café Arabica 20 jours haussière : momentum suivi"
     phrase_short: "tendance café Arabica 20 jours baissière"
 
   maladies_cafeier:
-    phrase_long: "maladies du caféier — menace sur l'offre, bullish café"
+    phrase_long: "maladies du caféier : menace sur l'offre, bullish café"
     phrase_short: "pas de pression maladie sur le café"
 
   cycle_production_bresil_cafe:
-    phrase_long: "cycle brésilien en année faible — offre café réduite"
-    phrase_short: "cycle brésilien en année forte — offre café abondante"
+    phrase_long: "cycle brésilien en année faible : offre café réduite"
+    phrase_short: "cycle brésilien en année forte : offre café abondante"
 
   usd_brl_cafe:
-    phrase_long: "real brésilien fort — rétention des producteurs, soutien café"
-    phrase_short: "real faible — les producteurs brésiliens vendent, pression sur le café"
+    phrase_long: "real brésilien fort : rétention des producteurs, soutien café"
+    phrase_short: "real faible : les producteurs brésiliens vendent, pression sur le café"
 
   sox_trend_5j:
-    phrase_long: "semi-conducteurs en tendance haussière — moteur de la tech"
-    phrase_short: "semi-conducteurs en repli — frein sur la tech"
+    phrase_long: "semi-conducteurs en tendance haussière : moteur de la tech"
+    phrase_short: "semi-conducteurs en repli : frein sur la tech"
 
   sentiment_ia_megacaps:
-    phrase_long: "sentiment IA/méga-caps porteur — appétit tech"
+    phrase_long: "sentiment IA/méga-caps porteur : appétit tech"
     phrase_short: "sentiment IA/méga-caps en berne"
 
   ecart_taux_fr_de_10a:
-    phrase_long: "spread France−Allemagne contenu — stress zone euro faible, soutien CAC"
-    phrase_short: "spread France−Allemagne large — stress souverain, pression CAC"
+    phrase_long: "spread France−Allemagne contenu : stress zone euro faible, soutien CAC"
+    phrase_short: "spread France−Allemagne large : stress souverain, pression CAC"
 
   surperf_cac_sp500_5j:
-    phrase_long: "CAC en surperformance relative — flux préférentiel vers Paris"
+    phrase_long: "CAC en surperformance relative : flux préférentiel vers Paris"
     phrase_short: "CAC en sous-performance face au S&P"
 
   cot_ble:
-    phrase_long: "spéculateurs blé vendeurs à l'extrême — soutien au blé"
+    phrase_long: "spéculateurs blé vendeurs à l'extrême : soutien au blé"
     phrase_short: "positionnement long saturé sur le blé"
 
   secheresse_plaines_us:
-    phrase_long: "sécheresse plaines US — soutien au blé"
-    phrase_short: "conditions favorables plaines US — pression sur le blé"
+    phrase_long: "sécheresse plaines US : soutien au blé"
+    phrase_short: "conditions favorables plaines US : pression sur le blé"
 
   momentum_ble_20j:
-    phrase_long: "tendance blé 20 jours haussière — on suit la hausse"
-    phrase_short: "tendance blé 20 jours baissière — on suit la baisse"
+    phrase_long: "tendance blé 20 jours haussière : on suit la hausse"
+    phrase_short: "tendance blé 20 jours baissière : on suit la baisse"
 
   valorisation_shiller_cape:
-    phrase_long: "valorisation modérée — marge de hausse"
-    phrase_short: "valorisation extrême (CAPE élevé) — frein structurel à long terme"
+    phrase_long: "valorisation modérée : marge de hausse"
+    phrase_short: "valorisation extrême (CAPE élevé) : frein structurel à long terme"
 
 # Alias : clé RÉELLE du pipeline (decision-log) → clé canonique de `drivers`
 # ci-dessus. L'audit a documenté des `cle_courante` idéalisées ; le pipeline
@@ -221,11 +221,11 @@ aliases:
 # (Le matching exact `drivers` ci-dessus prime toujours sur les préfixes.)
 prefixes:
   momentum_prix_20j_:
-    phrase_long: "tendance 20 jours haussière — on suit le momentum"
-    phrase_short: "tendance 20 jours baissière — on suit la baisse"
+    phrase_long: "tendance 20 jours haussière : on suit le momentum"
+    phrase_short: "tendance 20 jours baissière : on suit la baisse"
   variation_taux_10y_5j:
-    phrase_long: "taux longs US qui refluent — bouffée d'oxygène pour les actions"
-    phrase_short: "taux longs US qui montent — pression sur la valorisation actions"
+    phrase_long: "taux longs US qui refluent : bouffée d'oxygène pour les actions"
+    phrase_short: "taux longs US qui montent : pression sur la valorisation actions"
   momentum_cac_20j:
-    phrase_long: "tendance CAC 20 jours haussière — on suit le momentum"
-    phrase_short: "tendance CAC 20 jours baissière — on suit la baisse"
+    phrase_long: "tendance CAC 20 jours haussière : on suit le momentum"
+    phrase_short: "tendance CAC 20 jours baissière : on suit la baisse"

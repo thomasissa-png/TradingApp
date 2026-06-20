@@ -327,7 +327,13 @@ def render_html(
     performance_md: Optional[str] = None,
 ) -> str:
     """Génère le HTML autonome."""
-    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    # Timestamp de génération en libellé FR lisible (refonte S9 : plus de format
+    # machine « 2026-06-20 14:30 UTC » dans l'interface ; il vit en pied de page).
+    _now = datetime.now(timezone.utc)
+    _MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+                "août", "septembre", "octobre", "novembre", "décembre"]
+    generated_at_iso = _now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    generated_at = f"{_now.day} {_MOIS_FR[_now.month - 1]} {_now.year} · {_now:%Hh%M} (UTC)"
     # On sérialise séparément id/label/filename en JSON (simple), et le markdown
     # est inséré dans des template literals JS échappés (plus robuste pour
     # les guillemets, backslashes, et caractères Unicode).
@@ -391,6 +397,12 @@ def render_html(
     --th-bg: #f1f5f9;
     --dir-long-color: #15803d;
     --dir-short-color: #b91c1c;
+    /* Badge statut « mode test » — discret (refonte header S9). */
+    --status-bg: #0f1c2e;
+    --status-border: #1d3045;
+    --status-text: #64748b;
+    --status-dot: #f59e0b;
+    --header-divider: #253348;
   }}
   /* Dark mode automatique selon le réglage système — zéro toggle.
      Surcharge des variables CSS uniquement, aucune logique JS impactée.
@@ -424,32 +436,32 @@ def render_html(
     font-size: 16px;
     -webkit-font-smoothing: antialiased;
   }}
+  /* HEADER — ligne unique, sticky, 44px (refonte S9). Le titre du produit +
+     le statut « mode test » discret tiennent sur une seule ligne. */
   header {{
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
-    padding: 12px 20px;
+    padding: 0 20px;
     position: sticky; top: 0; z-index: 20;
+    height: 44px;
+    display: flex; align-items: center;
   }}
-  header .header-row {{ display: flex; align-items: center; gap: 12px; }}
-  header h1 {{ margin: 0; font-size: 17px; font-weight: 600; flex: 1; }}
-  header .meta {{ font-size: 12px; color: var(--text-muted); margin-top: 4px; }}
-  header .meta-note {{ margin-left: 8px; }}
-  header .legend {{ font-size: 12px; color: var(--text-muted); margin-top: 6px; }}
-  header .legend code {{ background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 11px; }}
-  /* Bandeau contexte permanent (casquette COMPRENDRE) — discret mais toujours là. */
-  .context-banner {{
-    background: var(--accent-bg);
-    border-bottom: 1px solid var(--border);
-    padding: 8px 20px;
-    font-size: 12px;
-    color: var(--text-muted);
+  header .header-row {{ display: flex; align-items: center; gap: 10px; width: 100%; }}
+  header h1 {{
+    margin: 0; font-size: 15px; font-weight: 600; color: var(--text);
+    flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1;
   }}
-  .context-inner {{
-    max-width: 900px; margin: 0 auto;
-    display: flex; flex-direction: column; gap: 2px;
+  header .meta-note {{ font-size: 11px; color: var(--text-muted); margin-left: 6px; }}
+  /* Badge statut « mode test » — inline, côté droit, point ambre + texte discret. */
+  .header-status {{ display: flex; align-items: center; gap: 6px; flex-shrink: 0; }}
+  .header-status-dot {{
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--status-dot); flex-shrink: 0;
   }}
-  .context-inner strong {{ color: var(--text); font-weight: 600; }}
-  .context-inner .ctx-shadow strong {{ color: var(--dir-short-color); }}
+  .header-status-text {{
+    font-size: 11px; font-weight: 500; color: var(--status-text); white-space: nowrap;
+  }}
+  @media (max-width: 380px) {{ .header-status-date {{ display: none; }} }}
   /* Hamburger (mobile uniquement) */
   .hamburger {{
     display: none;
@@ -462,9 +474,10 @@ def render_html(
     color: var(--text);
   }}
   .hamburger:hover {{ background: var(--accent-bg); }}
+  .hamburger:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
   .layout {{
     display: flex;
-    height: calc(100vh - 86px);
+    height: calc(100vh - 44px);
   }}
   aside {{
     width: 280px;
@@ -514,44 +527,52 @@ def render_html(
     position: static;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
-    padding: 10px 20px;
-    font-size: 13px;
+    padding: 8px 20px;
+    font-size: 12.5px;
     line-height: 1.5;
-    color: var(--text);
+    color: var(--text-muted);
   }}
   .legend-bar .legend-inner {{
     max-width: 900px; margin: 0 auto;
-    display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+    display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center;
   }}
-  .legend-bar code {{ background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 12px; }}
+  .legend-bar code {{ background: var(--code-bg); padding: 1px 4px; border-radius: 3px; font-size: 11px; }}
+  .legend-bar a {{ color: var(--accent); text-decoration: none; }}
+  .legend-bar a:hover {{ text-decoration: underline; }}
+  /* Date de génération — discrète, en pied de contenu (refonte S9). */
+  .gen-meta {{ margin-top: 40px; font-size: 11px; color: var(--text-muted); text-align: right; }}
   /* Sous-navigation d'ancres intra-bulletin (seule barre sticky sous le header) */
   .subnav {{
-    position: sticky; top: 0; z-index: 4;
+    position: sticky; top: 44px; z-index: 4;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
-    padding: 8px 20px;
+    padding: 6px 20px;
     font-size: 13px;
   }}
   .subnav .subnav-inner {{
     max-width: 900px; margin: 0 auto;
-    display: flex; flex-wrap: wrap; gap: 4px 4px; align-items: center;
+    display: flex; flex-wrap: nowrap; gap: 4px; align-items: center;
+    overflow-x: auto; scrollbar-width: none;
   }}
+  .subnav .subnav-inner::-webkit-scrollbar {{ display: none; }}
   .subnav a {{
     color: var(--accent);
     text-decoration: none;
-    padding: 4px 10px;
+    padding: 3px 10px;
     border-radius: 999px;
     background: var(--accent-bg);
-    font-size: 12.5px;
+    font-size: 12px;
     border: 1px solid transparent;
     white-space: nowrap;
+    flex-shrink: 0;
   }}
   .subnav a:hover {{ border-color: var(--accent); }}
-  .subnav .subnav-label {{ color: var(--text-muted); font-size: 12px; margin-right: 4px; }}
+  .subnav a:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
+  .subnav .subnav-label {{ color: var(--text-muted); font-size: 11px; margin-right: 4px; flex-shrink: 0; }}
   main h1, main h2, main h3 {{ color: var(--text); }}
   main h1 {{ font-size: 26px; border-bottom: 2px solid var(--border); padding-bottom: 10px; margin-top: 8px; }}
-  main h2 {{ font-size: 20px; margin-top: 36px; padding-bottom: 6px; border-bottom: 1px solid var(--border); scroll-margin-top: 100px; }}
-  main h3 {{ font-size: 16px; margin-top: 24px; scroll-margin-top: 100px; }}
+  main h2 {{ font-size: 20px; margin-top: 36px; padding-bottom: 6px; border-bottom: 1px solid var(--border); scroll-margin-top: 90px; }}
+  main h3 {{ font-size: 16px; margin-top: 24px; scroll-margin-top: 90px; }}
   main p {{ margin: 10px 0; }}
   /* Wrapper de table pour scroll horizontal mobile propre */
   .table-wrap {{
@@ -831,8 +852,10 @@ def render_html(
   @media (max-width: 768px) {{
     body {{ font-size: 15.5px; }}
     .hamburger {{ display: inline-block; }}
-    header h1 {{ font-size: 15.5px; }}
-    .layout {{ height: calc(100vh - 86px); }}
+    header {{ height: 40px; padding: 0 12px; }}
+    header h1 {{ font-size: 14px; }}
+    .header-status-text {{ font-size: 10px; }}
+    .layout {{ height: calc(100vh - 40px); }}
     aside {{
       position: fixed;
       top: 0; left: 0; bottom: 0;
@@ -847,12 +870,12 @@ def render_html(
     aside.open {{ transform: translateX(0); }}
     main {{ width: 100%; }}
     .content-inner {{ padding: 12px 14px 32px 14px; }}
-    .legend-bar {{ padding: 8px 12px; font-size: 12px; }}
-    .subnav {{ padding: 6px 12px; top: 0; }}
-    .subnav a {{ font-size: 12px; padding: 3px 8px; }}
+    .legend-bar {{ padding: 6px 12px; font-size: 12px; }}
+    .subnav {{ padding: 5px 12px; top: 40px; }}
+    .subnav a {{ font-size: 11.5px; padding: 3px 8px; }}
     main h1 {{ font-size: 22px; }}
-    main h2 {{ font-size: 18px; margin-top: 28px; scroll-margin-top: 130px; }}
-    main h3 {{ font-size: 15.5px; scroll-margin-top: 130px; }}
+    main h2 {{ font-size: 18px; margin-top: 28px; scroll-margin-top: 84px; }}
+    main h3 {{ font-size: 15.5px; scroll-margin-top: 84px; }}
     .help-box {{ font-size: 13px; }}
     /* Tables denses (Détail par actif, 9 colonnes) : on masque sur mobile la
        3e (« Valeur actuelle »), la 4e (« Penchant ») et — [CH-6 audit visuel
@@ -874,24 +897,13 @@ def render_html(
 <header>
   <div class="header-row">
     <button class="hamburger" id="hamburger" aria-label="Ouvrir la liste des bulletins" aria-expanded="false">☰</button>
-    <h1>TradingApp v3 — Bulletins</h1>
-  </div>
-  <div class="meta">Généré : {generated_at}{truncated_note}</div>
-  <div class="legend">
-    Légende symboles :
-    <code>⚑</code> gate régime ·
-    <code>📰</code> news&gt;50% ·
-    <code>⚪</code> coin-flip (non-actionnable) ·
-    <code>⚠</code> calcul contesté ·
-    <code>🔴</code> alerte ·
-    <code>🟡</code> vigilance
+    <h1>TradingApp v3 · Bulletins</h1>
+    <div class="header-status" role="status" aria-label="Statut : mode test, go-live le 08/08">
+      <span class="header-status-dot" aria-hidden="true"></span>
+      <span class="header-status-text">Mode test<span class="header-status-date"> · go-live 08/08</span></span>
+    </div>
   </div>
 </header>
-<div class="context-banner" role="note" aria-label="Contexte du système">
-  <div class="context-inner">
-    <span class="ctx-line ctx-shadow">⚠️ <strong>Mode test</strong> — non validé pour le réel · go-live 08/08 (WR&nbsp;≥&nbsp;70&nbsp;%, N&nbsp;≥&nbsp;15)</span>
-  </div>
-</div>
 <div class="sidebar-overlay" id="sidebar-overlay"></div>
 <div class="layout">
   <aside id="sidebar">
@@ -911,17 +923,9 @@ def render_html(
         <span>·</span>
         <span><span class="dir-short">🔴 SHORT</span> = baisse</span>
         <span>·</span>
-        <span><code>note</code> = force de conviction (plus elle est haute, plus la conviction est forte)</span>
+        <span><code>note</code> = force de conviction</span>
         <span>·</span>
-        <span>⚪ = non-actionnable</span>
-        <span>·</span>
-        <span>📰 news&gt;50%</span>
-        <span>·</span>
-        <span>⚑ gate</span>
-        <span>·</span>
-        <span>⚠ calcul contesté</span>
-        <span>·</span>
-        <span>🔴 alerte · 🟡 vigilance</span>
+        <span><a href="#help-box" id="legend-help-link">❓ Symboles</a></span>
       </div>
     </div>
     <nav class="subnav" id="subnav" aria-label="Sections du bulletin">
@@ -931,7 +935,7 @@ def render_html(
       </div>
     </nav>
     <div class="content-inner">
-      <details class="help-box">
+      <details class="help-box" id="help-box">
         <summary>❓ Comment lire les scores (détails complets)</summary>
         <div class="help-body">
           <p><strong>Signe = direction</strong> : <span class="dir-long">vert = LONG (hausse)</span>, <span class="dir-short">rouge = SHORT (baisse)</span>.</p>
@@ -945,7 +949,14 @@ def render_html(
           </ul>
           <p><strong>Synthèse des décisions</strong> (en haut du bulletin) = vue d'oiseau : direction + note (le score signé, ex. <code>SHORT -3.82</code> ; plus <code>|note|</code> est élevé, plus la conviction est forte) ou <code>🚫</code>. Le détail chiffré complet est dans la <strong>Matrice</strong> plus bas.</p>
           <p><code>[pond: …]</code> = score en version <strong>pondérée</strong> (news × matérialité × fiabilité), affiché <strong>seulement s'il diffère</strong> du primaire. Sur les cellules <code>📰</code> (news&gt;50%), le pondéré (tempéré, plus fiable) passe <strong>en tête</strong> et le brut est entre parenthèses : <code>LONG +3.77 (brut +5.69) 📰</code>.</p>
-          <p><strong>Symboles</strong> : <code>🚫</code> données insuffisantes · <code>⚑</code> gate · <code>📰</code> news&gt;50% du quant · <code>⚪</code> quasi coin-flip non-actionnable · <code>⚠</code> divergence primaire/pondéré. La légende complète du bulletin ne liste que les symboles réellement présents.</p>
+          <p><strong>Symboles</strong> (la légende du bulletin ne liste que ceux réellement présents) :</p>
+          <ul>
+            <li><code>🚫</code> données insuffisantes · <code>⚑</code> gate régime · <code>📰</code> news&gt;50% du quant</li>
+            <li><code>⚪</code> quasi coin-flip, non-actionnable · <code>≈</code> quasi-neutre (sous la bande de décision)</li>
+            <li><code>⚠</code> divergence primaire/pondéré · <code>↯</code> divergence quant/news · <code>◧</code> mono-critère (une seule donnée porte la décision)</li>
+            <li><code>⇄</code> contre-momentum (bouge à contre-sens depuis la dernière clôture vue) · <code>⇆</code> zigzag (direction instable) · <code>⌛</code> déjà coté (la news est dans le prix)</li>
+            <li><code>⚭</code> driver macro partagé (plusieurs cellules portées par le même pari) · <code>🔴</code> alerte · <code>🟡</code> vigilance</li>
+          </ul>
         </div>
       </details>
       <div id="bulletin-content">
@@ -1013,6 +1024,9 @@ def render_html(
         </div>
         <p id="history-empty" hidden></p>
       </section>
+      <p class="gen-meta" aria-label="Date de génération de la page">
+        Page générée le <time datetime="{generated_at_iso}">{generated_at}</time>{truncated_note}
+      </p>
     </div>
   </main>
 </div>
@@ -1420,12 +1434,71 @@ const FOLD_SECTION_PATTERNS = [
   /détail\\s+par\\s+actif/i,
   // [P8] « Synthèse des décisions » : DÉPLIÉE par défaut (demande Thomas). On la
   // RETIRE de la liste de repli → elle reste une section ouverte normale.
-  /comment\\s+lire\\s+les\\s+scores/i, // pédagogie consolidée → repliée (lecture rapide)
   /fausses\\s+aux\\s+retournements/i, // [C-BD2] métrique technique du moteur (bilan jour)
+  // [Refonte S9 — I7/I9] sections informatives non décisionnelles, repliées :
+  /intensité\\s+comparable/i,    // I7 — note normalisée, informatif
+  /^flips\\s+vs\\s+veille/i,      // I9 — retournements, consultés en 2e lecture
 ];
+
+// Détecte la section H2 dont le titre matche `re` ; renvoie le <h2> ou null.
+function findH2(root, re) {{
+  return Array.from(root.querySelectorAll('h2')).find(h => re.test(h.textContent || '')) || null;
+}}
+
+// Renvoie le texte agrégé d'une section H2 (du h2 jusqu'au prochain h2).
+function sectionText(h2) {{
+  let txt = '';
+  let node = h2.nextSibling;
+  while (node && !(node.nodeType === 1 && node.tagName === 'H2')) {{
+    txt += (node.textContent || '');
+    node = node.nextSibling;
+  }}
+  return txt;
+}}
 
 function foldSections(root) {{
   if (!root) return;
+
+  // [I12] « Comment lire les scores » : doublon EXACT de la help-box (qui contient
+  // désormais tous les symboles). On la RETIRE du flux du bulletin (pas repliée :
+  // supprimée), zéro perte d'info. Idempotent.
+  const cl = findH2(root, /comment\\s+lire\\s+les\\s+scores/i);
+  if (cl) {{
+    let node = cl.nextSibling;
+    while (node && !(node.nodeType === 1 && node.tagName === 'H2')) {{
+      const next = node.nextSibling; node.remove(); node = next;
+    }}
+    cl.remove();
+  }}
+
+  // [I6] « Santé des sources » : repliée par défaut, OUVERTE seulement si une
+  // anomalie est détectée (un flux « en échec » au-delà de 0, ou « muet »).
+  const sante = findH2(root, /santé\\s+des\\s+sources/i);
+  if (sante) {{
+    const t = sectionText(sante);
+    const anomalie = /[1-9]\\d*\\s+en\\s+échec/i.test(t) || /muet/i.test(t);
+    const sm = foldOneSection(sante);
+    if (sm) {{
+      const d = sm.closest('details.fold-section');
+      if (d) d.open = anomalie;
+      sm.textContent = anomalie ? '⚠️ Santé des sources (anomalie détectée)'
+                                : '✓ Santé des sources (tout OK)';
+    }}
+  }}
+
+  // [I8] « News par actif » : repliée seulement si AUCUN actif n'a d'actualité
+  // (matin calme = bruit total). Si ≥ 1 news → reste dépliée.
+  const news = findH2(root, /news\\s+par\\s+actif/i);
+  if (news) {{
+    const t = sectionText(news);
+    // Vide si chaque entrée dit « aucune actualité » et aucun contenu d'actu.
+    const aucune = /aucune\\s+actualité/i.test(t) && !/\\b(LONG|SHORT|impact|haussier|baissier)\\b/i.test(t);
+    if (aucune) {{
+      const sm = foldOneSection(news);
+      if (sm) sm.textContent = 'News par actif (aucune ce matin)';
+    }}
+  }}
+
   const h2s = Array.from(root.querySelectorAll('h2'));
   h2s.forEach(h => {{
     const txt = h.textContent || '';
@@ -1490,6 +1563,40 @@ function slugify(s) {{
     .replace(/^-+|-+$/g, '');
 }}
 
+// Libellé court et LISIBLE pour la sous-nav : table de correspondance par motif
+// sur le titre du <h2>. Évite les émojis nus (🎯🎯🎯) et les doublons. Repli :
+// on retire les émojis/symboles en tête puis on prend les deux premiers mots.
+const SUBNAV_LABELS = [
+  [/décor/i,                          'Décor'],
+  [/santé\\s+des\\s+sources/i,          'Sources'],
+  [/décision\\s+du\\s+jour/i,           'Décision'],
+  [/sélection\\s+du\\s+jour/i,          'Décision'],
+  [/à\\s+jouer/i,                       'À jouer'],
+  [/top\\s+swing/i,                     'Top swing'],
+  [/top\\s+convictions/i,               'Top swing'],
+  [/tableau\\s+de\\s+bord/i,            'Tableau de bord'],
+  [/synthèse\\s+des\\s+décisions/i,     'Tableau de bord'],
+  [/intensité/i,                       'Intensité'],
+  [/cellules\\s+à\\s+surveiller/i,      'Surveiller'],
+  [/drivers\\s+macro/i,                 'Drivers'],
+  [/flips/i,                           'Flips'],
+  [/comment\\s+lire/i,                  null],   // section supprimée du flux (→ help-box)
+  [/détail\\s+par\\s+actif/i,           'Détail'],
+  [/limites/i,                         'Limites'],
+  [/calls\\s+24h\\s+jug/i,              'Calls'],
+  [/audit\\s+de\\s+la\\s+veille/i,      'Calls'],
+  [/news\\s+par\\s+actif/i,             'News'],
+];
+function subnavLabelFor(raw) {{
+  for (const [re, lab] of SUBNAV_LABELS) {{
+    if (re.test(raw)) return lab; // null → exclu (filtré en amont par buildSubnav)
+  }}
+  // Repli : retire émojis/symboles/espaces en tête, prend les 2 premiers mots.
+  const cleaned = raw.replace(/^[^\\p{{L}}\\p{{N}}]+/u, '').trim();
+  const words = cleaned.split(/[\\s–\\-:(]+/).filter(Boolean);
+  return words.slice(0, 2).join(' ') || raw;
+}}
+
 // Construit la sous-navigation d'ancres à partir des <h2> du bulletin.
 // Réécrit les ids des <h2> pour des ancres prévisibles et stables.
 function buildSubnav(root) {{
@@ -1503,13 +1610,19 @@ function buildSubnav(root) {{
     return;
   }}
   subnav.style.display = '';
+  let lastLabel = null;
+  let emitted = 0;
   h2s.forEach((h, i) => {{
     const raw = (h.textContent || '').trim();
-    // Label court : premier mot significatif (Briefing / Matrice / Flips / Détail / Limites…)
-    let label = raw.split(/[ —–\\-:(]/)[0] || raw;
-    if (label.length > 22) label = label.slice(0, 22) + '…';
     const id = `sec-${{i}}-${{slugify(raw).slice(0, 40)}}`;
-    h.id = id;
+    h.id = id; // l'id est posé même si la section n'est pas dans la sous-nav.
+    // Label court et LISIBLE. Table de correspondance (mots, jamais d'émoji nu) :
+    // on reconnaît la section par un motif sur son titre, sinon repli générique.
+    let label = subnavLabelFor(raw);
+    if (label === null) return;            // section exclue de la nav (ex. Comment lire)
+    if (label === lastLabel) return;       // dédoublonne (ex. ancienne fusion 24h)
+    lastLabel = label;
+    if (label.length > 22) label = label.slice(0, 22) + '…';
     const a = document.createElement('a');
     a.href = '#' + id;
     a.textContent = label;
@@ -1520,8 +1633,9 @@ function buildSubnav(root) {{
       const target = document.getElementById(id);
       if (target) target.scrollIntoView({{behavior: 'smooth', block: 'start'}});
     }};
-    if (i > 0) links.appendChild(document.createTextNode(' '));
+    if (emitted > 0) links.appendChild(document.createTextNode(' '));
     links.appendChild(a);
+    emitted += 1;
   }});
 }}
 
@@ -2151,6 +2265,15 @@ function closeSidebarMobile() {{
   }});
   const ov = document.getElementById('sidebar-overlay');
   if (ov) ov.addEventListener('click', closeSidebarMobile);
+
+  // Lien « ❓ Symboles » de la legend-bar → ouvre la help-box repliée + scrolle.
+  const helpLink = document.getElementById('legend-help-link');
+  const helpBox = document.getElementById('help-box');
+  if (helpLink && helpBox) helpLink.addEventListener('click', (e) => {{
+    e.preventDefault();
+    helpBox.open = true;
+    helpBox.scrollIntoView({{behavior: 'smooth', block: 'start'}});
+  }});
   document.addEventListener('keydown', (e) => {{
     if (e.key === 'Escape') closeSidebarMobile();
   }});

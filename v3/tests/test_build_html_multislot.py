@@ -149,21 +149,26 @@ def test_html_grisage_et_badge_niveau():
 
 
 def test_html_bandeau_contexte_present():
-    """P0-B : bandeau contexte compact permanent (avertissement mode test/shadow)."""
+    """P0-B / refonte S9 : le statut « mode test » reste visible en permanence,
+    désormais sous forme de badge discret inline dans le header (le bandeau
+    context-banner a été absorbé dedans). Intention conservée : Thomas voit
+    qu'il est en mode test + la date de go-live."""
     html = _render_sample_html()
-    assert "context-banner" in html
+    assert "header-status" in html
     assert "Mode test" in html
-    assert "shadow" in html.lower()
-    assert "non validé" in html
+    assert "go-live 08/08" in html
 
 
 def test_html_header_gate_pas_flip():
-    """P0-A : le header décrit ⚑ comme « gate régime » (cohérent avec le bulletin),
-    plus comme « flip »."""
+    """P0-A / refonte S9 : la légende des symboles a quitté le header (place
+    canonique = help-box). On vérifie que le header ne réintroduit pas un
+    libellé erroné « flip » pour le gate ⚑, et que la définition correcte
+    « gate régime » subsiste dans la page (help-box)."""
     html = _render_sample_html()
-    header = html.split("</header>", 1)[0]
-    assert "gate régime" in header
-    assert "flip ·" not in header
+    # Markup du header uniquement (entre <header> et </header>, pas le <style>).
+    header = html.split("<header>", 1)[1].split("</header>", 1)[0]
+    assert "flip" not in header.lower()
+    assert "gate régime" in html
 
 
 def test_html_message_semaine_avec_date():

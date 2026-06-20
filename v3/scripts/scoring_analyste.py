@@ -3352,7 +3352,7 @@ def build_top_multi_horizons_block(
         if r is not None:
             selected.append((r, h))
 
-    out: List[str] = ["## 🎯 Top convictions multi-horizons", ""]
+    out: List[str] = ["## Top swing (7j / 1m)", ""]
     if not selected:
         out.append("_Aucune conviction à couverture suffisante ce cycle._")
         out.append("")
@@ -3917,11 +3917,14 @@ def render_bulletin(
             or ln.startswith("- ⚠️ Régime extrême")
         ):
             _meta_end = i + 1
-    # Bloc 1 (audit UX 10/06) — « 🎯 À jouer aujourd'hui (24h) » remplace/absorbe
-    # l'ancien « Top 3 convictions du jour » (qui mélangeait les horizons et
-    # masquait les drapeaux). On garde un mini « Top convictions multi-horizons »
-    # APRÈS, avec les drapeaux de chaque cellule + la ligne ⚭ si convergence.
-    # « Sélection du jour — max 3 » EN PREMIER (décision fondateur 12/06).
+    # Ordre du haut de bulletin (refonte S9, décision fondateur 12/06 « 2-3 bons
+    # paris/jour, pas 12 ») :
+    #   1) Décision du jour : « Sélection du jour — max 3 » EN PREMIER, puis le
+    #      tableau « À jouer aujourd'hui (24h) » (l'actionnable d'abord).
+    #   2) Le panorama « Synthèse des décisions » (Tableau de bord 12×3) JUSTE
+    #      en dessous (la vue d'ensemble en contexte, après l'actionnable).
+    #   3) « Top swing (7j / 1m) » APRÈS le panorama (il répond au swing 7j/1m,
+    #      une question différente du pari du jour — I10).
     head_block = (
         build_selection_du_jour_block(
             results, now, prix_reference=prix_reference,
@@ -3929,9 +3932,13 @@ def render_bulletin(
         )
         + build_a_jouer_block(results, now, prix_reference=prix_reference)
         + _SHADOW_CAPTEURS_NOTE
-        + build_top_multi_horizons_block(results, _shared_summary)
     )
-    lines = lines[:_meta_end] + [""] + head_block + synth_lines + lines[_meta_end:]
+    top_swing_block = build_top_multi_horizons_block(results, _shared_summary)
+    lines = (
+        lines[:_meta_end] + [""]
+        + head_block + synth_lines + top_swing_block
+        + lines[_meta_end:]
+    )
 
     # P2/P4/P5 — « ## Comment lire les scores » : TOUTE la pédagogie, une seule
     # fois, juste avant le détail. Les sections du jour (ci-dessus) ne gardent

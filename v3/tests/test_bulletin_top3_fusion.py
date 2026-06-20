@@ -101,17 +101,18 @@ def test_synthese_garde_sous_table_insuffisant_separee():
 # ===========================================================================
 
 def test_top3_present_en_tete():
-    """Le bloc « À jouer aujourd'hui (24h) » + le mini « Top convictions
-    multi-horizons » sont présents et placés avant la table de synthèse
-    (remplacent l'ancien « Top 3 convictions du jour »)."""
+    """Refonte S9 : « À jouer aujourd'hui (24h) » en tête, le panorama « Synthèse
+    des décisions » juste en dessous (décision fondateur 12/06), puis « Top swing
+    (7j / 1m) » (ex-« Top convictions multi-horizons », I10) APRÈS le panorama."""
     res = sa.score_actif("test", _fiche(quant_poids=10), _vals(1.0))
     b = sa.render_bulletin([res], {}, NOW, "h", "ok")
     assert "## 🎯 À jouer aujourd'hui (24h)" in b
-    assert "## 🎯 Top convictions multi-horizons" in b
+    assert "## Top swing (7j / 1m)" in b
     assert b.index("## 🎯 À jouer aujourd'hui (24h)") < b.index("## Synthèse des décisions")
-    assert b.index("## 🎯 À jouer aujourd'hui (24h)") < b.index("## 🎯 Top convictions multi-horizons")
-    # L'ancien titre exact a disparu (absorbé).
+    assert b.index("## Synthèse des décisions") < b.index("## Top swing (7j / 1m)")
+    # Les anciens titres exacts ont disparu (absorbé / renommé).
     assert "## 🎯 Top 3 convictions du jour" not in b
+    assert "## 🎯 Top convictions multi-horizons" not in b
 
 
 def test_top3_ne_contient_que_des_cellules_normales():
@@ -407,14 +408,14 @@ def _actif_24h(nom: str, score_24h: float, confidence: str = "normale") -> "sa.A
 
 
 def test_a_jouer_present_et_24h_seulement():
-    """Le bloc « À jouer aujourd'hui (24h) » est en tête, avant Top multi-horizons
-    et Synthèse, et porte les colonnes attendues."""
+    """Le bloc « À jouer aujourd'hui (24h) » est en tête, avant le panorama et le
+    Top swing, et porte les colonnes attendues."""
     r = _actif_24h("Fort", 8.0)
     b = sa.render_bulletin([r], {}, NOW, "h", "ok")
     assert "## 🎯 À jouer aujourd'hui (24h)" in b
     assert "| Actif | Direction | Note | Conviction | Drapeaux | Porté par | Prix de réf. |" in b
     assert "**Jouables**" in b and "**À éviter**" in b
-    assert b.index("## 🎯 À jouer aujourd'hui (24h)") < b.index("## 🎯 Top convictions multi-horizons")
+    assert b.index("## 🎯 À jouer aujourd'hui (24h)") < b.index("## Top swing (7j / 1m)")
 
 
 def test_a_jouer_tri_note_decroissante():

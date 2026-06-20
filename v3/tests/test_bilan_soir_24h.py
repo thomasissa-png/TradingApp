@@ -207,7 +207,10 @@ def test_apprentissage_sortie_ratee_et_prudence():
     )]
     lignes = bj.compute_apprentissage_jour(perf, gros)
     txt = "\n".join(lignes)
-    assert "Sortie optimale ratée sur **S&P 500**" in txt
+    # Brief B : reformulé « Sortie tardive … PARCE QUE … » (le pourquoi causal).
+    # Ici aucune news high tracée (events_path non injecté) → cause non identifiée.
+    assert "Sortie tardive sur **S&P 500**" in txt
+    assert "cause non identifiée (pas de catalyseur tracé)" in txt
     assert "Sélection trop prudente sur **Cacao**" in txt
 
 

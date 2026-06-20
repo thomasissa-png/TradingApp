@@ -111,6 +111,10 @@ class SuiviRapport:
     news_fraiches: List[str] = field(default_factory=list)
     news_fraiches_indispo: bool = False
     contexte_frais: str = ""
+    # Section « News majeures depuis {heure_préc} » : events de l'events-log à
+    # FORTE matérialité (high) ingérés depuis le rapport précédent (lecture seule,
+    # zéro DeepSeek). Lignes markdown prêtes ; [] → « Aucune news majeure ».
+    news_majeures: List[str] = field(default_factory=list)
     markdown: str = ""
 
 
@@ -450,6 +454,67 @@ def news_a_impact(
             if len(out) >= max_news:
                 return out
     return out
+
+
+# Nombre max de news MAJEURES (high) affichées dans le suivi (court).
+MAX_NEWS_MAJEURES = 3
+
+
+def _heure_precedente_label(report_type: str) -> str:
+    """Libellé court de l'heure du rapport précédent (« 7h » / « 12h »)."""
+    return f"{SEUIL_HEURE_PRECEDENTE.get(report_type, 7)}h"
+
+
+def news_majeures_lignes(
+    report_type: str,
+    now: datetime,
+    events_path: Optional[Path] = None,
+    max_news: int = MAX_NEWS_MAJEURES,
+) -> List[str]:
+    """Lignes « News majeures depuis {heure_préc} » (high matérialité, zéro DeepSeek).
+
+    LÉGER : lecture seule de l'events-log déjà classé (réutilise le parser ROBUSTE
+    par index de colonne de `briefing`, + l'horodatage d'INGESTION du batch). Pas
+    de re-scoring, pas de DeepSeek.
+
+    Filtre (cf. briefing.news_majeures_depuis) : matérialité == high ET ingéré
+    DEPUIS l'heure du rapport précédent (12h → depuis 7h du jour ; 18h → depuis 12h
+    du jour). Un event sans horodatage d'ingestion lisible est EXCLU (zéro
+    invention, pas de supposition d'heure). Max `max_news`, triées par fraîcheur.
+
+    Best-effort : toute erreur de lecture/parsing → liste vide (le suivi ne casse
+    jamais). Retourne des lignes markdown prêtes (1 ligne/news : actif si dispo +
+    résumé court). Liste vide → message « Aucune news majeure » géré au rendu.
+    """
+    try:
+        import briefing as B  # noqa: PLC0415
+        path = events_path or B.EVENTS_LOG
+        events = B.parse_events_with_ingest_ts(path)
+        heure_prec = SEUIL_HEURE_PRECEDENTE.get(report_type, 7)
+        # Heure du rapport précédent, en Paris ce jour-là, convertie en UTC.
+        cutoff_paris = datetime.combine(
+            now.date(), time(hour=heure_prec), tzinfo=PARIS_TZ
+        )
+        cutoff_utc = cutoff_paris.astimezone(timezone.utc)
+        majeures = B.news_majeures_depuis(events, cutoff_utc, now.date(), max_news)
+    except Exception as e:  # noqa: BLE001 — bloc léger best-effort, jamais de crash
+        logger.warning("news_majeures_lignes KO: %s — section vide", e)
+        return []
+
+    lignes: List[str] = []
+    for ev in majeures:
+        try:
+            actif = B._primary_actif_from_event(ev)
+        except Exception:  # noqa: BLE001
+            actif = None
+        trigger = B.strip_monetaire((ev.get("trigger", "") or "").strip())
+        if not trigger:
+            continue
+        if len(trigger) > 160:
+            trigger = trigger[:157].rstrip() + "..."
+        prefixe = f"**{actif}** : " if actif and actif != "Autres" else ""
+        lignes.append(f"- {prefixe}{trigger}")
+    return lignes
 
 
 # source_track signifiant « ce créneau news porte la direction NETTE IA »
@@ -935,6 +1000,10 @@ def build_suivi(
     rapport.news_fraiches_indispo = indispo
     rapport.contexte_frais = _ligne_contexte_frais(report_type, lignes_frais, indispo)
 
+    # Section « News majeures depuis {heure_préc} » : high matérialité de l'events-log
+    # ingérées depuis le rapport précédent (lecture seule, zéro DeepSeek). Best-effort.
+    rapport.news_majeures = news_majeures_lignes(report_type, now)
+
     rapport.markdown = _render_markdown(rapport)
 
     # Persiste les deltas du 12h pour le suivi 18h (cache de présentation only).
@@ -1110,6 +1179,18 @@ def _render_markdown(r: SuiviRapport) -> str:
         L.append("Aucune news impactante dans le Briefing 7h.")
     L.append("")
 
+    # Section « News majeures depuis {heure_préc} » : events à FORTE matérialité
+    # (high) ingérés depuis le rapport précédent (lecture seule events-log, zéro
+    # DeepSeek). DISTINCTE des « Actus du jour » (titres RSS bruts) et du Contexte
+    # 7h : ici uniquement le high déjà classé. Placée juste avant Actus du jour.
+    heure_prec_label = _heure_precedente_label(h)
+    L.append(f"### 🚨 News majeures depuis {heure_prec_label}")
+    if r.news_majeures:
+        L.extend(r.news_majeures[:MAX_NEWS_MAJEURES])
+    else:
+        L.append(f"Aucune news majeure depuis {heure_prec_label}.")
+    L.append("")
+
     # PARTIE B — bloc « Actus du jour » : titres FRAIS récoltés depuis le créneau
     # précédent (RSS léger, zéro DeepSeek). CLAIREMENT distinct du Contexte 7h
     # ci-dessus (matin figé) — libellé honnête sur la fenêtre de fraîcheur.
@@ -1217,6 +1298,7 @@ __all__ = [
     "save_delta_snapshot",
     "load_delta_snapshot",
     "news_a_impact",
+    "news_majeures_lignes",
     "recolte_news_fraiches",
     "save_titres_frais_snapshot",
     "load_titres_frais_snapshot",

@@ -490,6 +490,108 @@ def win_rate_par_conviction(
 # Libellés des points de relevé (heure Paris), ordonnés chronologiquement.
 PIC_POINTS = ("12h", "18h", "clôture")
 
+# Heure Paris (entier) associée à chaque label de point de relevé, pour borner la
+# recherche d'un catalyseur news APRÈS le pic. « clôture » ≈ 22h (fin du 24h).
+_PIC_HEURE_PARIS = {"12h": 12, "18h": 18, "clôture": 22}
+
+
+# ---------------------------------------------------------------------------
+# Brief B — le « POURQUOI » : cause TRAÇABLE d'un mouvement (zéro invention)
+# ---------------------------------------------------------------------------
+# La cause d'un repli (ou d'un gros move) n'est citée QUE si elle est tracée dans
+# l'events-log : une news à FORTE matérialité (high) sur CET actif, horodatée
+# (ingestion) APRÈS l'heure de référence (le pic). Réutilise le parser ROBUSTE de
+# `briefing` (index de colonne nommée + horodatage de batch). Aucune news high
+# tracée → AUCUNE cause inventée (l'appelant écrit « cause non identifiée »).
+
+
+def _events_high_actif_apres(
+    actif_label: str,
+    date_j: date,
+    apres_heure_paris: Optional[int],
+    events_path: Optional[Path] = None,
+) -> List[dict]:
+    """Events high sur `actif_label`, ingérés le jour J (et après `apres_heure_paris`).
+
+    Lecture seule de l'events-log (parser briefing, horodatage de batch). Filtre :
+    - matérialité == high ;
+    - actif principal de l'event == actif_label (mapping IA, cf. briefing) ;
+    - ingéré le jour `date_j` ; si `apres_heure_paris` fourni, ingéré APRÈS cette
+      heure (Paris). Un event sans horodatage d'ingestion lisible est EXCLU (zéro
+      invention). Tri par fraîcheur (ingest_ts desc). Best-effort : erreur → [].
+    """
+    try:
+        import briefing as B  # noqa: PLC0415
+        path = events_path or B.EVENTS_LOG
+        events = B.parse_events_with_ingest_ts(path)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("cause news high : parsing events-log KO (%s)", e)
+        return []
+
+    cutoff = None
+    if apres_heure_paris is not None:
+        cutoff = datetime.combine(
+            date_j, datetime.min.time().replace(hour=apres_heure_paris),
+            tzinfo=PARIS_TZ,
+        ).astimezone(ZoneInfo("UTC"))
+
+    out: List[dict] = []
+    for ev in events:
+        if (ev.get("materiality", "") or "").lower() != "high":
+            continue
+        ts = ev.get("ingest_ts")
+        if not isinstance(ts, datetime):
+            continue  # horodatage absent → exclu (zéro invention)
+        ts_utc = ts.astimezone(ZoneInfo("UTC"))
+        if ts_utc.date() != date_j:
+            continue
+        if cutoff is not None and ts_utc < cutoff:
+            continue
+        try:
+            if B._primary_actif_from_event(ev) != actif_label:
+                continue
+        except Exception:  # noqa: BLE001
+            continue
+        out.append(ev)
+    out.sort(key=lambda e: e["ingest_ts"], reverse=True)
+    return out
+
+
+def _resume_news(ev: dict, max_len: int = 140) -> str:
+    """Résumé court d'une news (trigger tronqué). Vide si pas de trigger.
+
+    WIN RATE ONLY : nettoyage monétaire (symboles $€£, termes gain/perte/rendement/
+    p&l) via `briefing.strip_monetaire` — on ne cite jamais une valeur monétaire,
+    même issue d'un titre de news externe.
+    """
+    import briefing as B  # noqa: PLC0415
+    trigger = B.strip_monetaire((ev.get("trigger", "") or "").strip())
+    if not trigger:
+        return ""
+    if len(trigger) > max_len:
+        trigger = trigger[: max_len - 3].rstrip() + "..."
+    return trigger
+
+
+def cause_news_high_apres(
+    actif_label: str,
+    date_j: date,
+    apres_heure_paris: Optional[int],
+    events_path: Optional[Path] = None,
+) -> Optional[str]:
+    """Résumé de la news high la plus fraîche sur `actif_label` APRÈS l'heure donnée.
+
+    None si aucune news high tracée (zéro invention : l'appelant écrit alors
+    « cause non identifiée »). Réutilisable pour le verdict de sortie (Bloc 1) et
+    les gros moves hors Top 3 (Bloc 2).
+    """
+    evs = _events_high_actif_apres(actif_label, date_j, apres_heure_paris, events_path)
+    for ev in evs:
+        resume = _resume_news(ev)
+        if resume:
+            return resume
+    return None
+
 
 def _fav(delta_pct: Optional[float], call: str) -> Optional[float]:
     """% directionnel signé favorable (réutilise run_suivi.fav_delta)."""
@@ -514,6 +616,10 @@ class PerfTop3Ligne:
     points_manquants: List[str]   # points de relevé absents (trou de données)
     verdict: str                  # verdict de sortie optimale, relié aux heures
     vendre_reco: Optional[str]    # reco réelle du suivi 18h ("Vendre"/"Pas vendre"/None)
+    # Brief B — cause TRAÇABLE du repli après le pic (news high sur l'actif après
+    # l'heure du pic) ou None si non identifiée (zéro invention). Renseigné SEULEMENT
+    # quand le pic a reflué avant la clôture (sinon pas de repli à expliquer).
+    cause_repli: Optional[str] = None
 
 
 def _verdict_sortie(
@@ -568,6 +674,8 @@ def compute_perf_top3(
     selection_map: Dict[Tuple[str, str], bool],
     tracking: Dict[str, Dict[str, dict]],
     vendre_map: Optional[Dict[str, str]] = None,
+    date_j: Optional[date] = None,
+    events_path: Optional[Path] = None,
 ) -> List[PerfTop3Ligne]:
     """Bloc 1 — Performance 24h des cellules de la Sélection du jour (top ≤3).
 
@@ -612,6 +720,20 @@ def compute_perf_top3(
             pic_heure, pic_valeur = None, None
 
         verdict = _verdict_sortie(fav_12h, fav_18h, fav_cloture, pic_valeur, pic_heure)
+        # Brief B — cause TRAÇABLE du repli : si le pic a reflué AVANT la clôture
+        # (pic positif à 12h/18h, clôture plus basse), cherche une news high sur
+        # CET actif ingérée APRÈS l'heure du pic. None si rien de tracé (l'appelant
+        # écrira « cause non identifiée » — zéro invention).
+        cause_repli = None
+        a_reflue = (
+            pic_heure in ("12h", "18h")
+            and isinstance(pic_valeur, (int, float)) and pic_valeur > 0
+            and isinstance(fav_cloture, (int, float)) and fav_cloture < pic_valeur
+        )
+        if a_reflue and date_j is not None:
+            cause_repli = cause_news_high_apres(
+                actif, date_j, _PIC_HEURE_PARIS.get(pic_heure), events_path
+            )
         out.append(PerfTop3Ligne(
             actif=actif, call=call,
             fav_12h=(round(fav_12h, 2) if fav_12h is not None else None),
@@ -619,7 +741,7 @@ def compute_perf_top3(
             fav_cloture=(round(fav_cloture, 2) if fav_cloture is not None else None),
             pic_valeur=(round(pic_valeur, 2) if pic_valeur is not None else None),
             pic_heure=pic_heure, points_manquants=manquants, verdict=verdict,
-            vendre_reco=vendre_map.get(actif),
+            vendre_reco=vendre_map.get(actif), cause_repli=cause_repli,
         ))
     out.sort(key=lambda x: x.actif)
     return out
@@ -634,6 +756,9 @@ class GrosMoveAutre:
     direction_juste: Optional[bool]  # le call 24h pointait-il le bon sens ?
     raison_non_select: str           # pourquoi pas dans le top 3 (déduit des logs)
     apprentissage: str               # 1 ligne actionnable
+    # Brief B — POURQUOI le mouvement a eu lieu : news high sur l'actif ce jour
+    # (résumé) ou None si non tracé (l'appelant écrit « cause non tracée »).
+    cause_move: Optional[str] = None
 
 
 def reason_non_selection(
@@ -700,6 +825,8 @@ def compute_gros_moves_autres(
     score_fort_seuil: float,
     selection_coverage_min: float = 0.70,
     gros_move_factor: float = GROS_MOVE_FACTOR,
+    date_j: Optional[date] = None,
+    events_path: Optional[Path] = None,
 ) -> List[GrosMoveAutre]:
     """Bloc 2 — Gros mouvements sur les AUTRES actifs (hors top 3).
 
@@ -725,10 +852,16 @@ def compute_gros_moves_autres(
         direction_juste = (fav > 0) if isinstance(fav, (int, float)) else None
         rec = conviction_records.get((actif, m.horizon))
         raison = reason_non_selection(actif, rec, score_fort_seuil, selection_coverage_min)
+        # Brief B — POURQUOI le move : news high sur l'actif ce jour (toute heure),
+        # ou None si rien de tracé (zéro invention → « cause non tracée » au rendu).
+        cause_move = None
+        if date_j is not None:
+            cause_move = cause_news_high_apres(actif, date_j, None, events_path)
         out.append(GrosMoveAutre(
             actif=actif, call=call, mouvement_pct=round(delta, 2),
             direction_juste=direction_juste, raison_non_select=raison,
             apprentissage=_apprentissage_gros_move(direction_juste, raison),
+            cause_move=cause_move,
         ))
     out.sort(key=lambda x: abs(x.mouvement_pct), reverse=True)
     return out
@@ -756,23 +889,36 @@ def compute_apprentissage_jour(
         and isinstance(p.fav_cloture, (int, float)) and p.fav_cloture < p.pic_valeur
     ]
     for p in rates:
+        # Brief B — inclure le POURQUOI causal du repli quand il est TRACÉ (news
+        # high après le pic), sinon le dire honnêtement (cause non identifiée).
+        if p.cause_repli:
+            pourquoi = f" Repli après {p.pic_heure} car : {p.cause_repli}"
+        else:
+            pourquoi = (
+                f" Repli après {p.pic_heure}, cause non identifiée "
+                f"(pas de catalyseur tracé)"
+            )
         lignes.append(
-            f"- Sortie optimale ratée sur **{p.actif}** : pic à {p.pic_heure}, "
-            f"clôture en repli. Verrouiller au pic aurait mieux payé."
+            f"- Sortie tardive sur **{p.actif}** : pic à {p.pic_heure}, clôture en "
+            f"repli.{pourquoi}. Verrouiller au pic aurait mieux payé."
         )
     # Sélection trop prudente : gros move bonne direction, pas joué.
     prudents = [g for g in gros_moves if g.direction_juste is True]
     for g in prudents:
+        # Brief B — POURQUOI le move (cause tracée uniquement).
+        pourquoi = f", porté par : {g.cause_move}" if g.cause_move else " (cause non tracée)"
         lignes.append(
             f"- Sélection trop prudente sur **{g.actif}** : "
-            f"{_fmt_pct(g.mouvement_pct)} dans le bon sens, écarté ({g.raison_non_select})."
+            f"{_fmt_pct(g.mouvement_pct)} dans le bon sens{pourquoi}, "
+            f"écarté ({g.raison_non_select})."
         )
     # Mauvaise direction sur un gros move (le call était à côté).
     rates_dir = [g for g in gros_moves if g.direction_juste is False]
     for g in rates_dir:
+        pourquoi = f", porté par : {g.cause_move}" if g.cause_move else " (cause non tracée)"
         lignes.append(
             f"- Mauvaise direction sur **{g.actif}** : "
-            f"{_fmt_pct(g.mouvement_pct)} à contre-sens du call, driver à revoir."
+            f"{_fmt_pct(g.mouvement_pct)} à contre-sens du call{pourquoi}, driver à revoir."
         )
     # Trous de données intraday (honnêteté : zéro invention).
     trous = [p for p in perf_top3 if p.points_manquants]
@@ -1055,9 +1201,11 @@ def build_bilan_jour(
     conv_records = load_conviction_records(date_j, decision_log_dir)
     score_fort_seuil = _load_score_fort_seuil()
 
-    bilan.perf_top3 = compute_perf_top3(measures_24h, selection_map, tracking, vendre_map)
+    bilan.perf_top3 = compute_perf_top3(
+        measures_24h, selection_map, tracking, vendre_map, date_j=date_j
+    )
     bilan.gros_moves_autres = compute_gros_moves_autres(
-        measures_24h, selection_map, conv_records, score_fort_seuil,
+        measures_24h, selection_map, conv_records, score_fort_seuil, date_j=date_j,
     )
     bilan.apprentissage = compute_apprentissage_jour(bilan.perf_top3, bilan.gros_moves_autres)
 
@@ -1175,7 +1323,26 @@ def _render_bloc1_perf_top3(bilan: "BilanJour") -> List[str]:
             reco_txt = f" Le suivi 18h recommandait « Pas vendre »{rate}."
         else:
             reco_txt = " (pas de reco de suivi 18h relevée.)"
-        L.append(f"- **{p.actif}** ({p.call}) : {p.verdict}{reco_txt}")
+        # Brief B — POURQUOI le repli (cause tracée uniquement) : si le pic a reflué
+        # avant la clôture, on cite la news high tracée sur l'actif après le pic, ou
+        # on déclare honnêtement la cause non identifiée (jamais d'invention).
+        cause_txt = ""
+        a_reflue = (
+            p.pic_heure in ("12h", "18h")
+            and isinstance(p.pic_valeur, (int, float)) and p.pic_valeur > 0
+            and isinstance(p.fav_cloture, (int, float)) and p.fav_cloture < p.pic_valeur
+        )
+        if a_reflue:
+            if p.cause_repli:
+                cause_txt = (
+                    f" Le repli après {p.pic_heure} coïncide avec : {p.cause_repli}."
+                )
+            else:
+                cause_txt = (
+                    f" Cause du repli après {p.pic_heure} non identifiée "
+                    f"(pas de catalyseur tracé)."
+                )
+        L.append(f"- **{p.actif}** ({p.call}) : {p.verdict}{reco_txt}{cause_txt}")
     L.append("")
     return L
 
@@ -1206,6 +1373,11 @@ def _render_bloc2_gros_moves(bilan: "BilanJour") -> List[str]:
             f"- **{g.actif}** ({g.call}) : {_fmt_pct(g.mouvement_pct)} vs ouverture "
             f"→ {dir_txt}. Pourquoi pas sélectionné : {g.raison_non_select}."
         )
+        # Brief B — POURQUOI le mouvement (cause tracée uniquement, sinon honnête).
+        if g.cause_move:
+            L.append(f"  - _Pourquoi ce move : {g.cause_move}._")
+        else:
+            L.append("  - _Pourquoi ce move : cause non tracée (pas de news high sur l'actif ce jour)._")
         L.append(f"  - _Apprentissage : {g.apprentissage}_")
     L.append("")
     return L

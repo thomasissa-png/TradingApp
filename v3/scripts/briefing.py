@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -162,6 +162,75 @@ def parse_events(events_path: Path) -> List[Dict[str, str]]:
     return events
 
 
+# Commentaire de batch d'ingestion : `<!-- batch 2026-06-19T06:08:09Z : 240 events -->`
+# C'est le SEUL horodatage à l'HEURE tracé dans l'events-log (la colonne `date`
+# d'un event ne porte que le JOUR de la news, pas l'heure d'ingestion). L'ordre
+# du fichier = ordre d'append des batchs → tout event écrit APRÈS un commentaire
+# de batch a été ingéré à l'horodatage de ce batch. On s'en sert UNIQUEMENT pour
+# le cutoff horaire des « News majeures depuis {heure} » (suivis 12h/18h).
+_BATCH_RE = re.compile(
+    r"<!--\s*batch\s+(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:?\d{2})?)\s*:",
+)
+
+
+def _parse_batch_ts(s: str) -> Optional[datetime]:
+    """Parse un horodatage de batch (`...T..:..:..Z`) en datetime tz-aware UTC.
+
+    None si illisible (zéro invention : un event sans batch lisible ne sera pas
+    horodaté donc pas inclus dans les news majeures).
+    """
+    s = (s or "").strip()
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def parse_events_with_ingest_ts(events_path: Path) -> List[Dict[str, Any]]:
+    """Comme `parse_events`, mais attache à chaque event l'horodatage d'INGESTION.
+
+    L'horodatage = le timestamp du dernier commentaire `<!-- batch ...Z : N events -->`
+    rencontré AVANT la ligne de l'event (ordre du fichier = ordre d'append des
+    batchs). Champ ajouté : `ingest_ts` (datetime tz-aware UTC) ou None si aucun
+    commentaire de batch ne précède l'event (events legacy → pas d'heure tracée →
+    exclus des news majeures, ZÉRO invention). Ne modifie pas `parse_events`.
+    """
+    if not events_path.exists():
+        logger.warning("events-log introuvable : %s", events_path)
+        return []
+    events: List[Dict[str, Any]] = []
+    current_ts: Optional[datetime] = None
+    for raw_line in events_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        m = _BATCH_RE.search(line)
+        if m:
+            ts = _parse_batch_ts(m.group("ts"))
+            if ts is not None:
+                current_ts = ts
+            continue
+        if not line.startswith("|"):
+            continue
+        parts = [p.strip() for p in line.strip("|").split("|")]
+        if len(parts) < _MIN_COLS:
+            continue
+        d = {
+            name: (parts[i] if i < len(parts) else "")
+            for i, name in enumerate(_COLS_BY_INDEX)
+        }
+        first = d["date"].strip().lower()
+        if first in HEADER_TOKENS or first.startswith(":---") or first.startswith("---"):
+            continue
+        ev: Dict[str, Any] = {k: (v or "").strip() for k, v in d.items()}
+        ev["ingest_ts"] = current_ts
+        events.append(ev)
+    return events
+
+
 def _parse_impacts_compact(encoded: str) -> List[Dict[str, Any]]:
     """Décode 'ASSET:DIR:CONF;...' → liste de dicts. Vide si encoded vide."""
     if not encoded:
@@ -210,6 +279,52 @@ def match_actif(cours: str) -> Optional[str]:
             if alias in low:
                 return actif
     return None
+
+
+_MONETAIRE_SUB = re.compile(r"[$€£]|p&l|\bgains?\b|\bpertes?\b|\brendements?\b", re.IGNORECASE)
+
+
+def strip_monetaire(text: str) -> str:
+    """Retire de tout texte de news CITÉ les marques monétaires (symboles $€£ et
+    les termes gain/perte/rendement/p&l) — WIN RATE ONLY : on n'affiche AUCUNE
+    valeur monétaire, même issue d'un titre de news externe (ex. « 35,3 g$ » →
+    « 35,3 g »). Espaces résiduels resserrés. Garde-fou fondateur (répété)."""
+    if not text:
+        return text
+    return re.sub(r"\s{2,}", " ", _MONETAIRE_SUB.sub("", text)).strip()
+
+
+def news_majeures_depuis(
+    events: List[Dict[str, Any]],
+    cutoff_utc: datetime,
+    today: date,
+    max_news: int = 3,
+) -> List[Dict[str, Any]]:
+    """News à FORTE matérialité (high) ingérées DEPUIS `cutoff_utc` (zéro invention).
+
+    Filtre, sur les events issus de `parse_events_with_ingest_ts` :
+    - matérialité == "high" (les medium/low/"" sont écartés) ;
+    - `ingest_ts` présent ET >= cutoff_utc (un event sans horodatage d'ingestion
+      lisible est IGNORÉ — pas de supposition d'heure) ;
+    - `ingest_ts` rattaché à un batch du jour `today` (on ne remonte pas un batch
+      d'un jour antérieur même si son heure est > cutoff sur un autre jour).
+    Tri par fraîcheur (ingest_ts desc), tronqué à `max_news`. Dédup par titre+source.
+    """
+    forts: List[Dict[str, Any]] = []
+    for ev in events:
+        if (ev.get("materiality", "") or "").lower() != "high":
+            continue
+        ts = ev.get("ingest_ts")
+        if not isinstance(ts, datetime):
+            continue  # horodatage absent/illisible → exclu (zéro invention)
+        if ts.astimezone(timezone.utc).date() != today:
+            continue  # batch d'un autre jour → hors périmètre du suivi du jour
+        if ts < cutoff_utc:
+            continue
+        forts.append(ev)
+    forts.sort(key=lambda e: e["ingest_ts"], reverse=True)
+    deduped = _dedup_news_in_actif(forts)
+    return deduped[:max_news]
 
 
 def filter_recent_impactful(

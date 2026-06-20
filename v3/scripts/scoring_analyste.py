@@ -3193,6 +3193,37 @@ def raison_cellule_courte(r: "ActifResult", h: str) -> str:
     return nom or ""
 
 
+def raison_cellule_phrase(r: "ActifResult", h: str) -> str:
+    """[Point #3 — v2] Raison EXPLICATIVE (la logique, pas un nom à 2 mots) pour
+    la cellule de « Synthèse des décisions ». Réutilise la phrase de la biblio
+    experte `raisons-drivers.yml` (auditée 10/10) selon le SIGNE de la contribution
+    du driver dominant : ex. « taux réels US élevés : l'or coûte à porter ».
+
+    SANS chiffre ni drapeaux (déjà sur la 1ʳᵉ ligne de la cellule). Retourne "" si
+    quasi-neutre / insuffisant / aucun driver franc (zéro invention). Déterministe.
+    Fallback : pas d'entrée biblio → nom court du critère. Même source que le
+    détail (`_raison_parts`) → cohérence grille ↔ raison.
+    """
+    direction = r.conclusions.get(h, "")
+    score = r.scores.get(h, 0.0)
+    if direction not in ("LONG", "SHORT") or abs(score) < NEUTRAL_BAND:
+        return ""
+    cle, nom, ctr = _driver_dominant_net(r, h, direction)
+    if not cle and not nom:
+        return ""
+    phrases = _raison_phrases_for_cle(cle)
+    if phrases is None:
+        return nom or ""
+    if _resolve_cle_canonique(cle) in _RAISON_DRIVERS_DOUTEUX:
+        phrase = phrases.get("phrase_neutre") or phrases.get(
+            "phrase_long" if ctr > 0 else "phrase_short", ""
+        )
+    else:
+        phrase = phrases.get("phrase_long" if ctr > 0 else "phrase_short", "")
+    return phrase or nom or ""
+
+
+
 def build_raisons_block(
     results: List["ActifResult"], now: Optional[datetime] = None
 ) -> List[str]:
@@ -3883,14 +3914,36 @@ def render_bulletin(
                 f"{core_out}{coin_flip_flag}{neutral_band_flag}{carry_flag}{regime_flag}{conf_flag}"
                 f"{mono_flag}{div_qn_flag}{cmom_flag}{incoh_flag}{ap_flag}{denial_flag}"
             )
-            # [Point #3] Raison principale DANS la cellule (sous la direction +
-            # note) : le driver dominant courant, compact (ex. « · taux réels US »).
-            # `<br>` (HTML, rendu par marked dans les tables) → 2 lignes par cellule.
-            # Vide pour les cellules quasi-neutres/insuffisantes (aucune raison
-            # inventée). Source UNIQUE = même driver dominant que le détail.
-            raison_courte = raison_cellule_courte(r, h)
-            if raison_courte:
-                cell_txt = f"{cell_txt}<br>· {raison_courte}"
+            # ── Marqueur « changement de tendance » (⇌, EN TÊTE de cellule) ──
+            # Même sémantique que is_flip (LOT 6, decision-log) : la direction
+            # LONG/SHORT de CETTE cellule (actif × horizon) DIFFÈRE-t-elle de la
+            # MÊME cellule dans le bulletin de la VEILLE ? Aucun marqueur si :
+            #   - pas de lecture de veille pour cette cellule (zéro invention)
+            #   - direction courante OU veille == non-franche (≠ LONG/SHORT)
+            #   - cellule courante quasi-neutre : coin-flip ⚪ (|note|<0.05) ou
+            #     bande quasi-neutre ≈ — la « direction » y est nominale, pas
+            #     franche (exigence UX du design : pas de bascule sur du flou).
+            # Le glyphe est posé AVANT le contenu directionnel ; le liseré ambre
+            # gauche est ajouté en CSS via td:has(.trend-flip). Distinct des
+            # drapeaux de fin de cellule (⚠️ 📰 ⇄ ◧ …) qui restent en queue.
+            _cell_franche = not coin_flip_flag and not neutral_band_flag
+            if veille_conclusions and conc in ("LONG", "SHORT") and _cell_franche:
+                _prev_dir = (veille_conclusions.get(r.nom.lower()) or {}).get(h)
+                if _prev_dir in ("LONG", "SHORT") and _prev_dir != conc:
+                    cell_txt = (
+                        '<span class="trend-flip" '
+                        'title="Tendance inversée vs la veille">⇌</span> '
+                        + cell_txt
+                    )
+            # [Point #3 — v2] Raison EXPLICATIVE DANS la cellule (sous la direction
+            # + note) : la phrase de logique (biblio experte), pas un nom à 2 mots.
+            # Ex. « · taux réels US élevés : l'or coûte à porter ». `<br>` + span
+            # `.cell-reason` (s'enroule proprement, sans couper les mots, même sur
+            # mobile). Vide si quasi-neutre/insuffisant (zéro invention). Source
+            # UNIQUE = même driver dominant que le détail.
+            raison_phrase = raison_cellule_phrase(r, h)
+            if raison_phrase:
+                cell_txt = f'{cell_txt}<br><span class="cell-reason">· {raison_phrase}</span>'
             cells.append(cell_txt)
         detail_cells[r.nom] = cells
 

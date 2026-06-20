@@ -607,6 +607,24 @@ def render_html(
   }}
   main table tbody tr:nth-child(even) {{ background: var(--row-alt); }}
   main table tbody tr:hover {{ background: var(--accent-bg); }}
+  /* [Point #3] Raison explicative (2e ligne d'une cellule de Synthèse) : la
+     LOGIQUE, pas un nom. S'enroule proprement (jamais coupée en plein mot), même
+     là où les cellules passent en nowrap sur mobile. Grisée, plus petite. */
+  main table td .cell-reason {{
+    display: block; margin-top: 3px;
+    font-size: 11.5px; font-weight: 400; color: var(--text-muted);
+    white-space: normal; overflow-wrap: normal; word-break: normal; line-height: 1.3;
+  }}
+  /* ── MARQUEUR « CHANGEMENT DE TENDANCE » (vs la veille) ───────────────────
+     Une cellule (actif × horizon) dont la direction LONG/SHORT DIFFÈRE de la
+     veille reçoit, EN TÊTE de cellule, le glyphe ⇌ (U+21CC) + un liseré gauche
+     ambre. Le liseré est posé via :has() sur le <td> contenant le glyphe — pas
+     de classe à injecter dans le markdown→td. Token : --status-dot (#f59e0b).
+     Double-codage forme (⇌) + couleur (ambre) → OK daltonien. */
+  .trend-flip {{ color: var(--status-dot); font-weight: 700; margin-right: 3px; }}
+  main table td:has(.trend-flip) {{
+    border-left: 3px solid var(--status-dot); padding-left: 9px;
+  }}
   main code {{ background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 13px; }}
   main pre {{ background: var(--code-bg); padding: 12px; border-radius: 6px; overflow-x: auto; }}
   main pre code {{ background: none; padding: 0; }}
@@ -901,6 +919,9 @@ def render_html(
        Les libellés d'actif multi-mots (« S&P 500 », « Café (Arabica) ») peuvent
        passer à la ligne entre MOTS (normal) mais jamais à l'intérieur d'un mot. */
     main table td, main table th {{ white-space: nowrap; overflow-wrap: normal; word-break: keep-all; }}
+    /* [Point #3] Sur mobile, la phrase de raison s'enroule en 2-3 lignes dans une
+       largeur bornée (sinon elle étire la colonne et force un long scroll). */
+    main table td .cell-reason {{ max-width: 58vw; white-space: normal; }}
     .help-box {{ font-size: 13px; }}
     /* Tables denses (Détail par actif, 9 colonnes) : on masque sur mobile la
        3e (« Valeur actuelle »), la 4e (« Penchant ») et — [CH-6 audit visuel

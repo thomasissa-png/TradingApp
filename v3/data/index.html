@@ -241,6 +241,9 @@
     font-size: 11.5px; font-weight: 400; color: var(--text-muted);
     white-space: normal; overflow-wrap: normal; word-break: normal; line-height: 1.3;
   }
+  /* En-têtes à double libellé (tableau Sélection) : complet par défaut (desktop),
+     court sur mobile. La version courte est masquée hors mobile. */
+  .c-short { display: none; }
   /* ── MARQUEUR « CHANGEMENT DE TENDANCE » (vs la veille) ───────────────────
      Une cellule (actif × horizon) dont la direction LONG/SHORT DIFFÈRE de la
      veille reçoit, EN TÊTE de cellule, le glyphe ⇌ (U+21CC) + un liseré gauche
@@ -562,6 +565,25 @@
     .dense-table th:nth-child(4),
     .dense-table td:nth-child(6),
     .dense-table th:nth-child(6) { display: none; }
+    /* [Refonte suivi S9] Tableau « Sélection du jour — progression » (6 col.,
+       vue rapide en tête du suivi). Sur mobile, les 6 colonnes ne tiennent pas
+       à 390px → on resserre police + padding pour cette table UNIQUEMENT, afin
+       que la colonne « Vendre / Pas vendre » (la reco, la plus importante) reste
+       visible sans scroll horizontal. Classe posée en JS sur l'en-tête signature
+       « % vs ouv. 12h ». */
+    .selection-progression { font-size: 12px; }
+    .selection-progression th, .selection-progression td { padding: 7px 6px; }
+    /* À 390px, les 6 colonnes ne tiennent pas même resserrées. On masque la 5e
+       (« Tendance ») UNIQUEMENT sur mobile : la progression 12h→18h des deux
+       colonnes « % » porte déjà la dynamique, et la reco « Vendre / Pas vendre »
+       (la décision) doit rester visible SANS scroll. Tendance reste sur desktop
+       et dans le suivi détaillé. */
+    .selection-progression td:nth-child(5),
+    .selection-progression th:nth-child(5) { display: none; }
+    /* En-têtes : version courte sur mobile (la complète prend trop de largeur et
+       repoussait la reco hors écran). */
+    .selection-progression .c-full { display: none; }
+    .selection-progression .c-short { display: inline; }
   }
 </style>
 </head>
@@ -686,7 +708,7 @@
         <p id="history-empty" hidden></p>
       </section>
       <p class="gen-meta" aria-label="Date de génération de la page">
-        Page générée le <time datetime="2026-06-20T15:06:41Z">20 juin 2026 · 15h06 (UTC)</time>
+        Page générée le <time datetime="2026-06-20T16:33:07Z">20 juin 2026 · 16h33 (UTC)</time>
       </p>
     </div>
   </main>
@@ -16130,6 +16152,21 @@ function markDenseTables(root) {
   });
 }
 
+// [Refonte suivi S9] Tague le tableau « Sélection du jour — progression » des
+// suivis (6 col.) par sa signature d'en-tête « % vs ouv. 12h », pour le resserrer
+// sur mobile (CSS .selection-progression) sans masquer aucune colonne — la reco
+// « Vendre / Pas vendre » reste visible. marked rend les tables sans classe → on
+// cible par texte d'en-tête (zéro faux positif : libellé unique au suivi).
+function markSelectionTables(root) {
+  if (!root) return;
+  root.querySelectorAll('table').forEach(t => {
+    const headRow = t.querySelector('thead tr') || t.querySelector('tr');
+    if (!headRow) return;
+    const heads = Array.from(headRow.querySelectorAll('th, td')).map(c => (c.textContent || '').trim());
+    if (heads.some(h => h.indexOf('% vs ouv. 12h') !== -1)) t.classList.add('selection-progression');
+  });
+}
+
 // [Refonte S9 vague 3 — encart Sélection] Enveloppe le sous-bloc « Sélection
 // (max 3) » de « Décision du jour » dans une carte .decision-selection pour le
 // détacher visuellement. On repère le <h3> dont le texte commence par
@@ -16736,6 +16773,7 @@ function renderMarkdownInto(target, md) {
     colorizeDirections(target);
     addSymbolTooltips(target);
     markDenseTables(target);
+    markSelectionTables(target);
     wrapTables(target);
     wrapDecisionSelection(target);
     foldSections(target);
@@ -17042,6 +17080,7 @@ function selectBulletin(id) {
     colorizeDirections(content);
     addSymbolTooltips(content);
     markDenseTables(content);
+    markSelectionTables(content);
     wrapTables(content);
     wrapDecisionSelection(content);
     // [Refonte S9 — (B)1] Ordre : assignH2Ids → foldSections → buildSubnav.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TradingApp v3 — Bulletins</title>
+<title>TradingApp v3 · Bulletins</title>
 <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3QgeD0nOCcgeT0nNicgd2lkdGg9JzQnIGhlaWdodD0nMjAnIHJ4PScxJyBmaWxsPSdjcmltc29uJy8+PGxpbmUgeDE9JzEwJyB5MT0nMicgeDI9JzEwJyB5Mj0nNicgc3Ryb2tlPSdjcmltc29uJyBzdHJva2Utd2lkdGg9JzInLz48bGluZSB4MT0nMTAnIHkxPScyNicgeDI9JzEwJyB5Mj0nMzAnIHN0cm9rZT0nY3JpbXNvbicgc3Ryb2tlLXdpZHRoPScyJy8+PHJlY3QgeD0nMjAnIHk9JzEyJyB3aWR0aD0nNCcgaGVpZ2h0PScxNCcgcng9JzEnIGZpbGw9J2xpbWVncmVlbicvPjxsaW5lIHgxPScyMicgeTE9JzQnIHgyPScyMicgeTI9JzEyJyBzdHJva2U9J2xpbWVncmVlbicgc3Ryb2tlLXdpZHRoPScyJy8+PGxpbmUgeDE9JzIyJyB5MT0nMjYnIHgyPScyMicgeTI9JzI4JyBzdHJva2U9J2xpbWVncmVlbicgc3Ryb2tlLXdpZHRoPScyJy8+PC9zdmc+">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
@@ -23,6 +23,12 @@
     --th-bg: #f1f5f9;
     --dir-long-color: #15803d;
     --dir-short-color: #b91c1c;
+    /* Badge statut « mode test » — discret (refonte header S9). */
+    --status-bg: #0f1c2e;
+    --status-border: #1d3045;
+    --status-text: #64748b;
+    --status-dot: #f59e0b;
+    --header-divider: #253348;
   }
   /* Dark mode automatique selon le réglage système — zéro toggle.
      Surcharge des variables CSS uniquement, aucune logique JS impactée.
@@ -56,32 +62,32 @@
     font-size: 16px;
     -webkit-font-smoothing: antialiased;
   }
+  /* HEADER — ligne unique, sticky, 44px (refonte S9). Le titre du produit +
+     le statut « mode test » discret tiennent sur une seule ligne. */
   header {
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
-    padding: 12px 20px;
+    padding: 0 20px;
     position: sticky; top: 0; z-index: 20;
+    height: 44px;
+    display: flex; align-items: center;
   }
-  header .header-row { display: flex; align-items: center; gap: 12px; }
-  header h1 { margin: 0; font-size: 17px; font-weight: 600; flex: 1; }
-  header .meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-  header .meta-note { margin-left: 8px; }
-  header .legend { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
-  header .legend code { background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 11px; }
-  /* Bandeau contexte permanent (casquette COMPRENDRE) — discret mais toujours là. */
-  .context-banner {
-    background: var(--accent-bg);
-    border-bottom: 1px solid var(--border);
-    padding: 8px 20px;
-    font-size: 12px;
-    color: var(--text-muted);
+  header .header-row { display: flex; align-items: center; gap: 10px; width: 100%; }
+  header h1 {
+    margin: 0; font-size: 15px; font-weight: 600; color: var(--text);
+    flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1;
   }
-  .context-inner {
-    max-width: 900px; margin: 0 auto;
-    display: flex; flex-direction: column; gap: 2px;
+  header .meta-note { font-size: 11px; color: var(--text-muted); margin-left: 6px; }
+  /* Badge statut « mode test » — inline, côté droit, point ambre + texte discret. */
+  .header-status { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .header-status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--status-dot); flex-shrink: 0;
   }
-  .context-inner strong { color: var(--text); font-weight: 600; }
-  .context-inner .ctx-shadow strong { color: var(--dir-short-color); }
+  .header-status-text {
+    font-size: 11px; font-weight: 500; color: var(--status-text); white-space: nowrap;
+  }
+  @media (max-width: 380px) { .header-status-date { display: none; } }
   /* Hamburger (mobile uniquement) */
   .hamburger {
     display: none;
@@ -94,9 +100,10 @@
     color: var(--text);
   }
   .hamburger:hover { background: var(--accent-bg); }
+  .hamburger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .layout {
     display: flex;
-    height: calc(100vh - 86px);
+    height: calc(100vh - 44px);
   }
   aside {
     width: 280px;
@@ -146,45 +153,72 @@
     position: static;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
-    padding: 10px 20px;
-    font-size: 13px;
+    padding: 8px 20px;
+    font-size: 12.5px;
     line-height: 1.5;
-    color: var(--text);
+    color: var(--text-muted);
   }
   .legend-bar .legend-inner {
     max-width: 900px; margin: 0 auto;
-    display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+    display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center;
   }
-  .legend-bar code { background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  .legend-bar code { background: var(--code-bg); padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+  .legend-bar a { color: var(--accent); text-decoration: none; }
+  .legend-bar a:hover { text-decoration: underline; }
+  /* Date de génération — discrète, en pied de contenu (refonte S9). */
+  .gen-meta { margin-top: 40px; font-size: 11px; color: var(--text-muted); text-align: right; }
   /* Sous-navigation d'ancres intra-bulletin (seule barre sticky sous le header) */
   .subnav {
-    position: sticky; top: 0; z-index: 4;
+    position: sticky; top: 44px; z-index: 4;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
-    padding: 8px 20px;
+    padding: 6px 20px;
     font-size: 13px;
   }
+  /* [Refonte S9 — (C)] La subnav WRAPPE proprement (PC et mobile) plutôt que de
+     scroller horizontalement : l'ensemble des pastilles (≤ ~10) tient sur 1-2
+     lignes, toujours visibles, sans geste de scroll caché. */
   .subnav .subnav-inner {
     max-width: 900px; margin: 0 auto;
-    display: flex; flex-wrap: wrap; gap: 4px 4px; align-items: center;
+    display: flex; flex-wrap: wrap; gap: 5px 4px; align-items: center;
   }
   .subnav a {
     color: var(--accent);
     text-decoration: none;
-    padding: 4px 10px;
+    padding: 3px 10px;
     border-radius: 999px;
     background: var(--accent-bg);
-    font-size: 12.5px;
+    font-size: 12px;
     border: 1px solid transparent;
     white-space: nowrap;
+    flex-shrink: 0;
   }
   .subnav a:hover { border-color: var(--accent); }
-  .subnav .subnav-label { color: var(--text-muted); font-size: 12px; margin-right: 4px; }
+  .subnav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .subnav .subnav-label { color: var(--text-muted); font-size: 11px; margin-right: 4px; flex-shrink: 0; }
   main h1, main h2, main h3 { color: var(--text); }
   main h1 { font-size: 26px; border-bottom: 2px solid var(--border); padding-bottom: 10px; margin-top: 8px; }
-  main h2 { font-size: 20px; margin-top: 36px; padding-bottom: 6px; border-bottom: 1px solid var(--border); scroll-margin-top: 100px; }
-  main h3 { font-size: 16px; margin-top: 24px; scroll-margin-top: 100px; }
+  main h2 { font-size: 20px; margin-top: 36px; padding-bottom: 6px; border-bottom: 1px solid var(--border); scroll-margin-top: 104px; }
+  main h3 { font-size: 16px; margin-top: 24px; scroll-margin-top: 104px; }
   main p { margin: 10px 0; }
+  /* [Refonte S9 vague 3 — encart Sélection] Carte distincte et discrète qui
+     détache l'encart « Sélection (max 3) » en tête de « Décision du jour ».
+     Cohérente avec les tokens dark-mode (bg-panel + accent). Épurée : un filet
+     accent à gauche, un fond panneau, un padding raisonnable. Ne déborde pas
+     (overflow géré par .table-wrap interne) et reste lisible sur mobile. */
+  .decision-selection {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 18px 0 8px;
+  }
+  .decision-selection > h3:first-child { margin-top: 0; }
+  .decision-selection .table-wrap { margin-bottom: 0; }
+  @media (max-width: 640px) {
+    .decision-selection { padding: 12px 12px; border-radius: 6px; }
+  }
   /* Wrapper de table pour scroll horizontal mobile propre */
   .table-wrap {
     overflow-x: auto;
@@ -463,8 +497,10 @@
   @media (max-width: 768px) {
     body { font-size: 15.5px; }
     .hamburger { display: inline-block; }
-    header h1 { font-size: 15.5px; }
-    .layout { height: calc(100vh - 86px); }
+    header { height: 40px; padding: 0 12px; }
+    header h1 { font-size: 14px; }
+    .header-status-text { font-size: 10px; }
+    .layout { height: calc(100vh - 40px); }
     aside {
       position: fixed;
       top: 0; left: 0; bottom: 0;
@@ -479,12 +515,18 @@
     aside.open { transform: translateX(0); }
     main { width: 100%; }
     .content-inner { padding: 12px 14px 32px 14px; }
-    .legend-bar { padding: 8px 12px; font-size: 12px; }
-    .subnav { padding: 6px 12px; top: 0; }
-    .subnav a { font-size: 12px; padding: 3px 8px; }
+    .legend-bar { padding: 6px 12px; font-size: 12px; }
+    .subnav { padding: 5px 12px; top: 40px; }
+    .subnav a { font-size: 11.5px; padding: 3px 8px; }
+    .subnav .subnav-label { width: 100%; margin-bottom: 2px; }
+    /* La subnav wrappe désormais sur ~2 lignes sous un header de 40px : on
+       décale l'ancrage des titres pour qu'ils ne passent pas sous le chrome. */
     main h1 { font-size: 22px; }
-    main h2 { font-size: 18px; margin-top: 28px; scroll-margin-top: 130px; }
-    main h3 { font-size: 15.5px; scroll-margin-top: 130px; }
+    main h2 { font-size: 18px; margin-top: 28px; scroll-margin-top: 110px; }
+    main h3 { font-size: 15.5px; scroll-margin-top: 110px; }
+    /* Anti-débordement horizontal : aucun mot long (URL, hash) ne pousse la page
+       au-delà du viewport. Les tables larges scrollent dans leur .table-wrap. */
+    main p, main li, main td, main th, main summary { overflow-wrap: anywhere; }
     .help-box { font-size: 13px; }
     /* Tables denses (Détail par actif, 9 colonnes) : on masque sur mobile la
        3e (« Valeur actuelle »), la 4e (« Penchant ») et — [CH-6 audit visuel
@@ -506,24 +548,13 @@
 <header>
   <div class="header-row">
     <button class="hamburger" id="hamburger" aria-label="Ouvrir la liste des bulletins" aria-expanded="false">☰</button>
-    <h1>TradingApp v3 — Bulletins</h1>
-  </div>
-  <div class="meta">Généré : 2026-06-19 20:15 UTC</div>
-  <div class="legend">
-    Légende symboles :
-    <code>⚑</code> gate régime ·
-    <code>📰</code> news&gt;50% ·
-    <code>⚪</code> coin-flip (non-actionnable) ·
-    <code>⚠</code> calcul contesté ·
-    <code>🔴</code> alerte ·
-    <code>🟡</code> vigilance
+    <h1>TradingApp v3 · Bulletins</h1>
+    <div class="header-status" role="status" aria-label="Statut : mode test, go-live le 08/08">
+      <span class="header-status-dot" aria-hidden="true"></span>
+      <span class="header-status-text">Mode test<span class="header-status-date"> · go-live 08/08</span></span>
+    </div>
   </div>
 </header>
-<div class="context-banner" role="note" aria-label="Contexte du système">
-  <div class="context-inner">
-    <span class="ctx-line ctx-shadow">⚠️ <strong>Mode test</strong> — non validé pour le réel · go-live 08/08 (WR&nbsp;≥&nbsp;70&nbsp;%, N&nbsp;≥&nbsp;15)</span>
-  </div>
-</div>
 <div class="sidebar-overlay" id="sidebar-overlay"></div>
 <div class="layout">
   <aside id="sidebar">
@@ -543,17 +574,9 @@
         <span>·</span>
         <span><span class="dir-short">🔴 SHORT</span> = baisse</span>
         <span>·</span>
-        <span><code>note</code> = force de conviction (plus elle est haute, plus la conviction est forte)</span>
+        <span><code>note</code> = force de conviction</span>
         <span>·</span>
-        <span>⚪ = non-actionnable</span>
-        <span>·</span>
-        <span>📰 news&gt;50%</span>
-        <span>·</span>
-        <span>⚑ gate</span>
-        <span>·</span>
-        <span>⚠ calcul contesté</span>
-        <span>·</span>
-        <span>🔴 alerte · 🟡 vigilance</span>
+        <span><a href="#help-box" id="legend-help-link">❓ Symboles</a></span>
       </div>
     </div>
     <nav class="subnav" id="subnav" aria-label="Sections du bulletin">
@@ -563,7 +586,7 @@
       </div>
     </nav>
     <div class="content-inner">
-      <details class="help-box">
+      <details class="help-box" id="help-box">
         <summary>❓ Comment lire les scores (détails complets)</summary>
         <div class="help-body">
           <p><strong>Signe = direction</strong> : <span class="dir-long">vert = LONG (hausse)</span>, <span class="dir-short">rouge = SHORT (baisse)</span>.</p>
@@ -577,18 +600,25 @@
           </ul>
           <p><strong>Synthèse des décisions</strong> (en haut du bulletin) = vue d'oiseau : direction + note (le score signé, ex. <code>SHORT -3.82</code> ; plus <code>|note|</code> est élevé, plus la conviction est forte) ou <code>🚫</code>. Le détail chiffré complet est dans la <strong>Matrice</strong> plus bas.</p>
           <p><code>[pond: …]</code> = score en version <strong>pondérée</strong> (news × matérialité × fiabilité), affiché <strong>seulement s'il diffère</strong> du primaire. Sur les cellules <code>📰</code> (news&gt;50%), le pondéré (tempéré, plus fiable) passe <strong>en tête</strong> et le brut est entre parenthèses : <code>LONG +3.77 (brut +5.69) 📰</code>.</p>
-          <p><strong>Symboles</strong> : <code>🚫</code> données insuffisantes · <code>⚑</code> gate · <code>📰</code> news&gt;50% du quant · <code>⚪</code> quasi coin-flip non-actionnable · <code>⚠</code> divergence primaire/pondéré. La légende complète du bulletin ne liste que les symboles réellement présents.</p>
+          <p><strong>Symboles</strong> (la légende du bulletin ne liste que ceux réellement présents) :</p>
+          <ul>
+            <li><code>🚫</code> données insuffisantes · <code>⚑</code> gate régime · <code>📰</code> news&gt;50% du quant</li>
+            <li><code>⚪</code> quasi coin-flip, non-actionnable · <code>≈</code> quasi-neutre (sous la bande de décision)</li>
+            <li><code>⚠</code> divergence primaire/pondéré · <code>↯</code> divergence quant/news · <code>◧</code> mono-critère (une seule donnée porte la décision)</li>
+            <li><code>⇄</code> contre-momentum (bouge à contre-sens depuis la dernière clôture vue) · <code>⇆</code> zigzag (direction instable) · <code>⌛</code> déjà coté (la news est dans le prix)</li>
+            <li><code>⚭</code> driver macro partagé (plusieurs cellules portées par le même pari) · <code>🔴</code> alerte · <code>🟡</code> vigilance</li>
+          </ul>
         </div>
       </details>
       <div id="bulletin-content">
         <p>Chargement...</p>
       </div>
-      <section id="winrate-view" hidden aria-label="Résultats — win rate par actif">
+      <section id="winrate-view" hidden aria-label="Résultats : win rate par actif">
         <h1>📈 Résultats / Win rate</h1>
-        <p class="history-intro">Le taux de bonnes directions par actif et par horizon — réécrit à chaque run. Deux mesures : le <strong>Win rate</strong> (sur les paris conclus) et le <strong>WR tradable</strong> (VRAI / VRAI+FAUSSE+non-conclusif — inclut les jours sous seuil où une position aurait quand même été prise, donc toujours ≤ Win rate).</p>
+        <p class="history-intro">Le taux de bonnes directions par actif et par horizon, réécrit à chaque run. Deux mesures : le <strong>Win rate</strong> (sur les paris conclus) et le <strong>WR tradable</strong> (VRAI / VRAI+FAUSSE+non-conclusif, qui inclut les jours sous seuil où une position aurait quand même été prise, donc toujours ≤ Win rate).</p>
         <p class="history-intro"><strong>⏳ trop peu (N/15)</strong> = il faut au moins 15 paris indépendants par cellule pour qu'un chiffre soit fiable ; en dessous, le taux affiché ne veut encore rien dire.</p>
         <div class="winrate-warmup" role="note">
-          <strong>Tout est en chauffe.</strong> Les 12 actifs ont été remis à zéro le <strong>11 juin 2026</strong> (passage en ère v2 du moteur). La mesure ouverture→clôture, 1 décision notée par jour, tourne depuis le 9 juin. Premier point de contrôle : le <strong>8 août 2026</strong> — une cellule 24h se trade alors uniquement si son WR tradable ≥&nbsp;70&nbsp;% sur ≥&nbsp;15 paris (règle de sélection gravée, mode test jusque-là).
+          <strong>Tout est en chauffe.</strong> Les 12 actifs ont été remis à zéro le <strong>11 juin 2026</strong> (passage en ère v2 du moteur). La mesure ouverture→clôture, 1 décision notée par jour, tourne depuis le 9 juin. Premier point de contrôle : le <strong>8 août 2026</strong>, une cellule 24h se trade alors uniquement si son WR tradable ≥&nbsp;70&nbsp;% sur ≥&nbsp;15 paris (règle de sélection gravée, mode test jusque-là).
         </div>
         <div id="winrate-content"></div>
         <p id="winrate-empty" hidden></p>
@@ -612,7 +642,7 @@
         <div id="history-winrate"></div>
         <details class="fold-section" id="history-ab-fold">
           <summary>Détail technique par cellule (calibration ±1)</summary>
-          <p class="history-intro" style="margin-top:8px;">Taux et calibration internes par cellule — secondaire, conservé pour le suivi technique.</p>
+          <p class="history-intro" style="margin-top:8px;">Taux et calibration internes par cellule (secondaire, conservé pour le suivi technique).</p>
           <div id="history-summary"></div>
         </details>
         <h2>Décision par décision</h2>
@@ -645,6 +675,9 @@
         </div>
         <p id="history-empty" hidden></p>
       </section>
+      <p class="gen-meta" aria-label="Date de génération de la page">
+        Page générée le <time datetime="2026-06-20T11:26:47Z">20 juin 2026 · 11h26 (UTC)</time>
+      </p>
     </div>
   </main>
 </div>
@@ -14516,6 +14549,53 @@ _290 events analysés, 89 à impact (fenêtre 48h jusqu'au 2026-05-30)._
 `}
 ];
 const REPORTS = [
+{...{"id": "bilan-jour-2026-06-19", "kind": "bilan-jour", "date": "2026-06-19", "slot": "22h", "label": "Bilan du jour", "filename": "2026-06-19.md"}, markdown: `# Bilan du jour — 2026-06-19
+
+_Généré : 2026-06-19T22:15:25.606323+02:00 (Europe/Paris)._
+
+**Résultat du 19/06 : 0 ✅ / 0 ❌ / 0 ⚪**
+
+### Résultat des calls 7h
+
+| Actif | Call 7h | Ouverture | Clôture | Delta% | Résultat | Amplitude flag |
+|---|---|---|---|---|---|---|
+| Argent | SHORT | — | — | — | non-notee | — |
+| Blé | LONG | — | — | — | non-notee | — |
+| CAC 40 | SHORT | — | — | — | non-notee | — |
+| Cacao | LONG | — | — | — | non-notee | — |
+| Café (Arabica) | LONG | — | — | — | non-notee | — |
+| Cuivre | SHORT | — | — | — | non-notee | — |
+| EUR/USD | SHORT | — | — | — | non-notee | — |
+| Nasdaq | SHORT | — | — | — | non-notee | — |
+| Or | SHORT | — | — | — | non-notee | — |
+| Pétrole (Brent) | SHORT | — | — | — | non-notee | — |
+| S&P 500 | LONG | — | — | — | non-notee | — |
+| VIX | SHORT | — | — | — | non-notee | — |
+
+### Win rate du jour
+**— (aucun call conclusif aujourd'hui)**
+
+_Détail :_
+- WR tradable du jour : — (aucun pari tradable aujourd'hui)
+- WR Sélection du jour : — (aucun pari sélectionné conclusif aujourd'hui)
+- Win rate conviction forte (jour) : — (N insuffisant) (N=0)
+- Win rate conviction faible (jour) : — (N insuffisant) (N=0)
+- Win rate cumulé : voir performance.md
+
+### FAUSSES aux retournements (shadow A5)
+_Métrique shadow momentum (ne change pas le win rate) :_
+- FAUSSES aux retournements (jour) : — (aucune cellule conclusive en situation de retournement aujourd'hui)
+
+### FAUX à forte amplitude (erreurs prioritaires)
+Pas de call faux à forte amplitude aujourd'hui.
+
+### News qui ont compté aujourd'hui
+Pas de news déterminante croisée avec un call conclusif aujourd'hui.
+
+### Catalyseurs J+1
+Aucun catalyseur majeur connu dans les prochains jours (calendrier éco statique — zéro invention).
+
+`},
 {...{"id": "suivi-2026-06-19-18h", "kind": "suivi", "date": "2026-06-19", "slot": "18h", "label": "Suivi 18h", "filename": "2026-06-19-18h.md"}, markdown: `# Suivi 18h — 2026-06-19 18h15
 
 _Du neuf depuis 12h : 3 actus fraîches ci-dessous._
@@ -15987,7 +16067,7 @@ function renderList(activeId) {
     // Créneau lisible : "matin/midi/soir" (b.slot) prioritaire, sinon l'heure
     // brute extraite de l'id (rétro-compat), sinon rien.
     const slotTxt = (b.slot && b.slot.length) ? b.slot : dt.time;
-    dateSpan.textContent = slotTxt ? `${dt.short} — ${slotTxt}` : dt.short;
+    dateSpan.textContent = slotTxt ? `${dt.short} · ${slotTxt}` : dt.short;
     a.appendChild(dateSpan);
     if (b.id === latestId) {
       a.classList.add('latest');
@@ -16035,14 +16115,44 @@ function markDenseTables(root) {
   });
 }
 
+// [Refonte S9 vague 3 — encart Sélection] Enveloppe le sous-bloc « Sélection
+// (max 3) » de « Décision du jour » dans une carte .decision-selection pour le
+// détacher visuellement. On repère le <h3> dont le texte commence par
+// « Sélection » et on déplace ce h3 + tous les nœuds frères suivants JUSQU'AU
+// prochain titre (h2/h3) dans la carte. Idempotent (skip si déjà enveloppé).
+// Robuste : no-op si le h3 est absent (jour d'abstention rend quand même un h3).
+function wrapDecisionSelection(root) {
+  if (!root) return;
+  const h3s = root.querySelectorAll('h3');
+  let target = null;
+  for (const h of h3s) {
+    const txt = (h.textContent || '').trim().toLowerCase();
+    if (txt.indexOf('sélection') === 0 || txt.indexOf('selection') === 0) { target = h; break; }
+  }
+  if (!target) return;
+  if (target.parentElement && target.parentElement.classList.contains('decision-selection')) return;
+  const card = document.createElement('div');
+  card.className = 'decision-selection';
+  target.parentNode.insertBefore(card, target);
+  let node = target;
+  while (node) {
+    const next = node.nextSibling;
+    // On s'arrête au prochain titre de section (le tableau « À jouer » en h3, ou
+    // un h2). Le h3 « Sélection » lui-même est inclus (premier tour de boucle).
+    if (node !== target && node.nodeType === 1 && /^H[123]$/.test(node.tagName)) break;
+    card.appendChild(node);
+    node = next;
+  }
+}
+
 // Tooltips natifs (attribut title) sur les symboles d'info de la matrice/synthèse.
 // Reprend les définitions de la légende du bulletin. Zéro CSS, zéro espace.
 const SYMBOL_TOOLTIPS = {
-  '🚫': 'Données insuffisantes — actif non scoré',
-  '⏸': 'En pause — pas de décision actionnable',
-  '📰': 'News > 50% du score quant — pondéré en tête',
+  '🚫': 'Données insuffisantes : actif non scoré',
+  '⏸': 'En pause : pas de décision actionnable',
+  '📰': 'News > 50% du score quant : pondéré en tête',
   '⚑': 'Gate régime extrême actif',
-  '⚪': 'Quasi coin-flip (|score| < 0.05) — non-actionnable',
+  '⚪': 'Quasi coin-flip (|score| < 0.05) : non-actionnable',
   '⚠️': 'Divergence primaire/pondéré ou confiance faible',
   '⚠': 'Divergence primaire/pondéré ou confiance faible',
   '↯': 'Divergence quant ↔ news (signes opposés)',
@@ -16118,12 +16228,71 @@ const FOLD_SECTION_PATTERNS = [
   /détail\s+par\s+actif/i,
   // [P8] « Synthèse des décisions » : DÉPLIÉE par défaut (demande Thomas). On la
   // RETIRE de la liste de repli → elle reste une section ouverte normale.
-  /comment\s+lire\s+les\s+scores/i, // pédagogie consolidée → repliée (lecture rapide)
   /fausses\s+aux\s+retournements/i, // [C-BD2] métrique technique du moteur (bilan jour)
+  // [Refonte S9 — I7/I9] sections informatives non décisionnelles, repliées :
+  /intensité\s+comparable/i,    // I7 — note normalisée, informatif
+  /^flips\s+vs\s+veille/i,      // I9 — retournements, consultés en 2e lecture
 ];
+
+// Détecte la section H2 dont le titre matche `re` ; renvoie le <h2> ou null.
+function findH2(root, re) {
+  return Array.from(root.querySelectorAll('h2')).find(h => re.test(h.textContent || '')) || null;
+}
+
+// Renvoie le texte agrégé d'une section H2 (du h2 jusqu'au prochain h2).
+function sectionText(h2) {
+  let txt = '';
+  let node = h2.nextSibling;
+  while (node && !(node.nodeType === 1 && node.tagName === 'H2')) {
+    txt += (node.textContent || '');
+    node = node.nextSibling;
+  }
+  return txt;
+}
 
 function foldSections(root) {
   if (!root) return;
+
+  // [I12] « Comment lire les scores » : doublon EXACT de la help-box (qui contient
+  // désormais tous les symboles). On la RETIRE du flux du bulletin (pas repliée :
+  // supprimée), zéro perte d'info. Idempotent.
+  const cl = findH2(root, /comment\s+lire\s+les\s+scores/i);
+  if (cl) {
+    let node = cl.nextSibling;
+    while (node && !(node.nodeType === 1 && node.tagName === 'H2')) {
+      const next = node.nextSibling; node.remove(); node = next;
+    }
+    cl.remove();
+  }
+
+  // [I6] « Santé des sources » : repliée par défaut, OUVERTE seulement si une
+  // anomalie est détectée (un flux « en échec » au-delà de 0, ou « muet »).
+  const sante = findH2(root, /santé\s+des\s+sources/i);
+  if (sante) {
+    const t = sectionText(sante);
+    const anomalie = /[1-9]\d*\s+en\s+échec/i.test(t) || /muet/i.test(t);
+    const sm = foldOneSection(sante);
+    if (sm) {
+      const d = sm.closest('details.fold-section');
+      if (d) d.open = anomalie;
+      sm.textContent = anomalie ? '⚠️ Santé des sources (anomalie détectée)'
+                                : '✓ Santé des sources (tout OK)';
+    }
+  }
+
+  // [I8] « News par actif » : repliée seulement si AUCUN actif n'a d'actualité
+  // (matin calme = bruit total). Si ≥ 1 news → reste dépliée.
+  const news = findH2(root, /news\s+par\s+actif/i);
+  if (news) {
+    const t = sectionText(news);
+    // Vide si chaque entrée dit « aucune actualité » et aucun contenu d'actu.
+    const aucune = /aucune\s+actualité/i.test(t) && !/\b(LONG|SHORT|impact|haussier|baissier)\b/i.test(t);
+    if (aucune) {
+      const sm = foldOneSection(news);
+      if (sm) sm.textContent = 'News par actif (aucune ce matin)';
+    }
+  }
+
   const h2s = Array.from(root.querySelectorAll('h2'));
   h2s.forEach(h => {
     const txt = h.textContent || '';
@@ -16188,8 +16357,55 @@ function slugify(s) {
     .replace(/^-+|-+$/g, '');
 }
 
-// Construit la sous-navigation d'ancres à partir des <h2> du bulletin.
-// Réécrit les ids des <h2> pour des ancres prévisibles et stables.
+// Libellé court et LISIBLE pour la sous-nav : table de correspondance par motif
+// sur le titre du <h2>. Évite les émojis nus (🎯🎯🎯) et les doublons. Repli :
+// on retire les émojis/symboles en tête puis on prend les deux premiers mots.
+const SUBNAV_LABELS = [
+  [/décor/i,                          'Décor'],
+  [/santé\s+des\s+sources/i,          'Sources'],
+  [/décision\s+du\s+jour/i,           'Décision'],
+  [/top\s+swing/i,                     'Top swing'],
+  [/top\s+convictions/i,               'Top swing'],
+  [/tableau\s+de\s+bord/i,            'Tableau de bord'],
+  [/synthèse\s+des\s+décisions/i,     'Tableau de bord'],
+  [/intensité/i,                       'Intensité'],
+  [/cellules\s+à\s+surveiller/i,      'Surveiller'],
+  [/drivers\s+macro/i,                 'Drivers'],
+  [/flips/i,                           'Flips'],
+  [/comment\s+lire/i,                  null],   // section supprimée du flux (→ help-box)
+  [/détail\s+par\s+actif/i,           'Détail'],
+  [/limites/i,                         'Limites'],
+  [/calls\s+24h\s+jug/i,              'Calls'],
+  [/audit\s+de\s+la\s+veille/i,      'Calls'],
+  [/news\s+par\s+actif/i,             'News'],
+];
+function subnavLabelFor(raw) {
+  for (const [re, lab] of SUBNAV_LABELS) {
+    if (re.test(raw)) return lab; // null → exclu (filtré en amont par buildSubnav)
+  }
+  // Repli : retire émojis/symboles/espaces en tête, prend les 2 premiers mots.
+  const cleaned = raw.replace(/^[^\p{L}\p{N}]+/u, '').trim();
+  const words = cleaned.split(/[\s–\-:(]+/).filter(Boolean);
+  return words.slice(0, 2).join(' ') || raw;
+}
+
+// Pose un id stable et prévisible sur CHAQUE <h2> du bulletin. Appelé AVANT
+// foldSections : ainsi un h2 replié transfère son id à son <summary> (l'ancre
+// reste valide même une fois la section repliée).
+function assignH2Ids(root) {
+  if (!root) return;
+  root.querySelectorAll('h2').forEach((h, i) => {
+    const raw = (h.textContent || '').trim();
+    h.id = `sec-${i}-${slugify(raw).slice(0, 40)}`;
+  });
+}
+
+// Construit la sous-navigation d'ancres. [Refonte S9 — (B)1] N'affiche QUE les
+// sections VISIBLES : on appelle buildSubnav APRÈS foldSections, qui remplace
+// chaque h2 replié par un <details><summary> (l'h2 disparaît du DOM). Du coup
+// `querySelectorAll('h2')` ne renvoie plus que les sections dépliées → la
+// subnav ne pointe jamais vers une section masquée. Solution la plus simple et
+// robuste : zéro test d'état de repli, on s'appuie sur le DOM déjà transformé.
 function buildSubnav(root) {
   const links = document.getElementById('subnav-links');
   const subnav = document.getElementById('subnav');
@@ -16201,13 +16417,19 @@ function buildSubnav(root) {
     return;
   }
   subnav.style.display = '';
-  h2s.forEach((h, i) => {
+  let lastLabel = null;
+  let emitted = 0;
+  h2s.forEach((h) => {
     const raw = (h.textContent || '').trim();
-    // Label court : premier mot significatif (Briefing / Matrice / Flips / Détail / Limites…)
-    let label = raw.split(/[ —–\-:(]/)[0] || raw;
+    const id = h.id || `sec-${slugify(raw).slice(0, 40)}`;
+    h.id = id; // garantit une ancre même si assignH2Ids n'a pas tourné.
+    // Label court et LISIBLE. Table de correspondance (mots, jamais d'émoji nu) :
+    // on reconnaît la section par un motif sur son titre, sinon repli générique.
+    let label = subnavLabelFor(raw);
+    if (label === null) return;            // section exclue de la nav (ex. Comment lire)
+    if (label === lastLabel) return;       // dédoublonne (ex. ancienne fusion 24h)
+    lastLabel = label;
     if (label.length > 22) label = label.slice(0, 22) + '…';
-    const id = `sec-${i}-${slugify(raw).slice(0, 40)}`;
-    h.id = id;
     const a = document.createElement('a');
     a.href = '#' + id;
     a.textContent = label;
@@ -16218,8 +16440,9 @@ function buildSubnav(root) {
       const target = document.getElementById(id);
       if (target) target.scrollIntoView({behavior: 'smooth', block: 'start'});
     };
-    if (i > 0) links.appendChild(document.createTextNode(' '));
+    if (emitted > 0) links.appendChild(document.createTextNode(' '));
     links.appendChild(a);
+    emitted += 1;
   });
 }
 
@@ -16325,7 +16548,7 @@ function renderHistoryTable() {
   if (!MEASURES || MEASURES.length === 0) {
     tbody.innerHTML = '';
     if (table) table.hidden = true;
-    if (empty) { empty.hidden = false; empty.textContent = 'Historique en cours de constitution — les résultats par prédiction apparaîtront ici dès la première mesure d\'échéance.'; }
+    if (empty) { empty.hidden = false; empty.textContent = 'Historique en cours de constitution : les résultats par prédiction apparaîtront ici dès la première mesure d\'échéance.'; }
     if (countEl) countEl.textContent = '';
     return;
   }
@@ -16489,6 +16712,7 @@ function renderMarkdownInto(target, md) {
     addSymbolTooltips(target);
     markDenseTables(target);
     wrapTables(target);
+    wrapDecisionSelection(target);
     foldSections(target);
   } else {
     const pre = document.createElement('pre');
@@ -16539,7 +16763,7 @@ function buildTodayView() {
 
   const days = Object.keys(byDay).sort().reverse();
   if (days.length === 0) {
-    if (empty) { empty.hidden = false; empty.textContent = "Aucun rapport pour l'instant — les briefings et suivis apparaîtront ici."; }
+    if (empty) { empty.hidden = false; empty.textContent = "Aucun rapport pour l'instant : les briefings et suivis apparaîtront ici."; }
     return;
   }
   if (empty) empty.hidden = true;
@@ -16604,7 +16828,7 @@ function weekHumanTitle(weekly) {
                   'août', 'septembre', 'octobre', 'novembre', 'décembre'];
     return dt.getUTCDate() + ' ' + MOIS[dt.getUTCMonth()];
   };
-  const sem = iso ? ('Semaine ISO ' + iso[1] + ' — ') : '';
+  const sem = iso ? ('Semaine ISO ' + iso[1] + ' · ') : '';
   return sem + 'du lundi ' + fmt(lundi) + ' au vendredi ' + fmt(vendredi);
 }
 
@@ -16616,7 +16840,7 @@ function buildWeekView() {
   if (!WEEKLY) {
     content.innerHTML = '';
     if (titleEl) titleEl.hidden = true;
-    if (empty) { empty.hidden = false; empty.textContent = 'Aucun bilan de semaine pour le moment — le premier est généré le dimanche suivant (18h), puis chaque dimanche.'; }
+    if (empty) { empty.hidden = false; empty.textContent = 'Aucun bilan de semaine pour le moment : le premier est généré le dimanche suivant (18h), puis chaque dimanche.'; }
     return;
   }
   if (empty) empty.hidden = true;
@@ -16733,7 +16957,7 @@ function buildWinrateView() {
     buildVerdictSequences(content);
   } else if (empty) {
     empty.hidden = false;
-    empty.textContent = 'Aucun résultat de win rate disponible pour le moment — les chiffres apparaîtront ici dès les premières mesures.';
+    empty.textContent = 'Aucun résultat de win rate disponible pour le moment : les chiffres apparaîtront ici dès les premières mesures.';
   }
 }
 
@@ -16757,7 +16981,7 @@ function appendDayFil(container, id) {
   const LABELS = { '12h': '🕛 Suivi 12h', '18h': '🕕 Suivi 18h' };
   reports.forEach(r => {
     const isBilan = r.kind === 'bilan-jour';
-    const label = isBilan ? '🌙 Bilan du jour — 22h15' : (LABELS[r.slot] || ('Suivi ' + (r.slot || '')));
+    const label = isBilan ? '🌙 Bilan du jour · 22h15' : (LABELS[r.slot] || ('Suivi ' + (r.slot || '')));
     const rd = document.createElement('details');
     rd.className = 'day-fil-report';  // replié par défaut (pas d'attribut open)
     const rs = document.createElement('summary');
@@ -16794,11 +17018,17 @@ function selectBulletin(id) {
     addSymbolTooltips(content);
     markDenseTables(content);
     wrapTables(content);
-    // buildSubnav AVANT foldSections : il pose les ids sur tous les <h2> ;
-    // foldSections les reprend sur le <summary> pour garder l'ancrage. Un clic
-    // sous-nav vers une section repliée l'ouvre alors (openFoldedSectionFor).
-    buildSubnav(content);
+    wrapDecisionSelection(content);
+    // [Refonte S9 — (B)1] Ordre : assignH2Ids → foldSections → buildSubnav.
+    // 1) on pose les ids sur tous les <h2> (ancres stables) ; 2) foldSections
+    // remplace chaque section repliée par un <details><summary> (l'h2 disparaît,
+    // son id passe au summary) ; 3) buildSubnav ne voit alors QUE les <h2>
+    // restants = sections VISIBLES → la sous-nav ne pointe jamais vers une
+    // section masquée. openFoldedSectionFor reste le filet pour les ancres
+    // pointant vers un summary (clic direct sur une ancre externe).
+    assignH2Ids(content);
     foldSections(content);
+    buildSubnav(content);
   } else {
     // Fallback : affichage brut si marked n'a pas chargé (offline)
     const pre = document.createElement('pre');
@@ -16821,7 +17051,7 @@ function selectBulletin(id) {
   // 12 juin · 7h ».
   const dt = formatBulletinDate(b.id);
   const tt = dt.time ? ` · ${dt.time}` : '';
-  document.title = `Briefing — ${dt.short}${tt} · TradingApp v3`;
+  document.title = `Briefing · ${dt.short}${tt} · TradingApp v3`;
   if (mainEl) mainEl.scrollTop = 0;
 }
 
@@ -16849,6 +17079,15 @@ function closeSidebarMobile() {
   });
   const ov = document.getElementById('sidebar-overlay');
   if (ov) ov.addEventListener('click', closeSidebarMobile);
+
+  // Lien « ❓ Symboles » de la legend-bar → ouvre la help-box repliée + scrolle.
+  const helpLink = document.getElementById('legend-help-link');
+  const helpBox = document.getElementById('help-box');
+  if (helpLink && helpBox) helpLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    helpBox.open = true;
+    helpBox.scrollIntoView({behavior: 'smooth', block: 'start'});
+  });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeSidebarMobile();
   });

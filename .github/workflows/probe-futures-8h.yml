@@ -13,8 +13,6 @@ name: probe-futures-8h
 #   - AUCUN commit/push : le résultat sort en ARTIFACT + LOG uniquement
 #   - workflow_dispatch : à déclencher À LA MAIN entre 08h00 et 08h30 Paris
 #     (heure critique : seuls les futures Globex cotent ; SPY/QQQ/VIXY non)
-#   - + cron TEMPORAIRE 08h05 Paris jours ouvrés (S6) car le créneau manuel
-#     n'a jamais pu être tenu — garde heure-Paris, à retirer après verdict A/B
 #
 # DÉCLENCHEMENT :
 #   GitHub → Actions → "probe-futures-8h" → "Run workflow"
@@ -28,15 +26,9 @@ name: probe-futures-8h
 #     (téléchargeable depuis la page du run, NON commité dans le repo)
 
 on:
+  # Déclenchement manuel uniquement (usage ad-hoc). Lancer ENTRE 08h00 et
+  # 08h30 Paris pour que le test de fraîcheur soit pertinent (cf. en-tête).
   workflow_dispatch:
-  # TEMPORAIRE (S6, 2026-06-10) : la fenêtre 8h00-8h30 Paris exige un humain
-  # éveillé → le dispatch manuel n'a jamais eu lieu. Cron jours ouvrés
-  # 06:05 UTC (= 08h05 Paris en été/CEST) + garde heure-Paris dans le job
-  # (hors fenêtre → NO-OP propre, DST-safe). À RETIRER dès que le verdict
-  # A/B réf 8h est rendu (Lot 1). Ne s'active qu'une fois mergé sur main
-  # (les schedules GitHub ne tournent que depuis la branche par défaut).
-  schedule:
-    - cron: "5 6 * * 1-5"
 
 permissions:
   contents: read

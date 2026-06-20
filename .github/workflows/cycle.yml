@@ -52,10 +52,6 @@ on:
 
 permissions:
   contents: write
-  # TEMPORAIRE (11/06) : permet au slot stamp 8h de dispatcher la sonde
-  # probe-futures-8h (relais fiable — le schedule GitHub de la sonde saute
-  # des occurrences). À retirer avec le relais après verdict A/B réf 8h.
-  actions: write
 
 concurrency:
   group: cycle-decision
@@ -226,13 +222,6 @@ jobs:
           elif [ "$ph" -eq 22 ] && [ "$pm" -ge 15 ]; then slot="bilan"
           fi
           echo "slot=$slot" >> "$GITHUB_OUTPUT"
-          # TEMPORAIRE (11/06) : fenêtre du relais sonde 8h (8h00-8h30 Paris strict —
-          # un dispatch hors fenêtre ne prouverait rien sur la réf 8h).
-          if [ "$ph" -eq 8 ] && [ "$pm" -le 30 ]; then
-            echo "probe8h=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "probe8h=false" >> "$GITHUB_OUTPUT"
-          fi
           echo "Heure Paris ${ph}h${pm} → slot=${slot}."
           if [ "$slot" = "none" ]; then
             echo "Aucun créneau à cette heure (cron horaire hors créneau) → NO-OP."
@@ -300,19 +289,6 @@ jobs:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           LOG_LEVEL: INFO
         run: python v3/scripts/run_stamp.py
-
-      # TEMPORAIRE (11/06) : relais fiable de la sonde 8h. Le schedule GitHub de
-      # probe-futures-8h saute des occurrences (0 run le 11/06 malgré le cron) ;
-      # ce run de stamp est déclenché par le VPS à 8h15 Paris = en plein dans la
-      # fenêtre 8h00-8h30. Non-bloquant (|| true) : un échec de dispatch ne casse
-      # JAMAIS le stamp. Curl sur UNE ligne (leçon 02/06). À RETIRER (avec le
-      # cron de la sonde et la permission actions:write) après verdict A/B.
-      - name: Relais sonde 8h (TEMPORAIRE — dispatch probe-futures-8h)
-        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'stamp' && steps.route.outputs.probe8h == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          curl -sS -o /dev/null -w "dispatch sonde 8h -> HTTP %{http_code}\n" -X POST -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${{ github.repository }}/actions/workflows/probe-futures-8h.yml/dispatches" -d '{"ref":"main"}' || true
 
       # ----- Slot SUIVI 12h (R2 léger — PAS le bulletin complet, Q9) -----
       - name: Suivi 12h (R2 — statut vs ouverture, dynamique, suggestions de sortie)

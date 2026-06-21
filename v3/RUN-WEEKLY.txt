@@ -1,2 +1,4 @@
 Trigger bilan semaine — surface section 5 (audit 3 experts 10/10) + section 4 chiffrée + retrait 2 sections.
 run: 2026-06-21T16:27:03Z
+Trigger bilan — surface KPI WR >= 0,5% + raisons réelles (drivers) sur tous les rapports.
+run: 2026-06-21T17:37:03Z

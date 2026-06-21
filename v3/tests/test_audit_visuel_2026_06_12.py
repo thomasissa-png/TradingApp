@@ -191,22 +191,32 @@ def test_hbd1_ligne_resume_en_tete():
     assert "Win rate : 11%" in head
 
 
-def test_hbd2_wr_du_jour_primaire_en_gras():
+def test_resume_en_tete_win_rate_et_signif():
+    """Ligne résumé EN TÊTE (calque hebdo) : win rate + WR ≥ 0,5 % d'un coup d'œil."""
     b = _bilan_1_8_3()
-    md = bj._render_markdown(b, {})
-    wr_section = md.split("### Win rate du jour")[1].split("### ")[0]
-    assert "**11% (1/9)**" in wr_section
-    assert "_Détail :_" in wr_section
-
-
-def test_wr_significatif_du_jour_affiche():
-    """Le bilan du jour affiche le WR ≥ 0,5 % à côté du win rate (mouvement exploitable)."""
-    b = _bilan_1_8_3()
-    b.n_vrai_signif = 1                       # le seul VRAI (Argent +1,6 %) est >= 0,5 %
+    b.n_vrai_signif = 1
     b.win_rate_signif_jour = round(1 / 9 * 100.0, 1)
     md = bj._render_markdown(b, {})
-    wr_section = md.split("### Win rate du jour")[1].split("### ")[0]
-    assert "WR ≥ 0,5 % du jour : 1/9 = 11%" in wr_section
+    head = md.split("## 1.")[0]
+    assert "**Résultat du" in head
+    assert "Win rate : 11%" in head and "WR ≥ 0,5 % : 11%" in head
+
+
+def test_bilan_jour_calque_sur_bilan_semaine():
+    """Le bilan du jour reprend les mêmes sections que le bilan semaine, + annexe repliée."""
+    b = _bilan_1_8_3()
+    md = bj._render_markdown(b, {})
+    for h in ("## 1. Performance de la Sélection du jour",
+              "## 2. Ce qu'on a bien fait aujourd'hui",
+              "## 3. Ce qu'on doit améliorer aujourd'hui",
+              "## 4. Les learnings du jour",
+              "## 5. Catalyseurs J+1"):
+        assert h in md, f"section manquante : {h}"
+    # Le détail de mesure dense descend dans l'annexe repliée.
+    assert '<details class="weekly-annex">' in md
+    idx = md.index('<details class="weekly-annex">')
+    assert md.index("### Résultat des calls 7h") > idx
+    assert md.index("### Win rate détaillé") > idx
 
 
 def test_i7_bilan_titre_h1():

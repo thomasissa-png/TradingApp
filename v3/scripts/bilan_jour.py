@@ -1331,7 +1331,7 @@ def _render_bloc1_perf_top3(bilan: "BilanJour") -> List[str]:
     actif (relié aux heures) confronté à la reco réelle du suivi 18h.
     """
     L: List[str] = []
-    L.append("### 1. Performance 24h du Top 3 (la Sélection du jour)")
+    L.append("### Sortie optimale (intraday 12h / 18h)")
     L.append("")
     if not bilan.perf_top3:
         L.append("Pas de sélection conclusive aujourd'hui (aucun top 3 à noter).")
@@ -1411,8 +1411,7 @@ def _render_bloc1_perf_top3(bilan: "BilanJour") -> List[str]:
                     f"(pas de catalyseur tracé)."
                 )
         # VRAIE raison du call (drivers du score) — pourquoi on a pris ce pari.
-        raison_txt = f" Pris sur : {p.raison_call}." if p.raison_call else ""
-        L.append(f"- **{p.actif}** ({p.call}) : {p.verdict}{raison_txt}{reco_txt}{cause_txt}")
+        L.append(f"- **{p.actif}** ({p.call}) : {p.verdict}{reco_txt}{cause_txt}")
     L.append("")
     return L
 
@@ -1463,6 +1462,131 @@ def _render_bloc3_apprentissage(bilan: "BilanJour") -> List[str]:
     return L
 
 
+# ===========================================================================
+# Bilan du jour CALQUÉ sur le bilan semaine (mêmes sections, à l'échelle du jour) :
+# 1) Performance de la Sélection · 2) Ce qu'on a bien fait + POURQUOI ·
+# 3) Ce qu'on doit améliorer + POURQUOI · 4) Learnings du jour · annexe repliée.
+# « Raison » = vrais drivers du score (decision-log), jamais une news lambda.
+# ===========================================================================
+
+_SEUIL_BIEN_FAIT_JOUR = 1.0   # mouvement favorable > 1 % = vraie réussite (def. fondateur)
+
+
+def _render_jour_selection(bilan: "BilanJour") -> List[str]:
+    """SECTION 1 — Performance de la Sélection du jour (calque de la section 1 hebdo)."""
+    from journaliste import (  # noqa: PLC0415
+        OUTCOME_VRAI, OUTCOME_FAUSSE, OUTCOME_NC, SEUIL_MVT_SIGNIFICATIF,
+    )
+    L: List[str] = ["## 1. Performance de la Sélection du jour", ""]
+    perf = bilan.perf_top3
+    if not perf:
+        L += ["Pas de sélection conclusive aujourd'hui (aucun top 3 à noter).", ""]
+        return L
+    delta_by = {m.cell.actif_name: m.delta_pct for m in bilan.measures_24h}
+    out_by = {m.cell.actif_name: m.outcome for m in bilan.measures_24h}
+    glyph = {OUTCOME_VRAI: "✅", OUTCOME_FAUSSE: "❌", OUTCOME_NC: "⚪"}
+    concl = [p for p in perf if out_by.get(p.actif) in (OUTCOME_VRAI, OUTCOME_FAUSSE)]
+    nN = len(concl)
+    nv = sum(1 for p in concl if out_by.get(p.actif) == OUTCOME_VRAI)
+    nv_sig = sum(
+        1 for p in concl
+        if out_by.get(p.actif) == OUTCOME_VRAI
+        and isinstance(delta_by.get(p.actif), (int, float))
+        and abs(delta_by[p.actif]) >= SEUIL_MVT_SIGNIFICATIF
+    )
+    amps = [p.fav_cloture for p in concl if isinstance(p.fav_cloture, (int, float))]
+    amp = sum(amps) / len(amps) if amps else None
+    wr = f"{nv / nN * 100:.0f}%" if nN else "—"
+    wrs = f"{nv_sig / nN * 100:.0f}%" if nN else "—"
+    L.append(
+        "> Nos paris 24h du jour. **Variation actif** = mouvement RÉEL de l'actif sur "
+        "24h (monte → +, baisse → −) ; le ✅/❌ dit si notre call était dans le bon "
+        "sens. **Raison** = les vrais drivers du score à l'émission (decision-log)."
+    )
+    L.append("")
+    L.append(
+        f"Win rate : **{wr}** ({nv}/{nN} jugés) · WR ≥ 0,5 % : **{wrs}** ({nv_sig}/{nN}) "
+        f"· ampleur moyenne : **{_fmt_pct(amp)}**."
+    )
+    L.append("")
+    L.append("| Actif | Call | Variation actif | Résultat | Raison |")
+    L.append("|---|---|---|---|---|")
+    for p in perf:
+        g = glyph.get(out_by.get(p.actif), "⚪")
+        L.append(f"| {p.actif} | {p.call} | {_fmt_pct(delta_by.get(p.actif))} | {g} | {p.raison_call or '—'} |")
+    L.append("")
+    return L
+
+
+def _points_forts_jour(bilan: "BilanJour") -> List[str]:
+    """SECTION 2 — Ce qu'on a bien fait aujourd'hui + POURQUOI (calque hebdo)."""
+    pts: List[str] = []
+    for p in bilan.perf_top3:
+        if not (isinstance(p.fav_cloture, (int, float)) and p.fav_cloture >= _SEUIL_BIEN_FAIT_JOUR):
+            continue
+        ligne = f"{p.actif} {p.call} : {_fmt_pct(p.fav_cloture)} dans le bon sens"
+        if p.raison_call:
+            ligne += f". Pris sur : {p.raison_call}"
+        pts.append(ligne + ".")
+    return pts
+
+
+def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
+    """SECTION 3 — Ce qu'on doit améliorer aujourd'hui + POURQUOI (calque hebdo) :
+    picks perdants (cause) + opportunités ratées (gros mouvements hors top 3)."""
+    from journaliste import OUTCOME_FAUSSE  # noqa: PLC0415
+    out_by = {m.cell.actif_name: m.outcome for m in bilan.measures_24h}
+    delta_by = {m.cell.actif_name: m.delta_pct for m in bilan.measures_24h}
+    pts: List[str] = []
+    # Picks perdants : on a suivi un signal qui s'est trompé (cause + drivers suivis).
+    for p in bilan.perf_top3:
+        if out_by.get(p.actif) != OUTCOME_FAUSSE:
+            continue
+        ligne = f"{p.actif} {p.call} ({_fmt_pct(delta_by.get(p.actif))}) raté"
+        if p.raison_call:
+            ligne += f" : on a suivi {p.raison_call}, le marché a fait l'inverse"
+        else:
+            ligne += " : call à contre-sens du marché"
+        if p.cause_repli:
+            ligne += f" ({p.cause_repli})"
+        pts.append(ligne + ".")
+    # Opportunités ratées : gros mouvement hors top 3 dans le bon sens, non sélectionné.
+    for g in bilan.gros_moves_autres:
+        if not g.direction_juste:
+            continue
+        ligne = (f"{g.actif} {g.call} {_fmt_pct(g.mouvement_pct)} (hors top 3) : "
+                 f"opportunité ratée — {g.raison_non_select}")
+        if g.cause_move:
+            ligne += f", sur : {g.cause_move}"
+        pts.append(ligne + ".")
+    return pts[:9]
+
+
+def _learnings_jour(bilan: "BilanJour") -> List[str]:
+    """SECTION 4 — Les learnings du jour (calque hebdo) : cadre + synthèse du jour.
+    Un jour = échantillon minuscule : ça ORIENTE, ça ne change aucune règle (cf. bilan
+    semaine pour les ajustements structurels)."""
+    out: List[str] = []
+    out.append(
+        "Cadre : une seule journée = échantillon minuscule, aucun chiffre n'est "
+        "significatif seul. Ces constats ORIENTENT ; les ajustements de RÈGLE se "
+        "décident sur le bilan SEMAINE (≥ ~50 paris cumulés), jamais sur un jour."
+    )
+    s = bilan.selection
+    if s.taux is not None:
+        out.append(
+            f"Sélection du jour : {s.n_vrai_select}/{s.n_select} justes "
+            f"({s.taux:.0f}%) — à confirmer dans la durée."
+        )
+    rates = [g for g in bilan.gros_moves_autres if g.direction_juste]
+    if rates:
+        out.append(
+            f"{len(rates)} gros mouvement(s) dans le bon sens hors top 3 (détail en "
+            "section 3) : revoir pourquoi ils n'ont pas été sélectionnés."
+        )
+    return out[:5]
+
+
 def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     """Markdown R4 (spec §3.4). WIN RATE ONLY — aucun montant."""
     from journaliste import (  # noqa: PLC0415
@@ -1476,35 +1600,71 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     L.append("")
     L.append(f"_Généré : {horodatage_fr(bilan.now)} (Europe/Paris)._")
     L.append("")
-    # [H-BD1 audit visuel 12/06] : ligne résumé du score EN TÊTE, avant le
-    # tableau détaillé — Thomas voit « j'ai eu raison combien de fois » d'un coup.
-    wr_txt = (
-        f" · Win rate : {bilan.win_rate_jour:.0f}%"
-        if bilan.win_rate_jour is not None else ""
-    )
+    # [H-BD1] ligne résumé du score EN TÊTE, calquée sur le bilan semaine
+    # (win rate + WR ≥ 0,5 % d'un coup d'œil).
+    bits = []
+    if bilan.win_rate_jour is not None:
+        bits.append(f"Win rate : {bilan.win_rate_jour:.0f}%")
+    if bilan.win_rate_signif_jour is not None:
+        bits.append(f"WR ≥ 0,5 % : {bilan.win_rate_signif_jour:.0f}%")
+    wr_txt = (" · " + " · ".join(bits)) if bits else ""
+    L.append("- WIN RATE ONLY · aucune mesure monétaire.")
     L.append(
         f"**Résultat du {bilan.date_j.strftime('%d/%m')} : "
         f"{bilan.n_vrai} ✅ / {bilan.n_fausse} ❌ / {bilan.n_nc} ⚪{wr_txt}**"
     )
     L.append("")
 
-    # Refonte bilan soir S9 (Thomas) — 3 blocs « suivi 24h » EN TÊTE, avant la
-    # mesure détaillée. WIN RATE ONLY (le % d'ampleur est OK). Zéro invention.
-    L.extend(_render_bloc1_perf_top3(bilan))
-    L.extend(_render_bloc2_gros_moves(bilan))
-    L.extend(_render_bloc3_apprentissage(bilan))
+    # === Structure CALQUÉE sur le bilan semaine ===
+    L.extend(_render_jour_selection(bilan))                         # 1. Performance
 
+    L.append("## 2. Ce qu'on a bien fait aujourd'hui")              # 2. Bien fait + POURQUOI
+    L.append("")
+    forts = _points_forts_jour(bilan)
+    if forts:
+        L.extend(f"- {x}" for x in forts)
+    else:
+        L.append("Rien de net aujourd'hui : aucun pari à plus de 1 % dans le bon sens.")
+    L.append("")
+
+    L.append("## 3. Ce qu'on doit améliorer aujourd'hui")          # 3. À améliorer + POURQUOI
+    L.append("")
+    faibles = _points_faibles_jour(bilan)
+    if faibles:
+        L.extend(f"- {x}" for x in faibles)
+    else:
+        L.append("Aucun pari raté ni opportunité ratée nette aujourd'hui.")
+    L.append("")
+
+    L.append("## 4. Les learnings du jour")                        # 4. Learnings
+    L.append("")
+    L.extend(f"- {x}" for x in _learnings_jour(bilan))
+    L.append("")
+
+    L.append("## 5. Catalyseurs J+1")                              # 5. À surveiller demain
+    L.append("")
+    L.extend(_catalyseurs_j1(bilan.now))
+    L.append("")
+
+    # === ANNEXE TECHNIQUE (repliée) — détail de mesure, comme le bilan semaine ===
+    L.append('<details class="weekly-annex">')
+    L.append("<summary>Annexe technique · détail de mesure (replié)</summary>")
+    L.append("")
+
+    # Sortie optimale intraday (pic 12h/18h vs clôture, reco du suivi, cause du repli).
+    L.extend(_render_bloc1_perf_top3(bilan))
+
+    # Résultat brut des 12 calls 7h (table complète).
     L.append("### Résultat des calls 7h")
     L.append("")
     L.append("| Actif | Call 7h | Ouverture | Clôture | Delta% | Résultat | Amplitude flag |")
     L.append("|---|---|---|---|---|---|---|")
-
     res_label = {
         OUTCOME_VRAI: "✅ VRAI",
         OUTCOME_FAUSSE: "❌ FAUSSE",
         OUTCOME_NC: "⚪ NC",
     }
-    faux_gros: List[Tuple[str, float]] = []  # (ligne, |delta|) — tri par amplitude
+    faux_gros: List[Tuple[str, float]] = []  # (actif, |delta|) — tri par amplitude
     for m in sorted(bilan.measures_24h, key=lambda x: x.cell.actif_name):
         delta = m.delta_pct
         seuil = m.seuil_pct
@@ -1517,8 +1677,6 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         ):
             flag = "⚡ gros move"
             faux_gros.append((m.cell.actif_name, abs(delta)))
-        # CA-B2 : marqueur [close approx] si la clôture EU est un fallback spot
-        # (close officiel 17h30 indisponible — Q5).
         cloture_cell = _fmt_price(m.prix_courant)
         if getattr(m, "ticker", None) in bilan.close_approx_tickers:
             cloture_cell = f"{cloture_cell} {CLOSE_APPROX_MARKER}"
@@ -1530,107 +1688,58 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     if not bilan.measures_24h:
         L.append("| _aucune cellule 24h mesurable du Briefing 7h_ | | | | | | |")
     L.append("")
-    # CA-B2 — note Q5 : si une clôture EU est approximée (spot 22h faute de
-    # close officiel 17h30), on le signale explicitement (zéro invention).
     if bilan.close_approx_tickers:
         L.append(
             f"> {CLOSE_APPROX_MARKER} : clôture EU = dernier prix disponible "
-            f"(spot ~22h), faute de close officiel 17h30 récupérable. "
-            f"À valider en live (Q5 : comportement Twelve Data pour FCHI/ETF)."
+            f"(spot ~22h), faute de close officiel 17h30 récupérable (Q5)."
         )
         L.append("")
 
-    # Win rate du jour — [H-BD2 audit visuel 12/06] : 2 niveaux. Le chiffre
-    # PRIMAIRE (le WR du jour) en gras, seul, en premier. Le détail (WR tradable,
-    # conviction forte/faible, sélection) descend en bloc « Détail » secondaire.
-    L.append("### Win rate du jour")
-    denom = bilan.n_vrai + bilan.n_fausse
-    if bilan.win_rate_jour is not None:
-        L.append(
-            f"**{bilan.win_rate_jour:.0f}% ({bilan.n_vrai}/{denom})** "
-            f"— {denom} paris conclusifs, {bilan.n_nc} non-conclusifs sous seuil."
-        )
-    else:
-        L.append("**— (aucun call conclusif aujourd'hui)**")
+    # Win rate détaillé (tradable / sélection / conviction).
+    L.append("### Win rate détaillé")
     L.append("")
-    L.append("_Détail :_")
-    # WR significatif : ne compte que les calls justes ayant bougé >= 0,5 % en
-    # notre faveur (gain exploitable ; quasi-plats écartés). Même dénominateur.
-    if bilan.win_rate_signif_jour is not None:
-        L.append(
-            f"- WR ≥ 0,5 % du jour : {bilan.n_vrai_signif}/{denom} = "
-            f"{bilan.win_rate_signif_jour:.0f}% (calls justes ayant bougé d'au moins 0,5 %)"
-        )
-    # WR tradable (secondaire) : inclut les non-conclusifs au dénominateur.
+    denom = bilan.n_vrai + bilan.n_fausse
     denom_trad = bilan.n_vrai + bilan.n_fausse + bilan.n_nc
     if bilan.wr_tradable_jour is not None:
         L.append(
             f"- WR tradable du jour : {bilan.n_vrai}/{denom_trad} = "
             f"{bilan.wr_tradable_jour:.0f}% (VRAI / VRAI+FAUSSE+non-conclusif)"
         )
-    else:
-        L.append("- WR tradable du jour : — (aucun pari tradable aujourd'hui)")
-    # WR Sélection du jour (Étage 1c) : les paris de l'encart « Sélection (max 3) »
-    # en tête de « 🎯 Décision du jour » (refonte S9 vague 3), mesurés comme objet
-    # dédié (VRAI/FAUX, NC exclus comme le WR global). « — » si aucune cellule
-    # sélectionnée n'est conclusive aujourd'hui.
     s = bilan.selection
     if s.taux is not None:
         L.append(
-            f"- WR Sélection du jour : {s.n_vrai_select}/{s.n_select} = "
-            f"{s.taux:.0f}% (encart « 🎯 Sélection (max 3) » de Décision du jour)"
+            f"- WR Sélection du jour : {s.n_vrai_select}/{s.n_select} = {s.taux:.0f}%"
         )
-    else:
-        L.append(
-            "- WR Sélection du jour : — (aucun pari sélectionné conclusif aujourd'hui)"
-        )
-    # Win rate par conviction (CA-W6)
     c = bilan.conviction
     tf = f"{c.taux_forte:.0f}%" if c.taux_forte is not None else "— (N insuffisant)"
     tw = f"{c.taux_faible:.0f}%" if c.taux_faible is not None else "— (N insuffisant)"
     L.append(f"- Win rate conviction forte (jour) : {tf} (N={c.n_forte})")
     L.append(f"- Win rate conviction faible (jour) : {tw} (N={c.n_faible})")
-    L.append("- Win rate cumulé : voir performance.md")
-    L.append("")
-    # A5 (audit momentum-family 10/06) — métrique shadow « FAUSSES aux
-    # retournements ». DISTINCTE du win rate ; sert UNIQUEMENT à comparer
-    # avant/après momentum v3 le taux d'erreurs aux points de retournement
-    # (forward-test J+60 = 2026-08-08). N'entre dans AUCUNE décision.
-    fr = bilan.fausses_retournement
-    L.append("### FAUSSES aux retournements (shadow A5)")
-    # [P-BD1 audit visuel 12/06] : explication réduite à 1 ligne (le détail
-    # complet était du bruit après la première lecture).
-    L.append("_Métrique shadow momentum (ne change pas le win rate) :_")
-    if fr.taux_fausses is not None:
-        L.append(
-            f"- FAUSSES aux retournements (jour) : "
-            f"**{fr.n_fausse_retournement}/{fr.n_retournement} = "
-            f"{fr.taux_fausses:.0f}%** (N={fr.n_retournement} cellules en retournement)"
-        )
-    else:
-        L.append(
-            "- FAUSSES aux retournements (jour) : — "
-            "(aucune cellule conclusive en situation de retournement aujourd'hui)"
-        )
+    L.append("- Win rate cumulé : voir page Performance.")
     L.append("")
 
-    # FAUX à forte amplitude (erreurs prioritaires) — tri par amplitude % desc.
-    L.append("### FAUX à forte amplitude (erreurs prioritaires)")
+    # FAUSSES aux retournements (shadow momentum, ne change aucune décision).
+    fr = bilan.fausses_retournement
+    L.append("### FAUSSES aux retournements (shadow momentum)")
+    if fr.taux_fausses is not None:
+        L.append(
+            f"- {fr.n_fausse_retournement}/{fr.n_retournement} = "
+            f"{fr.taux_fausses:.0f}% (N={fr.n_retournement} cellules en retournement)"
+        )
+    else:
+        L.append("- — (aucune cellule conclusive en retournement aujourd'hui)")
+    L.append("")
+
+    # FAUX à forte amplitude (erreurs prioritaires, déjà en section 3 — détail chiffré ici).
+    L.append("### FAUX à forte amplitude")
     if faux_gros:
         for actif, amp in sorted(faux_gros, key=lambda x: x[1], reverse=True):
-            L.append(
-                f"- ⚡ {actif} : call faux, le marché a bougé {amp:.2f}% "
-                f"dans le sens opposé."
-            )
-        # [C-BD1 audit visuel 12/06] : renvoi au bilan semaine UNE seule fois,
-        # en bas de liste (au lieu de répété sur chaque erreur).
-        L.append("")
-        L.append("_Ces erreurs seront analysées dans le bilan de semaine._")
+            L.append(f"- ⚡ {actif} : call faux, le marché a bougé {amp:.2f}% dans le sens opposé.")
     else:
         L.append("Pas de call faux à forte amplitude aujourd'hui.")
     L.append("")
 
-    # News qui ont compté (Option C — croisement) : best-effort.
+    # News qui ont compté aujourd'hui (croisement news ↔ calls conclusifs).
     L.append("### News qui ont compté aujourd'hui")
     news_lines = _news_qui_ont_compte(bilan)
     if news_lines:
@@ -1639,9 +1748,7 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         L.append("Pas de news déterminante croisée avec un call conclusif aujourd'hui.")
     L.append("")
 
-    # Catalyseurs J+1 (calendrier économique statique — zéro API, zéro invention).
-    L.append("### Catalyseurs J+1")
-    L.extend(_catalyseurs_j1(bilan.now))
+    L.append("</details>")
     L.append("")
     return "\n".join(L)
 

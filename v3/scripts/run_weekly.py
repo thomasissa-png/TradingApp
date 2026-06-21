@@ -422,6 +422,7 @@ class PickSemaine:
     bulletin_date: date
     ratio_news: Optional[float]          # 0-1, part de news à l'émission
     fiche_key: Optional[str] = None      # clé fiche (pour calendrier + famille)
+    score: Optional[float] = None        # score pondéré à l'émission (classement top 1)
     mono_critere: bool = False
     mono_critere_nom: Optional[str] = None
     coin_flip: bool = False
@@ -583,6 +584,9 @@ def _enrich_picks_semaine(
             bulletin_date=bdate,
             ratio_news=float(ratio) if isinstance(ratio, (int, float)) else None,
             fiche_key=str(fiche_key) if fiche_key else None,
+            score=(rec.get("score_pond") if isinstance(rec.get("score_pond"), (int, float))
+                   else rec.get("score_pm1") if isinstance(rec.get("score_pm1"), (int, float))
+                   else None),
             mono_critere=bool(rec.get("mono_critere_dominant", False)),
             mono_critere_nom=rec.get("mono_critere_nom"),
             coin_flip=bool(rec.get("coin_flip", False)),
@@ -1195,40 +1199,83 @@ def _fmt_jours_segment(jours: List[date]) -> str:
     return debut if debut == fin else f"{debut}→{fin}"
 
 
+def _top1_picks(picks: List["PickSemaine"]) -> List["PickSemaine"]:
+    """Le meilleur pari de CHAQUE jour (1 par bulletin_date) = score |max|.
+    Départage : ampleur favorable puis actif (déterministe). 1 par jour de bourse."""
+    par_jour: Dict[date, "PickSemaine"] = {}
+    def _key(p):
+        return (abs(p.score) if isinstance(p.score, (int, float)) else -1.0,
+                p.mouvement_dir if p.mouvement_dir is not None else -999.0)
+    for p in picks:
+        cur = par_jour.get(p.bulletin_date)
+        if cur is None or _key(p) > _key(cur):
+            par_jour[p.bulletin_date] = p
+    return list(par_jour.values())
+
+
+def _agg_picks(picks: List["PickSemaine"]) -> Tuple[int, int, Optional[float]]:
+    """(n_vrai, n_conclusifs, ampleur_moy_dir) sur un ensemble de picks."""
+    concl = [p for p in picks if p.outcome in ("VRAI", "FAUSSE")]
+    nv = sum(1 for p in concl if p.vrai)
+    amps = [p.mouvement_dir for p in concl if p.mouvement_dir is not None]
+    amp = round(sum(amps) / len(amps), 2) if amps else None
+    return nv, len(concl), amp
+
+
+def _render_picks_par_jour(picks: List["PickSemaine"], L: List[str]) -> None:
+    """Table des picks triée PAR JOUR (pas par actif) : jour, actif, call, % (sens
+    du call), verdict. Au sein d'un jour, du meilleur score au moins bon."""
+    JJ = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
+    rows = sorted(
+        picks,
+        key=lambda p: (p.bulletin_date,
+                       -(abs(p.score) if isinstance(p.score, (int, float)) else -1.0),
+                       p.actif),
+    )
+    L.append("| Jour | Actif | Call | % (sens du call) | Résultat |")
+    L.append("|---|---|---|---|---|")
+    for p in rows:
+        jour = f"{JJ[p.bulletin_date.weekday()]} {p.bulletin_date.day}"
+        glyph = "✅" if p.vrai else ("❌" if p.outcome in ("FAUSSE", "FAUX") else "⚪")
+        L.append(f"| {jour} | {p.actif} | {p.call} | {_fmt_signed_pct(p.mouvement_dir)} | {glyph} |")
+    L.append("")
+
+
+def _render_agg_picks(picks: List["PickSemaine"], L: List[str]) -> None:
+    nv, nt, amp = _agg_picks(picks)
+    wr = _fmt_pct(round(nv / nt * 100.0, 1)) if nt else "—"
+    L.append(f"Win rate : **{wr}** ({nv}/{nt} jugés) · ampleur moyenne : **{_fmt_signed_pct(amp)}**.")
+    L.append("")
+
+
 def _render_section1_selection(bilan: BilanSemaine, L: List[str]) -> None:
-    """SECTION 1 — Performance des 24h sélectionnés (la semaine)."""
+    """SECTION 1 — Performance des 24h sélectionnés (la semaine), par jour."""
     L.append("## 1. Performance des 24h sélectionnés (la semaine)")
     L.append("")
     L.append(
-        "> Nos « top du jour » (la Sélection, horizon 24h) agrégés sur la semaine : "
-        "taux de réussite et ampleur moyenne du mouvement, en pourcentage (jamais en euros)."
+        "> Nos paris 24h de la semaine, triés PAR JOUR. **Top 1** = le meilleur pari de "
+        "chaque jour (1 par jour de bourse, ~5/semaine) ; **Top 3** = les trois retenus. "
+        "Win rate = % de calls justes · ampleur = % moyen de gain/perte dans le sens du "
+        "call (jamais d'euros)."
     )
     L.append("")
-    s = bilan.selection
-    if s is None or s.n_select == 0:
+    picks = bilan.picks
+    if not picks:
         L.append(
             "Aucune sélection 24h jugée cette semaine (pas de top du jour conclusif "
             "sur les jours de bourse écoulés)."
         )
         L.append("")
     else:
-        wr = _fmt_pct(s.win_rate)
-        L.append("| Indicateur | Valeur |")
-        L.append("|---|---|")
-        L.append(f"| Win rate de la sélection | {wr} ({s.n_vrai}/{s.n_select} jugées) |")
-        ng = len(s.ampleurs_gagnantes)
-        npd = len(s.ampleurs_perdantes)
-        amp_g = _fmt_signed_pct(s.ampleur_moy_gagnantes) if ng else "—"
-        amp_p = _fmt_signed_pct(s.ampleur_moy_perdantes) if npd else "—"
-        L.append(f"| Ampleur moyenne des sélections gagnantes | {amp_g} ({ng}) |")
-        L.append(f"| Ampleur moyenne des sélections perdantes | {amp_p} ({npd}) |")
+        L.append("### Top 1 du jour (le meilleur pari, 1 par jour)")
         L.append("")
-        L.append(
-            "> Ampleur = moyenne du mouvement dans le sens du call (signe selon LONG/SHORT), "
-            "depuis le prix de référence d'émission. Sélection dont un prix manque = exclue "
-            "de l'ampleur (zéro donnée fabriquée)."
-        )
+        top1 = _top1_picks(picks)
+        _render_agg_picks(top1, L)
+        _render_picks_par_jour(top1, L)
+        L.append("### Top 3 du jour")
         L.append("")
+        _render_agg_picks(picks, L)
+        _render_picks_par_jour(picks, L)
     _render_edge_familles(bilan, L)
     _render_detail_24h(bilan, L)
 

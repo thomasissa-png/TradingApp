@@ -423,13 +423,30 @@ def test_annexe_technique_repliee_hors_sections_analyse(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 def _pick(actif, call, outcome, ratio_news, *, mono=False, mono_nom=None,
-          coin_flip=False, quasi=False, cause=None, mv=1.0, evt=None):
+          coin_flip=False, quasi=False, cause=None, mv=1.0, evt=None,
+          score=None, bdate=date(2026, 6, 16)):
     return rw.PickSemaine(
         actif=actif, call=call, outcome=outcome, realized_pct=mv, mouvement_dir=mv,
-        bulletin_date=date(2026, 6, 16), ratio_news=ratio_news,
+        bulletin_date=bdate, ratio_news=ratio_news, score=score,
         mono_critere=mono, mono_critere_nom=mono_nom, coin_flip=coin_flip,
         quasi_neutre=quasi, cause_news=cause, evenement_programme=evt,
     )
+
+
+def test_top1_picks_un_par_jour_meilleur_score():
+    lun, mar = date(2026, 6, 15), date(2026, 6, 16)
+    p_or = _pick("Or", "SHORT", "VRAI", 0.0, mv=4.4, score=-5.0, bdate=lun)     # |5|
+    p_ble = _pick("Blé", "SHORT", "FAUSSE", 0.0, mv=-1.0, score=-1.0, bdate=lun)  # |1|
+    p_sp = _pick("S&P 500", "LONG", "FAUSSE", 0.0, mv=-1.1, score=2.0, bdate=mar)
+    top1 = rw._top1_picks([p_or, p_ble, p_sp])
+    assert sorted(p.actif for p in top1) == ["Or", "S&P 500"]  # 1/jour, meilleur score
+
+
+def test_agg_picks_winrate_et_ampleur():
+    ps = [_pick("Or", "SHORT", "VRAI", 0.0, mv=4.0),
+          _pick("Blé", "SHORT", "FAUSSE", 0.0, mv=-2.0)]
+    nv, nt, amp = rw._agg_picks(ps)
+    assert nv == 1 and nt == 2 and amp == 1.0   # (4 + -2)/2 = 1.0
 
 
 # --- Priorisation par famille + alerte événement programmé (S9 vague experts) ---

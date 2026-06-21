@@ -760,7 +760,7 @@
         <p id="history-empty" hidden></p>
       </section>
       <p class="gen-meta" aria-label="Date de génération de la page">
-        Page générée le <time datetime="2026-06-21T14:56:41Z">21 juin 2026 · 14h56 (UTC)</time>
+        Page générée le <time datetime="2026-06-21T15:16:46Z">21 juin 2026 · 15h16 (UTC)</time>
       </p>
     </div>
   </main>
@@ -15757,21 +15757,38 @@ Catalyseurs J+1 non disponibles — agenda éco non ingéré ce jour (best-effor
 const WEEKLY = [
 {...{"id": "weekly-2026-S25", "label": "Semaine 2026-S25", "filename": "2026-S25.md"}, markdown: `# Bilan semaine · 2026-S25 (2026-06-15 → 2026-06-21)
 
-- Généré : 21 juin 2026, 16h56 (samedi matin, Paris)
+- Généré : 21 juin 2026, 17h16 (samedi matin, Paris)
 - WIN RATE ONLY · aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.
 - WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) · inclut les jours sous seuil où une position aurait quand même été prise (toujours ≤ Win rate).
 
 ## 1. Performance des 24h sélectionnés (la semaine)
 
-> Nos « top du jour » (la Sélection, horizon 24h) agrégés sur la semaine : taux de réussite et ampleur moyenne du mouvement, en pourcentage (jamais en euros).
+> Nos paris 24h de la semaine, triés PAR JOUR. **Top 1** = le meilleur pari de chaque jour (1 par jour de bourse, ~5/semaine) ; **Top 3** = les trois retenus. Win rate = % de calls justes · ampleur = % moyen de gain/perte dans le sens du call (jamais d'euros).
 
-| Indicateur | Valeur |
-|---|---|
-| Win rate de la sélection | 50.0% (4/8 jugées) |
-| Ampleur moyenne des sélections gagnantes | +4,5 % (4) |
-| Ampleur moyenne des sélections perdantes | -4,0 % (4) |
+### Top 1 du jour (le meilleur pari, 1 par jour)
 
-> Ampleur = moyenne du mouvement dans le sens du call (signe selon LONG/SHORT), depuis le prix de référence d'émission. Sélection dont un prix manque = exclue de l'ampleur (zéro donnée fabriquée).
+Win rate : **66.7%** (2/3 jugés) · ampleur moyenne : **+2,5 %**.
+
+| Jour | Actif | Call | % (sens du call) | Résultat |
+|---|---|---|---|---|
+| lun 15 | Or | SHORT | +4,4 % | ✅ |
+| mar 16 | S&P 500 | LONG | -1,1 % | ❌ |
+| mer 17 | Or | SHORT | +4,2 % | ✅ |
+
+### Top 3 du jour
+
+Win rate : **50.0%** (4/8 jugés) · ampleur moyenne : **+0,3 %**.
+
+| Jour | Actif | Call | % (sens du call) | Résultat |
+|---|---|---|---|---|
+| lun 15 | Or | SHORT | +4,4 % | ✅ |
+| lun 15 | Pétrole (Brent) | SHORT | +5,1 % | ✅ |
+| lun 15 | Café (Arabica) | SHORT | -5,7 % | ❌ |
+| mar 16 | S&P 500 | LONG | -1,1 % | ❌ |
+| mar 16 | Pétrole (Brent) | SHORT | +4,3 % | ✅ |
+| mer 17 | Or | SHORT | +4,2 % | ✅ |
+| mer 17 | S&P 500 | LONG | -0,5 % | ❌ |
+| mer 17 | Argent | LONG | -8,7 % | ❌ |
 
 ### Où est notre edge (par famille d'actif, cumulé)
 
@@ -15977,21 +15994,38 @@ Rien en zone d'observation cette semaine.
 const WEEKLIES = [
 {...{"id": "weekly-2026-S25", "label": "Semaine 2026-S25", "sunday": "2026-06-21", "filename": "2026-S25.md"}, markdown: `# Bilan semaine · 2026-S25 (2026-06-15 → 2026-06-21)
 
-- Généré : 21 juin 2026, 16h56 (samedi matin, Paris)
+- Généré : 21 juin 2026, 17h16 (samedi matin, Paris)
 - WIN RATE ONLY · aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.
 - WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) · inclut les jours sous seuil où une position aurait quand même été prise (toujours ≤ Win rate).
 
 ## 1. Performance des 24h sélectionnés (la semaine)
 
-> Nos « top du jour » (la Sélection, horizon 24h) agrégés sur la semaine : taux de réussite et ampleur moyenne du mouvement, en pourcentage (jamais en euros).
+> Nos paris 24h de la semaine, triés PAR JOUR. **Top 1** = le meilleur pari de chaque jour (1 par jour de bourse, ~5/semaine) ; **Top 3** = les trois retenus. Win rate = % de calls justes · ampleur = % moyen de gain/perte dans le sens du call (jamais d'euros).
 
-| Indicateur | Valeur |
-|---|---|
-| Win rate de la sélection | 50.0% (4/8 jugées) |
-| Ampleur moyenne des sélections gagnantes | +4,5 % (4) |
-| Ampleur moyenne des sélections perdantes | -4,0 % (4) |
+### Top 1 du jour (le meilleur pari, 1 par jour)
 
-> Ampleur = moyenne du mouvement dans le sens du call (signe selon LONG/SHORT), depuis le prix de référence d'émission. Sélection dont un prix manque = exclue de l'ampleur (zéro donnée fabriquée).
+Win rate : **66.7%** (2/3 jugés) · ampleur moyenne : **+2,5 %**.
+
+| Jour | Actif | Call | % (sens du call) | Résultat |
+|---|---|---|---|---|
+| lun 15 | Or | SHORT | +4,4 % | ✅ |
+| mar 16 | S&P 500 | LONG | -1,1 % | ❌ |
+| mer 17 | Or | SHORT | +4,2 % | ✅ |
+
+### Top 3 du jour
+
+Win rate : **50.0%** (4/8 jugés) · ampleur moyenne : **+0,3 %**.
+
+| Jour | Actif | Call | % (sens du call) | Résultat |
+|---|---|---|---|---|
+| lun 15 | Or | SHORT | +4,4 % | ✅ |
+| lun 15 | Pétrole (Brent) | SHORT | +5,1 % | ✅ |
+| lun 15 | Café (Arabica) | SHORT | -5,7 % | ❌ |
+| mar 16 | S&P 500 | LONG | -1,1 % | ❌ |
+| mar 16 | Pétrole (Brent) | SHORT | +4,3 % | ✅ |
+| mer 17 | Or | SHORT | +4,2 % | ✅ |
+| mer 17 | S&P 500 | LONG | -0,5 % | ❌ |
+| mer 17 | Argent | LONG | -8,7 % | ❌ |
 
 ### Où est notre edge (par famille d'actif, cumulé)
 

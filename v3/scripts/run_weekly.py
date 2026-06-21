@@ -1,4 +1,4 @@
-"""TradingApp v3 — Bilan de la semaine dimanche 18h (R5) + le Manager.
+"""TradingApp v3 — Bilan de la semaine samedi matin (R5) + le Manager.
 
 Source de vérité : `v3/docs/reco/spec-refonte-5-rapports.md` §4 + §7 (CA-W*).
 
@@ -23,7 +23,7 @@ Garde-fous :
 - Fuseaux via ZoneInfo, jamais d'offset codé en dur. Réutilise l'existant
   (compute_kpi/measure, archive hebdo, win rate conviction).
 
-Le déclenchement dimanche 18h (guard weekday()==6 + bypass is_trading_day) est
+Le déclenchement samedi matin (guard weekday()==5 + bypass is_trading_day) est
 géré par l'infra (cron + cycle.yml), PAS ici. Ce module EXPOSE build_bilan_semaine
 appelable avec un `now` (datetime Europe/Paris).
 """
@@ -60,8 +60,8 @@ DECISION_LOG_DIR = ROOT / "data" / "decision-log"
 PRIX_EMISSION_DIR = ROOT / "data" / "prix-emission"
 PRIX_OUVERTURE_DIR = ROOT / "data" / "prix-ouverture"
 # Journal PERSISTÉ des mesures (verdicts jugés jour par jour). Source de vérité du
-# bilan : on NE re-mesure PAS à chaud (les prix passés ne sont plus dispo le
-# dimanche → tout repasserait « non-conclusif » = bug « Aucune sélection »).
+# bilan : on NE re-mesure PAS à chaud (les prix passés ne sont plus dispo en fin
+# de semaine → tout repasserait « non-conclusif » = bug « Aucune sélection »).
 MEASURES_LOG = ROOT / "data" / "measures-log.jsonl"
 
 # --- Seuils de détection du Manager (§4.3) ---------------------------------
@@ -328,10 +328,10 @@ def selection_semaine(
     """Agrège la Sélection du jour (24h) sur la semaine ISO de `now`.
 
     Source = le JOURNAL PERSISTÉ des mesures (measures-log.jsonl), c.-à-d. les
-    verdicts déjà jugés jour par jour. On NE re-mesure PAS à chaud : le dimanche,
-    les prix passés ne sont souvent plus re-téléchargeables → une re-mesure live
-    repasse tout en « non-conclusif » et fait disparaître la sélection (bug
-    historique « Aucune sélection 24h jugée » alors qu'on avait bien des tops).
+    verdicts déjà jugés jour par jour. On NE re-mesure PAS à chaud : en fin de
+    semaine, les prix passés ne sont souvent plus re-téléchargeables → une
+    re-mesure live repasse tout en « non-conclusif » et fait disparaître la
+    sélection (bug historique « Aucune sélection 24h jugée » malgré des tops).
 
     Pour chaque mesure 24h CONCLUSIVE (VRAI/FAUSSE) dont l'échéance tombe dans la
     semaine : on vérifie qu'elle était dans la Sélection du jour de décision
@@ -996,7 +996,7 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     # reste présent (lu par build_html.weekHumanTitle pour le titre humain).
     L.append(f"# Bilan semaine · {bilan.iso} ({bilan.lundi.isoformat()} → {bilan.dimanche.isoformat()})")
     L.append("")
-    L.append(f"- Généré : {horodatage_fr(bilan.now)} (dimanche 18h Paris)")
+    L.append(f"- Généré : {horodatage_fr(bilan.now)} (samedi matin, Paris)")
     L.append("- WIN RATE ONLY · aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.")
     L.append(
         "- WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) · inclut les jours "
@@ -1583,7 +1583,7 @@ def write_bilan_semaine(bilan: BilanSemaine, out_dir: Path = BILAN_SEMAINE_DIR) 
 def main(argv: Optional[List[str]] = None) -> int:
     """CLI : produit le bilan de la semaine + propositions Manager.
 
-    Le déclenchement dimanche 18h (guard weekday()==6, bypass is_trading_day) est
+    Le déclenchement samedi matin (guard weekday()==5, bypass is_trading_day) est
     géré par l'infra. Ici on construit et on écrit le rapport.
     """
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

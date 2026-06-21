@@ -1,29 +1,29 @@
 name: weekly-summary
 
-# Objectif : le Bilan de la semaine (R5) + le Manager, dimanche 18h Paris.
+# Objectif : le Bilan de la semaine (R5) + le Manager, samedi matin Paris.
 # Source de vérité : v3/docs/reco/spec-refonte-5-rapports.md §4 + §5.2 + CA-W1/CA-I2.
 #
 # EXCEPTION DÉLIBÉRÉE à la garde « jours de bourse » : les marchés sont fermés le
-# dimanche, mais R5 est un BILAN de performance (pas un bulletin sur prix live).
+# samedi, mais R5 est un BILAN de performance (pas un bulletin sur prix live).
 # Il ne stamp aucun prix d'émission, ne génère aucune cellule LONG/SHORT mesurable.
-# → Il BYPASS `is_trading_day` et s'exécute UNIQUEMENT le dimanche (weekday()==6).
+# → Il BYPASS `is_trading_day` et s'exécute UNIQUEMENT le samedi (weekday()==5).
 #
 # WORKFLOW SÉPARÉ (choix Q7 = job séparé) : pas de risque de confusion avec les
 # runs quotidiens de cycle.yml (qui ont leur propre garde jour-de-bourse). Le
 # Manager PROPOSE, Thomas VALIDE — `git diff v3/config/` reste vide (CA-W4).
 #
-# Cron UTC (pas de DST auto) : 16h UTC dimanche = 18h Paris été (CEST) / 17h Paris
-# hiver (CET). L'écart d'1h en hiver est sans impact : R5 lit des données figées
-# (archive hebdo + decision-log + KPI), pas un prix live à l'heure pile.
+# Cron UTC (pas de DST auto) : 6h UTC samedi = 8h Paris été (CEST) / 7h Paris
+# hiver (CET) — le matin. L'écart d'1h en hiver est sans impact : R5 lit des
+# données figées (archive hebdo + decision-log + KPI), pas un prix live à l'heure.
 # REDONDANCE : 3 tentatives (:12/:27/:42) comme cycle.yml — un garde-fou anti-doublon
 # (snapshot < 2h) no-op les tentatives 2 et 3 si le bilan a déjà été produit.
 on:
   schedule:
-    - cron: "12,27,42 16 * * 0"   # dimanche 16h UTC = 18h Paris (CEST) / 17h (CET)
+    - cron: "12,27,42 6 * * 6"    # samedi 6h UTC = 8h Paris (CEST) / 7h (CET) — matin
   workflow_dispatch:
     inputs:
       force:
-        description: "Forcer le bilan semaine hors dimanche (échappatoire manuelle). Le VPS ne passe JAMAIS force=true."
+        description: "Forcer le bilan semaine hors samedi (échappatoire manuelle). Le VPS ne passe JAMAIS force=true."
         type: boolean
         default: false
   # Répétition manuelle sans bouton (mobile) : pousser v3/RUN-WEEKLY.txt déclenche R5.
@@ -48,7 +48,7 @@ jobs:
         with:
           fetch-depth: 50
 
-      - name: Guard — dimanche uniquement (bypass jour-de-bourse) + redondance ×3
+      - name: Guard — samedi uniquement (bypass jour-de-bourse) + redondance ×3
         id: guard
         env:
           FORCE_INPUT: ${{ github.event.inputs.force }}
@@ -57,45 +57,45 @@ jobs:
           # TABLE DE VÉRITÉ  (déclencheur × jour × force → run ?)
           # -------------------------------------------------------------------
           #   déclencheur          jour       force → run ?  pourquoi
-          #   schedule (dim 16hUTC) Dimanche    —   → OUI*   bilan semaine (*anti-doublon ×3)
-          #   schedule (dim 16hUTC) Lun-Sam     —   → NON    sécurité : ne tourne que le dimanche
-          #   dispatch (VPS)        Dimanche  false → OUI    driver réel dimanche
-          #   dispatch (VPS)        Lun-Sam   false → NON    hors dimanche, pas de bypass sans force
+          #   schedule (sam 6hUTC)  Samedi      —   → OUI*   bilan semaine (*anti-doublon ×3)
+          #   schedule (sam 6hUTC)  autre jour  —   → NON    sécurité : ne tourne que le samedi
+          #   dispatch (VPS)        Samedi    false → OUI    driver réel samedi
+          #   dispatch (VPS)        autre jour false → NON   hors samedi, pas de bypass sans force
           #   dispatch (force)      N'importe true  → OUI    échappatoire humaine (bypass, CA-W1.c)
           #   push RUN-WEEKLY.txt   N'importe   —   → OUI    échappatoire humaine (bypass)
           #
           # CONTRASTE avec cycle.yml : ici la garde est INVERSÉE. cycle.yml coupe
-          # le week-end ; weekly-summary ne tourne QUE le dimanche. R5 ne touche
-          # aucun prix live → le dimanche est INTENTIONNEL, pas une anomalie.
+          # le week-end ; weekly-summary ne tourne QUE le samedi. R5 ne touche
+          # aucun prix live → le samedi est INTENTIONNEL, pas une anomalie.
           # `is_trading_day` n'est PAS appelé (bypass délibéré §5.2) — la seule
-          # condition calendaire est `weekday()==6` (dimanche, heure de Paris).
+          # condition calendaire est `weekday()==5` (samedi, heure de Paris).
           # ===================================================================
 
           # --- 1. Forçage explicite = échappatoire humaine → run, bypass tout (CA-W1.c)
           #     a) workflow_dispatch avec input force=true   b) push RUN-WEEKLY.txt
           if [ "${FORCE_INPUT}" = "true" ] || [ "${GITHUB_EVENT_NAME}" = "push" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Forçage explicite (force=${FORCE_INPUT:-n/a} / event=${GITHUB_EVENT_NAME}) → run R5, bypass garde dimanche."
+            echo "Forçage explicite (force=${FORCE_INPUT:-n/a} / event=${GITHUB_EVENT_NAME}) → run R5, bypass garde samedi."
             exit 0
           fi
 
           # --- 2. Déclencheurs automatiques (schedule OU dispatch-VPS sans force) :
-          #     garde DIMANCHE STRICTE. weekday() : 7 = dimanche en `date +%u`
-          #     (1=lundi … 6=samedi, 7=dimanche). On exige le dimanche heure Paris.
+          #     garde SAMEDI STRICTE. weekday() : 6 = samedi en `date +%u`
+          #     (1=lundi … 6=samedi, 7=dimanche). On exige le samedi heure Paris.
           dow=$(TZ='Europe/Paris' date +%u)
-          if [ "$dow" -ne 7 ]; then
+          if [ "$dow" -ne 6 ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Pas dimanche (jour=$dow, Europe/Paris) + déclenchement automatique (${GITHUB_EVENT_NAME}) → NO-OP (R5 ne tourne que le dimanche)."
+            echo "Pas samedi (jour=$dow, Europe/Paris) + déclenchement automatique (${GITHUB_EVENT_NAME}) → NO-OP (R5 ne tourne que le samedi)."
             exit 0
           fi
 
-          # --- 3. Dimanche : anti-doublon ×3 pour le SCHEDULE uniquement.
+          # --- 3. Samedi : anti-doublon ×3 pour le SCHEDULE uniquement.
           #     Le schedule tire 3×/créneau (:12/:27/:42) → on no-op les tentatives
           #     2 et 3 si un bilan semaine a déjà été produit dans les 2h. Le VPS
           #     tire 1×/créneau (workflow_dispatch) → on le laisse toujours passer.
           if [ "${GITHUB_EVENT_NAME}" != "schedule" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Dimanche + déclenchement ${GITHUB_EVENT_NAME} (VPS, 1 tir/créneau) → run R5."
+            echo "Samedi + déclenchement ${GITHUB_EVENT_NAME} (VPS, 1 tir/créneau) → run R5."
             exit 0
           fi
           last=$(git log -1 --format=%ct --grep="bilan semaine" 2>/dev/null || echo 0)
@@ -105,7 +105,7 @@ jobs:
             echo "Bilan semaine il y a $(((now-last)/60)) min → tentative schedule redondante, SKIP."
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Dimanche + schedule, pas de bilan récent → run R5."
+            echo "Samedi + schedule, pas de bilan récent → run R5."
           fi
 
       - name: Setup Python

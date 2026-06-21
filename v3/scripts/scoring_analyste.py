@@ -1698,14 +1698,37 @@ def _build_legende(flags_present: set) -> str:
     Les flags 4a/5 (↯ ⇄ ⇆ ⌛ ⊘) et ⚠/⚠️ sont visuels : ils n'altèrent PAS la
     conclusion (mode shadow).
     """
+    # Regroupé pour décoder vite (au lieu d'une liste à plat de 10+ glyphes) :
+    #   1. À écarter (non jouable) · 2. Prudence (fragilité, n'exclut pas) ·
+    #   3. Contexte (n'altère pas la direction). Display-only, zéro impact mesure.
+    _NON_JOUABLE = ("🚫", "⚪", "≈")
+    _PRUDENCE = ("◧", "↯", "⚠️", "⚠", "⇄", "⇆", "⌛", "⊘")
+    _CONTEXTE = ("📰", "⚑", "⏸", "⚭")
+    _desc = dict(_LEGENDE_DEFS)
     lines: List[str] = ["**Légende** (symboles présents) :", ""]
-    any_shadow = False
+    any_shadow = any(
+        s in flags_present for s in ("↯", "⇄", "⇆", "⌛", "⊘", "⚠", "⚠️", "◧")
+    )
+
+    def _groupe(titre: str, syms: Tuple[str, ...]) -> None:
+        present = [s for s in syms if s in flags_present]
+        if not present:
+            return
+        lines.append(f"_{titre}_")
+        for s in present:
+            lines.append(f"- {s} {_desc.get(s, '')}")
+        lines.append("")
+
+    _groupe("À écarter — non jouable", _NON_JOUABLE)
+    _groupe("Prudence — drapeau de fragilité (n'exclut pas)", _PRUDENCE)
+    _groupe("Contexte — n'altère pas la direction", _CONTEXTE)
+    # Filet : tout symbole présent non classé (robustesse si on ajoute un glyphe).
+    _classes = set(_NON_JOUABLE + _PRUDENCE + _CONTEXTE)
     for sym, desc in _LEGENDE_DEFS:
-        if sym not in flags_present:
-            continue
-        if sym in ("↯", "⇄", "⇆", "⌛", "⊘", "⚠", "⚠️", "◧"):
-            any_shadow = True
-        lines.append(f"- {sym} {desc}")
+        if sym in flags_present and sym not in _classes:
+            lines.append(f"- {sym} {desc}")
+    if lines and lines[-1] == "":
+        lines.pop()
     # Échelle de la Note (toujours affichée) : la Note est une somme pondérée
     # signée, sans borne fixe — son amplitude dépend de la couverture de l'actif.
     # On la lit donc conjointement avec la confiance (%).

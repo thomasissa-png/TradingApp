@@ -53,11 +53,15 @@ def test_renderList_une_entree_par_jour_et_clic_selectDay():
     assert "selectDay(en.date);" in html
 
 
-def test_renderList_badge_dernier_conserve():
+def test_renderList_jour_recent_gras_sans_badge():
+    # Refonte S9 : la pastille verte « DERNIER » est retirée (redondante avec le
+    # tri récent-d'abord + l'entrée « Aujourd'hui »). Le jour le plus récent garde
+    # un repère DOUX : la classe .latest (léger gras), sans badge.
     html = _html()
     assert "const latestDate = days.length > 0 ? days[0].date : null;" in html
-    assert "if (en.date === latestDate) {" in html
-    assert "badge.textContent = 'dernier';" in html
+    assert "if (en.date === latestDate) a.classList.add('latest');" in html
+    assert "badge.textContent = 'dernier';" not in html
+    assert "badge-latest" not in html
 
 
 def test_renderList_bilans_semaine_dans_le_menu():

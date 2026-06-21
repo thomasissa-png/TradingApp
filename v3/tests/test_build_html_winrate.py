@@ -1,10 +1,18 @@
-"""Tests build_html — vue « Résultats / Win rate » (performance.md).
+"""Tests build_html — vue « Performance » (fusion Résultats/Win rate + Historique).
+
+Refonte design S9 : les deux entrées de menu « Résultats / Win rate » et
+« Historique / Performance » faisaient doublon (même bloc win rate en tête, même
+table 24h). Elles sont FUSIONNÉES en une seule vue « 📊 Performance » :
+  - win rate par actif et par horizon en tête (le KPI, win-rate-only) ;
+  - séquence des verdicts par cellule ;
+  - détail technique A/B (calibration ±1) replié ;
+  - table décision par décision en dessous.
 
 Vérifie :
   - load_performance_md lit notre tableau win-rate-only en markdown brut ;
   - absent → None (dégradation propre) ;
-  - render_html embarque le markdown win-rate en JS + la nav/section dédiée ;
-  - l'onglet Historique met le win rate en tête et rétrograde le bloc A/B Brier ;
+  - render_html embarque le markdown win-rate en JS ;
+  - la vue Performance unique (plus de winrate-view/showWinrate séparés) ;
   - win-rate-only : aucun montant d'argent injecté par le builder.
 
 On NE teste PAS la logique de mesure (compute_kpi, render_performance) — couverte
@@ -56,7 +64,7 @@ def test_load_performance_md_absent_retourne_none(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# render_html — embarquement + vue dédiée
+# render_html — embarquement + vue Performance fusionnée
 # ---------------------------------------------------------------------------
 
 def test_render_html_embarque_le_tableau_winrate():
@@ -69,29 +77,44 @@ def test_render_html_embarque_le_tableau_winrate():
     assert "Win rate du bulletin" in html
 
 
-def test_render_html_vue_winrate_nav_et_section():
+def test_render_html_vue_performance_unique():
+    # Une SEULE vue Performance (fusion) : la nav et la section Historique
+    # portent désormais le libellé « Performance », routée par #vue=performance.
     html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD)
-    # Entrée de nav sidebar + section dédiée + fonctions de rendu.
-    assert 'id="nav-winrate"' in html
-    assert "Résultats / Win rate" in html
-    assert 'id="winrate-view"' in html
-    assert 'id="winrate-content"' in html
-    assert "function showWinrate" in html
-    assert "function buildWinrateView" in html
-    assert "vue=resultats" in html
-
-
-def test_render_html_winrate_en_tete_onglet_historique():
-    html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD)
-    # Le win rate est rendu en tête de l'onglet Historique.
+    assert 'id="nav-history"' in html
+    assert "📊 Performance" in html
+    assert 'id="history-view"' in html
     assert 'id="history-winrate"' in html
-    # Le win rate est rendu dans #history-winrate (le call passe désormais par
-    # une variable `hwr` pour enchaîner dimEmptyRows/enhanceWinrateRows — P-R1/C-R1).
+    assert "vue=performance" in html
+    # Rétro-compat des liens partagés d'avant la fusion (ne crée pas de vue).
+    assert "vue=resultats" in html
+    assert "vue=historique" in html
+
+
+def test_render_html_ancienne_vue_resultats_supprimee():
+    # La vue « Résultats / Win rate » séparée n'existe plus (doublon retiré).
+    html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD)
+    assert 'id="nav-winrate"' not in html
+    assert 'id="winrate-view"' not in html
+    assert 'id="winrate-content"' not in html
+    assert "function showWinrate" not in html
+    assert "function buildWinrateView" not in html
+    assert "Résultats / Win rate" not in html
+
+
+def test_render_html_winrate_en_tete_vue_performance():
+    html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD)
+    # Le win rate est rendu en tête de la vue Performance (#history-winrate),
+    # avec la séquence des verdicts (annotateFlipContinuation + buildVerdictSequences).
     assert "getElementById('history-winrate')" in html
     assert "renderWinrateInto(hwr)" in html
+    assert "buildVerdictSequences(hwr)" in html
+    assert "annotateFlipContinuation(hwr)" in html
     # Le bloc A/B Brier est rétrogradé dans un <details> replié et secondaire.
     assert 'id="history-ab-fold"' in html
     assert "Détail technique par cellule" in html
+    # L'encart de chauffe (ex-vue Résultats) vit désormais dans la vue Performance.
+    assert "Tout est en chauffe." in html
 
 
 def test_render_html_winrate_absent_degradation_propre():
@@ -100,13 +123,13 @@ def test_render_html_winrate_absent_degradation_propre():
     assert html.startswith("<!DOCTYPE html>")
     assert "const WINRATE_MD = null" in html
     assert "{winrate_js}" not in html
-    # La section + le message de dégradation existent dans la page (masqués via JS).
-    assert 'id="winrate-view"' in html
+    # La vue Performance + le message de dégradation existent (rendu via JS).
+    assert 'id="history-view"' in html
     assert "Aucun résultat de win rate disponible" in html
 
 
 def test_render_html_sequence_verdicts_par_cellule():
-    """La vue Résultats embarque la séquence compacte des verdicts par cellule,
+    """La vue Performance embarque la séquence compacte des verdicts par cellule,
     dérivée de MEASURES (rendu pur, zéro recalcul de KPI)."""
     html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD, measures=[
         {"actif": "Or", "horizon": "24h", "outcome": "VRAI", "bulletin_date": "2026-06-01"},
@@ -125,9 +148,9 @@ def test_render_html_sequence_verdicts_par_cellule():
 
 
 def test_render_html_winrate_only_aucun_argent_injecte():
-    """Le builder n'ajoute aucune notion d'argent autour du tableau win-rate."""
+    """Le builder n'ajoute aucune notion d'argent autour de la vue Performance."""
     html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD)
-    # On vérifie que le chrome de la vue (titres, intro) est win-rate-only.
-    section = html.split('id="winrate-view"')[1].split("</section>")[0]
+    # On vérifie que le chrome de la vue (titres, intro, encart) est win-rate-only.
+    section = html.split('id="history-view"')[1].split("</section>")[0]
     for banned in ["P&L", "€", "$", "gain", "expectancy", "equity"]:
-        assert banned not in section, f"Terme argent dans la vue Résultats : {banned}"
+        assert banned not in section, f"Terme argent dans la vue Performance : {banned}"

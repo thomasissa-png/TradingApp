@@ -1,13 +1,13 @@
 """Tests build_html — extension UX aux vues hors-Briefing (Session 7).
 
 Présentation pure. On vérifie que le HTML généré embarque bien les nouveaux
-éléments d'aide à la lecture pour les vues Résultats / Bilan semaine / Historique :
-  - Vue Résultats : intro contextuelle (WR tradable, « trop peu N/15 »), encart
-    « chauffe » avec les dates/règles RÉELLES (reset 11/06, jalon 08/08, 12 actifs),
-    grisage des lignes sans données, explication « Flip vs continuation » ;
+éléments d'aide à la lecture pour les vues Performance / Bilan semaine :
+  - Vue Performance (fusion Résultats + Historique) : intro contextuelle (WR
+    tradable, « trop peu N/15 »), encart « chauffe » avec les dates/règles RÉELLES
+    (reset 11/06, jalon 08/08, 12 actifs), grisage des lignes sans données,
+    explication « Flip vs continuation », colonne créneau, dates humaines,
+    regroupement par jour, distinction du jour courant ;
   - Vue Bilan semaine : titre humain « Semaine ISO … du lundi … au vendredi … » ;
-  - Vue Historique : colonne créneau, dates humaines, regroupement par jour,
-    distinction du jour courant ;
   - Transverse : bandeau MODE TEST hors du <main> (visible sur toutes les vues).
 
 Zéro logique métier testée — uniquement le rendu / la présence des hooks JS+CSS.
@@ -56,20 +56,20 @@ SAMPLE_WEEKLY_MD = """# Win rate — semaine 2026-S24 (2026-06-08 → 2026-06-14
 """
 
 
-# --- Vue Résultats ---------------------------------------------------------
+# --- Vue Performance (fusion Résultats + Historique, refonte S9) ------------
 
-def test_resultats_intro_contextuelle():
+def test_performance_intro_contextuelle():
     html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD)
-    section = html.split('id="winrate-view"')[1].split("</section>")[0]
+    section = html.split('id="history-view"')[1].split("</section>")[0]
     # Explique les deux métriques + le « trop peu N/15 ».
     assert "WR tradable" in section
     assert "trop peu" in section
     assert "15 paris" in section
 
 
-def test_resultats_encart_chauffe_dates_reelles():
+def test_performance_encart_chauffe_dates_reelles():
     html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD)
-    section = html.split('id="winrate-view"')[1].split("</section>")[0]
+    section = html.split('id="history-view"')[1].split("</section>")[0]
     assert "winrate-warmup" in section
     # Dates/règles RÉELLES (SELECTION-RULE / cutover momentum), zéro invention.
     assert "11 juin 2026" in section      # reset 12 actifs (ère v2)
@@ -78,29 +78,29 @@ def test_resultats_encart_chauffe_dates_reelles():
     assert "70" in section and "15" in section  # WR tradable ≥ 70% / N ≥ 15
 
 
-def test_resultats_grisage_lignes_sans_donnees():
+def test_performance_grisage_lignes_sans_donnees():
     html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD)
     assert "function dimEmptyRows" in html
     assert "row-no-data" in html
-    # Appelé dans la construction de la vue Résultats.
-    view = html.split("function buildWinrateView")[1][:600]
-    assert "dimEmptyRows(content)" in view
+    # Appelé dans la construction de la vue Performance (sur #history-winrate).
+    view = html.split("function showHistory")[1][:700]
+    assert "dimEmptyRows(hwr)" in view
 
 
-def test_resultats_explication_flip_continuation():
+def test_performance_explication_flip_continuation():
     html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD)
     assert "function annotateFlipContinuation" in html
     # L'explication relie au bug momentum (cacao) et est appelée dans la vue.
     assert "momentum" in html.lower()
     assert "cacao" in html.lower()
-    assert "annotateFlipContinuation(content)" in html
+    assert "annotateFlipContinuation(hwr)" in html
 
 
-def test_resultats_winrate_only_aucun_argent():
+def test_performance_winrate_only_aucun_argent():
     html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD)
-    section = html.split('id="winrate-view"')[1].split("</section>")[0]
+    section = html.split('id="history-view"')[1].split("</section>")[0]
     for banned in ["P&L", "€", "$", "gain", "expectancy", "equity"]:
-        assert banned not in section, f"Terme argent dans la vue Résultats : {banned}"
+        assert banned not in section, f"Terme argent dans la vue Performance : {banned}"
 
 
 # --- Vue Bilan semaine -----------------------------------------------------

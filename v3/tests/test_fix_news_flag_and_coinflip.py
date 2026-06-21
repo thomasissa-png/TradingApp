@@ -268,8 +268,10 @@ def test_build_html_contains_sticky_legend_and_subnav():
     # Wrapping tables (scroll horizontal mobile)
     assert "wrapTables" in content, "Fonction wrapTables absente"
     assert "table-wrap" in content, "Classe CSS table-wrap absente"
-    # Sidebar : badge "dernier" sur le plus récent
-    assert "badge-latest" in content, "Badge 'dernier' absent"
+    # Sidebar : repère DOUX (léger gras) sur le jour le plus récent. La pastille
+    # verte « DERNIER » a été retirée (refonte S9, redondante) → on vérifie le
+    # repère .latest qui la remplace.
+    assert "aside a.latest" in content, "Repère .latest (jour récent) absent"
     # Position sticky toujours utilisée par le header (la subnav, elle, défile
     # avec le contenu depuis qu'elle a été dé-stickée — chrome permanent réduit).
     assert "position: sticky" in content or "position:sticky" in content

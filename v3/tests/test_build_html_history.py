@@ -140,7 +140,9 @@ def test_render_html_genere_tableau_et_filtres():
 def test_render_html_entree_de_nav():
     html = bh.render_html([], 0, measures=SAMPLE_MEASURES, perf_ab={})
     assert 'id="nav-history"' in html
-    assert "Historique" in html
+    # Refonte S9 : l'entrée porte le libellé « Performance » (fusion Résultats +
+    # Historique), routée par #vue=performance.
+    assert "📊 Performance" in html
     assert "function showHistory" in html
 
 

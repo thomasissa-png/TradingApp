@@ -401,7 +401,9 @@ def render_html(
     --text: #0f172a;
     --text-muted: #64748b;
     --accent: #2563eb;
+    --accent-strong: #1d4ed8;
     --accent-bg: #eff6ff;
+    --accent-tint: #f5f8ff;
     --code-bg: #f1f5f9;
     --row-alt: #f8fafc;
     --badge-bg: #16a34a;
@@ -415,6 +417,10 @@ def render_html(
     --status-text: #64748b;
     --status-dot: #f59e0b;
     --header-divider: #253348;
+    /* Ombres douces (refonte design S9 vague 4) — donnent du relief aux cartes
+       sans alourdir : la page « respire » au lieu d'empiler des filets 1px. */
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+    --shadow-md: 0 2px 4px rgba(15, 23, 42, 0.05), 0 4px 12px rgba(15, 23, 42, 0.07);
   }}
   /* Dark mode automatique selon le réglage système — zéro toggle.
      Surcharge des variables CSS uniquement, aucune logique JS impactée.
@@ -436,6 +442,10 @@ def render_html(
       --th-bg: #243044;
       --dir-long-color: #4ade80;
       --dir-short-color: #f87171;
+      --accent-strong: #93c5fd;
+      --accent-tint: #16243c;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.28);
+      --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.24), 0 4px 12px rgba(0, 0, 0, 0.32);
     }}
   }}
   * {{ box-sizing: border-box; }}
@@ -448,20 +458,39 @@ def render_html(
     font-size: 16px;
     -webkit-font-smoothing: antialiased;
   }}
-  /* HEADER — ligne unique, sticky, 44px (refonte S9). Le titre du produit +
-     le statut « mode test » discret tiennent sur une seule ligne. */
+  /* HEADER — ligne unique, sticky, 48px (refonte design S9 vague 4). Marque
+     produit avec pastille accent (identité visuelle) + statut « mode test »
+     discret, le tout sur une seule ligne. Ombre douce sous le header pour le
+     détacher du contenu au scroll. */
   header {{
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
-    padding: 0 20px;
+    box-shadow: var(--shadow-sm);
+    padding: 0 22px;
     position: sticky; top: 0; z-index: 20;
-    height: 44px;
+    height: 48px;
     display: flex; align-items: center;
   }}
   header .header-row {{ display: flex; align-items: center; gap: 10px; width: 100%; }}
-  header h1 {{
-    margin: 0; font-size: 15px; font-weight: 600; color: var(--text);
-    flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1;
+  /* Marque : pastille accent + nom. Cliquable → retour « Aujourd'hui ». */
+  .brand {{
+    display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0;
+    text-decoration: none; color: var(--text);
+  }}
+  .brand-mark {{
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+    color: #fff; font-size: 14px; font-weight: 800; line-height: 1;
+    box-shadow: var(--shadow-sm);
+  }}
+  .brand-name {{
+    font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1;
+  }}
+  .brand-name .brand-v {{ color: var(--text-muted); font-weight: 600; }}
+  .brand-name .brand-sub {{
+    color: var(--text-muted); font-weight: 500; font-size: 13px; margin-left: 2px;
   }}
   header .meta-note {{ font-size: 11px; color: var(--text-muted); margin-left: 6px; }}
   /* Badge statut « mode test » — inline, côté droit, point ambre + texte discret. */
@@ -489,7 +518,7 @@ def render_html(
   .hamburger:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
   .layout {{
     display: flex;
-    height: calc(100vh - 44px);
+    height: calc(100vh - 48px);
   }}
   aside {{
     width: 280px;
@@ -509,13 +538,6 @@ def render_html(
   aside a:hover {{ background: var(--accent-bg); }}
   aside a.active {{ background: var(--accent-bg); border-left-color: var(--accent); font-weight: 600; }}
   aside a.latest {{ font-weight: 600; }}
-  aside .badge-latest {{
-    background: var(--badge-bg); color: var(--badge-text);
-    font-size: 10px; font-weight: 700;
-    padding: 2px 6px; border-radius: 10px;
-    text-transform: uppercase; letter-spacing: 0.3px;
-    flex-shrink: 0;
-  }}
   aside .item-date {{ flex: 1; }}
   main {{
     flex: 1;
@@ -565,10 +587,28 @@ def render_html(
   .subnav a:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
   .subnav .subnav-label {{ color: var(--text-muted); font-size: 11px; margin-right: 4px; flex-shrink: 0; }}
   main h1, main h2, main h3 {{ color: var(--text); }}
-  main h1 {{ font-size: 26px; border-bottom: 2px solid var(--border); padding-bottom: 10px; margin-top: 8px; }}
-  main h2 {{ font-size: 20px; margin-top: 36px; padding-bottom: 6px; border-bottom: 1px solid var(--border); scroll-margin-top: 104px; }}
-  main h3 {{ font-size: 16px; margin-top: 24px; scroll-margin-top: 104px; }}
-  main p {{ margin: 10px 0; }}
+  main h1 {{
+    font-size: 28px; font-weight: 800; letter-spacing: -0.02em;
+    border-bottom: 2px solid var(--border); padding-bottom: 12px; margin-top: 8px;
+    line-height: 1.25;
+  }}
+  /* H2 : repère d'accent à gauche (barre verticale) qui donne une identité à
+     chaque section sans alourdir — l'œil retrouve les sections d'un coup. */
+  main h2 {{
+    font-size: 21px; font-weight: 700; letter-spacing: -0.01em;
+    margin-top: 42px; padding: 2px 0 8px 14px; position: relative;
+    border-bottom: 1px solid var(--border); scroll-margin-top: 104px;
+  }}
+  main h2::before {{
+    content: ""; position: absolute; left: 0; top: 4px; bottom: 10px;
+    width: 4px; border-radius: 3px;
+    background: linear-gradient(var(--accent), var(--accent-strong));
+  }}
+  main h3 {{ font-size: 16.5px; font-weight: 700; margin-top: 26px; scroll-margin-top: 104px; }}
+  main p {{ margin: 11px 0; }}
+  /* Paragraphe d'accroche (premier paragraphe d'une vue, sous le H1) : un peu
+     plus grand, posé, pour inviter à la lecture. */
+  main .lead {{ font-size: 16px; color: var(--text-muted); margin: 10px 0 22px 0; line-height: 1.55; }}
   /* [Refonte S9 vague 3 — encart Sélection] Carte distincte et discrète qui
      détache l'encart « Sélection (max 3) » en tête de « Décision du jour ».
      Cohérente avec les tokens dark-mode (bg-panel + accent). Épurée : un filet
@@ -578,9 +618,10 @@ def render_html(
     background: var(--bg-panel);
     border: 1px solid var(--border);
     border-left: 3px solid var(--accent);
-    border-radius: 8px;
-    padding: 14px 18px;
+    border-radius: 10px;
+    padding: 16px 20px;
     margin: 18px 0 8px;
+    box-shadow: var(--shadow-sm);
   }}
   .decision-selection > h3:first-child {{ margin-top: 0; }}
   .decision-selection .table-wrap {{ margin-bottom: 0; }}
@@ -594,9 +635,10 @@ def render_html(
   .table-wrap {{
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    margin: 14px 0;
+    margin: 16px 0;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
+    box-shadow: var(--shadow-sm);
     background:
       linear-gradient(to right, var(--bg-panel) 30%, rgba(255,255,255,0)),
       linear-gradient(to left, var(--bg-panel) 30%, rgba(255,255,255,0)) 100% 0,
@@ -609,11 +651,13 @@ def render_html(
   main table {{ border-collapse: collapse; margin: 0; font-size: 13.5px; width: 100%; }}
   main table th, main table td {{
     border-bottom: 1px solid var(--border);
-    padding: 9px 12px; text-align: left;
+    padding: 10px 13px; text-align: left;
     vertical-align: top;
   }}
   main table th {{
-    background: var(--th-bg); font-weight: 600;
+    background: var(--th-bg); font-weight: 700;
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-muted);
     border-bottom: 2px solid var(--border-strong);
     white-space: nowrap;
   }}
@@ -643,10 +687,15 @@ def render_html(
   main code {{ background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 13px; }}
   main pre {{ background: var(--code-bg); padding: 12px; border-radius: 6px; overflow-x: auto; }}
   main pre code {{ background: none; padding: 0; }}
+  /* Citations = notes explicatives (omniprésentes dans les bilans). Fond teinté
+     accent + filet accent : on les lit comme des « aides de lecture », pas comme
+     du texte mort. Coins arrondis, italique léger retiré pour la lisibilité. */
   main blockquote {{
-    border-left: 4px solid var(--border-strong); margin: 12px 0; padding: 4px 16px;
-    color: var(--text-muted);
+    border-left: 3px solid var(--accent); margin: 14px 0; padding: 10px 16px;
+    background: var(--accent-tint); border-radius: 0 8px 8px 0;
+    color: var(--text-muted); font-size: 14px; line-height: 1.55;
   }}
+  main blockquote p {{ margin: 4px 0; }}
   main ul, main ol {{ padding-left: 24px; }}
   main li {{ margin: 4px 0; }}
   /* Colorisation directionnelle LONG/SHORT et scores signés */
@@ -693,7 +742,8 @@ def render_html(
   .help-box {{
     background: var(--bg-panel);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
+    box-shadow: var(--shadow-sm);
     margin: 20px 0 0 0;
     padding: 0;
     font-size: 13.5px;
@@ -727,7 +777,8 @@ def render_html(
   /* Section repliée « Cellules à surveiller » (monitoring dense) */
   .fold-section {{
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
+    box-shadow: var(--shadow-sm);
     margin: 20px 0;
     background: var(--bg-panel);
   }}
@@ -756,7 +807,7 @@ def render_html(
     border-left: 3px solid transparent; font-weight: 600; font-size: 13.5px;
   }}
   .nav-view-link:hover {{ background: var(--accent-bg); }}
-  .nav-view-link.active {{ background: var(--accent-bg); border-left-color: var(--accent); }}
+  .nav-view-link.active {{ background: var(--accent-bg); border-left-color: var(--accent); color: var(--accent-strong); }}
   .nav-section-label {{
     padding: 8px 16px 4px 16px; font-size: 11px; text-transform: uppercase;
     letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;
@@ -780,8 +831,8 @@ def render_html(
   }}
   /* Vue Aujourd'hui : un groupe replié par jour, chaque rapport en sous-bloc */
   .today-day {{
-    border: 1px solid var(--border); border-radius: 8px; margin: 0 0 18px 0;
-    background: var(--bg-panel); overflow: hidden;
+    border: 1px solid var(--border); border-radius: 10px; margin: 0 0 18px 0;
+    background: var(--bg-panel); overflow: hidden; box-shadow: var(--shadow-sm);
   }}
   .today-day > summary {{
     cursor: pointer; padding: 12px 16px; font-weight: 600; font-size: 15px;
@@ -881,10 +932,12 @@ def render_html(
   @media (max-width: 768px) {{
     body {{ font-size: 15.5px; }}
     .hamburger {{ display: inline-block; }}
-    header {{ height: 40px; padding: 0 12px; }}
-    header h1 {{ font-size: 14px; }}
+    header {{ height: 44px; padding: 0 12px; }}
+    .brand-name {{ font-size: 14px; }}
+    .brand-name .brand-sub {{ display: none; }}  /* gain de place : « · Bulletins » masqué sur mobile */
+    .brand-mark {{ width: 23px; height: 23px; font-size: 12px; }}
     .header-status-text {{ font-size: 10px; }}
-    .layout {{ height: calc(100vh - 40px); }}
+    .layout {{ height: calc(100vh - 44px); }}
     aside {{
       position: fixed;
       top: 0; left: 0; bottom: 0;
@@ -964,7 +1017,10 @@ def render_html(
 <header>
   <div class="header-row">
     <button class="hamburger" id="hamburger" aria-label="Ouvrir la liste des bulletins" aria-expanded="false">☰</button>
-    <h1>TradingApp v3 · Bulletins</h1>
+    <a class="brand" href="#vue=aujourdhui" aria-label="TradingApp v3 — accueil">
+      <span class="brand-mark" aria-hidden="true">▲</span>
+      <span class="brand-name">TradingApp <span class="brand-v">v3</span><span class="brand-sub">· Bulletins</span></span>
+    </a>
     <div class="header-status" role="status" aria-label="Statut : mode test, go-live le 08/08">
       <span class="header-status-dot" aria-hidden="true"></span>
       <span class="header-status-text">Mode test<span class="header-status-date"> · go-live 08/08</span></span>
@@ -976,9 +1032,8 @@ def render_html(
   <aside id="sidebar">
     <ul id="nav-views">
       <li><a href="#vue=aujourdhui" id="nav-today" class="nav-view-link">📅 Aujourd'hui</a></li>
-      <li><a href="#vue=resultats" id="nav-winrate" class="nav-view-link">📈 Résultats / Win rate</a></li>
       <li><a href="#vue=semaine" id="nav-week" class="nav-view-link">🗓️ Bilan semaine</a></li>
-      <li><a href="#vue=historique" id="nav-history" class="nav-view-link">📊 Historique / Performance</a></li>
+      <li><a href="#vue=performance" id="nav-history" class="nav-view-link">📊 Performance</a></li>
     </ul>
     <div class="nav-section-label">Bulletins</div>
     <ul id="bulletin-list"></ul>
@@ -1018,19 +1073,9 @@ def render_html(
       <div id="bulletin-content">
         <p>Chargement...</p>
       </div>
-      <section id="winrate-view" hidden aria-label="Résultats : win rate par actif">
-        <h1>📈 Résultats / Win rate</h1>
-        <p class="history-intro">Le taux de bonnes directions par actif et par horizon, réécrit à chaque run. Deux mesures : le <strong>Win rate</strong> (sur les paris conclus) et le <strong>WR tradable</strong> (VRAI / VRAI+FAUSSE+non-conclusif, qui inclut les jours sous seuil où une position aurait quand même été prise, donc toujours ≤ Win rate).</p>
-        <p class="history-intro"><strong>⏳ trop peu (N/15)</strong> = il faut au moins 15 paris indépendants par cellule pour qu'un chiffre soit fiable ; en dessous, le taux affiché ne veut encore rien dire.</p>
-        <div class="winrate-warmup" role="note">
-          <strong>Tout est en chauffe.</strong> Les 12 actifs ont été remis à zéro le <strong>11 juin 2026</strong> (passage en ère v2 du moteur). La mesure ouverture→clôture, 1 décision notée par jour, tourne depuis le 9 juin. Premier point de contrôle : le <strong>8 août 2026</strong>, une cellule 24h se trade alors uniquement si son WR tradable ≥&nbsp;70&nbsp;% sur ≥&nbsp;15 paris (règle de sélection gravée, mode test jusque-là).
-        </div>
-        <div id="winrate-content"></div>
-        <p id="winrate-empty" hidden></p>
-      </section>
       <section id="today-view" hidden aria-label="Rapports d'aujourd'hui">
         <h1>📅 Aujourd'hui</h1>
-        <p class="history-intro">Le briefing du matin et les suivis de la journée, regroupés par jour. Le plus récent en premier.</p>
+        <p class="lead">Le briefing du matin et les suivis de la journée, regroupés par jour. Le plus récent en premier.</p>
         <div id="today-list"></div>
         <p id="today-empty" hidden></p>
       </section>
@@ -1041,9 +1086,13 @@ def render_html(
         <div id="week-content"></div>
         <p id="week-empty" hidden></p>
       </section>
-      <section id="history-view" hidden aria-label="Historique des décisions et performance">
-        <h1>Historique / Performance</h1>
-        <p class="history-intro">Le win rate par actif en tête (résultats), puis le détail décision par décision.</p>
+      <section id="history-view" hidden aria-label="Performance : win rate et historique des décisions">
+        <h1>📊 Performance</h1>
+        <p class="lead">Ce qui marche : le win rate par actif et par horizon (le taux de bonnes directions), puis le détail décision par décision.</p>
+        <p class="history-intro">Deux mesures : le <strong>Win rate</strong> (sur les paris conclus) et le <strong>WR tradable</strong> (VRAI / VRAI+FAUSSE+non-conclusif, qui inclut les jours sous seuil où une position aurait quand même été prise, donc toujours ≤ Win rate). <strong>⏳ trop peu (N/15)</strong> = il faut au moins 15 paris indépendants par cellule pour qu'un chiffre soit fiable ; en dessous, le taux affiché ne veut encore rien dire.</p>
+        <div class="winrate-warmup" role="note">
+          <strong>Tout est en chauffe.</strong> Les 12 actifs ont été remis à zéro le <strong>11 juin 2026</strong> (passage en ère v2 du moteur). La mesure ouverture→clôture, 1 décision notée par jour, tourne depuis le 9 juin. Premier point de contrôle : le <strong>8 août 2026</strong>, une cellule 24h se trade alors uniquement si son WR tradable ≥&nbsp;70&nbsp;% sur ≥&nbsp;15 paris (règle de sélection gravée, mode test jusque-là).
+        </div>
         <div id="history-winrate"></div>
         <details class="fold-section" id="history-ab-fold">
           <summary>Détail technique par cellule (calibration ±1)</summary>
@@ -1399,13 +1448,10 @@ function renderList(activeDate) {{
       a.href = '#jour=' + encodeURIComponent(en.date);
       dateSpan.textContent = dt.short;
       a.appendChild(dateSpan);
-      if (en.date === latestDate) {{
-        a.classList.add('latest');
-        const badge = document.createElement('span');
-        badge.className = 'badge-latest';
-        badge.textContent = 'dernier';
-        a.appendChild(badge);
-      }}
+      // Repère « jour le plus récent » : un léger gras suffit. La pastille verte
+      // « DERNIER » a été retirée (refonte S9) — redondante avec le tri (le plus
+      // récent est toujours en tête) et avec l'entrée « 📅 Aujourd'hui ».
+      if (en.date === latestDate) a.classList.add('latest');
       if (en.date === activeDate) a.classList.add('active');
       a.onclick = (e) => {{
         e.preventDefault();
@@ -1972,7 +2018,7 @@ function renderHistoryTable() {{
   if (countEl) countEl.textContent = rows.length + ' / ' + MEASURES.length + ' décisions';
 }}
 // Liste des liens de nav de vue auxiliaire (pour gérer l'état .active).
-const AUX_NAV_IDS = ['nav-today', 'nav-winrate', 'nav-week', 'nav-history'];
+const AUX_NAV_IDS = ['nav-today', 'nav-week', 'nav-history'];
 function clearAuxNavActive() {{
   AUX_NAV_IDS.forEach(id => {{
     const el = document.getElementById(id);
@@ -1984,7 +2030,7 @@ function clearAuxNavActive() {{
 // bulletin + sa chrome (légende, sous-nav, aide) et n'affiche QUE la section
 // demandée. `sectionId` = id de la <section> à afficher.
 function showAuxView(sectionId, navId) {{
-  ['today-view', 'winrate-view', 'week-view', 'history-view'].forEach(s => {{
+  ['today-view', 'week-view', 'history-view'].forEach(s => {{
     const el = document.getElementById(s);
     if (el) el.hidden = (s !== sectionId);
   }});
@@ -1999,8 +2045,8 @@ function showAuxView(sectionId, navId) {{
   if (nav) nav.classList.add('active');
   // [CH-4] titre d'onglet par vue auxiliaire.
   const AUX_TITLES = {{
-    'nav-today': 'Aujourd\\'hui', 'nav-winrate': 'Résultats / Win rate',
-    'nav-week': 'Bilan semaine', 'nav-history': 'Historique',
+    'nav-today': 'Aujourd\\'hui',
+    'nav-week': 'Bilan semaine', 'nav-history': 'Performance',
   }};
   document.title = `${{AUX_TITLES[navId] || 'Vue'}} · TradingApp v3`;
   renderList(null);
@@ -2010,7 +2056,7 @@ function showAuxView(sectionId, navId) {{
 
 // Quitte toute vue auxiliaire et restaure la vue bulletin (légende, aide…).
 function hideAuxViews() {{
-  ['today-view', 'winrate-view', 'week-view', 'history-view'].forEach(s => {{
+  ['today-view', 'week-view', 'history-view'].forEach(s => {{
     const el = document.getElementById(s);
     if (el) el.hidden = true;
   }});
@@ -2026,11 +2072,6 @@ function showToday() {{
   showAuxView('today-view', 'nav-today');
   history.replaceState(null, '', '#vue=aujourdhui');
 }}
-function showWinrate() {{
-  buildWinrateView();
-  showAuxView('winrate-view', 'nav-winrate');
-  history.replaceState(null, '', '#vue=resultats');
-}}
 function showWeek(weekly) {{
   buildWeekView(weekly || WEEKLY);
   showAuxView('week-view', 'nav-week');
@@ -2038,29 +2079,53 @@ function showWeek(weekly) {{
 }}
 function showHistory() {{
   if (!HISTORY_BUILT) {{
-    // Win rate en tête de l'onglet (résultats principaux), puis A/B replié.
+    // Vue « Performance » fusionnée : win rate par actif en tête (résultats
+    // principaux + séquence des verdicts), puis le détail A/B replié, puis la
+    // table décision par décision. (Fusion S9 : l'ancienne vue « Résultats /
+    // Win rate » faisait doublon avec celle-ci — une seule vue désormais.)
     const hwr = document.getElementById('history-winrate');
-    renderWinrateInto(hwr);
-    dimEmptyRows(hwr);
-    enhanceWinrateRows(hwr);
+    if (renderWinrateInto(hwr)) {{
+      dimEmptyRows(hwr);
+      enhanceWinrateRows(hwr);
+      annotateFlipContinuation(hwr);
+      buildVerdictSequences(hwr);
+    }} else if (hwr) {{
+      hwr.innerHTML = '<p class="history-intro">Aucun résultat de win rate disponible pour le moment : les chiffres apparaîtront ici dès les premières mesures.</p>';
+    }}
     buildHistoryFilters();
     buildHistorySummary();
     HISTORY_BUILT = true;
   }}
   renderHistoryTable();
   showAuxView('history-view', 'nav-history');
-  history.replaceState(null, '', '#vue=historique');
+  history.replaceState(null, '', '#vue=performance');
 }}
 
 // --- Rendu markdown mutualisé (suivis, bilans, semaine) -------------------
 // Rend `md` dans `target` avec le même pipeline d'enrichissement que les
 // bulletins (colorisation LONG/SHORT, tooltips symboles, wrap tables). Fallback
 // <pre> si marked.js n'a pas chargé (offline). Réutilisé par toutes les vues.
+// Normalisation typographique : le tiret cadratin « — » « fait très IA »
+// (préférence fondateur). On le remplace AU RENDU par le point médian « · »
+// (style maison déjà utilisé dans les titres), en absorbant les espaces autour.
+// Couvre d'un coup les archives (markdown figé) ET les futurs rapports, sans
+// toucher aux fichiers data/. On épargne les blocs de code (``` … ```) pour ne
+// rien casser dans d'éventuels exemples techniques.
+function normalizeDashes(md) {{
+  if (!md) return md;
+  const parts = md.split(/(```[\\s\\S]*?```)/g);
+  for (let i = 0; i < parts.length; i++) {{
+    if (i % 2 === 1) continue;  // bloc de code → inchangé
+    parts[i] = parts[i].replace(/\\s*—\\s*/g, ' · ');
+  }}
+  return parts.join('');
+}}
+
 function renderMarkdownInto(target, md) {{
   if (!target) return;
   if (typeof marked !== 'undefined') {{
     marked.setOptions({{gfm: true, breaks: false}});
-    target.innerHTML = marked.parse(md || '');
+    target.innerHTML = marked.parse(normalizeDashes(md) || '');
     // Même pipeline de transformations que la vue bulletin principale : sans
     // ça, le briefing affiché dans « Aujourd'hui » semblait être un AUTRE
     // rapport (mur de texte non replié, hash en tête — incident 11/06). Seule
@@ -2325,21 +2390,6 @@ function annotateFlipContinuation(root) {{
   target.parentNode.insertBefore(note, target.nextSibling);
 }}
 
-function buildWinrateView() {{
-  const content = document.getElementById('winrate-content');
-  const empty = document.getElementById('winrate-empty');
-  if (!content) return;
-  if (renderWinrateInto(content)) {{
-    if (empty) empty.hidden = true;
-    dimEmptyRows(content);
-    enhanceWinrateRows(content);
-    annotateFlipContinuation(content);
-    buildVerdictSequences(content);
-  }} else if (empty) {{
-    empty.hidden = false;
-    empty.textContent = 'Aucun résultat de win rate disponible pour le moment : les chiffres apparaîtront ici dès les premières mesures.';
-  }}
-}}
 
 // Clic sur un JOUR de l'historique : on présente la journée COMME la vue
 // « Aujourd'hui » — un groupe dépliable (buildDayGroup) avec briefing 7h +
@@ -2412,16 +2462,16 @@ function closeSidebarMobile() {{
     if (el) el.addEventListener('click', (e) => {{ e.preventDefault(); fn(); closeSidebarMobile(); }});
   }};
   bindNav('nav-today', showToday);
-  bindNav('nav-winrate', showWinrate);
   bindNav('nav-week', showWeek);
   bindNav('nav-history', showHistory);
 
   const rawHash = (location.hash || '').replace(/^#/, '');
-  // Routage des vues auxiliaires (avant la résolution d'un jour).
+  // Routage des vues auxiliaires (avant la résolution d'un jour). #vue=performance
+  // est le hash canonique de la vue fusionnée ; #vue=resultats et #vue=historique
+  // y retombent (rétro-compat des liens partagés avant la fusion S9).
   if (rawHash === 'vue=aujourdhui') {{ showToday(); return; }}
-  if (rawHash === 'vue=resultats') {{ showWinrate(); return; }}
   if (rawHash === 'vue=semaine') {{ showWeek(); return; }}
-  if (rawHash === 'vue=historique') {{ showHistory(); return; }}
+  if (rawHash === 'vue=performance' || rawHash === 'vue=historique' || rawHash === 'vue=resultats') {{ showHistory(); return; }}
 
   const days = listDays();
   if (days.length === 0) {{

@@ -1,0 +1,26 @@
+{
+  "12h": {
+    "CAC 40": {
+      "call": "SHORT",
+      "fav_pct": 0.25,
+      "heure": "12h03"
+    },
+    "Or": {
+      "call": "SHORT",
+      "fav_pct": 1.0,
+      "heure": "12h03"
+    }
+  },
+  "18h": {
+    "CAC 40": {
+      "call": "SHORT",
+      "fav_pct": 0.12,
+      "heure": "18h03"
+    },
+    "Or": {
+      "call": "SHORT",
+      "fav_pct": 0.59,
+      "heure": "18h03"
+    }
+  }
+}

@@ -1,17 +1,22 @@
-"""Tests build_html — fil complet de la journée sous le briefing 7h (vue Historique).
+"""Tests build_html — clic sur un JOUR de l'historique = journée dépliable.
 
-Cliquer un bulletin de l'Historique affiche le briefing 7h PUIS, sous lui, le fil
-de la journée : suivi 12h → suivi 18h → bilan du jour 22h, chacun dans un
-<details class="day-fil-report"> REPLIÉ (le briefing reste la lecture primaire).
+Refonte navigation (session 06-20) : la sidebar liste désormais UN JOUR par
+entrée (déduplication par date, sans heure dans le libellé). Cliquer un jour
+présente la journée COMME la vue « Aujourd'hui » : un groupe repliable
+(buildDayGroup) avec briefing 7h + suivis 12h/18h + bilan du soir, chacun dans
+un <details class="today-report"> à rendu paresseux — au lieu de n'ouvrir que le
+bulletin 7h.
+
+Intention conservée vs l'ancien `appendDayFil`/`selectBulletin` (supprimés) :
+- ordre canonique de la journée via `sameDayReports` (12h → 18h → bilan),
+- TOUS les rapports du jour visibles et dépliables,
+- dégradation propre si un rapport manque (jour sans bilan, etc.),
+- rendu paresseux via le pipeline unifié `renderMarkdownInto`.
+Le système de regroupement de today-view est RÉUTILISÉ (pas de second système).
 
 Ces blocs sont construits côté client (JS embarqué dans index.html). Les tests
-vérifient donc le contrat statique du JS/CSS généré :
-- helper d'ordre canonique `sameDayReports(dateIso)` partagé avec la vue Aujourd'hui,
-- `appendDayFil(content, id)` appelé après le rendu du briefing dans `selectBulletin`,
-- ordre 12h → 18h → bilan, labels FR, rendu paresseux, dégradation propre,
-- styles `.day-fil-*` cohérents avec l'existant.
-
-Présentation/JS/CSS pur — WIN RATE ONLY, UTF-8/français.
+vérifient le contrat statique du JS/CSS généré. Présentation/JS/CSS pur —
+WIN RATE ONLY, UTF-8/français.
 """
 
 from __future__ import annotations
@@ -30,7 +35,7 @@ def _html() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Helper d'ordre canonique partagé
+# Helpers d'ordre canonique partagés (un seul système de regroupement)
 # ---------------------------------------------------------------------------
 
 def test_helper_sameDayReports_present():
@@ -48,86 +53,104 @@ def test_helper_sameDayReports_ordonne_suivis_puis_bilan():
     assert "return bilan ? suivis.concat([bilan]) : suivis;" in html
 
 
-def test_buildTodayView_reutilise_le_helper():
-    # Pas de duplication de la logique d'ordre : la vue Aujourd'hui consomme le helper.
+def test_helper_sameDayBriefings_present():
+    # Un jour peut avoir plusieurs briefings (run matin + soir) : helper dédié.
     html = _html()
-    assert "const dayReports = sameDayReports(d);" in html
+    assert "function sameDayBriefings(dateIso)" in html
+
+
+def test_buildTodayView_et_selectDay_reutilisent_le_meme_groupe():
+    # Pas de duplication : today-view ET le clic d'historique passent par buildDayGroup.
+    html = _html()
+    assert "function buildDayGroup(dateIso, opts)" in html
+    # today-view consomme buildDayGroup…
+    assert "buildDayGroup(d, { openDay:" in html
+    # …et le clic sur un jour aussi.
+    assert "const grp = buildDayGroup(dateIso," in html
 
 
 # ---------------------------------------------------------------------------
-# appendDayFil : insertion dans selectBulletin
+# buildDayGroup : ordre, rendu paresseux, dégradation propre
 # ---------------------------------------------------------------------------
 
-def test_appendDayFil_defini_et_appele_apres_briefing():
+def test_buildDayGroup_collecte_briefings_et_rapports():
     html = _html()
-    assert "function appendDayFil(container, id)" in html
-    # Appelé dans selectBulletin, AVANT le replaceState (donc après le rendu 7h).
-    assert "appendDayFil(content, b.id);" in html
-    idx_call = html.index("appendDayFil(content, b.id);")
-    idx_replace = html.index("history.replaceState(null, '', '#' + encodeURIComponent(id));")
-    assert idx_call < idx_replace
+    assert "const briefings = sameDayBriefings(dateIso);" in html
+    assert "const dayReports = sameDayReports(dateIso);" in html
 
 
-def test_appendDayFil_calcule_la_date_depuis_id():
+def test_buildDayGroup_ordre_briefing_suivis_bilan():
+    # Ordre de lecture : briefing 7h → suivi 12h → suivi 18h → bilan 22h.
     html = _html()
-    assert "const dateIso = (id || '').slice(0, 10);" in html
-    assert "const reports = sameDayReports(dateIso);" in html
+    assert "briefings.forEach(b => ordered.push({ tag: 'Briefing'" in html
+    # tags FR conservés
+    assert "tag: isBilan ? 'Bilan' : 'Suivi'" in html
 
 
-def test_appendDayFil_degradation_propre_si_aucun_rapport():
-    # Aucun rapport du jour → return immédiat, rien n'est ajouté (zéro séparateur,
-    # zéro message d'erreur).
-    html = _html()
-    assert "if (reports.length === 0) return;" in html
-
-
-def test_appendDayFil_separateur_uniquement_si_rapports():
-    # Le séparateur « La journée » est créé APRÈS le garde-fou length === 0,
-    # donc absent quand il n'y a aucun rapport.
-    html = _html()
-    idx_guard = html.index("if (reports.length === 0) return;")
-    idx_sep = html.index("sep.className = 'day-fil-sep';")
-    assert idx_guard < idx_sep
-    assert "sep.textContent = 'La journée';" in html
-
-
-def test_appendDayFil_labels_francais():
-    html = _html()
-    assert "🕛 Suivi 12h" in html
-    assert "🕕 Suivi 18h" in html
-    assert "🌙 Bilan du jour · 22h15" in html
-
-
-def test_appendDayFil_details_replie_par_defaut():
-    # <details class="day-fil-report"> sans attribut open → replié (briefing primaire).
-    html = _html()
-    assert "rd.className = 'day-fil-report';" in html
-    # Aucune ouverture forcée sur ces blocs (pas de rd.open = true dans appendDayFil).
-    start = html.index("function appendDayFil(container, id)")
-    end = html.index("function selectBulletin(id)", start)
-    body = html[start:end]
-    assert "rd.open = true" not in body
-
-
-def test_appendDayFil_rendu_paresseux_via_pipeline_unifie():
+def test_buildDayGroup_rendu_paresseux_via_pipeline_unifie():
     # Rendu seulement à la première ouverture, via renderMarkdownInto (badges, fold…).
     html = _html()
-    start = html.index("function appendDayFil(container, id)")
-    end = html.index("function selectBulletin(id)", start)
+    start = html.index("function buildDayGroup(dateIso, opts)")
+    end = html.index("function buildTodayView()", start)
     body = html[start:end]
     assert "addEventListener('toggle'" in body
-    assert "renderMarkdownInto(body, r.markdown)" in body
+    assert "renderMarkdownInto(body, item.md)" in body
+    # chaque rapport est un <details class="today-report"> (accordéon today-view réutilisé).
+    assert "rd.className = 'today-report';" in body
 
 
-# ---------------------------------------------------------------------------
-# CSS discret et cohérent
-# ---------------------------------------------------------------------------
-
-def test_css_day_fil_present_et_reutilise_les_variables():
+def test_buildDayGroup_degradation_propre_un_rapport_par_existence():
+    # On n'ajoute que les rapports qui existent : aucune section vide forcée.
+    # ordered est rempli à partir des seuls briefings/dayReports présents.
     html = _html()
-    assert ".day-fil-report {" in html
-    assert ".day-fil-sep {" in html
-    assert ".day-fil-body {" in html
+    start = html.index("function buildDayGroup(dateIso, opts)")
+    end = html.index("function buildTodayView()", start)
+    body = html[start:end]
+    assert "const ordered = [];" in body
+    # Pas de placeholder « slot fixe » : on itère sur ce qui est réellement là.
+    assert "dayReports.forEach(r =>" in body
+
+
+# ---------------------------------------------------------------------------
+# selectDay : présente la journée comme « Aujourd'hui » (briefing ouvert)
+# ---------------------------------------------------------------------------
+
+def test_selectDay_defini_et_rend_le_groupe_dans_le_contenu():
+    html = _html()
+    assert "function selectDay(dateIso)" in html
+    # Le groupe est inséré dans la zone de lecture principale.
+    assert "content.appendChild(grp);" in html
+    # Le jour est ouvert, briefing (1er rapport) ouvert par défaut = lecture primaire.
+    assert "buildDayGroup(dateIso, { openDay: true, openFirstReport: true })" in html
+
+
+def test_selectDay_degradation_propre_si_jour_vide():
+    # Jour sans aucun briefing ni rapport → message neutre, pas de crash.
+    html = _html()
+    assert "if (briefings.length === 0 && dayReports.length === 0) {" in html
+    assert "Aucun rapport pour ce jour." in html
+
+
+def test_selectDay_met_a_jour_hash_et_titre():
+    html = _html()
+    assert "history.replaceState(null, '', '#jour=' + encodeURIComponent(dateIso));" in html
+    # Pas d'ancien selectBulletin/appendDayFil résiduel.
+    assert "function selectBulletin(" not in html
+    assert "function appendDayFil(" not in html
+
+
+# ---------------------------------------------------------------------------
+# CSS : l'accordéon today-day/today-report (réutilisé) est présent
+# ---------------------------------------------------------------------------
+
+def test_css_today_accordion_present_et_reutilise_les_variables():
+    html = _html()
+    assert ".today-day {" in html
+    assert ".today-report {" in html
+    assert ".today-report .report-body {" in html
     # Réutilise les tokens existants, pas un nouveau thème.
     assert "var(--border)" in html
     assert "var(--bg-panel)" in html
+    # L'ancien thème day-fil-* a été retiré (un seul système).
+    assert ".day-fil-report {" not in html
+    assert ".day-fil-sep {" not in html

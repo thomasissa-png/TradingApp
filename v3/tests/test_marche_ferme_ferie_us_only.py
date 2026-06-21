@@ -226,3 +226,30 @@ def test_or_continu_7j_jour_ouvre_normal_non_skippe(tmp_path, _suivi_override):
     m = [mm for mm in measures if mm.horizon == "7j"][0]
     assert m.outcome == jr.OUTCOME_VRAI
     assert m.outcome != jr.OUTCOME_MARCHE_FERME
+
+
+# PARTIE 3 — ÉCHÉANCE 24h PAR MARCHÉ (fix : un férié US-only ne repousse pas le
+# vendredi des continus/CAC). On simule Juneteenth (us fermé ven, continu/eu
+# ouverts) pour ne pas dépendre de la lib `holidays` (absente du conteneur).
+def test_echeance_24h_par_marche_juneteenth(monkeypatch):
+    def fake_open(group, d):
+        if d.weekday() >= 5:
+            return False
+        if d == date(2026, 6, 19):       # Juneteenth : NYSE fermé, le reste ouvert
+            return group in ("continu", "eu")
+        return True
+    monkeypatch.setattr(jr, "is_market_open_for", fake_open)
+    thu = date(2026, 6, 18)
+    # Continus + CAC (eu) : échéance = vendredi 19/06 (ils cotaient).
+    assert jr.compute_echeance(thu, "24h", "continu") == date(2026, 6, 19)
+    assert jr.compute_echeance(thu, "24h", "eu") == date(2026, 6, 19)
+    # Indices US : NYSE fermé vendredi → échéance repoussée au lundi 22/06.
+    assert jr.compute_echeance(thu, "24h", "us") == date(2026, 6, 22)
+
+
+def test_echeance_24h_group_none_retrocompat():
+    # group=None → comportement GLOBAL historique (prochain jour ouvré, week-end).
+    # lun→mar (jour ouvré normal) inchangé.
+    assert jr.compute_echeance(date(2026, 6, 15), "24h") == date(2026, 6, 16)
+    # vendredi → lundi (saute le week-end), comportement global préservé.
+    assert jr.compute_echeance(date(2026, 6, 12), "24h").weekday() == 0  # lundi

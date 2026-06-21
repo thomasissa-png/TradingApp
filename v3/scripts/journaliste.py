@@ -463,8 +463,17 @@ def _next_business_day(d: date) -> date:
     return d
 
 
-def compute_echeance(bulletin_date: date, horizon: str) -> date:
+def compute_echeance(bulletin_date: date, horizon: str,
+                     group: Optional[str] = None) -> date:
     """Échéance figée déterministe (C5 invariant #2).
+
+    `group` (us / eu / continu) — PÉRIMÈTRE PAR MARCHÉ (fix Juneteenth 2026-06-19) :
+    l'échéance 24h saute au prochain jour où LE MARCHÉ DE CET ACTIF est ouvert, pas
+    au prochain jour ouvré GLOBAL. Sinon un férié US-only (Juneteenth) repoussait le
+    vendredi au lundi POUR TOUS — y compris l'Or, le Cuivre, l'EUR/USD, le CAC qui
+    cotaient. group=None → comportement global historique (rétro-compat, callers
+    sans actif). En prod la lib `holidays` distingue XNYS/XECB ; sans elle, fallback
+    conservateur (union) — ne ferme jamais à tort un jour ouvré commun.
 
     Horizons 7j / 1m : echeance = bulletin_date + HORIZON_DAYS[horizon]
     (calendaire — le bruit week-end y est négligeable et le rendre ouvré
@@ -490,8 +499,17 @@ def compute_echeance(bulletin_date: date, horizon: str) -> date:
     days = HORIZON_DAYS[horizon]
     echeance = bulletin_date + timedelta(days=days)
     if horizon == "24h":
-        # Reporter l'échéance 24h sur le prochain jour ouvré (saute le week-end).
-        echeance = _next_business_day(echeance)
+        # Reporter l'échéance 24h sur le prochain jour OUVERT POUR CE MARCHÉ.
+        if group in ("us", "eu", "continu"):
+            d = echeance
+            for _ in range(10):  # cap anti-boucle (jamais > quelques jours fériés)
+                if is_market_open_for(group, d):
+                    break
+                d = d + timedelta(days=1)
+            echeance = d
+        else:
+            # group inconnu/None → prochain jour ouvré GLOBAL (rétro-compat).
+            echeance = _next_business_day(echeance)
     # Assertion d'intégrité : une échéance ≤ émission marquerait un bug
     # critique (horizon nul/négatif, dates inversées, etc.) — refuser net.
     # Reste vraie après report : +1 jour puis saut week-end ne recule jamais.
@@ -1123,8 +1141,10 @@ def measure_cell(
         seuil = float(seuil_raw) if seuil_raw is not None else None
     except (TypeError, ValueError):
         seuil = None
-    # C5 invariant #2 — échéance figée déterministe (helper unique)
-    echeance = compute_echeance(cell.bulletin_date, cell.horizon)
+    # C5 invariant #2 — échéance figée déterministe (helper unique), par marché.
+    echeance = compute_echeance(
+        cell.bulletin_date, cell.horizon, _actif_group_for_fiche(fiche)
+    )
 
     base = Measure(
         cell=cell,
@@ -2033,27 +2053,27 @@ def measure(
             decision_log_dir=sys.modules[__name__].DECISION_LOG_DIR,
         )
         for cell in cells:
-            # n'inclure que les horizons échus à `today`.
-            # Utiliser compute_echeance (et non un +N calendaire local) pour
-            # rester cohérent avec le report 24h jour-ouvré : une prédiction du
-            # vendredi n'est due qu'au lundi, pas dès le samedi.
-            echeance = compute_echeance(cell.bulletin_date, cell.horizon)
-            if echeance > today:
-                continue
+            # On résout d'abord la fiche → le GROUPE de marché de l'actif, car
+            # l'échéance 24h est désormais calculée PAR MARCHÉ (fix Juneteenth :
+            # un férié US-only ne doit pas repousser le vendredi des continus/CAC).
             match = fiche_for_actif_name(fiches, cell.actif_name)
             if not match:
                 logger.warning("Fiche introuvable pour actif %r (bulletin %s)", cell.actif_name, bdate)
                 continue
             fiche_key, fiche = match
             ticker = fiche.get("ticker_principal", "")
+            group = _actif_group_for_fiche(fiche)
+            # n'inclure que les horizons échus à `today` (échéance par marché).
+            echeance = compute_echeance(cell.bulletin_date, cell.horizon, group)
+            if echeance > today:
+                continue
             # Refonte CA-M6b : un bulletin de suivi (12h/18h) ne produit pas de
             # mesure win rate → cellule marquée `non-noté` (exclue des KPIs),
             # tracée pour visibilité. Court-circuit avant tout fetch/mesure.
             if not bulletin_mesurable:
-                echeance_nn = compute_echeance(cell.bulletin_date, cell.horizon)
                 m = Measure(
                     cell=cell, fiche_key=fiche_key, ticker=ticker,
-                    horizon=cell.horizon, echeance=echeance_nn,
+                    horizon=cell.horizon, echeance=echeance,
                     prix_emission=None, prix_courant=None, seuil_pct=None,
                     delta_pct=None, outcome=OUTCOME_NON_NOTE,
                     note="bulletin non-7h (suivi) — exclu du win rate (CA-M6b)",
@@ -2070,7 +2090,7 @@ def measure(
             # + continus mesurés normalement. Groupe via actif_group (mesure_
             # ouverture) — zéro liste d'actifs en dur. Si groupe inconnu → on NE
             # skippe PAS (comportement historique préservé, dégradation sûre).
-            group = _actif_group_for_fiche(fiche)
+            # (`group` déjà résolu en tête de boucle.)
             if group is not None and not is_market_open_for(group, echeance):
                 m = Measure(
                     cell=cell, fiche_key=fiche_key, ticker=ticker,

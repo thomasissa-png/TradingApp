@@ -419,32 +419,6 @@
     padding: 2px 7px; border-radius: 10px; background: var(--accent-bg); color: var(--accent);
     flex-shrink: 0;
   }
-  /* Fil de la journée sous le briefing 7h (vue Historique/bulletin) : séparateur
-     léger + rapports repliés. Cohérent avec .today-report / .fold-section. */
-  .day-fil-sep {
-    display: flex; align-items: center; gap: 12px;
-    margin: 28px 0 14px 0; font-size: 12px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted);
-  }
-  .day-fil-sep::before, .day-fil-sep::after {
-    content: ""; flex: 1; height: 1px; background: var(--border);
-  }
-  .day-fil-report {
-    border: 1px solid var(--border); border-radius: 8px; margin: 0 0 12px 0;
-    background: var(--bg-panel); overflow: hidden;
-  }
-  .day-fil-report > summary {
-    cursor: pointer; padding: 11px 16px; font-weight: 600; font-size: 14px;
-    color: var(--accent); list-style: none; user-select: none;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .day-fil-report > summary::-webkit-details-marker { display: none; }
-  .day-fil-report > summary::before {
-    content: "▸"; display: inline-block; transition: transform 0.15s ease;
-    color: var(--text-muted);
-  }
-  .day-fil-report[open] > summary::before { transform: rotate(90deg); }
-  .day-fil-body { padding: 4px 18px 16px 18px; }
   /* Vue Historique */
   #history-view .history-intro { color: var(--text-muted); margin: 4px 0 18px 0; }
   .history-filters {
@@ -711,7 +685,7 @@
         <p id="history-empty" hidden></p>
       </section>
       <p class="gen-meta" aria-label="Date de génération de la page">
-        Page générée le <time datetime="2026-06-20T19:10:04Z">20 juin 2026 · 19h10 (UTC)</time>
+        Page générée le <time datetime="2026-06-21T08:01:32Z">21 juin 2026 · 08h01 (UTC)</time>
       </p>
     </div>
   </main>
@@ -16092,34 +16066,51 @@ function formatBulletinDate(id) {
   return { short, time };
 }
 
-function renderList(activeId) {
+// Liste des JOURS de l'historique : une seule entrée par date (déduplication),
+// sans heure/créneau dans le libellé (« ven. 19 juin »). Un jour = un clic qui
+// ouvre TOUS ses rapports groupés et dépliables (cf. selectDay), comme la vue
+// « Aujourd'hui ». On garde, par date, le bulletin le plus récent comme ancre
+// (BULLETINS est déjà trié décroissant par build_payload). Les jours qui n'ont
+// que des suivis/bilans (REPORTS) mais aucun briefing apparaissent aussi.
+function listDays() {
+  const byDay = {};  // date ISO -> { date, briefingId }
+  BULLETINS.forEach(b => {
+    const d = (b.id || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+    if (!byDay[d]) byDay[d] = { date: d, briefingId: b.id };  // 1er = plus récent du jour
+  });
+  REPORTS.forEach(r => {
+    if (r.date && !byDay[r.date]) byDay[r.date] = { date: r.date, briefingId: null };
+  });
+  return Object.values(byDay).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
+
+function renderList(activeDate) {
   const ul = document.getElementById('bulletin-list');
   ul.innerHTML = '';
-  // Le plus récent = index 0 (BULLETINS déjà triés décroissant par build_payload).
-  const latestId = BULLETINS.length > 0 ? BULLETINS[0].id : null;
-  BULLETINS.forEach(b => {
+  const days = listDays();
+  const latestDate = days.length > 0 ? days[0].date : null;
+  days.forEach(day => {
     const li = document.createElement('li');
     const a = document.createElement('a');
-    a.href = '#' + encodeURIComponent(b.id);
-    const dt = formatBulletinDate(b.id);
+    a.href = '#jour=' + encodeURIComponent(day.date);
+    const dt = formatBulletinDate(day.date);
     const dateSpan = document.createElement('span');
     dateSpan.className = 'item-date';
-    // Créneau lisible : "matin/midi/soir" (b.slot) prioritaire, sinon l'heure
-    // brute extraite de l'id (rétro-compat), sinon rien.
-    const slotTxt = (b.slot && b.slot.length) ? b.slot : dt.time;
-    dateSpan.textContent = slotTxt ? `${dt.short} · ${slotTxt}` : dt.short;
+    // Pas d'heure : un jour = une entrée. Ex. « ven. 19 juin ».
+    dateSpan.textContent = dt.short;
     a.appendChild(dateSpan);
-    if (b.id === latestId) {
+    if (day.date === latestDate) {
       a.classList.add('latest');
       const badge = document.createElement('span');
       badge.className = 'badge-latest';
       badge.textContent = 'dernier';
       a.appendChild(badge);
     }
-    if (b.id === activeId) a.classList.add('active');
+    if (day.date === activeDate) a.classList.add('active');
     a.onclick = (e) => {
       e.preventDefault();
-      selectBulletin(b.id);
+      selectDay(day.date);
       closeSidebarMobile();
     };
     li.appendChild(a);
@@ -16796,8 +16787,8 @@ function renderMarkdownInto(target, md) {
 // Rapports REPORTS d'une date ISO (YYYY-MM-DD), triés dans l'ordre de lecture
 // de la journée : suivi 12h → suivi 18h → bilan du jour (22h). Renvoie [] si
 // rien (dégradation propre côté appelants). Helper partagé entre la vue
-// « Aujourd'hui » (buildTodayView) et le fil de la vue « Historique »
-// (selectBulletin) — un seul ordre canonique, pas de duplication.
+// « Aujourd'hui » (buildTodayView) et le clic sur un jour de l'historique
+// (selectDay, via buildDayGroup) — un seul ordre canonique, pas de duplication.
 function sameDayReports(dateIso) {
   if (!dateIso) return [];
   const suivis = [];
@@ -16811,28 +16802,75 @@ function sameDayReports(dateIso) {
   return bilan ? suivis.concat([bilan]) : suivis;
 }
 
+// Briefings (BULLETINS) d'une date ISO, plus récent d'abord — un jour peut en
+// avoir plusieurs (run du matin + run du soir). Helper partagé.
+function sameDayBriefings(dateIso) {
+  return BULLETINS.filter(b => (b.id || '').slice(0, 10) === dateIso);
+}
+
+// Construit le groupe repliable d'UN jour : un <details class="today-day"> dont
+// le summary porte la date, contenant le briefing 7h + suivis 12h/18h + bilan du
+// soir, chacun dans un <details class="today-report"> à rendu paresseux. C'est
+// LE bloc partagé entre la vue « Aujourd'hui » (buildTodayView) et le clic sur
+// un jour de l'historique (selectDay) — un seul système de regroupement.
+// Dégradation propre : un jour sans bilan (ou sans briefing) n'affiche que ce
+// qui existe (zéro section vide trompeuse). openDay/openLastReport pilotent les
+// états ouverts par défaut.
+function buildDayGroup(dateIso, opts) {
+  opts = opts || {};
+  const dt = formatBulletinDate(dateIso);
+  const briefings = sameDayBriefings(dateIso);
+  const dayReports = sameDayReports(dateIso);
+
+  const details = document.createElement('details');
+  details.className = 'today-day';
+  if (opts.openDay) details.open = true;
+  const summary = document.createElement('summary');
+  const n = briefings.length + dayReports.length;
+  summary.innerHTML = '<span>' + dt.short + '</span>'
+    + '<span class="day-count">' + n + ' rapport' + (n > 1 ? 's' : '') + '</span>';
+  details.appendChild(summary);
+
+  // Ordre de lecture du jour : briefing 7h → suivi 12h → suivi 18h → bilan 22h.
+  const ordered = [];
+  briefings.forEach(b => ordered.push({ tag: 'Briefing', slot: b.slot || '7h', md: b.markdown }));
+  dayReports.forEach(r => {
+    const isBilan = r.kind === 'bilan-jour';
+    ordered.push({ tag: isBilan ? 'Bilan' : 'Suivi', slot: isBilan ? '22h' : r.slot, md: r.markdown });
+  });
+
+  ordered.forEach((item, ii) => {
+    const rd = document.createElement('details');
+    rd.className = 'today-report';
+    // Premier rapport ouvert (le briefing, lecture primaire) si demandé.
+    if (opts.openFirstReport && ii === 0) rd.open = true;
+    // Dernier rapport ouvert (le plus frais) si demandé — utilisé par « Aujourd'hui ».
+    if (opts.openLastReport && ii === ordered.length - 1) rd.open = true;
+    const rs = document.createElement('summary');
+    rs.innerHTML = '<span class="report-tag">' + item.tag + '</span><span>' + (item.slot || '') + '</span>';
+    rd.appendChild(rs);
+    const body = document.createElement('div');
+    body.className = 'report-body';
+    rd.appendChild(body);
+    // Rendu paresseux : on ne parse le markdown qu'à la première ouverture.
+    let rendered = false;
+    const doRender = () => { if (!rendered) { renderMarkdownInto(body, item.md); rendered = true; } };
+    rd.addEventListener('toggle', () => { if (rd.open) doRender(); });
+    if (rd.open) doRender();
+    details.appendChild(rd);
+  });
+  return details;
+}
+
 // Construit la vue « Aujourd'hui » : pour chaque jour (récent d'abord), un
-// groupe repliable contenant le briefing 7h + les suivis 12h/18h + le bilan du
-// jour. Réutilise BULLETINS (briefings) + REPORTS (suivis/bilans).
+// groupe repliable (buildDayGroup). Réutilise BULLETINS + REPORTS.
 function buildTodayView() {
   const wrap = document.getElementById('today-list');
   const empty = document.getElementById('today-empty');
   if (!wrap) return;
   wrap.innerHTML = '';
 
-  // Regroupe par date ISO (YYYY-MM-DD). Un briefing 7h = un bulletin dont l'id
-  // commence par la date ; on extrait juste les 10 premiers caractères.
-  const byDay = {};  // date -> groupe (briefings)
-  const ensure = (d) => (byDay[d] = byDay[d] || { briefings: [] });
-  BULLETINS.forEach(b => {
-    const d = (b.id || '').slice(0, 10);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) ensure(d).briefings.push(b);
-  });
-  REPORTS.forEach(r => {
-    if (r.date) ensure(r.date);  // un jour sans briefing mais avec suivi/bilan reste listé
-  });
-
-  const days = Object.keys(byDay).sort().reverse();
+  const days = listDays().map(d => d.date);  // déjà trié récent d'abord
   if (days.length === 0) {
     if (empty) { empty.hidden = false; empty.textContent = "Aucun rapport pour l'instant : les briefings et suivis apparaîtront ici."; }
     return;
@@ -16840,44 +16878,8 @@ function buildTodayView() {
   if (empty) empty.hidden = true;
 
   days.forEach((d, di) => {
-    const grp = byDay[d];
-    const dt = formatBulletinDate(d);
-    const details = document.createElement('details');
-    details.className = 'today-day';
-    if (di === 0) details.open = true;  // le jour le plus récent ouvert par défaut
-    const dayReports = sameDayReports(d);
-    const summary = document.createElement('summary');
-    const n = grp.briefings.length + dayReports.length;
-    summary.innerHTML = '<span>' + dt.short + '</span>'
-      + '<span class="day-count">' + n + ' rapport' + (n > 1 ? 's' : '') + '</span>';
-    details.appendChild(summary);
-
-    // Ordre de lecture du jour : briefing 7h → suivi 12h → suivi 18h → bilan 22h.
-    const ordered = [];
-    grp.briefings.forEach(b => ordered.push({ tag: 'Briefing', slot: b.slot || '7h', md: b.markdown, key: '07' }));
-    dayReports.forEach(r => {
-      const isBilan = r.kind === 'bilan-jour';
-      ordered.push({ tag: isBilan ? 'Bilan' : 'Suivi', slot: isBilan ? '22h' : r.slot, md: r.markdown, key: isBilan ? '22' : r.slot });
-    });
-
-    ordered.forEach((item, ii) => {
-      const rd = document.createElement('details');
-      rd.className = 'today-report';
-      if (di === 0 && ii === ordered.length - 1) rd.open = true;  // dernier rapport du jour le + récent ouvert
-      const rs = document.createElement('summary');
-      rs.innerHTML = '<span class="report-tag">' + item.tag + '</span><span>' + (item.slot || '') + '</span>';
-      rd.appendChild(rs);
-      const body = document.createElement('div');
-      body.className = 'report-body';
-      rd.appendChild(body);
-      // Rendu paresseux : on ne parse le markdown qu'à la première ouverture.
-      let rendered = false;
-      const doRender = () => { if (!rendered) { renderMarkdownInto(body, item.md); rendered = true; } };
-      rd.addEventListener('toggle', () => { if (rd.open) doRender(); });
-      if (rd.open) doRender();
-      details.appendChild(rd);
-    });
-    wrap.appendChild(details);
+    const grp = buildDayGroup(d, { openDay: di === 0, openLastReport: di === 0 });
+    wrap.appendChild(grp);
   });
 }
 
@@ -17032,98 +17034,36 @@ function buildWinrateView() {
   }
 }
 
-// Ajoute, à la suite du briefing 7h rendu dans `container`, le fil des rapports
-// du même jour (suivi 12h → suivi 18h → bilan 22h). Chaque rapport est un
-// <details class="day-fil-report"> REPLIÉ, rendu paresseusement via le pipeline
-// unifié. Si aucun rapport ce jour-là → n'ajoute rien (zéro séparateur, zéro
-// message). Présentation pure : aucune logique métier, aucun scoring.
-function appendDayFil(container, id) {
-  if (!container) return;
-  const dateIso = (id || '').slice(0, 10);
-  const reports = sameDayReports(dateIso);
-  if (reports.length === 0) return;  // dégradation propre
-
-  // Séparateur léger « ── La journée ── », uniquement s'il y a ≥1 rapport.
-  const sep = document.createElement('div');
-  sep.className = 'day-fil-sep';
-  sep.textContent = 'La journée';
-  container.appendChild(sep);
-
-  const LABELS = { '12h': '🕛 Suivi 12h', '18h': '🕕 Suivi 18h' };
-  reports.forEach(r => {
-    const isBilan = r.kind === 'bilan-jour';
-    const label = isBilan ? '🌙 Bilan du jour · 22h15' : (LABELS[r.slot] || ('Suivi ' + (r.slot || '')));
-    const rd = document.createElement('details');
-    rd.className = 'day-fil-report';  // replié par défaut (pas d'attribut open)
-    const rs = document.createElement('summary');
-    rs.textContent = label;
-    rd.appendChild(rs);
-    const body = document.createElement('div');
-    body.className = 'day-fil-body';
-    rd.appendChild(body);
-    // Rendu paresseux : on ne parse le markdown qu'à la première ouverture.
-    let rendered = false;
-    rd.addEventListener('toggle', () => {
-      if (rd.open && !rendered) { renderMarkdownInto(body, r.markdown); rendered = true; }
-    });
-    container.appendChild(rd);
-  });
-}
-
-function selectBulletin(id) {
+// Clic sur un JOUR de l'historique : on présente la journée COMME la vue
+// « Aujourd'hui » — un groupe dépliable (buildDayGroup) avec briefing 7h +
+// suivis 12h/18h + bilan du soir, au lieu de n'ouvrir que le bulletin 7h. Le
+// briefing (premier rapport) est ouvert par défaut (lecture primaire), les
+// autres repliés. Dégradation propre : un jour sans bilan n'affiche que ce qui
+// existe. Réutilise EXACTEMENT le système de regroupement de today-view.
+function selectDay(dateIso) {
   hideAuxViews();
-  const b = BULLETINS.find(x => x.id === id);
   const content = document.getElementById('bulletin-content');
   const mainEl = document.getElementById('bulletin-main');
-  if (!b) {
-    content.innerHTML = '<p>Bulletin introuvable.</p>';
+  const subnav = document.getElementById('subnav');
+  // La journée par jour n'a pas de sous-nav globale (chaque rapport est replié).
+  if (subnav) subnav.style.display = 'none';
+  content.innerHTML = '';
+
+  const briefings = sameDayBriefings(dateIso);
+  const dayReports = sameDayReports(dateIso);
+  if (briefings.length === 0 && dayReports.length === 0) {
+    content.innerHTML = '<p>Aucun rapport pour ce jour.</p>';
+    renderList(dateIso);
     return;
   }
-  if (typeof marked !== 'undefined') {
-    marked.setOptions({gfm: true, breaks: false});
-    content.innerHTML = marked.parse(b.markdown);
-    relocateDebugMeta(content);
-    addLevelBadges(content);
-    dimWeakCells(content);
-    colorizeDirections(content);
-    addSymbolTooltips(content);
-    markDenseTables(content);
-    markSelectionTables(content);
-    wrapTables(content);
-    wrapDecisionSelection(content);
-    // [Refonte S9 — (B)1] Ordre : assignH2Ids → foldSections → buildSubnav.
-    // 1) on pose les ids sur tous les <h2> (ancres stables) ; 2) foldSections
-    // remplace chaque section repliée par un <details><summary> (l'h2 disparaît,
-    // son id passe au summary) ; 3) buildSubnav ne voit alors QUE les <h2>
-    // restants = sections VISIBLES → la sous-nav ne pointe jamais vers une
-    // section masquée. openFoldedSectionFor reste le filet pour les ancres
-    // pointant vers un summary (clic direct sur une ancre externe).
-    assignH2Ids(content);
-    foldSections(content);
-    buildSubnav(content);
-  } else {
-    // Fallback : affichage brut si marked n'a pas chargé (offline)
-    const pre = document.createElement('pre');
-    pre.textContent = b.markdown;
-    content.innerHTML = '';
-    content.appendChild(pre);
-    // Pas de sous-nav en mode fallback
-    const subnav = document.getElementById('subnav');
-    if (subnav) subnav.style.display = 'none';
-  }
-  // Le fil complet de la journée sous le briefing 7h : suivi 12h → suivi 18h →
-  // bilan 22h (REPORTS, 30 derniers jours). Chaque rapport en <details> REPLIÉ —
-  // le briefing reste la lecture primaire. Dégradation propre : aucun rapport du
-  // jour (bulletin pré-refonte ou > 30 jours) → on n'ajoute RIEN.
-  appendDayFil(content, b.id);
-  history.replaceState(null, '', '#' + encodeURIComponent(id));
-  renderList(id);
-  // [CH-4 audit visuel 12/06] : le titre d'onglet reflète le bulletin actif
-  // (utile quand l'onglet reste ouvert toute la journée). Ex. « Briefing — mer.
-  // 12 juin · 7h ».
-  const dt = formatBulletinDate(b.id);
-  const tt = dt.time ? ` · ${dt.time}` : '';
-  document.title = `Briefing · ${dt.short}${tt} · TradingApp v3`;
+
+  const grp = buildDayGroup(dateIso, { openDay: true, openFirstReport: true });
+  content.appendChild(grp);
+
+  history.replaceState(null, '', '#jour=' + encodeURIComponent(dateIso));
+  renderList(dateIso);
+  const dt = formatBulletinDate(dateIso);
+  document.title = `${dt.short} · TradingApp v3`;
   if (mainEl) mainEl.scrollTop = 0;
 }
 
@@ -17170,24 +17110,29 @@ function closeSidebarMobile() {
   bindNav('nav-history', showHistory);
 
   const rawHash = (location.hash || '').replace(/^#/, '');
-  // Routage des vues auxiliaires (avant la résolution d'un bulletin par id).
+  // Routage des vues auxiliaires (avant la résolution d'un jour).
   if (rawHash === 'vue=aujourdhui') { showToday(); return; }
   if (rawHash === 'vue=resultats') { showWinrate(); return; }
   if (rawHash === 'vue=semaine') { showWeek(); return; }
   if (rawHash === 'vue=historique') { showHistory(); return; }
 
-  if (BULLETINS.length === 0) {
-    // Pas de bulletin mais peut-être des suivis/bilans → on ouvre « Aujourd'hui »
-    // si disponible, sinon un message neutre.
-    if (REPORTS.length > 0) { showToday(); return; }
+  const days = listDays();
+  if (days.length === 0) {
+    // Aucun jour : ni briefing ni suivi/bilan → message neutre.
     document.getElementById('bulletin-content').innerHTML = '<p>Aucun bulletin disponible.</p>';
     const subnav = document.getElementById('subnav');
     if (subnav) subnav.style.display = 'none';
     return;
   }
+  // Hash « jour=YYYY-MM-DD » → ce jour ; rétro-compat : un hash d'id de bulletin
+  // (ex. ancien lien « 2026-06-16T05... ») retombe sur sa date (10 prem. car.).
+  let target = null;
   const hash = decodeURIComponent(rawHash);
-  const found = BULLETINS.find(b => b.id === hash);
-  selectBulletin(found ? found.id : BULLETINS[0].id);
+  const jm = hash.match(/^jour=(\d{4}-\d{2}-\d{2})$/);
+  if (jm) target = jm[1];
+  else if (/^\d{4}-\d{2}-\d{2}/.test(hash)) target = hash.slice(0, 10);
+  const known = days.some(d => d.date === target);
+  selectDay(known ? target : days[0].date);
 })();
 </script>
 </body>

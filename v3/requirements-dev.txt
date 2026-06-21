@@ -1,0 +1,16 @@
+# TradingApp v3 — dépendances DEV (tests). PAS nécessaires au runtime cron
+# (le cron GitHub Actions installe v3/requirements.txt). À installer en local :
+#   pip install -r v3/requirements-dev.txt
+#
+# Inclut les deps runtime : sans pandas/yfinance/holidays, ~22 tests échouent en
+# ModuleNotFoundError (backtest, criteres, bilan_jour cam7/cab2) — les installer
+# rend la suite 100 % verte en local.
+-r requirements.txt
+
+# Lanceur de tests (version épinglée sur celle du conteneur de référence).
+pytest==9.1.1
+
+# Parallélisation de la suite (~1600 tests). Lancer sur les cœurs dispo :
+#   python3 -m pytest v3/tests/ -n auto
+# Divise le temps de la suite complète (~17 min en série) par le nombre de cœurs.
+pytest-xdist==3.8.0

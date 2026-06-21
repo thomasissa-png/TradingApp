@@ -1099,7 +1099,7 @@ def render_html(
       <section id="week-view" hidden aria-label="Bilan de la semaine">
         <h1>🗓️ Bilan semaine</h1>
         <p id="week-human-title" class="week-human-title" hidden></p>
-        <p class="history-intro">Win rate cumulé de la semaine en cours (réécrit à chaque run, figé en fin de semaine).</p>
+        <p class="history-intro">WIN RATE ONLY · jamais d'euros. Le Manager propose, Thomas valide.</p>
         <div id="week-content"></div>
         <p id="week-empty" hidden></p>
       </section>
@@ -2311,7 +2311,13 @@ function buildWeekView(weekly) {{
     if (human) {{ titleEl.textContent = human; titleEl.hidden = false; }}
     else titleEl.hidden = true;
   }}
-  renderMarkdownInto(content, weekly.markdown);
+  // Anti-doublon : le H1 du markdown (« Bilan semaine · 2026-S## (range) ») et
+  // ses 3 puces méta (Généré / WIN RATE ONLY / WR tradable) répètent le chrome de
+  // la vue (titre + sous-titre humain + intro). On rend à partir de la 1re section
+  // « ## 1. … » seulement. weekHumanTitle lit le markdown BRUT (range intact).
+  const md = weekly.markdown || '';
+  const idx = md.search(/^## /m);
+  renderMarkdownInto(content, idx > 0 ? md.slice(idx) : md);
 }}
 
 // Rend notre tableau win-rate-only (performance.md) dans `target`. Renvoie true

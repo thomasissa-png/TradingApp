@@ -657,6 +657,9 @@ class PerfTop3Ligne:
     # l'heure du pic) ou None si non identifiée (zéro invention). Renseigné SEULEMENT
     # quand le pic a reflué avant la clôture (sinon pas de repli à expliquer).
     cause_repli: Optional[str] = None
+    # VRAIE raison du call (drivers dominants du score à l'émission, decision-log) —
+    # « pourquoi on a pris ce pari ». Aligné avec le bilan semaine. None si non tracé.
+    raison_call: Optional[str] = None
 
 
 def _verdict_sortie(
@@ -713,6 +716,7 @@ def compute_perf_top3(
     vendre_map: Optional[Dict[str, str]] = None,
     date_j: Optional[date] = None,
     events_path: Optional[Path] = None,
+    conviction_records: Optional[Dict[Tuple[str, str], dict]] = None,
 ) -> List[PerfTop3Ligne]:
     """Bloc 1 — Performance 24h des cellules de la Sélection du jour (top ≤3).
 
@@ -768,9 +772,22 @@ def compute_perf_top3(
             and isinstance(fav_cloture, (int, float)) and fav_cloture < pic_valeur
         )
         if a_reflue and date_j is not None:
-            cause_repli = cause_news_high_apres(
-                actif, date_j, _PIC_HEURE_PARIS.get(pic_heure), events_path
-            )
+            # Un repli = le marché a battu NOTRE call → news à CONTRE-SENS du call
+            # (direction-cohérente), jamais une news pro-call (qui contredirait le repli).
+            opp = "SHORT" if call == "LONG" else "LONG" if call == "SHORT" else None
+            if opp:
+                cause_repli = cause_news_high_dir(
+                    actif, date_j, opp, _PIC_HEURE_PARIS.get(pic_heure), events_path
+                )
+        # VRAIE raison du call = drivers dominants du score (decision-log), comme le
+        # bilan semaine. Source unique journaliste.drivers_du_call. None si non tracé.
+        raison_call = None
+        if conviction_records is not None:
+            from journaliste import drivers_du_call  # noqa: PLC0415
+            rec = conviction_records.get((actif, "24h")) or {}
+            drivers = drivers_du_call(rec, call)
+            if drivers:
+                raison_call = " + ".join(drivers)
         out.append(PerfTop3Ligne(
             actif=actif, call=call,
             fav_12h=(round(fav_12h, 2) if fav_12h is not None else None),
@@ -779,6 +796,7 @@ def compute_perf_top3(
             pic_valeur=(round(pic_valeur, 2) if pic_valeur is not None else None),
             pic_heure=pic_heure, points_manquants=manquants, verdict=verdict,
             vendre_reco=vendre_map.get(actif), cause_repli=cause_repli,
+            raison_call=raison_call,
         ))
     out.sort(key=lambda x: x.actif)
     return out
@@ -893,7 +911,11 @@ def compute_gros_moves_autres(
         # ou None si rien de tracé (zéro invention → « cause non tracée » au rendu).
         cause_move = None
         if date_j is not None:
-            cause_move = cause_news_high_apres(actif, date_j, None, events_path)
+            # News cohérente avec le SENS du mouvement (monte → LONG, baisse → SHORT) :
+            # ce qui a réellement porté le move, pas une news à contre-sens.
+            sens_move = "LONG" if delta > 0 else "SHORT" if delta < 0 else None
+            if sens_move:
+                cause_move = cause_news_high_dir(actif, date_j, sens_move, None, events_path)
         out.append(GrosMoveAutre(
             actif=actif, call=call, mouvement_pct=round(delta, 2),
             direction_juste=direction_juste, raison_non_select=raison,
@@ -1247,7 +1269,8 @@ def build_bilan_jour(
     score_fort_seuil = _load_score_fort_seuil()
 
     bilan.perf_top3 = compute_perf_top3(
-        measures_24h, selection_map, tracking, vendre_map, date_j=date_j
+        measures_24h, selection_map, tracking, vendre_map, date_j=date_j,
+        conviction_records=conv_records,
     )
     bilan.gros_moves_autres = compute_gros_moves_autres(
         measures_24h, selection_map, conv_records, score_fort_seuil, date_j=date_j,
@@ -1387,7 +1410,9 @@ def _render_bloc1_perf_top3(bilan: "BilanJour") -> List[str]:
                     f" Cause du repli après {p.pic_heure} non identifiée "
                     f"(pas de catalyseur tracé)."
                 )
-        L.append(f"- **{p.actif}** ({p.call}) : {p.verdict}{reco_txt}{cause_txt}")
+        # VRAIE raison du call (drivers du score) — pourquoi on a pris ce pari.
+        raison_txt = f" Pris sur : {p.raison_call}." if p.raison_call else ""
+        L.append(f"- **{p.actif}** ({p.call}) : {p.verdict}{raison_txt}{reco_txt}{cause_txt}")
     L.append("")
     return L
 

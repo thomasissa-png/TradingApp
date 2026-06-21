@@ -96,6 +96,7 @@ class SuiviLigne:
     selection: bool = False        # True si cellule `selection_du_jour: true` du jour
     fav_now: Optional[float] = None  # % directionnel signé favorable, créneau courant
     fav_prec: Optional[float] = None  # % directionnel signé favorable, créneau précédent (None au 12h)
+    raison_call: Optional[str] = None  # VRAIE raison du call (drivers du score 7h) — aligné jour/semaine
 
 
 @dataclass
@@ -980,6 +981,22 @@ def build_suivi(
         date_j, [li.actif for li in rapport.lignes], decision_log_dir
     )
 
+    # VRAIE raison du call (drivers du score 7h) pour les positions de la Sélection —
+    # même source unique que le bilan jour/semaine (journaliste.drivers_du_call). On
+    # explique « pourquoi on tient » chaque position, jamais une news lambda.
+    selected_lignes = [li for li in rapport.lignes if li.selection]
+    if selected_lignes:
+        try:
+            from bilan_jour import load_conviction_records  # noqa: PLC0415
+            conv = load_conviction_records(date_j, decision_log_dir)
+            for li in selected_lignes:
+                rec = conv.get((li.actif, "24h")) or {}
+                drivers = J.drivers_du_call(rec, li.call)
+                if drivers:
+                    li.raison_call = " + ".join(drivers)
+        except Exception as e:  # noqa: BLE001 — best-effort, jamais bloquant
+            logger.warning("build_suivi: raison_call KO (non bloquant) : %s", e)
+
     # PARTIE B — actus FRAÎCHES du jour (récolte RSS légère, best-effort, zéro DeepSeek).
     # Dédup contre : (1) le Contexte 7h affiché ci-dessus, (2) les titres frais déjà
     # montrés au 12h (snapshot, lu seulement au 18h). Best-effort total : une erreur
@@ -1089,6 +1106,15 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
         "couper un pari qui empire ; sinon on conserve._"
     )
     L.append("")
+    # Pourquoi on tient ces positions : la VRAIE raison du call (drivers du score à
+    # l'émission 7h), comme le bilan jour/semaine — pas une news lambda.
+    avec_raison = [li for li in selection if li.raison_call]
+    if avec_raison:
+        L.append("**Pourquoi ces positions (signal à 7h) :**")
+        L.append("")
+        for li in avec_raison:
+            L.append(f"- **{li.actif}** ({li.call}) : {li.raison_call}")
+        L.append("")
     return L
 
 

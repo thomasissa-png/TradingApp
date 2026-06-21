@@ -1270,46 +1270,12 @@ def _render_picks_par_jour(picks: List["PickSemaine"], L: List[str]) -> None:
     L.append("")
 
 
-# Part minimale d'un critère (vs le driver dominant) pour compter comme une VRAIE
-# raison du call. En dessous = contribution négligeable, ce n'est pas un moteur (la
-# lister induirait de fausses conclusions, autant que d'en cacher une vraie).
-_RAISON_MATERIALITE = 0.20
-
-
-def _driver_display(nom: str) -> str:
-    """Nom de critère prêt à afficher, conforme WIN-RATE-ONLY. Les noms de critères
-    viennent de la config (vocabulaire figé) ; un seul contient un terme monétaire
-    interdit : « haut rendement » (high-yield) → « spéculatif » (terme officiel FR
-    pour le crédit HY, fidèle). Filet de sécurité : strip_monetaire pour tout symbole
-    résiduel (€/$/P&L), sans jamais inventer."""
-    out = re.sub(r"haut rendement", "spéculatif", nom, flags=re.IGNORECASE)
-    try:
-        from briefing import strip_monetaire  # noqa: PLC0415
-        out = strip_monetaire(out)
-    except Exception:  # noqa: BLE001
-        pass
-    return " ".join(out.split())  # normalise les espaces laissés par un strip éventuel
-
-
 def _drivers_reels(rec: dict, call: str) -> List[str]:
-    """TOUS les critères qui ont matériellement poussé le score DANS LE SENS du call
-    (decision-log `criteres` / `contrib_pond`), du plus fort au plus faible. C'est
-    exactement ce qui a déclenché la décision — déterministe, jamais une news lambda.
-    On garde chaque co-moteur pesant ≥ 20 % du driver dominant (on les met TOUS) ;
-    on écarte uniquement le bruit négligeable. [] si aucun critère tracé."""
-    sens = 1.0 if call == "LONG" else -1.0 if call == "SHORT" else 0.0
-    if not sens:
-        return []
-    drivers = [
-        c for c in (rec.get("criteres") or [])
-        if isinstance(c.get("contrib_pond"), (int, float))
-        and c["contrib_pond"] * sens > 0 and c.get("nom")
-    ]
-    if not drivers:
-        return []
-    drivers.sort(key=lambda c: abs(c["contrib_pond"]), reverse=True)
-    seuil = _RAISON_MATERIALITE * abs(drivers[0]["contrib_pond"])
-    return [_driver_display(str(c["nom"])) for c in drivers if abs(c["contrib_pond"]) >= seuil]
+    """Délègue à la SOURCE UNIQUE `journaliste.drivers_du_call` (alignement jour /
+    semaine / suivi) : tous les critères qui ont matériellement poussé le score dans
+    le sens du call, déterministe, jamais une news lambda."""
+    from journaliste import drivers_du_call  # noqa: PLC0415
+    return drivers_du_call(rec, call)
 
 
 def _raison_reelle(rec: dict, call: str) -> Optional[str]:

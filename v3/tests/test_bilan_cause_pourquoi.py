@@ -161,14 +161,42 @@ def test_gros_move_cause_tracee(log_or_news_apres_pic: Path):
 
 
 def test_gros_move_cause_matchee_sur_le_bon_actif(log_or_news_apres_pic: Path):
-    # Or hors top 3 avec gros move → la news high GOLD du jour est citée.
-    meas = [_measure("Or", "SHORT", 2.0, 0.5)]
+    # Or hors top 3, mouvement BAISSIER (-2 %) → la news high GOLD baissière du jour
+    # (« Fed hawkish sinks gold », GOLD:SHORT) est citée car COHÉRENTE avec le sens
+    # du mouvement (une news haussière ne serait jamais collée à une baisse).
+    meas = [_measure("Or", "SHORT", -2.0, 0.5)]
     selmap = {}
     g = bj.compute_gros_moves_autres(
         meas, selmap, {}, 0.6, date_j=DJ, events_path=log_or_news_apres_pic
     )[0]
     assert g.cause_move is not None
     assert "Fed hawkish surprise sinks gold" in g.cause_move
+
+
+def test_perf_top3_affiche_la_vraie_raison_drivers():
+    """Bilan du jour : chaque pick du Top 3 montre la VRAIE raison (drivers du score,
+    decision-log), comme le bilan semaine — pas une news lambda."""
+    meas = [_measure("Or", "SHORT", -0.3, 0.3)]
+    selmap = {("Or", "24h"): True}
+    tracking = {
+        "12h": {"Or": {"call": "SHORT", "fav_pct": 1.0, "heure": "12h05"}},
+        "18h": {"Or": {"call": "SHORT", "fav_pct": 0.5, "heure": "18h05"}},
+    }
+    conv = {("Or", "24h"): {"criteres": [
+        {"nom": "Taux d'intérêt réels US (10 ans)", "contrib_pond": -4.0},  # SHORT, dominant
+        {"nom": "Indice de peur (VIX)", "contrib_pond": -1.2},              # SHORT, co-moteur
+        {"nom": "Momentum 5j", "contrib_pond": 0.5},                        # LONG → exclu
+    ]}}
+    p = bj.compute_perf_top3(meas, selmap, tracking, date_j=DJ, conviction_records=conv)[0]
+    assert p.raison_call == "Taux d'intérêt réels US (10 ans) + Indice de peur (VIX)"
+
+
+def test_perf_top3_raison_absente_si_pas_de_records():
+    """Sans decision-log fourni : pas de raison inventée (None)."""
+    meas = [_measure("Or", "SHORT", -0.3, 0.3)]
+    selmap = {("Or", "24h"): True}
+    p = bj.compute_perf_top3(meas, selmap, {}, date_j=DJ)[0]
+    assert p.raison_call is None
 
 
 def test_rendu_bloc2_cause_non_tracee(log_or_news_apres_pic: Path):

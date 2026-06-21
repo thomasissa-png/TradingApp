@@ -1037,6 +1037,46 @@ OUTCOME_INTERROMPU = "suivi-interrompu"
 # Partagé par tous les rapports (KPI « WR >= 0,5 % » à côté du win rate brut).
 SEUIL_MVT_SIGNIFICATIF = 0.5
 
+# Part minimale d'un critère (vs le driver dominant) pour compter comme une VRAIE
+# raison du call. En dessous = contribution négligeable, on l'écarte (le lister
+# induirait de fausses conclusions).
+_RAISON_MATERIALITE = 0.20
+
+
+def driver_display(nom: str) -> str:
+    """Nom de critère prêt à afficher, conforme WIN-RATE-ONLY. Le seul nom contenant
+    un terme monétaire interdit (« haut rendement » = high-yield) devient
+    « spéculatif » (terme FR officiel du crédit HY) ; filet strip_monetaire pour tout
+    symbole résiduel. SOURCE UNIQUE partagée par bilan jour / semaine / suivi."""
+    out = re.sub(r"haut rendement", "spéculatif", nom, flags=re.IGNORECASE)
+    try:
+        from briefing import strip_monetaire  # noqa: PLC0415
+        out = strip_monetaire(out)
+    except Exception:  # noqa: BLE001
+        pass
+    return " ".join(out.split())
+
+
+def drivers_du_call(rec: dict, sens: str) -> List[str]:
+    """VRAIE raison d'un call : TOUS les critères qui ont matériellement poussé le
+    score DANS LE SENS `sens` (decision-log `criteres`/`contrib_pond`), du plus fort
+    au plus faible. C'est ce qui a déclenché la décision — déterministe, jamais une
+    news lambda. On garde chaque co-moteur pesant >= 20 % du driver dominant ; on
+    écarte le bruit. [] si aucun critère tracé. SOURCE UNIQUE (jour/semaine/suivi)."""
+    s = 1.0 if sens == "LONG" else -1.0 if sens == "SHORT" else 0.0
+    if not s:
+        return []
+    drivers = [
+        c for c in (rec.get("criteres") or [])
+        if isinstance(c.get("contrib_pond"), (int, float))
+        and c["contrib_pond"] * s > 0 and c.get("nom")
+    ]
+    if not drivers:
+        return []
+    drivers.sort(key=lambda c: abs(c["contrib_pond"]), reverse=True)
+    seuil = _RAISON_MATERIALITE * abs(drivers[0]["contrib_pond"])
+    return [driver_display(str(c["nom"])) for c in drivers if abs(c["contrib_pond"]) >= seuil]
+
 # ---------------------------------------------------------------------------
 # C5 — Intégrité de la mesure (3 garde-fous incorruptibles)
 #

@@ -44,6 +44,10 @@ ROOT = Path(__file__).resolve().parents[1]
 BULLETINS_DIR = ROOT / "data" / "bulletins"
 DECISION_LOG_DIR = ROOT / "data" / "decision-log"
 BILAN_JOUR_DIR = ROOT / "data" / "bilan-jour"
+# Journal des verdicts de SORTIE (trop tôt / trop tard) de la Sélection 24h, écrit
+# chaque jour par le bilan du soir et AGRÉGÉ par le bilan semaine (le hebdo n'a pas
+# les relevés intraday 12h/18h). Persisté comme measures-log (source de vérité).
+SORTIE_TIMING_LOG = ROOT / "data" / "sortie-timing-log.jsonl"
 MANAGER_CONFIG_FILE = ROOT / "config" / "manager.yaml"
 
 PARIS_TZ = ZoneInfo("Europe/Paris")
@@ -1277,6 +1281,10 @@ def build_bilan_jour(
     )
     bilan.apprentissage = compute_apprentissage_jour(bilan.perf_top3, bilan.gros_moves_autres)
 
+    # Persiste les verdicts de sortie du jour pour l'agrégat hebdo (le bilan semaine
+    # n'a pas les relevés intraday 12h/18h). Best-effort, jamais bloquant.
+    persist_sortie_timing(date_j, bilan.perf_top3)
+
     bilan.close_approx_tickers = approx_tickers
     bilan.markdown = _render_markdown(bilan, fiches)
     return bilan
@@ -1324,29 +1332,143 @@ def _fmt_fav_cell(v: Optional[float]) -> str:
     return f"{v:+.2f}%" if isinstance(v, (int, float)) else "—"
 
 
-def _render_bloc1_perf_top3(bilan: "BilanJour") -> List[str]:
-    """Bloc 1 — Performance 24h du TOP 3 (la Sélection du jour).
+def _a_reflue(p: "PerfTop3Ligne") -> bool:
+    """Le pic favorable a-t-il reflué AVANT la clôture (sommet à 12h/18h, clôture
+    plus basse) ? = on a tenu trop longtemps (clôturé trop tard)."""
+    return bool(
+        p.pic_heure in ("12h", "18h")
+        and isinstance(p.pic_valeur, (int, float)) and p.pic_valeur > 0
+        and isinstance(p.fav_cloture, (int, float)) and p.fav_cloture < p.pic_valeur
+    )
 
-    Tableau favorable 12h/18h/clôture + pic horodaté, puis verdict de sortie par
-    actif (relié aux heures) confronté à la reco réelle du suivi 18h.
-    """
+
+def _verdict_timing_sortie(p: "PerfTop3Ligne") -> Tuple[str, str]:
+    """(verdict timing « trop tôt / trop tard / bien tenu », cause du repli tracée).
+
+    Confronte le pic favorable (12h/18h/clôture) à la clôture ET à la reco réelle du
+    suivi 12h/18h. Dit explicitement si on a clôturé TROP TARD (le gain a reflué après
+    le pic) ou si sortir aurait été TROP TÔT (ça montait encore à la clôture)."""
+    if p.pic_valeur is None or p.pic_heure is None:
+        return "pas de point de relevé exploitable pour juger la sortie", ""
+    if p.pic_valeur <= 0:
+        return (f"jamais dans notre sens (meilleur point {_fmt_pct(p.pic_valeur)} à "
+                f"{p.pic_heure}) : il n'y avait rien à verrouiller, sortie sans objet"), ""
+    cause_txt = ""
+    if _a_reflue(p):
+        timing = (
+            f"⏰ clôturé TROP TARD — pic {_fmt_pct(p.pic_valeur)} à {p.pic_heure}, "
+            f"rendu à {_fmt_pct(p.fav_cloture)} à la clôture : sortir à {p.pic_heure} "
+            "aurait verrouillé plus"
+        )
+        if p.vendre_reco == "Vendre":
+            timing += f" (le suivi {p.pic_heure} disait déjà « Vendre » — signal capté)"
+        elif p.vendre_reco == "Pas vendre":
+            timing += " (le suivi disait « Pas vendre » — signal de sortie manqué)"
+        if p.cause_repli:
+            cause_txt = f" Le repli après {p.pic_heure} coïncide avec : {p.cause_repli}."
+        else:
+            cause_txt = (f" Cause du repli après {p.pic_heure} non identifiée "
+                         "(pas de catalyseur tracé).")
+        return timing, cause_txt
+    # Pic à la clôture : la position a monté jusqu'au bout → tenir était bon.
+    if p.pic_heure == "clôture":
+        timing = "✅ bien tenu — le pic est à la clôture, sortir plus tôt aurait laissé du gain"
+        if p.vendre_reco == "Vendre":
+            timing += " ; ⚠️ le suivi recommandait « Vendre » : sortir aurait été TROP TÔT"
+        return timing, ""
+    return p.verdict, cause_txt
+
+
+def _render_sortie_timing(bilan: "BilanJour") -> List[str]:
+    """Bloc « trop tôt / trop tard » — VISIBLE en section 1 (besoin fondateur) :
+    a-t-on clôturé au bon moment vs les points de contrôle 12h / 18h ?"""
     L: List[str] = []
-    L.append("### Sortie optimale (intraday 12h / 18h)")
+    L.append("**Sortie — a-t-on clôturé trop tôt ou trop tard ? (vs suivi 12h / 18h)**")
     L.append("")
     if not bilan.perf_top3:
-        L.append("Pas de sélection conclusive aujourd'hui (aucun top 3 à noter).")
+        L.append("Pas de position de la Sélection à juger aujourd'hui.")
         L.append("")
         return L
-    # Concept du 24h (fondateur) : une position du jour est un pari d'UNE journée.
-    # À 22h, toute position encore active est clôturée (fin du 24h) au cours de
-    # clôture. La colonne « % clôture » ci-dessous est ce résultat 24h final.
+    for p in bilan.perf_top3:
+        timing, cause_txt = _verdict_timing_sortie(p)
+        L.append(f"- **{p.actif}** ({p.call}) : {timing}.{cause_txt}")
+    L.append("")
+    return L
+
+
+# Conservé sous son nom historique (référencé par les tests de cause) : c'est
+# désormais le bloc « sortie trop tôt / trop tard », remonté en section 1.
+def _render_bloc1_perf_top3(bilan: "BilanJour") -> List[str]:
+    return _render_sortie_timing(bilan)
+
+
+def categorie_sortie(p: "PerfTop3Ligne") -> str:
+    """Catégorie de timing de sortie d'un pick (persistée pour l'agrégat hebdo) :
+    - « trop_tard » : le gain a reflué après le pic (on a tenu trop longtemps) ;
+    - « trop_tot »  : pic à la clôture mais le suivi disait « Vendre » (sortie aurait été prématurée) ;
+    - « bien_tenu » : pic à la clôture, tenir était le bon choix ;
+    - « sans_objet »: jamais dans notre sens (rien à verrouiller)."""
+    if p.pic_valeur is None or p.pic_heure is None or p.pic_valeur <= 0:
+        return "sans_objet"
+    if _a_reflue(p):
+        return "trop_tard"
+    if p.pic_heure == "clôture" and p.vendre_reco == "Vendre":
+        return "trop_tot"
+    return "bien_tenu"
+
+
+def persist_sortie_timing(
+    date_j: date, perf_top3: List["PerfTop3Ligne"], path: Path = SORTIE_TIMING_LOG,
+) -> None:
+    """Écrit/màj les verdicts de sortie du jour dans le journal (dédup par (date,
+    actif) : un run plus tard écrase le précédent). Best-effort, jamais bloquant."""
+    if not perf_top3:
+        return
+    try:
+        records: Dict[Tuple[str, str], dict] = {}
+        if path.exists():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(r, dict) and r.get("date") and r.get("actif"):
+                    records[(str(r["date"]), str(r["actif"]))] = r
+        dj = date_j.isoformat()
+        for p in perf_top3:
+            records[(dj, p.actif)] = {
+                "date": dj, "actif": p.actif, "call": p.call,
+                "categorie": categorie_sortie(p),
+                "pic_pct": p.pic_valeur, "pic_heure": p.pic_heure,
+                "cloture_pct": p.fav_cloture,
+            }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "\n".join(json.dumps(r, ensure_ascii=False) for r in records.values()) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as e:  # noqa: BLE001 — persistance best-effort
+        logger.warning("persist_sortie_timing KO (non bloquant) : %s", e)
+
+
+def _render_intraday_table(bilan: "BilanJour") -> List[str]:
+    """Détail intraday brut (% favorable 12h / 18h / clôture + pic horodaté) — annexe."""
+    L: List[str] = []
+    L.append("### Détail intraday (12h / 18h / clôture)")
+    L.append("")
+    if not bilan.perf_top3:
+        L.append("Pas de sélection conclusive aujourd'hui.")
+        L.append("")
+        return L
     L.append(
-        "_Concept 24h : toute position encore ouverte à 22h est clôturée (fin du "
-        "24h) au cours de clôture. La colonne « % clôture » est ce résultat final._"
+        "_Concept 24h : toute position encore ouverte à 22h est clôturée au cours de "
+        "clôture (% clôture = résultat 24h final). % favorable signé : `+` va dans le "
+        "sens du call, `-` contre nous. « — » = point non relevé (zéro invention)._"
     )
     L.append("")
-    # En-têtes % à double libellé (desktop complet / mobile court) pour garder la
-    # colonne Pic lisible sur petit écran (CSS .c-full / .c-short, comme le suivi).
     L.append(
         "| Actif "
         "| <span class=\"c-full\">Call 7h</span><span class=\"c-short\">Call</span> "
@@ -1365,53 +1487,6 @@ def _render_bloc1_perf_top3(bilan: "BilanJour") -> List[str]:
             f"| {p.actif} | {p.call} | {_fmt_fav_cell(p.fav_12h)} | "
             f"{_fmt_fav_cell(p.fav_18h)} | {_fmt_fav_cell(p.fav_cloture)} | {pic} |"
         )
-    L.append("")
-    L.append(
-        "_% favorable signé : `+` = le marché va dans le sens du call (gagne), "
-        "`-` = contre nous. Pic = meilleur % favorable atteint parmi 12h / 18h / "
-        "clôture. « — » = point non relevé (zéro invention)._"
-    )
-    L.append("")
-    # Verdict de sortie optimale par actif, confronté à la reco réelle du suivi.
-    L.append("**Sortie optimale vs reco du suivi :**")
-    for p in bilan.perf_top3:
-        if p.vendre_reco == "Vendre":
-            capte = (
-                "capté" if (p.pic_heure in ("12h", "18h")) else "sorti trop tôt ?"
-            )
-            reco_txt = f" Le suivi 18h recommandait « Vendre » ({capte})."
-        elif p.vendre_reco == "Pas vendre":
-            rate = (
-                " (le pic était avant la clôture : on a raté la sortie)"
-                if p.pic_heure in ("12h", "18h")
-                and isinstance(p.pic_valeur, (int, float)) and p.pic_valeur > 0
-                and isinstance(p.fav_cloture, (int, float)) and p.fav_cloture < p.pic_valeur
-                else ""
-            )
-            reco_txt = f" Le suivi 18h recommandait « Pas vendre »{rate}."
-        else:
-            reco_txt = " (pas de reco de suivi 18h relevée.)"
-        # Brief B — POURQUOI le repli (cause tracée uniquement) : si le pic a reflué
-        # avant la clôture, on cite la news high tracée sur l'actif après le pic, ou
-        # on déclare honnêtement la cause non identifiée (jamais d'invention).
-        cause_txt = ""
-        a_reflue = (
-            p.pic_heure in ("12h", "18h")
-            and isinstance(p.pic_valeur, (int, float)) and p.pic_valeur > 0
-            and isinstance(p.fav_cloture, (int, float)) and p.fav_cloture < p.pic_valeur
-        )
-        if a_reflue:
-            if p.cause_repli:
-                cause_txt = (
-                    f" Le repli après {p.pic_heure} coïncide avec : {p.cause_repli}."
-                )
-            else:
-                cause_txt = (
-                    f" Cause du repli après {p.pic_heure} non identifiée "
-                    f"(pas de catalyseur tracé)."
-                )
-        # VRAIE raison du call (drivers du score) — pourquoi on a pris ce pari.
-        L.append(f"- **{p.actif}** ({p.call}) : {p.verdict}{reco_txt}{cause_txt}")
     L.append("")
     return L
 
@@ -1616,7 +1691,8 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     L.append("")
 
     # === Structure CALQUÉE sur le bilan semaine ===
-    L.extend(_render_jour_selection(bilan))                         # 1. Performance
+    L.extend(_render_jour_selection(bilan))                         # 1. Performance (table)
+    L.extend(_render_sortie_timing(bilan))                          # 1b. Sortie trop tôt/tard (VISIBLE)
 
     L.append("## 2. Ce qu'on a bien fait aujourd'hui")              # 2. Bien fait + POURQUOI
     L.append("")
@@ -1651,8 +1727,8 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     L.append("<summary>Annexe technique · détail de mesure (replié)</summary>")
     L.append("")
 
-    # Sortie optimale intraday (pic 12h/18h vs clôture, reco du suivi, cause du repli).
-    L.extend(_render_bloc1_perf_top3(bilan))
+    # Détail intraday brut (% favorable 12h / 18h / clôture + pic horodaté).
+    L.extend(_render_intraday_table(bilan))
 
     # Résultat brut des 12 calls 7h (table complète).
     L.append("### Résultat des calls 7h")

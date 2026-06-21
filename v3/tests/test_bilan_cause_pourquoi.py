@@ -304,3 +304,43 @@ def test_cause_dir_aucune_news_coherente_renvoie_none(tmp_path: Path):
         encoding="utf-8",
     )
     assert bj.cause_news_high_dir("Or", DJ, "SHORT", None, p) is None
+
+
+# ===========================================================================
+# Sortie « trop tôt / trop tard » + persistance pour l'agrégat hebdo
+# ===========================================================================
+
+def _perf(actif, call, fav_cloture, pic_valeur, pic_heure, vendre=None):
+    return bj.PerfTop3Ligne(
+        actif=actif, call=call, fav_12h=None, fav_18h=None, fav_cloture=fav_cloture,
+        pic_valeur=pic_valeur, pic_heure=pic_heure, points_manquants=[],
+        verdict="x", vendre_reco=vendre,
+    )
+
+
+def test_categorie_sortie_trop_tot_tard_bien_tenu():
+    assert bj.categorie_sortie(_perf("Or", "SHORT", 4.0, 4.0, "clôture")) == "bien_tenu"
+    assert bj.categorie_sortie(_perf("Argent", "LONG", 1.2, 2.5, "12h")) == "trop_tard"
+    assert bj.categorie_sortie(_perf("VIX", "SHORT", 3.0, 3.0, "clôture", vendre="Vendre")) == "trop_tot"
+    assert bj.categorie_sortie(_perf("Blé", "LONG", -1.0, -1.0, "clôture")) == "sans_objet"
+
+
+def test_persist_sortie_timing_dedup(tmp_path: Path):
+    import json as _j
+    log = tmp_path / "sortie-timing-log.jsonl"
+    perf = [_perf("Or", "SHORT", 4.0, 4.0, "clôture"),
+            _perf("Argent", "LONG", 1.2, 2.5, "12h")]
+    bj.persist_sortie_timing(date(2026, 6, 18), perf, path=log)
+    bj.persist_sortie_timing(date(2026, 6, 18), perf, path=log)  # idempotent (dédup date+actif)
+    recs = [_j.loads(l) for l in log.read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert len(recs) == 2
+    cats = {r["actif"]: r["categorie"] for r in recs}
+    assert cats == {"Or": "bien_tenu", "Argent": "trop_tard"}
+
+
+def test_render_sortie_timing_visible_en_section1():
+    """Le bloc « trop tôt / trop tard » est VISIBLE (besoin fondateur), pas en annexe."""
+    b = bj.BilanJour(date_j=DJ, now=datetime(2026, 6, 18, 22, 15))
+    b.perf_top3 = [_perf("Argent", "LONG", 1.2, 2.5, "12h", vendre="Pas vendre")]
+    md = "\n".join(bj._render_sortie_timing(b))
+    assert "clôturé TROP TARD" in md and "pic +2.50% à 12h" in md

@@ -121,6 +121,7 @@ class BilanSemaine:
     edge_familles: List["EdgeFamille"] = field(default_factory=list)  # où concentrer (S9)
     detail_24h: List["Detail24hActif"] = field(default_factory=list)  # grille 24h/actif (S9)
     mouvements_rates: List["MouvementRate"] = field(default_factory=list)  # wins ratés (S9)
+    sortie_timing: Optional["SortieTimingSemaine"] = None  # agrégat trop tôt/tard (vs 12h/18h)
     markdown: str = ""
 
 
@@ -701,6 +702,66 @@ def mouvements_rates_semaine(
 
 
 @dataclass
+class SortieTimingSemaine:
+    """Agrégat hebdo des verdicts de SORTIE de la Sélection 24h (trop tôt / trop tard /
+    bien tenu), reconstitué depuis le journal écrit par les bilans du jour."""
+    n_bien_tenu: int = 0
+    n_trop_tard: int = 0
+    n_trop_tot: int = 0
+    cas: List[str] = field(default_factory=list)  # libellés des cas notables (trop tard/tôt)
+
+    @property
+    def n_juge(self) -> int:
+        return self.n_bien_tenu + self.n_trop_tard + self.n_trop_tot
+
+
+def sortie_timing_semaine(now: datetime, path: Optional[Path] = None) -> Optional[SortieTimingSemaine]:
+    """Agrège les verdicts de sortie de la semaine ISO depuis sortie-timing-log.jsonl
+    (écrit par les bilans du jour). None si rien de jugé. Zéro invention."""
+    from journaliste import iso_week_bounds  # noqa: PLC0415
+    from bilan_jour import SORTIE_TIMING_LOG  # noqa: PLC0415
+    path = path or SORTIE_TIMING_LOG
+    if not path.exists():
+        return None
+    monday, sunday = iso_week_bounds(now)
+    agg = SortieTimingSemaine()
+    JJ = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        try:
+            d = date.fromisoformat(str(r.get("date")))
+        except (TypeError, ValueError):
+            continue
+        if not (monday <= d <= sunday):
+            continue
+        cat = r.get("categorie")
+        if cat == "bien_tenu":
+            agg.n_bien_tenu += 1
+        elif cat == "trop_tard":
+            agg.n_trop_tard += 1
+            agg.cas.append(
+                f"{r.get('actif')} ({JJ[d.weekday()]}) clôturé trop tard : pic "
+                f"{_fmt_signed_pct(r.get('pic_pct'))} à {r.get('pic_heure')}, "
+                f"rendu à {_fmt_signed_pct(r.get('cloture_pct'))}"
+            )
+        elif cat == "trop_tot":
+            agg.n_trop_tot += 1
+            agg.cas.append(
+                f"{r.get('actif')} ({JJ[d.weekday()]}) : le suivi disait « Vendre » "
+                "mais l'actif a monté jusqu'à la clôture (sortie aurait été trop tôt)"
+            )
+    if agg.n_juge == 0:
+        return None
+    return agg
+
+
+@dataclass
 class EdgeFamille:
     """Win rate cumulé des top 3 d'une famille d'actifs (où concentrer les paris)."""
     famille: str
@@ -1146,13 +1207,14 @@ def build_bilan_semaine(
     edge_fam = edge_par_famille(fiches=fiches)
     detail24 = detail_24h_par_actif(now)
     rates = mouvements_rates_semaine(now)
+    timing = sortie_timing_semaine(now)  # agrégat trop tôt/tard (journal des bilans du jour)
 
     bilan = BilanSemaine(
         iso=iso, lundi=monday, dimanche=sunday, now=now, cellules=cellules,
         n_forte=conv.n_forte, taux_forte=conv.taux_forte,
         n_faible_conv=conv.n_faible, taux_faible_conv=conv.taux_faible,
         selection=sel, tendances=tend, picks=picks, edge_familles=edge_fam,
-        detail_24h=detail24, mouvements_rates=rates,
+        detail_24h=detail24, mouvements_rates=rates, sortie_timing=timing,
     )
 
     propositions = [p for p in build_propositions(cellules) if proposition_valide(p)]
@@ -1362,6 +1424,28 @@ def _render_section1_selection(bilan: BilanSemaine, L: List[str]) -> None:
         L.append("")
         _render_agg_picks(picks, L)
         _render_picks_par_jour(picks, L)
+    _render_sortie_timing_semaine(bilan, L)
+
+
+def _render_sortie_timing_semaine(bilan: BilanSemaine, L: List[str]) -> None:
+    """Sortie de la semaine : a-t-on clôturé trop tôt / trop tard ? (agrégat des
+    bilans du jour, vs les points 12h/18h). Rien si aucun verdict tracé."""
+    t = bilan.sortie_timing
+    if t is None or t.n_juge == 0:
+        return
+    L.append("### Sortie : a-t-on clôturé au bon moment ? (vs 12h / 18h)")
+    L.append("")
+    L.append(
+        f"Sur {t.n_juge} position(s) jugée(s) cette semaine : **{t.n_bien_tenu} bien "
+        f"tenue(s)** · **{t.n_trop_tard} clôturée(s) trop tard** (gain rendu après le "
+        f"pic) · **{t.n_trop_tot} trop tôt** (sortie aurait coupé un gain qui montait "
+        "encore)."
+    )
+    if t.cas:
+        L.append("")
+        for c in t.cas[:6]:
+            L.append(f"- {c}.")
+    L.append("")
 
 
 def _verdict_segment(perf: Optional[float]) -> str:

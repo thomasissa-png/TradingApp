@@ -752,3 +752,39 @@ def test_manager_n_applique_rien_avec_segmentation(monkeypatch, tmp_path):
         cwd=ROOT.parent, capture_output=True, text=True,
     ).stdout
     assert before == after, f"v3/config/ modifié par le Manager : {after}"
+
+
+# --- Sortie « trop tôt / trop tard » agrégée à la semaine (vs 12h/18h) ---
+
+def test_sortie_timing_semaine_agrege(tmp_path):
+    import json as _j
+    log = tmp_path / "sortie-timing-log.jsonl"
+    rows = [
+        {"date": "2026-06-15", "actif": "Or", "categorie": "bien_tenu",
+         "pic_pct": 4.0, "pic_heure": "clôture", "cloture_pct": 4.0},
+        {"date": "2026-06-16", "actif": "Argent", "categorie": "trop_tard",
+         "pic_pct": 2.5, "pic_heure": "12h", "cloture_pct": 1.2},
+        {"date": "2026-06-17", "actif": "VIX", "categorie": "trop_tot",
+         "pic_pct": 3.0, "pic_heure": "clôture", "cloture_pct": 3.0},
+        {"date": "2026-06-01", "actif": "Blé", "categorie": "trop_tard",   # hors semaine ISO
+         "pic_pct": 2.0, "pic_heure": "12h", "cloture_pct": 1.0},
+    ]
+    log.write_text("\n".join(_j.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
+    agg = rw.sortie_timing_semaine(NOW, path=log)
+    assert agg is not None
+    assert (agg.n_bien_tenu, agg.n_trop_tard, agg.n_trop_tot) == (1, 1, 1)
+    assert agg.n_juge == 3   # le 2026-06-01 (hors semaine) est exclu
+    assert any("Argent" in c and "trop tard" in c for c in agg.cas)
+
+
+def test_render_sortie_timing_semaine_dans_section1():
+    agg = rw.SortieTimingSemaine(
+        n_bien_tenu=2, n_trop_tard=1, n_trop_tot=0,
+        cas=["Argent (mar) clôturé trop tard : pic +2,5 % à 12h, rendu à +1,2 %"],
+    )
+    L: list = []
+    rw._render_sortie_timing_semaine(SimpleNamespace(sortie_timing=agg), L)
+    md = "\n".join(L)
+    assert "Sortie : a-t-on clôturé au bon moment" in md
+    assert "1 clôturée(s) trop tard" in md and "2 bien tenue(s)" in md
+    assert "Argent" in md

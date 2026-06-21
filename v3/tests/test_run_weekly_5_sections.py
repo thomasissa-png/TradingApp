@@ -135,6 +135,29 @@ def test_bascule_cree_nouveau_segment(tmp_path):
     assert segs[1].en_cours is True
 
 
+def test_phase_un_jour_non_finale_perf_non_nulle(tmp_path):
+    """Bug S9 corrigé : une phase d'UN jour suivie d'une bascule mesure désormais
+    du prix de début au prix du JOUR DE BASCULE (et non début==fin → 0 %)."""
+    dlog = tmp_path / "decision-log"
+    pe = tmp_path / "prix-emission"
+    po = tmp_path / "prix-ouverture"
+    _write_decision_log(dlog, date(2026, 6, 15), {"Or": "LONG"})   # phase 1 jour
+    _write_decision_log(dlog, date(2026, 6, 16), {"Or": "SHORT"})  # bascule
+    _write_decision_log(dlog, date(2026, 6, 17), {"Or": "SHORT"})
+    _write_prix_emission(pe, date(2026, 6, 15), {"GC=F": 100.0})  # début phase LONG
+    _write_prix_emission(pe, date(2026, 6, 16), {"GC=F": 110.0})  # jour de bascule
+    _write_prix_emission(pe, date(2026, 6, 17), {"GC=F": 99.0})
+    res = rw.tendances_par_actif(
+        NOW, fiches=_fiches_or(),
+        decision_log_dir=dlog, prix_emission_dir=pe, prix_ouverture_dir=po,
+    )
+    segs = res[0].segments
+    assert len(segs) == 2
+    # Phase LONG d'un seul jour : 100 → 110 (jour de bascule) = +10 %, PAS 0 %.
+    assert segs[0].direction == "LONG"
+    assert segs[0].perf_pct == 10.0
+
+
 def test_prix_manquant_perf_none(tmp_path):
     """Prix d'émission absent pour le début de segment -> perf None (« — »)."""
     dlog = tmp_path / "decision-log"
@@ -198,32 +221,42 @@ def test_jour_sans_log_saute(tmp_path):
 # SECTION 1 — agrégat Sélection 24h (win rate + ampleur)
 # ---------------------------------------------------------------------------
 
-def _measure(actif, conclusion, outcome, prix_em, prix_cur, echeance):
-    cell = SimpleNamespace(actif_name=actif, conclusion=conclusion)
-    return SimpleNamespace(
-        cell=cell, horizon="24h", outcome=outcome,
-        prix_emission=prix_em, prix_courant=prix_cur, echeance=echeance,
+def _write_measures_log(path: Path, records: list) -> None:
+    """Écrit un measures-log.jsonl (journal persisté des verdicts)."""
+    path.write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n",
+        encoding="utf-8",
     )
 
 
+def _mrec(actif, conclusion, outcome, realized_pct, echeance, bulletin_date):
+    return {
+        "actif": actif, "horizon": "24h", "conclusion": conclusion,
+        "outcome": outcome, "realized_pct": realized_pct,
+        "echeance": echeance, "bulletin_date": bulletin_date,
+    }
+
+
 def test_selection_semaine_winrate_et_ampleur(tmp_path, monkeypatch):
-    """Win rate sélection + ampleur gagnantes/perdantes (mouvement directionnel)."""
-    # Sélection map : Or et Pétrole sélectionnés le jour de décision (15/06).
+    """Win rate sélection + ampleur gagnantes/perdantes, LU DEPUIS LE JOURNAL
+    PERSISTÉ (measures-log.jsonl) — plus de re-mesure live (bug « Aucune
+    sélection »). Ampleur directionnelle = signe(call) × realized_pct."""
     import bilan_jour as bj
+    # Or et Pétrole sélectionnés le jour de décision (15/06), échéance 16/06.
     monkeypatch.setattr(
         bj, "load_selection_map",
         lambda d, dl=None: {("Or", "24h"): True, ("Pétrole", "24h"): True},
     )
-    ech = date(2026, 6, 16)  # échéance 24h dans la semaine ISO
-    measures = [
-        # Or LONG VRAI, prix 100 -> 102 : +2 % (gagnante)
-        _measure("Or", "LONG", "VRAI", 100.0, 102.0, ech),
-        # Pétrole SHORT FAUSSE, prix 80 -> 82 : -2,5 % (perdante)
-        _measure("Pétrole", "SHORT", "FAUSSE", 80.0, 82.0, ech),
-        # Non sélectionné : ignoré
-        _measure("Cacao", "LONG", "VRAI", 10.0, 11.0, ech),
-    ]
-    res = rw.selection_semaine(measures, NOW, decision_log_dir=tmp_path)
+    log = tmp_path / "measures-log.jsonl"
+    _write_measures_log(log, [
+        # Or LONG VRAI, prix +2 % brut → directionnel +2 % (gagnante).
+        _mrec("Or", "LONG", "VRAI", 2.0, "2026-06-16", "2026-06-15"),
+        # Pétrole SHORT FAUSSE, prix +2,5 % brut → directionnel −2,5 % (perdante).
+        _mrec("Pétrole", "SHORT", "FAUSSE", 2.5, "2026-06-16", "2026-06-15"),
+        # Cacao non sélectionné → ignoré.
+        _mrec("Cacao", "LONG", "VRAI", 10.0, "2026-06-16", "2026-06-15"),
+    ])
+    res = rw.selection_semaine(NOW, measures_log=log, decision_log_dir=tmp_path)
     assert res.n_select == 2
     assert res.n_vrai == 1
     assert res.win_rate == 50.0
@@ -232,17 +265,35 @@ def test_selection_semaine_winrate_et_ampleur(tmp_path, monkeypatch):
 
 
 def test_selection_prix_manquant_exclu_ampleur(tmp_path, monkeypatch):
-    """Sélection sans prix : comptée au win rate, exclue de l'ampleur (zéro invention)."""
+    """realized_pct absent : compté au win rate, exclu de l'ampleur (zéro invention)."""
     import bilan_jour as bj
     monkeypatch.setattr(
         bj, "load_selection_map", lambda d, dl=None: {("Or", "24h"): True},
     )
-    ech = date(2026, 6, 16)
-    measures = [_measure("Or", "LONG", "VRAI", None, None, ech)]
-    res = rw.selection_semaine(measures, NOW, decision_log_dir=tmp_path)
+    log = tmp_path / "measures-log.jsonl"
+    _write_measures_log(log, [
+        _mrec("Or", "LONG", "VRAI", None, "2026-06-16", "2026-06-15"),
+    ])
+    res = rw.selection_semaine(NOW, measures_log=log, decision_log_dir=tmp_path)
     assert res.n_select == 1 and res.n_vrai == 1
     assert res.ampleur_moy_gagnantes is None
     assert res.ampleur_moy_perdantes is None
+
+
+def test_selection_semaine_ignore_non_conclusif_et_hors_semaine(tmp_path, monkeypatch):
+    """Non-conclusif exclu ; échéance hors semaine ISO exclue ; dédup dernier record."""
+    import bilan_jour as bj
+    monkeypatch.setattr(bj, "load_selection_map", lambda d, dl=None: {("Or", "24h"): True})
+    log = tmp_path / "measures-log.jsonl"
+    _write_measures_log(log, [
+        _mrec("Or", "LONG", "non-conclusive", None, "2026-06-16", "2026-06-15"),
+        _mrec("Or", "LONG", "VRAI", 1.0, "2026-06-08", "2026-06-05"),  # semaine précédente
+        # Dédup : deux records même (actif, échéance) → le dernier (VRAI) gagne.
+        _mrec("Or", "LONG", "FAUSSE", -1.0, "2026-06-17", "2026-06-16"),
+        _mrec("Or", "LONG", "VRAI", 1.5, "2026-06-17", "2026-06-16"),
+    ])
+    res = rw.selection_semaine(NOW, measures_log=log, decision_log_dir=tmp_path)
+    assert res.n_select == 1 and res.n_vrai == 1  # seul le 17/06 conclusif, dédup VRAI
 
 
 # ---------------------------------------------------------------------------

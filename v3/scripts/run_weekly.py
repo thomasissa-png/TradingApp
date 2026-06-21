@@ -59,6 +59,10 @@ PERFORMANCE_WEEKLY_DIR = ROOT / "data" / "performance" / "weekly"
 DECISION_LOG_DIR = ROOT / "data" / "decision-log"
 PRIX_EMISSION_DIR = ROOT / "data" / "prix-emission"
 PRIX_OUVERTURE_DIR = ROOT / "data" / "prix-ouverture"
+# Journal PERSISTÉ des mesures (verdicts jugés jour par jour). Source de vérité du
+# bilan : on NE re-mesure PAS à chaud (les prix passés ne sont plus dispo le
+# dimanche → tout repasserait « non-conclusif » = bug « Aucune sélection »).
+MEASURES_LOG = ROOT / "data" / "measures-log.jsonl"
 
 # --- Seuils de détection du Manager (§4.3) ---------------------------------
 # Cellule faible : N_eff >= N_EFF_PROPOSE ET Wilson_low < WILSON_FAIBLE,
@@ -316,13 +320,25 @@ def _mouvement_directionnel_pct(m: Any) -> Optional[float]:
 
 
 def selection_semaine(
-    measures: List[Any], now: datetime, decision_log_dir: Path = DECISION_LOG_DIR
+    now: datetime,
+    measures_log: Path = MEASURES_LOG,
+    decision_log_dir: Path = DECISION_LOG_DIR,
 ) -> SelectionSemaine:
     """Agrège la Sélection du jour (24h) sur la semaine ISO de `now`.
 
-    Réutilise bilan_jour.load_selection_map (par jour de décision) — zéro
-    recalcul du critère de sélection. Le win rate cumule VRAI/FAUSSE des cellules
-    sélectionnées ; l'ampleur sépare gagnantes/perdantes par le mouvement signé.
+    Source = le JOURNAL PERSISTÉ des mesures (measures-log.jsonl), c.-à-d. les
+    verdicts déjà jugés jour par jour. On NE re-mesure PAS à chaud : le dimanche,
+    les prix passés ne sont souvent plus re-téléchargeables → une re-mesure live
+    repasse tout en « non-conclusif » et fait disparaître la sélection (bug
+    historique « Aucune sélection 24h jugée » alors qu'on avait bien des tops).
+
+    Pour chaque mesure 24h CONCLUSIVE (VRAI/FAUSSE) dont l'échéance tombe dans la
+    semaine : on vérifie qu'elle était dans la Sélection du jour de décision
+    (`selection_du_jour: true`, lu via load_selection_map sur la bulletin_date du
+    record). Win rate = VRAI / (VRAI+FAUSSE) ; ampleur directionnelle = signe du
+    call × realized_pct (LONG +, SHORT −), gagnante si ≥ 0. Dédup par
+    (actif, échéance), dernier record gagnant. Zéro invention : realized_pct
+    absent → exclu de l'ampleur (mais compté au win rate via son outcome).
     """
     from journaliste import (  # noqa: PLC0415
         iso_week_bounds, OUTCOME_VRAI, OUTCOME_FAUSSE,
@@ -332,34 +348,55 @@ def selection_semaine(
 
     monday, sunday = iso_week_bounds(now)
     res = SelectionSemaine()
-    sel_cache: Dict[date, Dict[Tuple[str, str], bool]] = {}
+    if not measures_log.exists():
+        return res
 
-    for m in measures:
-        if m.horizon != "24h":
+    # Dédup : dernier record par (actif, horizon, échéance) gagne (re-mesures).
+    records: Dict[Tuple[str, str, str], dict] = {}
+    for line in measures_log.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
             continue
-        if m.outcome not in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
             continue
-        # Jour de décision d'un call 24h = échéance − 1 jour.
-        decision_day = m.echeance - timedelta(days=1)
-        if not (monday <= m.echeance <= sunday):
+        if not isinstance(r, dict) or r.get("horizon") != "24h":
             continue
+        key = (str(r.get("actif")), "24h", str(r.get("echeance")))
+        records[key] = r
+
+    sel_cache: Dict[date, Dict[Tuple[str, str], bool]] = {}
+    for r in records.values():
+        if r.get("outcome") not in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            continue
+        try:
+            ech = date.fromisoformat(str(r.get("echeance")))
+        except (TypeError, ValueError):
+            continue
+        if not (monday <= ech <= sunday):
+            continue
+        # Jour de décision = bulletin_date du record (fallback échéance − 1).
+        try:
+            decision_day = date.fromisoformat(str(r.get("bulletin_date")))
+        except (TypeError, ValueError):
+            decision_day = ech - timedelta(days=1)
+        actif = str(r.get("actif"))
         if decision_day not in sel_cache:
-            sel_cache[decision_day] = (
-                load_selection_map(decision_day, decision_log_dir)
-                if decision_log_dir else load_selection_map(decision_day)
-            )
-        if not sel_cache[decision_day].get((m.cell.actif_name, m.horizon), False):
+            sel_cache[decision_day] = load_selection_map(decision_day, decision_log_dir)
+        if not sel_cache[decision_day].get((actif, "24h"), False):
             continue
         res.n_select += 1
-        if m.outcome == OUTCOME_VRAI:
+        if r.get("outcome") == OUTCOME_VRAI:
             res.n_vrai += 1
-        mv = _mouvement_directionnel_pct(m)
-        if mv is None:
-            continue  # prix manquant -> exclu de l'ampleur (zéro invention)
-        if mv >= 0:
-            res.ampleurs_gagnantes.append(mv)
-        else:
-            res.ampleurs_perdantes.append(mv)
+        rp = r.get("realized_pct")
+        concl = r.get("conclusion")
+        if isinstance(rp, (int, float)) and concl in ("LONG", "SHORT"):
+            mv = (1.0 if concl == "LONG" else -1.0) * float(rp)
+            if mv >= 0:
+                res.ampleurs_gagnantes.append(round(mv, 2))
+            else:
+                res.ampleurs_perdantes.append(round(mv, 2))
     return res
 
 
@@ -536,12 +573,20 @@ def tendances_par_actif(
             else:
                 seg.jours.append(d)
         # Prix de début/fin de chaque segment.
-        for s in ta.segments:
+        # FIN d'une phase = prix au moment de la BASCULE (= 1er jour du segment
+        # suivant), pas le dernier jour où la direction tenait : sinon une phase
+        # d'un seul jour a prix_debut == prix_fin → 0 % mécanique (bug S9), et les
+        # phases multi-jours rataient le mouvement de leur dernier jour. La phase
+        # EN COURS (dernière) n'a pas de bascule → on prend son dernier jour dispo
+        # (≈ maintenant).
+        n = len(ta.segments)
+        for i, s in enumerate(ta.segments):
             s.prix_debut = _prix_du_jour(
                 ticker, s.jours[0], prix_emission_dir, prix_ouverture_dir
             ) if ticker else None
+            fin_day = ta.segments[i + 1].jours[0] if i < n - 1 else s.jours[-1]
             s.prix_fin = _prix_du_jour(
-                ticker, s.jours[-1], prix_emission_dir, prix_ouverture_dir
+                ticker, fin_day, prix_emission_dir, prix_ouverture_dir
             ) if ticker else None
             s.en_cours = bool(s is ta.segments[-1] and last_day in s.jours)
         resultats.append(ta)
@@ -652,7 +697,7 @@ def build_bilan_semaine(
     )
 
     conv = _conviction_semaine(measures, now)
-    sel = selection_semaine(measures, now)
+    sel = selection_semaine(now)
     tend = tendances_par_actif(now, fiches=fiches)
 
     bilan = BilanSemaine(

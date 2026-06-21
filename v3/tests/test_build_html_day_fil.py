@@ -87,16 +87,18 @@ def test_buildDayGroup_ordre_briefing_suivis_bilan():
     assert "tag: isBilan ? 'Bilan' : 'Suivi'" in html
 
 
-def test_buildDayGroup_rendu_paresseux_via_pipeline_unifie():
-    # Rendu seulement à la première ouverture, via renderMarkdownInto (badges, fold…).
+def test_buildDayGroup_onglets_briefing_par_defaut():
+    # Vue jour en ONGLETS : le Briefing est visible par défaut, un menu (day-tabs)
+    # donne accès aux autres rapports (Suivi/Bilan), un seul affiché à la fois.
+    # Rendu via le pipeline unifié renderMarkdownInto (badges, fold…).
     html = _html()
     start = html.index("function buildDayGroup(dateIso, opts)")
     end = html.index("function buildTodayView()", start)
     body = html[start:end]
-    assert "addEventListener('toggle'" in body
-    assert "renderMarkdownInto(body, item.md)" in body
-    # chaque rapport est un <details class="today-report"> (accordéon today-view réutilisé).
-    assert "rd.className = 'today-report';" in body
+    assert "day-tabs" in body and "day-tab" in body   # menu d'onglets
+    assert "day-panel" in body
+    assert "renderMarkdownInto(panel, item.md)" in body   # pipeline unifié
+    assert "showItem(ordered[0]" in body                  # Briefing (1er) par défaut
 
 
 def test_buildDayGroup_degradation_propre_un_rapport_par_existence():

@@ -751,6 +751,16 @@ def render_html(
   }}
   /* Vues Aujourd'hui / Bilan semaine / Historique */
   .history-intro {{ color: var(--text-muted); margin: 4px 0 18px 0; }}
+  /* Vue jour : menu d'onglets (Briefing par défaut + Suivi/Bilan), 1 rapport à la fois. */
+  .day-tabs {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 16px 0; }}
+  .day-tab {{
+    font: inherit; font-size: 12.5px; padding: 5px 12px;
+    border: 1px solid var(--border); border-radius: 999px;
+    background: var(--bg-panel); color: var(--text-muted); cursor: pointer;
+  }}
+  .day-tab:hover {{ border-color: var(--accent); }}
+  .day-tab.active {{ background: var(--accent-bg); border-color: var(--accent); color: var(--text); font-weight: 600; }}
+  .day-tab:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
   /* Titre humain de la semaine (lundi → vendredi) — sous le H1 « Bilan semaine ». */
   .week-human-title {{
     font-size: 15px; font-weight: 600; color: var(--text);
@@ -2087,9 +2097,7 @@ function buildDayGroup(dateIso, opts) {{
   details.className = 'today-day';
   if (opts.openDay) details.open = true;
   const summary = document.createElement('summary');
-  const n = briefings.length + dayReports.length;
-  summary.innerHTML = '<span>' + dt.short + '</span>'
-    + '<span class="day-count">' + n + ' rapport' + (n > 1 ? 's' : '') + '</span>';
+  summary.innerHTML = '<span>' + dt.short + '</span>';
   details.appendChild(summary);
 
   // Ordre de lecture du jour : briefing 7h → suivi 12h → suivi 18h → bilan 22h.
@@ -2099,27 +2107,35 @@ function buildDayGroup(dateIso, opts) {{
     const isBilan = r.kind === 'bilan-jour';
     ordered.push({{ tag: isBilan ? 'Bilan' : 'Suivi', slot: isBilan ? '22h' : r.slot, md: r.markdown }});
   }});
+  if (ordered.length === 0) return details;
 
+  // Vue jour : le BRIEFING est visible PAR DÉFAUT ; un MENU (onglets) donne accès
+  // aux autres rapports (Suivi 12h / Suivi 18h / Bilan 22h) DEPUIS le briefing.
+  // Un seul rapport affiché à la fois — pas 4 rapports empilés.
+  const tabs = document.createElement('div');
+  tabs.className = 'day-tabs';
+  const panel = document.createElement('div');
+  panel.className = 'day-panel';
+  const showItem = (item, btn) => {{
+    tabs.querySelectorAll('.day-tab').forEach(x => x.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    panel.innerHTML = '';
+    renderMarkdownInto(panel, item.md);
+  }};
   ordered.forEach((item, ii) => {{
-    const rd = document.createElement('details');
-    rd.className = 'today-report';
-    // Premier rapport ouvert (le briefing, lecture primaire) si demandé.
-    if (opts.openFirstReport && ii === 0) rd.open = true;
-    // Dernier rapport ouvert (le plus frais) si demandé — utilisé par « Aujourd'hui ».
-    if (opts.openLastReport && ii === ordered.length - 1) rd.open = true;
-    const rs = document.createElement('summary');
-    rs.innerHTML = '<span class="report-tag">' + item.tag + '</span><span>' + (item.slot || '') + '</span>';
-    rd.appendChild(rs);
-    const body = document.createElement('div');
-    body.className = 'report-body';
-    rd.appendChild(body);
-    // Rendu paresseux : on ne parse le markdown qu'à la première ouverture.
-    let rendered = false;
-    const doRender = () => {{ if (!rendered) {{ renderMarkdownInto(body, item.md); rendered = true; }} }};
-    rd.addEventListener('toggle', () => {{ if (rd.open) doRender(); }});
-    if (rd.open) doRender();
-    details.appendChild(rd);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'day-tab' + (ii === 0 ? ' active' : '');
+    const lab = (item.tag === 'Briefing') ? ('Briefing ' + (item.slot || '7h'))
+              : (item.tag === 'Bilan') ? ('Bilan ' + (item.slot || '22h'))
+              : ('Suivi ' + (item.slot || ''));
+    btn.textContent = lab;
+    btn.onclick = () => showItem(item, btn);
+    tabs.appendChild(btn);
   }});
+  details.appendChild(tabs);
+  details.appendChild(panel);
+  showItem(ordered[0], tabs.querySelector('.day-tab'));  // Briefing visible par défaut
   return details;
 }}
 

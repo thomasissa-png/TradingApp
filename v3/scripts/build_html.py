@@ -1099,7 +1099,6 @@ def render_html(
       <section id="week-view" hidden aria-label="Bilan de la semaine">
         <h1>🗓️ Bilan semaine</h1>
         <p id="week-human-title" class="week-human-title" hidden></p>
-        <p class="history-intro">WIN RATE ONLY · jamais d'euros. Le Manager propose, Thomas valide.</p>
         <div id="week-content"></div>
         <p id="week-empty" hidden></p>
       </section>
@@ -2277,10 +2276,11 @@ function buildTodayView() {{
 // Renvoie '' si on ne peut pas reconstituer proprement (zéro invention).
 function weekHumanTitle(weekly) {{
   if (!weekly) return '';
+  // Seule info utile au lecteur : QUELLE semaine (en clair). Le « Semaine ISO ## »
+  // était du jargon système, retiré (retour fondateur).
   const md = weekly.markdown || '';
-  const iso = (weekly.label || '').match(/S(\\d{{2}})/);
   const range = md.match(/(\\d{{4}})-(\\d{{2}})-(\\d{{2}})\\s*→\\s*(\\d{{4}})-(\\d{{2}})-(\\d{{2}})/);
-  if (!range) return iso ? ('Semaine ISO ' + iso[1]) : '';
+  if (!range) return '';
   // Lundi = borne basse ; vendredi = borne basse + 4 jours.
   const lundi = new Date(Date.UTC(+range[1], +range[2] - 1, +range[3]));
   const vendredi = new Date(lundi.getTime() + 4 * 86400000);
@@ -2289,8 +2289,7 @@ function weekHumanTitle(weekly) {{
                   'août', 'septembre', 'octobre', 'novembre', 'décembre'];
     return dt.getUTCDate() + ' ' + MOIS[dt.getUTCMonth()];
   }};
-  const sem = iso ? ('Semaine ISO ' + iso[1] + ' · ') : '';
-  return sem + 'du lundi ' + fmt(lundi) + ' au vendredi ' + fmt(vendredi);
+  return 'du lundi ' + fmt(lundi) + ' au vendredi ' + fmt(vendredi);
 }}
 
 function buildWeekView(weekly) {{

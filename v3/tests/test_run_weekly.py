@@ -162,7 +162,8 @@ def test_cellules_porteuses_remontees(monkeypatch, tmp_path):
     )
     porteuses = [c for c in bilan.cellules if c.porteuse]
     assert {c.actif for c in porteuses} == {"Or"}
-    assert "Cellules porteuses" in bilan.markdown
+    assert "Cellules : ce qui marche / ce qui décroche" in bilan.markdown
+    assert "✅ porteuse" in bilan.markdown
     assert "Or" in bilan.markdown
 
 
@@ -274,10 +275,11 @@ def test_prev_iso_label():
 
 
 # ---------------------------------------------------------------------------
-# CA-W2 — win rate hebdo pris tel quel depuis l'archive
+# Tri annexe — le détail win rate par cellule N'EST PLUS embarqué dans le bilan
+# (doublon de la page Performance) : l'annexe y renvoie.
 # ---------------------------------------------------------------------------
 
-def test_archive_hebdo_reprise_telle_quelle(monkeypatch, tmp_path):
+def test_archive_hebdo_non_embarquee_renvoi_performance(monkeypatch, tmp_path):
     _patch_measure(monkeypatch, [_kpi("Or", "24h", 90.0, 8, 0.60)])
     _patch_conviction_empty(monkeypatch)
     monkeypatch.setattr(
@@ -287,6 +289,8 @@ def test_archive_hebdo_reprise_telle_quelle(monkeypatch, tmp_path):
     bilan = rw.build_bilan_semaine(
         now=NOW, fiches={}, fetch_price=None, state_dir=tmp_path, persist_state=False
     )
-    assert "MARQUEUR_ARCHIVE_UNIQUE" in bilan.markdown
-    # Le titre H1 de l'archive est retiré (on garde le corps).
-    assert "# Win rate — semaine X" not in bilan.markdown
+    # La grande table win rate par cellule n'est plus dupliquée dans le bilan.
+    assert "MARQUEUR_ARCHIVE_UNIQUE" not in bilan.markdown
+    assert "### Win rate de la semaine" not in bilan.markdown
+    # L'annexe renvoie explicitement vers la page Performance.
+    assert "page **Performance**" in bilan.markdown

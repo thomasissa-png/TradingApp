@@ -1607,22 +1607,11 @@ def _render_annexe_technique(bilan: BilanSemaine, L: List[str]) -> None:
     L.append("<summary>Annexe technique · détail de mesure (replié)</summary>")
     L.append("")
     L.append(
-        "> Le détail win rate par cellule est aussi consultable sur la page "
-        "**Performance**. Ci-dessous : la photo figée de la semaine."
+        "> Info de CONTRÔLE (traçabilité), pas des décisions. Le détail win rate par "
+        "cellule (24h/7j/1m) vit sur la page **Performance**. Rappel warm-up : le 7j "
+        f"n'est significatif que vers {WARMUP_DATES['7j']}, le 1m pas avant 6 mois — "
+        "le Manager se concentre sur le 24h."
     )
-    L.append("")
-
-    # --- Win rate de la semaine (archive hebdo prise telle quelle) ---
-    L.append("### Win rate de la semaine")
-    L.append("")
-    archive = _read_weekly_archive(bilan.iso)
-    if archive:
-        L.append(f"> Source : `win-rate-{bilan.iso}.md` (archive hebdo, prise telle quelle).")
-        L.append("")
-        body = "\n".join(ln for ln in archive.splitlines() if not ln.startswith("# ")).strip()
-        L.append(body)
-    else:
-        L.append(f"> Archive `win-rate-{bilan.iso}.md` absente · produite au prochain run Journaliste.")
     L.append("")
 
     # --- Win rate par conviction ---
@@ -1638,70 +1627,48 @@ def _render_annexe_technique(bilan: BilanSemaine, L: List[str]) -> None:
     L.append(f"| Faible (quasi-neutre, mono-critère, coin-flip) | {bilan.n_faible_conv} | {tw} | {interp_w} |")
     L.append("")
 
-    # --- Cellules porteuses ---
-    L.append("### Cellules porteuses (ce qui marche)")
+    # --- Cellules : ce qui marche / ce qui décroche (fusion porteuses + surveiller
+    #     + observations en un seul tableau) ---
+    L.append("### Cellules : ce qui marche / ce qui décroche")
     L.append("")
     porteuses = sorted(
         [c for c in bilan.cellules if c.porteuse],
         key=lambda c: (c.win_rate if c.win_rate is not None else 0.0), reverse=True,
     )
-    if porteuses:
-        L.append("| Actif | Horizon | Win rate | WR tradable | N_eff | Signal |")
-        L.append("|---|---|---|---|---|---|")
-        for c in porteuses:
-            L.append(
-                f"| {c.actif} | {c.horizon} | {_fmt_pct(c.win_rate)} | "
-                f"{_fmt_pct(c.wr_tradable)} | {c.n_eff} | "
-                f"solide (≥ {WINRATE_PORTEUSE:.0f}% sur N_eff ≥ {N_EFF_PORTEUSE}) |"
-            )
-    else:
-        L.append(f"Aucune cellule avec N_eff ≥ {N_EFF_PORTEUSE} et win rate ≥ {WINRATE_PORTEUSE:.0f}% · observer.")
-    L.append("")
-
-    # --- Cellules à surveiller ---
-    L.append("### Cellules à surveiller")
-    L.append("")
     surveiller = sorted(
         [c for c in bilan.cellules if c.candidate_faible],
         key=lambda c: (c.win_rate if c.win_rate is not None else 100.0),
     )
-    if surveiller:
-        L.append("| Actif | Horizon | Raison | Win rate | N_eff | Wilson_low |")
-        L.append("|---|---|---|---|---|---|")
-        for c in surveiller:
-            raison = "faible confirmée (≥2 sem.)" if c.faible_confirmee else "candidate (1ère sem.)"
+    if porteuses or surveiller:
+        L.append("| Actif | Horizon | État | Win rate | WR tradable | N_eff | Repère |")
+        L.append("|---|---|---|---|---|---|---|")
+        for c in porteuses:
             L.append(
-                f"| {c.actif} | {c.horizon} | {raison} | {_fmt_pct(c.win_rate)} | "
-                f"{c.n_eff} | {_fmt_pct(c.wilson_low)} |"
+                f"| {c.actif} | {c.horizon} | ✅ porteuse | {_fmt_pct(c.win_rate)} | "
+                f"{_fmt_pct(c.wr_tradable)} | {c.n_eff} | "
+                f"≥ {WINRATE_PORTEUSE:.0f}% sur N_eff ≥ {N_EFF_PORTEUSE} |"
+            )
+        for c in surveiller:
+            etat = ("⚠️ faible confirmée (≥ 2 sem.)" if c.faible_confirmee
+                    else "⚠️ candidate (1ʳᵉ sem.)")
+            L.append(
+                f"| {c.actif} | {c.horizon} | {etat} | {_fmt_pct(c.win_rate)} | "
+                f"{_fmt_pct(c.wr_tradable)} | {c.n_eff} | borne basse {_fmt_pct(c.wilson_low)} |"
             )
     else:
-        L.append("Aucune cellule sous le seuil de détection (N_eff ≥ 10 ET Wilson_low < 50%).")
+        L.append(
+            f"Aucune cellule notable : ni porteuse (≥ {WINRATE_PORTEUSE:.0f}% sur "
+            f"N_eff ≥ {N_EFF_PORTEUSE}), ni sous le seuil de détection (N_eff ≥ 10 ET "
+            "borne basse < 50 %). Tout est encore en chauffe."
+        )
     L.append("")
-
-    # --- Observations sans proposition ---
-    L.append("### Observations sans proposition")
-    L.append("")
+    # Pré-watchlist : cellules en zone d'observation (pas encore de proposition).
     if bilan.observations:
+        L.append("_En observation (pas encore de proposition, on attend confirmation) :_")
+        L.append("")
         for o in bilan.observations:
             L.append(f"- {o}")
-    else:
-        L.append("Rien en zone d'observation cette semaine.")
-    L.append("")
-
-    # --- Sortie de warm-up par horizon ---
-    L.append("### Sortie de warm-up par horizon")
-    L.append("")
-    L.append("| Horizon | Date estimée de significativité |")
-    L.append("|---|---|")
-    for h in ("24h", "7j", "1m"):
-        L.append(f"| {h} | {WARMUP_DATES[h]} |")
-    L.append("")
-    L.append(
-        "> Le 7j est en warm-up jusqu'en octobre 2026 ; le 1m n'est pas mesurable "
-        "statistiquement dans les 6 premiers mois. Le Manager se concentre sur le "
-        "24h pendant cette période."
-    )
-    L.append("")
+        L.append("")
 
     # --- Justesse des news vs quant (informatif) ---
     L.append("### Justesse des news vs quant (informatif)")

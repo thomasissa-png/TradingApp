@@ -407,13 +407,16 @@ def test_annexe_technique_repliee_hors_sections_analyse(monkeypatch, tmp_path):
     assert "</details>" in md
     idx_annex = md.index('<details class="weekly-annex">')
     # Les tableaux denses descendent DANS l'annexe (après le <details>).
-    for bloc in ("### Win rate par conviction", "### Cellules à surveiller",
-                 "### Sortie de warm-up par horizon", "### Justesse des news vs quant"):
+    for bloc in ("### Win rate par conviction", "### Cellules : ce qui marche / ce qui décroche",
+                 "### Justesse des news vs quant"):
         assert bloc in md and md.index(bloc) > idx_annex, f"{bloc} doit être dans l'annexe"
+    # Blocs retirés au tri de l'annexe : doublon page Performance + tableau statique.
+    assert "### Win rate de la semaine" not in md
+    assert "### Sortie de warm-up par horizon" not in md
     # Les sections 3/4 (avant l'annexe) restent de l'ANALYSE : pas ces tables.
     section34 = md[md.index("## 3."):idx_annex]
     assert "### Win rate par conviction" not in section34
-    assert "### Cellules à surveiller" not in section34
+    assert "### Cellules : ce qui marche" not in section34
     # Les ajustements actionnables sont en section 6 (APRÈS les learnings), avant l'annexe.
     assert "## 6. Ajustements proposés (à valider Thomas)" in section34
     assert md.index("## 5. Les learnings") < md.index("## 6. Ajustements proposés")

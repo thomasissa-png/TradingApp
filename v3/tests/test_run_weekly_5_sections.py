@@ -516,24 +516,30 @@ def test_detail_24h_par_actif_grille(tmp_path):
     assert d.bilan == "1/2"
 
 
-def test_render_detail_24h_dans_section1():
-    """Le rendu Section 1 inclut la grille 24h par actif quand des calls existent."""
-    d = rw.Detail24hActif(actif="Or", par_jour={0: ("SHORT", "VRAI", 2.2)}, n_vrai=1, n_concl=1)
-    bilan = SimpleNamespace(detail_24h=[d])
-    L: list = []
-    rw._render_detail_24h(bilan, L)
-    md = "\n".join(L)
-    assert "### Détail 24h de la semaine, par actif" in md
-    assert "| Actif | Lun | Mar | Mer | Jeu | Ven | Bilan |" in md
-    assert "SHORT +2,2 % ✅" in md   # direction + % de gain/perte + verdict
-
-
 def test_section4_alerte_evenement_programme():
     faibles = rw._points_faibles(_bilan_stub([
         _pick("S&P 500", "LONG", "FAUSSE", 0.10, evt="Décision de taux Fed (FOMC)"),
     ]))
     blob = " ".join(faibles)
     assert "PRÉVISIBLE" in blob and "FOMC" in blob
+
+
+def test_section4_pick_perdant_affiche_variation_brute():
+    """Section 4 : chaque pick raté chiffre la variation BRUTE de l'actif (monte +, baisse −)."""
+    faibles = rw._points_faibles(_bilan_stub([
+        _pick("S&P 500", "LONG", "FAUSSE", 0.10, mv=-2.3),
+    ]))
+    blob = " ".join(faibles)
+    assert "S&P 500 LONG (-2,3 %)" in blob
+
+
+def test_section4_opportunite_ratee_affiche_variation_brute():
+    """Section 4 : les opportunités ratées affichent la variation BRUTE de l'actif."""
+    mr = rw.MouvementRate(actif="Or", jour=date(2026, 6, 16), call="SHORT",
+                          perf_dir=2.4, variation_brute=-2.4, raison="opportunité ratée")
+    faibles = rw._points_faibles(_bilan_stub([], mouvements_rates=[mr]))
+    blob = " ".join(faibles)
+    assert "Or SHORT -2,4 %" in blob  # variation brute (l'actif a baissé), pas le sens du call
 
 
 def test_priorite_familles_ferme_si_N_suffisant():

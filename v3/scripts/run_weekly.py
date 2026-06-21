@@ -606,6 +606,7 @@ class MouvementRate:
     jour: date            # jour d'échéance (où le mouvement s'est joué)
     call: str             # direction qui aurait gagné (notre call non sélectionné)
     perf_dir: float       # % de gain dans le sens du call (> 1)
+    variation_brute: float  # variation BRUTE signée de l'actif (monte +, baisse −)
     raison: str           # pourquoi pas dans le top 3 (déduit du decision-log)
 
 
@@ -680,7 +681,8 @@ def mouvements_rates_semaine(
         else:
             raison = "bon call NON classé dans le top 3 ce jour-là (conviction/score inférieurs) : opportunité ratée"
         out.append(MouvementRate(actif=actif, jour=ech, call=str(call),
-                                 perf_dir=round(perf_dir, 2), raison=raison))
+                                 perf_dir=round(perf_dir, 2),
+                                 variation_brute=round(float(rp), 2), raison=raison))
     out.sort(key=lambda m: (-m.perf_dir, m.jour, m.actif))
     return out
 
@@ -1296,75 +1298,6 @@ def _render_section1_selection(bilan: BilanSemaine, L: List[str]) -> None:
         L.append("")
         _render_agg_picks(picks, L)
         _render_picks_par_jour(picks, L)
-    _render_edge_familles(bilan, L)
-    _render_detail_24h(bilan, L)
-
-
-def _render_detail_24h(bilan: BilanSemaine, L: List[str]) -> None:
-    """Détail 24h de la semaine, par actif, jour par jour (équivalent 24h du
-    tableau des tendances 7j). Grille Actif × Lun→Ven : direction + verdict."""
-    details = [d for d in bilan.detail_24h if d.par_jour]
-    if not details:
-        return
-    L.append("### Détail 24h de la semaine, par actif")
-    L.append("")
-    L.append(
-        "> Tous nos calls 24h de la semaine, jour par jour (rangés au jour où ils se "
-        "sont joués). Chaque case = direction, **variation RÉELLE de l'actif** (monte → "
-        "+, baisse → −) et verdict ✅ juste · ❌ faux · ⚪ non concluant. « — » = pas de "
-        "call. Bilan = calls justes sur les calls tranchés."
-    )
-    L.append("")
-    L.append("| Actif | Lun | Mar | Mer | Jeu | Ven | Bilan |")
-    L.append("|---|---|---|---|---|---|---|")
-    for d in details:
-        cells = []
-        for wd in range(5):  # lundi(0) → vendredi(4)
-            cell = d.par_jour.get(wd)
-            if not cell:
-                cells.append("—")
-                continue
-            direction, outcome, perf = cell
-            if outcome == "VRAI":
-                glyph = "✅"
-            elif outcome in ("FAUSSE", "FAUX"):
-                glyph = "❌"
-            else:
-                glyph = "⚪"
-            cells.append(f"{direction} {_fmt_signed_pct(perf)} {glyph}")
-        L.append(f"| {d.actif} | " + " | ".join(cells) + f" | {d.bilan} |")
-    L.append("")
-
-
-def _render_edge_familles(bilan: BilanSemaine, L: List[str]) -> None:
-    """Carte « où est notre edge » : win rate de nos top 3 par famille d'actif,
-    cumulé sur tout l'historique. C'est l'outil de priorisation : concentrer les
-    paris sur les familles qui gagnent, se méfier de celles qui perdent."""
-    edges = [e for e in bilan.edge_familles if e.n_total > 0]
-    if not edges:
-        return
-    L.append("### Où est notre edge (par famille d'actif, cumulé)")
-    L.append("")
-    L.append(
-        "> Win rate de nos top 3 par famille, depuis qu'on mesure la sélection. "
-        "C'est là qu'on doit concentrer les paris : prioriser les familles qui "
-        "gagnent, se méfier de celles qui perdent. « ⏳ » = encore trop peu de paris "
-        "pour conclure (moins de 10)."
-    )
-    L.append("")
-    L.append("| Famille | Win rate | Paris jugés | Lecture |")
-    L.append("|---|---|---|---|")
-    for e in edges:
-        if e.n_total < 10:
-            lecture = "⏳ trop peu pour conclure"
-        elif e.win_rate is not None and e.win_rate >= 60.0:
-            lecture = "✅ edge à confirmer · prioriser"
-        elif e.win_rate is not None and e.win_rate < 45.0:
-            lecture = "❌ fragile · se méfier"
-        else:
-            lecture = "≈ neutre"
-        L.append(f"| {e.famille} | {_fmt_pct(e.win_rate)} | {e.n_vrai}/{e.n_total} | {lecture} |")
-    L.append("")
 
 
 def _verdict_segment(perf: Optional[float]) -> str:
@@ -1786,33 +1719,35 @@ def _points_faibles(bilan: BilanSemaine) -> List[str]:
 
     perdants_pick = [p for p in bilan.picks if not p.vrai]
 
-    # Règle 4.1 — picks perdants, cause par pick.
+    # Règle 4.1 — picks perdants, cause par pick. La variation BRUTE de l'actif
+    # (monte +, baisse −) est affichée pour chiffrer l'ampleur de l'échec.
     for p in perdants_pick:
         drap = p.drapeau_faible
+        tete = f"{p.actif} {p.call} ({_fmt_signed_pct(p.realized_pct)})"
         if p.news_driven and p.cause_news:  # CAS A : news ratée
             pts.append(
-                f"{p.actif} {p.call} raté : call orienté news (part news {_ratio_pct(p)}). "
+                f"{tete} raté : call orienté news (part news {_ratio_pct(p)}). "
                 f"{p.cause_news} a dominé le marché à CONTRE-SENS de notre position. Ce "
                 "catalyseur n'était pas (ou mal) pris dans notre synthèse."
             )
         elif p.news_driven:  # CAS A bis : news-driven mais aucun catalyseur tracé
             pts.append(
-                f"{p.actif} {p.call} raté : call orienté news (part news {_ratio_pct(p)}) "
+                f"{tete} raté : call orienté news (part news {_ratio_pct(p)}) "
                 "mais aucun catalyseur tracé dans l'events-log. Mouvement adverse inexpliqué."
             )
         elif drap:  # CAS B : signal faible suivi à tort
             pts.append(
-                f"{p.actif} {p.call} raté : pari pris sur un signal classé FAIBLE "
+                f"{tete} raté : pari pris sur un signal classé FAIBLE "
                 f"(drapeau {drap}). Ce type de signal ne devrait pas entrer dans la Sélection."
             )
         elif p.cause_news:  # CAS C : quant solide raté, mais une news adverse existait
             pts.append(
-                f"{p.actif} {p.call} raté : signal quant solide (aucun drapeau), mais "
+                f"{tete} raté : signal quant solide (aucun drapeau), mais "
                 f"{p.cause_news} l'a contre-pied. News possiblement sous-pondérée au scoring."
             )
         else:  # CAS C bis : quant solide raté, cause non identifiée
             pts.append(
-                f"{p.actif} {p.call} raté : signal quant solide (aucun drapeau), cause non "
+                f"{tete} raté : signal quant solide (aucun drapeau), cause non "
                 "identifiée (aucune news high tracée). À revoir si le pattern se répète."
             )
         # Alerte événement PROGRAMMÉ (News Trader) : si une grosse échéance connue
@@ -1836,7 +1771,7 @@ def _points_faibles(bilan: BilanSemaine) -> List[str]:
     if rates:
         JJ = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
         bouts = [
-            f"{m.actif} {m.call} {_fmt_signed_pct(m.perf_dir)} ({JJ[m.jour.weekday()]}) · {m.raison}"
+            f"{m.actif} {m.call} {_fmt_signed_pct(m.variation_brute)} ({JJ[m.jour.weekday()]}) · {m.raison}"
             for m in rates[:5]
         ]
         pts.append(

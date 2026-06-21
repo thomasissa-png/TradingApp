@@ -419,19 +419,82 @@ def test_annexe_technique_repliee_hors_sections_analyse(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 def _pick(actif, call, outcome, ratio_news, *, mono=False, mono_nom=None,
-          coin_flip=False, quasi=False, cause=None, mv=1.0):
+          coin_flip=False, quasi=False, cause=None, mv=1.0, evt=None):
     return rw.PickSemaine(
         actif=actif, call=call, outcome=outcome, realized_pct=mv, mouvement_dir=mv,
         bulletin_date=date(2026, 6, 16), ratio_news=ratio_news,
         mono_critere=mono, mono_critere_nom=mono_nom, coin_flip=coin_flip,
-        quasi_neutre=quasi, cause_news=cause,
+        quasi_neutre=quasi, cause_news=cause, evenement_programme=evt,
     )
 
 
-def _bilan_stub(picks):
+# --- Priorisation par famille + alerte événement programmé (S9 vague experts) ---
+
+def test_macro_famille_par_cle_mappe_3_classes():
+    fiches = {
+        "or": {"actif": "Or", "famille": "métaux-précieux"},
+        "petrole": {"actif": "Pétrole (Brent)", "famille": "énergie"},
+        "eurusd": {"actif": "EUR/USD", "famille": "fx"},
+        "sp500": {"actif": "S&P 500", "famille": "indices"},
+        "vix": {"actif": "VIX", "famille": "volatilité"},
+        "x": {"actif": "X"},  # famille absente → Autres
+    }
+    m = rw._macro_famille_par_cle(fiches)
+    assert m["or"] == "Matières premières"
+    assert m["petrole"] == "Matières premières"
+    assert m["eurusd"] == "Devises"
+    assert m["sp500"] == "Indices actions"
+    assert m["vix"] == "Indices actions"
+    assert m["x"] == "Autres"
+
+
+def test_edge_par_famille_winrate_par_classe(tmp_path, monkeypatch):
+    import bilan_jour as bj
+    monkeypatch.setattr(bj, "load_selection_map",
+                        lambda d, dl=None: {("Or", "24h"): True, ("S&P 500", "24h"): True})
+    fiches = {"or": {"actif": "Or", "famille": "métaux-précieux"},
+              "sp500": {"actif": "S&P 500", "famille": "indices"}}
+    log = tmp_path / "measures-log.jsonl"
+    _write_measures_log(log, [
+        {"actif": "Or", "fiche_key": "or", "horizon": "24h", "conclusion": "SHORT",
+         "outcome": "VRAI", "realized_pct": -2.0, "echeance": "2026-06-16", "bulletin_date": "2026-06-15"},
+        {"actif": "S&P 500", "fiche_key": "sp500", "horizon": "24h", "conclusion": "LONG",
+         "outcome": "FAUSSE", "realized_pct": -1.0, "echeance": "2026-06-16", "bulletin_date": "2026-06-15"},
+    ])
+    edges = rw.edge_par_famille(measures_log=log, decision_log_dir=tmp_path, fiches=fiches)
+    by = {e.famille: e for e in edges}
+    assert by["Matières premières"].win_rate == 100.0 and by["Matières premières"].n_total == 1
+    assert by["Indices actions"].win_rate == 0.0 and by["Indices actions"].n_total == 1
+
+
+def test_section4_alerte_evenement_programme():
+    faibles = rw._points_faibles(_bilan_stub([
+        _pick("S&P 500", "LONG", "FAUSSE", 0.10, evt="Décision de taux Fed (FOMC)"),
+    ]))
+    blob = " ".join(faibles)
+    assert "PRÉVISIBLE" in blob and "FOMC" in blob
+
+
+def test_priorite_familles_ferme_si_N_suffisant():
+    edges = [rw.EdgeFamille("Matières premières", n_vrai=8, n_total=10),
+             rw.EdgeFamille("Indices actions", n_vrai=2, n_total=12)]
+    line = rw._priorite_familles(_bilan_stub([], edge_familles=edges))
+    assert line and "concentrer" in line and "Matières premières" in line
+    assert "se méfier" in line and "Indices actions" in line
+
+
+def test_priorite_familles_douce_si_petit_N():
+    edges = [rw.EdgeFamille("Matières premières", n_vrai=4, n_total=5),
+             rw.EdgeFamille("Indices actions", n_vrai=0, n_total=3)]
+    line = rw._priorite_familles(_bilan_stub([], edge_familles=edges))
+    assert line and "CONFIRMER" in line
+
+
+def _bilan_stub(picks, edge_familles=None):
     return SimpleNamespace(
         picks=picks, tendances=[], selection=None, cellules=[],
         n_forte=0, taux_forte=None, n_faible_conv=0, taux_faible_conv=None,
+        edge_familles=edge_familles or [],
     )
 
 

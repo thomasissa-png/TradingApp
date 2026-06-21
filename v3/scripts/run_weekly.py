@@ -117,6 +117,7 @@ class BilanSemaine:
     selection: Optional["SelectionSemaine"] = None
     tendances: List["TendanceActif"] = field(default_factory=list)
     picks: List["PickSemaine"] = field(default_factory=list)  # post-mortem causal (S9)
+    edge_familles: List["EdgeFamille"] = field(default_factory=list)  # où concentrer (S9)
     markdown: str = ""
 
 
@@ -418,11 +419,13 @@ class PickSemaine:
     mouvement_dir: Optional[float]       # signe(call) × realized_pct (favorable si ≥ 0)
     bulletin_date: date
     ratio_news: Optional[float]          # 0-1, part de news à l'émission
+    fiche_key: Optional[str] = None      # clé fiche (pour calendrier + famille)
     mono_critere: bool = False
     mono_critere_nom: Optional[str] = None
     coin_flip: bool = False
     quasi_neutre: bool = False
     cause_news: Optional[str] = None     # résumé de la news high du jour (ou None)
+    evenement_programme: Optional[str] = None  # nom de l'événement calendaire majeur (ou None)
 
     @property
     def vrai(self) -> bool:
@@ -443,6 +446,58 @@ class PickSemaine:
         if self.quasi_neutre:
             return "quasi-neutre"
         return None
+
+
+# Famille macro d'un actif (priorisation par classe). Dérivée du champ `famille`
+# des fiches (granulaire) → 3 classes lisibles par Thomas. Source : v3/config/fiches.
+_MACRO_FAMILLE = {
+    "métaux-précieux": "Matières premières",
+    "métaux-industriels": "Matières premières",
+    "énergie": "Matières premières",
+    "agri": "Matières premières",
+    "agri-softs": "Matières premières",
+    "fx": "Devises",
+    "indices": "Indices actions",
+    "volatilité": "Indices actions",
+}
+
+
+def _macro_famille_par_cle(fiches: Optional[Dict[str, dict]] = None) -> Dict[str, str]:
+    """fiche_key -> famille macro (Matières premières / Devises / Indices actions).
+
+    Lit le champ `famille` des fiches et le réduit aux 3 classes. fiche_key absente
+    ou famille inconnue -> 'Autres' (zéro invention, dégradation propre)."""
+    from journaliste import load_fiches  # noqa: PLC0415
+    fiches = fiches if fiches is not None else load_fiches()
+    out: Dict[str, str] = {}
+    for cle, fiche in (fiches or {}).items():
+        fam = str((fiche or {}).get("famille") or "").strip().lower()
+        out[cle] = _MACRO_FAMILLE.get(fam, "Autres")
+    return out
+
+
+def _evenement_programme(
+    fiche_key: Optional[str], d_debut: date, d_fin: date,
+    calendrier_path: Optional[Path] = None,
+) -> Optional[str]:
+    """Nom d'un événement calendaire MAJEUR (impact high) touchant `fiche_key` dans
+    [d_debut, d_fin], ou None. Source déterministe = calendrier-eco.yml (FOMC, BCE,
+    OPEP, NFP…). Sert à dire « on a perdu un jour d'événement PRÉVISIBLE » (le pick
+    aurait dû être moins certain ce jour-là). Best-effort, jamais bloquant."""
+    if not fiche_key:
+        return None
+    try:
+        from calendrier_eco import charger_evenements, _dates_pour_event  # noqa: PLC0415
+        for ev in charger_evenements(calendrier_path):
+            if str(ev.get("impact") or "medium").lower() != "high":
+                continue
+            if fiche_key not in (ev.get("actifs") or []):
+                continue
+            if _dates_pour_event(ev, d_debut, d_fin):
+                return str(ev.get("nom") or ev.get("type") or "événement programmé")
+    except Exception:  # noqa: BLE001 — calendrier best-effort
+        return None
+    return None
 
 
 def _enrich_picks_semaine(
@@ -516,20 +571,92 @@ def _enrich_picks_semaine(
             cause = cause_news_high_apres(actif, bdate, None, events_path)
         except Exception:  # noqa: BLE001 — cause best-effort, jamais bloquante
             cause = None
+        fiche_key = r.get("fiche_key")
+        # Événement programmé majeur entre la prise (bdate) et l'échéance (ech).
+        evt = _evenement_programme(fiche_key, bdate, ech)
         picks.append(PickSemaine(
             actif=actif, call=str(call), outcome=str(r.get("outcome")),
             realized_pct=round(float(rp), 2) if isinstance(rp, (int, float)) else None,
             mouvement_dir=round(mv, 2) if mv is not None else None,
             bulletin_date=bdate,
             ratio_news=float(ratio) if isinstance(ratio, (int, float)) else None,
+            fiche_key=str(fiche_key) if fiche_key else None,
             mono_critere=bool(rec.get("mono_critere_dominant", False)),
             mono_critere_nom=rec.get("mono_critere_nom"),
             coin_flip=bool(rec.get("coin_flip", False)),
             quasi_neutre=bool(rec.get("quasi_neutre", False)),
             cause_news=cause,
+            evenement_programme=evt,
         ))
     picks.sort(key=lambda p: (p.bulletin_date, p.actif))
     return picks
+
+
+@dataclass
+class EdgeFamille:
+    """Win rate cumulé des top 3 d'une famille d'actifs (où concentrer les paris)."""
+    famille: str
+    n_vrai: int = 0
+    n_total: int = 0       # paris conclusifs (VRAI + FAUSSE)
+
+    @property
+    def win_rate(self) -> Optional[float]:
+        return round(self.n_vrai / self.n_total * 100.0, 1) if self.n_total else None
+
+
+def edge_par_famille(
+    measures_log: Path = MEASURES_LOG,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+    fiches: Optional[Dict[str, dict]] = None,
+) -> List[EdgeFamille]:
+    """Win rate CUMULÉ de nos top 3 (Sélection 24h) par famille macro, sur TOUT
+    l'historique persisté (pas seulement la semaine). C'est la carte « où est notre
+    edge » : prioriser les familles qui gagnent, se méfier de celles qui perdent.
+    Zéro invention : seules les sélections conclusives comptent. Dédup (actif, échéance)."""
+    from journaliste import OUTCOME_VRAI, OUTCOME_FAUSSE  # noqa: PLC0415
+    from bilan_jour import load_selection_map  # noqa: PLC0415
+
+    macro = _macro_famille_par_cle(fiches)
+    if not measures_log.exists():
+        return []
+    records: Dict[Tuple[str, str], dict] = {}
+    for line in measures_log.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(r, dict) or r.get("horizon") != "24h":
+            continue
+        if r.get("outcome") not in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            continue
+        records[(str(r.get("actif")), str(r.get("echeance")))] = r  # dédup, dernier
+
+    sel_cache: Dict[date, Dict[Tuple[str, str], bool]] = {}
+    par_famille: Dict[str, EdgeFamille] = {}
+    for r in records.values():
+        try:
+            bdate = date.fromisoformat(str(r.get("bulletin_date")))
+        except (TypeError, ValueError):
+            continue
+        actif = str(r.get("actif"))
+        if bdate not in sel_cache:
+            sel_cache[bdate] = load_selection_map(bdate, decision_log_dir)
+        if not sel_cache[bdate].get((actif, "24h"), False):
+            continue  # seulement les top 3 (certitudes)
+        fam = macro.get(str(r.get("fiche_key")), "Autres")
+        ef = par_famille.setdefault(fam, EdgeFamille(famille=fam))
+        ef.n_total += 1
+        if r.get("outcome") == OUTCOME_VRAI:
+            ef.n_vrai += 1
+    # Tri : win rate décroissant (les familles à edge en tête), N en départage.
+    return sorted(
+        par_famille.values(),
+        key=lambda e: (e.win_rate if e.win_rate is not None else -1.0, e.n_total),
+        reverse=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -832,12 +959,13 @@ def build_bilan_semaine(
     sel = selection_semaine(now)
     tend = tendances_par_actif(now, fiches=fiches)
     picks = _enrich_picks_semaine(now)
+    edge_fam = edge_par_famille(fiches=fiches)
 
     bilan = BilanSemaine(
         iso=iso, lundi=monday, dimanche=sunday, now=now, cellules=cellules,
         n_forte=conv.n_forte, taux_forte=conv.taux_forte,
         n_faible_conv=conv.n_faible, taux_faible_conv=conv.taux_faible,
-        selection=sel, tendances=tend, picks=picks,
+        selection=sel, tendances=tend, picks=picks, edge_familles=edge_fam,
     )
 
     propositions = [p for p in build_propositions(cellules) if proposition_valide(p)]
@@ -924,23 +1052,55 @@ def _render_section1_selection(bilan: BilanSemaine, L: List[str]) -> None:
             "sur les jours de bourse écoulés)."
         )
         L.append("")
+    else:
+        wr = _fmt_pct(s.win_rate)
+        L.append("| Indicateur | Valeur |")
+        L.append("|---|---|")
+        L.append(f"| Win rate de la sélection | {wr} ({s.n_vrai}/{s.n_select} jugées) |")
+        ng = len(s.ampleurs_gagnantes)
+        npd = len(s.ampleurs_perdantes)
+        amp_g = _fmt_signed_pct(s.ampleur_moy_gagnantes) if ng else "—"
+        amp_p = _fmt_signed_pct(s.ampleur_moy_perdantes) if npd else "—"
+        L.append(f"| Ampleur moyenne des sélections gagnantes | {amp_g} ({ng}) |")
+        L.append(f"| Ampleur moyenne des sélections perdantes | {amp_p} ({npd}) |")
+        L.append("")
+        L.append(
+            "> Ampleur = moyenne du mouvement dans le sens du call (signe selon LONG/SHORT), "
+            "depuis le prix de référence d'émission. Sélection dont un prix manque = exclue "
+            "de l'ampleur (zéro donnée fabriquée)."
+        )
+        L.append("")
+    _render_edge_familles(bilan, L)
+
+
+def _render_edge_familles(bilan: BilanSemaine, L: List[str]) -> None:
+    """Carte « où est notre edge » : win rate de nos top 3 par famille d'actif,
+    cumulé sur tout l'historique. C'est l'outil de priorisation : concentrer les
+    paris sur les familles qui gagnent, se méfier de celles qui perdent."""
+    edges = [e for e in bilan.edge_familles if e.n_total > 0]
+    if not edges:
         return
-    wr = _fmt_pct(s.win_rate)
-    L.append("| Indicateur | Valeur |")
-    L.append("|---|---|")
-    L.append(f"| Win rate de la sélection | {wr} ({s.n_vrai}/{s.n_select} jugées) |")
-    ng = len(s.ampleurs_gagnantes)
-    npd = len(s.ampleurs_perdantes)
-    amp_g = _fmt_signed_pct(s.ampleur_moy_gagnantes) if ng else "—"
-    amp_p = _fmt_signed_pct(s.ampleur_moy_perdantes) if npd else "—"
-    L.append(f"| Ampleur moyenne des sélections gagnantes | {amp_g} ({ng}) |")
-    L.append(f"| Ampleur moyenne des sélections perdantes | {amp_p} ({npd}) |")
+    L.append("### Où est notre edge (par famille d'actif, cumulé)")
     L.append("")
     L.append(
-        "> Ampleur = moyenne du mouvement dans le sens du call (signe selon LONG/SHORT), "
-        "depuis le prix de référence d'émission. Sélection dont un prix manque = exclue "
-        "de l'ampleur (zéro donnée fabriquée)."
+        "> Win rate de nos top 3 par famille, depuis qu'on mesure la sélection. "
+        "C'est là qu'on doit concentrer les paris : prioriser les familles qui "
+        "gagnent, se méfier de celles qui perdent. « ⏳ » = encore trop peu de paris "
+        "pour conclure (moins de 10)."
     )
+    L.append("")
+    L.append("| Famille | Win rate | Paris jugés | Lecture |")
+    L.append("|---|---|---|---|")
+    for e in edges:
+        if e.n_total < 10:
+            lecture = "⏳ trop peu pour conclure"
+        elif e.win_rate is not None and e.win_rate >= 60.0:
+            lecture = "✅ edge à confirmer · prioriser"
+        elif e.win_rate is not None and e.win_rate < 45.0:
+            lecture = "❌ fragile · se méfier"
+        else:
+            lecture = "≈ neutre"
+        L.append(f"| {e.famille} | {_fmt_pct(e.win_rate)} | {e.n_vrai}/{e.n_total} | {lecture} |")
     L.append("")
 
 
@@ -1359,6 +1519,13 @@ def _points_faibles(bilan: BilanSemaine) -> List[str]:
     cellules faibles (reformulées sans jargon Wilson).
     """
     pts: List[str] = []
+
+    # Règle 4.0 — PRIORISATION PAR FAMILLE (où concentrer / se méfier). C'est le
+    # levier n°1 vers 70 % : faire plus confiance là où on a un edge prouvé.
+    prio = _priorite_familles(bilan)
+    if prio:
+        pts.append(prio)
+
     perdants_pick = [p for p in bilan.picks if not p.vrai]
 
     # Règle 4.1 — picks perdants, cause par pick.
@@ -1390,6 +1557,15 @@ def _points_faibles(bilan: BilanSemaine) -> List[str]:
                 f"{p.actif} {p.call} raté : signal quant solide (aucun drapeau), cause non "
                 "identifiée (aucune news high tracée). À revoir si le pattern se répète."
             )
+        # Alerte événement PROGRAMMÉ (News Trader) : si une grosse échéance connue
+        # au calendrier tombait ce jour-là, le pari n'aurait pas dû passer en top 3
+        # avec une certitude pleine. C'est une faute évitable (≠ choc imprévisible).
+        if p.evenement_programme and pts:
+            pts[-1] = pts[-1].rstrip(".") + (
+                f". Or un événement PRÉVISIBLE était au calendrier ce jour-là "
+                f"({p.evenement_programme}) : on aurait dû baisser la certitude sur cet "
+                "actif, voire l'écarter du top 3."
+            )
 
     # Règle 4.2 — tendances 7j à contre-sens (retournement subi / faux flip).
     _, perdants_seg = _segments_signes(bilan)
@@ -1412,7 +1588,39 @@ def _points_faibles(bilan: BilanSemaine) -> List[str]:
             f"Cellules faibles sur 2 semaines : {noms}. Pas un coup de malchance passager, "
             "une faiblesse structurelle : une proposition d'ajustement est ci-dessous."
         )
-    return pts[:4]
+    return pts[:5]
+
+
+def _priorite_familles(bilan: BilanSemaine) -> Optional[str]:
+    """Reco de priorisation par famille (Règle 4.0). Ferme quand N >= 10 dans une
+    famille ; sinon lecture douce « à confirmer » s'il y a un écart net sur N >= 3 ;
+    rien si tout est trop maigre (zéro sur-interprétation)."""
+    edges = [e for e in bilan.edge_familles if e.n_total > 0]
+    if not edges:
+        return None
+    forts = [e for e in edges if e.n_total >= 10 and e.win_rate is not None and e.win_rate >= 60.0]
+    fragiles = [e for e in edges if e.n_total >= 10 and e.win_rate is not None and e.win_rate < 45.0]
+    if forts or fragiles:
+        bouts = []
+        if forts:
+            bouts.append("concentrer les top 3 sur : " + ", ".join(
+                f"{e.famille} ({_fmt_pct(e.win_rate)})" for e in forts))
+        if fragiles:
+            bouts.append("se méfier de : " + ", ".join(
+                f"{e.famille} ({_fmt_pct(e.win_rate)})" for e in fragiles))
+        return "Priorisation par famille (edge confirmé sur ≥ 10 paris) · " + " ; ".join(bouts) + "."
+    # Lecture douce : un écart net entre la meilleure et la pire famille (N >= 3).
+    notables = [e for e in edges if e.n_total >= 3 and e.win_rate is not None]
+    if len(notables) >= 2:
+        meilleure, pire = notables[0], notables[-1]
+        if meilleure.win_rate - pire.win_rate >= 20.0:
+            return (
+                f"Tendance d'edge par famille (à CONFIRMER, N encore faible) : on gagne "
+                f"surtout sur {meilleure.famille} ({_fmt_pct(meilleure.win_rate)}), on peine "
+                f"sur {pire.famille} ({_fmt_pct(pire.win_rate)}). À surveiller avant de "
+                "rééquilibrer la priorité des top 3."
+            )
+    return None
 
 
 def _learnings_semaine(bilan: BilanSemaine) -> List[str]:

@@ -63,6 +63,12 @@ RE_SUIVI = re.compile(r"^(\d{4}-\d{2}-\d{2})-(\d{2})h\.md$")
 RE_BILAN_JOUR = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
 # Bilan de semaine : v3/data/performance/weekly/win-rate-YYYY-S##.md
 RE_WEEKLY = re.compile(r"^win-rate-(\d{4})-S(\d{2})\.md$")
+# Rapport hebdo du Manager (5 sections) : v3/data/bilan-semaine/YYYY-S##.md.
+# C'est CE rapport qui doit s'afficher dans la vue « Bilan semaine » (et non
+# l'archive win-rate ci-dessus). La plage (lundi → dimanche) est dans le markdown.
+BILAN_SEMAINE_DIR = ROOT / "data" / "bilan-semaine"
+RE_BILAN_SEMAINE = re.compile(r"^(\d{4})-S(\d{2})\.md$")
+RE_WEEK_RANGE = re.compile(r"(\d{4}-\d{2}-\d{2})\s*→\s*(\d{4}-\d{2}-\d{2})")
 
 
 def slot_label(hour_utc: str) -> str:
@@ -202,32 +208,35 @@ def build_reports_payload(
     return payload
 
 
-def build_weekly_payload(weekly_dir: Path = WEEKLY_DIR) -> Optional[Dict[str, str]]:
-    """Renvoie le bilan de semaine le plus récent, ou None si aucun.
+def build_weeklies_payload(weekly_dir: Path = BILAN_SEMAINE_DIR) -> List[Dict[str, str]]:
+    """Tous les bilans de semaine du Manager (rapport 5 sections), récents d'abord.
 
-    Tri par (année, numéro de semaine ISO) décroissant. Dossier absent/vide → None
-    (la section « Bilan semaine » sera alors masquée — dégradation propre).
+    Lit `v3/data/bilan-semaine/YYYY-S##.md` (et NON l'archive win-rate). Chaque
+    entrée : id, label (« Semaine AAAA-S## »), sunday (date ISO = fin de plage du
+    markdown, pour ranger dans le menu au dimanche), filename, markdown. Dossier
+    absent/vide → [] (la vue « Bilan semaine » est alors masquée, dégradation propre).
     """
     if not weekly_dir.exists():
-        return None
-    best: Optional[Tuple[Tuple[int, int], Path, str]] = None
-    for p in weekly_dir.glob("win-rate-*.md"):
-        m = RE_WEEKLY.match(p.name)
+        return []
+    rows: List[Dict[str, Any]] = []
+    for p in weekly_dir.glob("*.md"):
+        m = RE_BILAN_SEMAINE.match(p.name)
         if not m:
             continue
-        key = (int(m.group(1)), int(m.group(2)))
-        label = f"Semaine {m.group(1)}-S{m.group(2)}"
-        if best is None or key > best[0]:
-            best = (key, p, label)
-    if best is None:
-        return None
-    _key, path, label = best
-    return {
-        "id": f"weekly-{path.stem}",
-        "label": label,
-        "filename": path.name,
-        "markdown": _read_md(path),
-    }
+        md = _read_md(p)
+        rng = RE_WEEK_RANGE.search(md)
+        rows.append({
+            "_key": (int(m.group(1)), int(m.group(2))),
+            "id": f"weekly-{p.stem}",
+            "label": f"Semaine {m.group(1)}-S{m.group(2)}",
+            "sunday": rng.group(2) if rng else "",
+            "filename": p.name,
+            "markdown": md,
+        })
+    rows.sort(key=lambda r: r["_key"], reverse=True)
+    for r in rows:
+        r.pop("_key", None)
+    return rows
 
 
 def load_measures(path: Path = MEASURES_LOG_FILE) -> List[Dict]:
@@ -324,6 +333,7 @@ def render_html(
     perf_ab: Optional[Dict[str, Dict[str, str]]] = None,
     reports: Optional[List[Dict[str, str]]] = None,
     weekly: Optional[Dict[str, str]] = None,
+    weeklies: Optional[List[Dict[str, str]]] = None,
     performance_md: Optional[str] = None,
 ) -> str:
     """Génère le HTML autonome."""
@@ -348,6 +358,8 @@ def render_html(
         weekly_js = _entries_to_js([weekly], ["id", "label", "filename"]) + "[0]"
     else:
         weekly_js = "null"
+    # Tous les bilans de semaine (pour le menu historique : datés au dimanche).
+    weeklies_js = _entries_to_js(weeklies or [], ["id", "label", "sunday", "filename"])
 
     # Historique : mesures unitaires + résumé Taux/Brier par cellule (page
     # autonome → tout est sérialisé en JS, aucun fetch au runtime).
@@ -1078,6 +1090,7 @@ def render_html(
 const BULLETINS = {bulletins_js};
 const REPORTS = {reports_js};   // suivis 12h/18h + bilans du jour (22h), plus récent d'abord
 const WEEKLY = {weekly_js};     // bilan de semaine le plus récent (ou null)
+const WEEKLIES = {weeklies_js}; // tous les bilans de semaine (datés au dimanche, pour le menu)
 const MEASURES = {measures_js};
 const PERF_AB = {perf_ab_js};
 const WINRATE_MD = {winrate_js};   // tableau win-rate-only (performance.md) ou null
@@ -1361,29 +1374,45 @@ function renderList(activeDate) {{
   ul.innerHTML = '';
   const days = listDays();
   const latestDate = days.length > 0 ? days[0].date : null;
-  days.forEach(day => {{
+  // Entrées combinées, triées par date décroissante : les JOURS (briefing +
+  // suivis + bilan) et les BILANS DE SEMAINE (datés à leur dimanche, marqués
+  // « (bilan) ») pour les retrouver facilement, en ligne avec les jours.
+  const entries = [];
+  days.forEach(d => entries.push({{ kind: 'day', date: d.date }}));
+  (WEEKLIES || []).forEach(w => {{ if (w.sunday) entries.push({{ kind: 'week', date: w.sunday, weekly: w }}); }});
+  entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (a.kind === 'week' ? -1 : 1)));
+  entries.forEach(en => {{
     const li = document.createElement('li');
     const a = document.createElement('a');
-    a.href = '#jour=' + encodeURIComponent(day.date);
-    const dt = formatBulletinDate(day.date);
+    const dt = formatBulletinDate(en.date);
     const dateSpan = document.createElement('span');
     dateSpan.className = 'item-date';
-    // Pas d'heure : un jour = une entrée. Ex. « ven. 19 juin ».
-    dateSpan.textContent = dt.short;
-    a.appendChild(dateSpan);
-    if (day.date === latestDate) {{
-      a.classList.add('latest');
-      const badge = document.createElement('span');
-      badge.className = 'badge-latest';
-      badge.textContent = 'dernier';
-      a.appendChild(badge);
+    if (en.kind === 'week') {{
+      // Bilan de semaine : « dim. JJ mois (bilan) » → ouvre la vue Bilan semaine.
+      a.href = '#vue=semaine';
+      a.classList.add('week-entry');
+      dateSpan.textContent = dt.short + ' (bilan)';
+      a.appendChild(dateSpan);
+      a.onclick = (e) => {{ e.preventDefault(); showWeek(en.weekly); closeSidebarMobile(); }};
+    }} else {{
+      // Pas d'heure : un jour = une entrée. Ex. « ven. 19 juin ».
+      a.href = '#jour=' + encodeURIComponent(en.date);
+      dateSpan.textContent = dt.short;
+      a.appendChild(dateSpan);
+      if (en.date === latestDate) {{
+        a.classList.add('latest');
+        const badge = document.createElement('span');
+        badge.className = 'badge-latest';
+        badge.textContent = 'dernier';
+        a.appendChild(badge);
+      }}
+      if (en.date === activeDate) a.classList.add('active');
+      a.onclick = (e) => {{
+        e.preventDefault();
+        selectDay(en.date);
+        closeSidebarMobile();
+      }};
     }}
-    if (day.date === activeDate) a.classList.add('active');
-    a.onclick = (e) => {{
-      e.preventDefault();
-      selectDay(day.date);
-      closeSidebarMobile();
-    }};
     li.appendChild(a);
     ul.appendChild(li);
   }});
@@ -2002,8 +2031,8 @@ function showWinrate() {{
   showAuxView('winrate-view', 'nav-winrate');
   history.replaceState(null, '', '#vue=resultats');
 }}
-function showWeek() {{
-  buildWeekView();
+function showWeek(weekly) {{
+  buildWeekView(weekly || WEEKLY);
   showAuxView('week-view', 'nav-week');
   history.replaceState(null, '', '#vue=semaine');
 }}
@@ -2182,24 +2211,25 @@ function weekHumanTitle(weekly) {{
   return sem + 'du lundi ' + fmt(lundi) + ' au vendredi ' + fmt(vendredi);
 }}
 
-function buildWeekView() {{
+function buildWeekView(weekly) {{
+  weekly = weekly || WEEKLY;
   const content = document.getElementById('week-content');
   const empty = document.getElementById('week-empty');
   const titleEl = document.getElementById('week-human-title');
   if (!content) return;
-  if (!WEEKLY) {{
+  if (!weekly) {{
     content.innerHTML = '';
     if (titleEl) titleEl.hidden = true;
     if (empty) {{ empty.hidden = false; empty.textContent = 'Aucun bilan de semaine pour le moment : le premier est généré le dimanche suivant (18h), puis chaque dimanche.'; }}
     return;
   }}
   if (empty) empty.hidden = true;
-  const human = weekHumanTitle(WEEKLY);
+  const human = weekHumanTitle(weekly);
   if (titleEl) {{
     if (human) {{ titleEl.textContent = human; titleEl.hidden = false; }}
     else titleEl.hidden = true;
   }}
-  renderMarkdownInto(content, WEEKLY.markdown);
+  renderMarkdownInto(content, weekly.markdown);
 }}
 
 // Rend notre tableau win-rate-only (performance.md) dans `target`. Renvoie true
@@ -2424,11 +2454,12 @@ def main() -> int:
     measures = load_measures()
     perf_ab = parse_perf_ab_summary()
     reports = build_reports_payload()
-    weekly = build_weekly_payload()
+    weeklies = build_weeklies_payload()
+    weekly = weeklies[0] if weeklies else None
     performance_md = load_performance_md()
     html = render_html(
         payload, total, measures=measures, perf_ab=perf_ab,
-        reports=reports, weekly=weekly, performance_md=performance_md,
+        reports=reports, weekly=weekly, weeklies=weeklies, performance_md=performance_md,
     )
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(html, encoding="utf-8")

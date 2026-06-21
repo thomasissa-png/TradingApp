@@ -46,24 +46,33 @@ def test_renderList_libelle_sans_heure():
 
 def test_renderList_une_entree_par_jour_et_clic_selectDay():
     html = _html()
-    # La liste itère sur les JOURS dédupliqués, pas sur tous les bulletins.
+    # La liste itère sur les JOURS dédupliqués (puis intercale les bilans semaine).
     assert "const days = listDays();" in html
-    assert "days.forEach(day =>" in html
-    # Clic → selectDay(date) (journée dépliable), plus selectBulletin(id).
-    assert "selectDay(day.date);" in html
+    assert "days.forEach(d => entries.push({ kind: 'day', date: d.date }));" in html
+    # Clic sur un jour → selectDay(date) (journée en onglets), plus selectBulletin(id).
+    assert "selectDay(en.date);" in html
 
 
 def test_renderList_badge_dernier_conserve():
     html = _html()
     assert "const latestDate = days.length > 0 ? days[0].date : null;" in html
-    assert "if (day.date === latestDate) {" in html
+    assert "if (en.date === latestDate) {" in html
     assert "badge.textContent = 'dernier';" in html
+
+
+def test_renderList_bilans_semaine_dans_le_menu():
+    # (B) Les bilans de semaine apparaissent dans le menu, datés à leur dimanche,
+    # marqués « (bilan) », et le clic ouvre la vue Bilan semaine sur CE bilan.
+    html = _html()
+    assert "(WEEKLIES || []).forEach(w =>" in html
+    assert "dateSpan.textContent = dt.short + ' (bilan)';" in html
+    assert "showWeek(en.weekly);" in html
 
 
 def test_hash_route_par_jour_et_retrocompat_id():
     # Le hash devient « #jour=YYYY-MM-DD » ; un ancien hash d'id de bulletin
     # (ex. lien partagé « 2026-06-16T05... ») retombe sur sa date.
     html = _html()
-    assert "a.href = '#jour=' + encodeURIComponent(day.date);" in html
+    assert "a.href = '#jour=' + encodeURIComponent(en.date);" in html
     assert "const jm = hash.match(" in html
     assert "selectDay(known ? target : days[0].date);" in html

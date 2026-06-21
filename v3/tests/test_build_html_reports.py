@@ -117,21 +117,24 @@ def test_build_reports_payload_ignore_fichiers_hors_format(tmp_path):
 # Collecte : bilan de semaine (le plus récent)
 # ---------------------------------------------------------------------------
 
-def test_build_weekly_payload_plus_recent(tmp_path):
-    wdir = tmp_path / "weekly"
-    _write(wdir / "win-rate-2026-S23.md", "# S23")
-    _write(wdir / "win-rate-2026-S24.md", WEEKLY)
-    weekly = bh.build_weekly_payload(weekly_dir=wdir)
-    assert weekly is not None
-    assert weekly["filename"] == "win-rate-2026-S24.md"
-    assert "2026-S24" in weekly["label"]
+def test_build_weeklies_payload_recent_dabord(tmp_path):
+    # Lit les rapports 5 sections (data/bilan-semaine/YYYY-S##.md), liste récente
+    # d'abord, avec le dimanche (fin de plage du markdown) pour le menu.
+    wdir = tmp_path / "bilan-semaine"
+    _write(wdir / "2026-S23.md", "# S23")
+    _write(wdir / "2026-S24.md", WEEKLY + "\n(2026-06-08 → 2026-06-14)")
+    weeklies = bh.build_weeklies_payload(weekly_dir=wdir)
+    assert len(weeklies) == 2
+    assert weeklies[0]["filename"] == "2026-S24.md"   # plus récent d'abord
+    assert "2026-S24" in weeklies[0]["label"]
+    assert weeklies[0]["sunday"] == "2026-06-14"      # dimanche = fin de plage
 
 
-def test_build_weekly_payload_absent(tmp_path):
-    assert bh.build_weekly_payload(weekly_dir=tmp_path / "nope") is None
-    # Dossier présent mais vide → None aussi.
+def test_build_weeklies_payload_absent(tmp_path):
+    assert bh.build_weeklies_payload(weekly_dir=tmp_path / "nope") == []
+    # Dossier présent mais vide → liste vide aussi.
     (tmp_path / "empty").mkdir()
-    assert bh.build_weekly_payload(weekly_dir=tmp_path / "empty") is None
+    assert bh.build_weeklies_payload(weekly_dir=tmp_path / "empty") == []
 
 
 # ---------------------------------------------------------------------------
@@ -145,11 +148,12 @@ def test_render_html_inclut_suivi_bilan_et_semaine(tmp_path):
     _write(suivi / "2026-06-08-12h.md", SUIVI_12H)
     _write(suivi / "2026-06-08-18h.md", SUIVI_18H)
     _write(bilan / "2026-06-08.md", BILAN_JOUR)
-    _write(wdir / "win-rate-2026-S24.md", WEEKLY)
+    _write(wdir / "2026-S24.md", WEEKLY)
 
     reports = bh.build_reports_payload(suivi_dir=suivi, bilan_jour_dir=bilan)
-    weekly = bh.build_weekly_payload(weekly_dir=wdir)
-    html = bh.render_html([], 0, reports=reports, weekly=weekly)
+    weeklies = bh.build_weeklies_payload(weekly_dir=wdir)
+    weekly = weeklies[0] if weeklies else None
+    html = bh.render_html([], 0, reports=reports, weekly=weekly, weeklies=weeklies)
 
     # Le HTML embarque le contenu de chaque rapport.
     assert "Suivi 12h" in html

@@ -414,8 +414,9 @@ def test_annexe_technique_repliee_hors_sections_analyse(monkeypatch, tmp_path):
     section34 = md[md.index("## 3."):idx_annex]
     assert "### Win rate par conviction" not in section34
     assert "### Cellules à surveiller" not in section34
-    # Mais les propositions actionnables restent en section 4.
-    assert "### Propositions d'ajustement" in section34
+    # Les ajustements actionnables sont en section 6 (APRÈS les learnings), avant l'annexe.
+    assert "## 6. Ajustements proposés (à valider Thomas)" in section34
+    assert md.index("## 5. Les learnings") < md.index("## 6. Ajustements proposés")
 
 
 # ---------------------------------------------------------------------------
@@ -615,16 +616,23 @@ def test_pick_semaine_proprietes():
     assert p2.drapeau_faible == "coin-flip"
 
 
-def test_section3_bien_fait_plus_de_1pct_avec_news():
-    # « Bien fait » = > 1 % dans le bon sens ; on précise la news s'il y en a une.
+def test_section3_bien_fait_avec_pourquoi_et_catalyseur():
+    # « Bien fait » = > 1 % dans le bon sens ; on dit le POURQUOI réel (driver) + le
+    # catalyseur news confirmant s'il y en a un (symétrie avec la section 4).
     forts = rw._points_forts(_bilan_stub([
-        _pick("Pétrole (Brent)", "SHORT", "VRAI", 0.71, mv=3.8, cause_pro="Stocks US en forte hausse"),
-        _pick("Or", "SHORT", "VRAI", 0.18, mv=4.4),               # sans news
+        _pick("Pétrole (Brent)", "SHORT", "VRAI", 0.71, mv=3.8,
+              raison_call="Stocks de brut US : surprise hebdomadaire + Tendance du pétrole Brent (20 jours)",
+              cause_pro="Stocks US en forte hausse"),
+        _pick("Or", "SHORT", "VRAI", 0.18, mv=4.4),               # pas de driver tracé → fallback
         _pick("Argent", "SHORT", "VRAI", 0.0, mv=0.6),            # < 1 % → exclu
     ]))
     blob = " ".join(forts)
-    assert "Pétrole (Brent) SHORT (24h) : +3,8 % dans le bon sens, sur la news : Stocks US" in blob
-    assert "Or SHORT (24h) : +4,4 % dans le bon sens" in blob
+    # Le POURQUOI réel (drivers du score) est affiché, pas une news lambda.
+    assert ("Pétrole (Brent) SHORT (24h) : +3,8 % dans le bon sens. Pris sur : "
+            "Stocks de brut US : surprise hebdomadaire + Tendance du pétrole Brent (20 jours)") in blob
+    assert "Catalyseur confirmant : Stocks US en forte hausse" in blob
+    # Sans driver tracé : fallback type de signal (jamais vide).
+    assert "Or SHORT (24h) : +4,4 % dans le bon sens. Pris sur : quant-pur" in blob
     assert all("Argent" not in f for f in forts)   # mouvement sous 1 % écarté
 
 

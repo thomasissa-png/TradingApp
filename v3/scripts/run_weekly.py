@@ -1319,6 +1319,23 @@ def _raison_reelle(rec: dict, call: str) -> Optional[str]:
     return " + ".join(drivers) if drivers else None
 
 
+def _drivers_segment(
+    actif: str, direction: str, jour: date,
+    conv_cache: Dict[date, Dict[Tuple[str, str], dict]],
+) -> Optional[str]:
+    """VRAIS drivers d'une orientation 7j (decision-log du jour `jour`, horizon 7j),
+    joints par « + ». None si non tracé. Partagé par la section 2 (bascules) et la
+    section 3 (réussites) pour un POURQUOI cohérent partout."""
+    from bilan_jour import load_conviction_records  # noqa: PLC0415
+    if jour not in conv_cache:
+        try:
+            conv_cache[jour] = load_conviction_records(jour)
+        except Exception:  # noqa: BLE001 — best-effort
+            conv_cache[jour] = {}
+    rec = conv_cache[jour].get((actif, "7j")) or {}
+    return _raison_reelle(rec, direction)
+
+
 def _raison_pick(p: "PickSemaine") -> str:
     """Raison (le moteur RÉEL) d'un pick pour le tableau Top 1/Top 3 : le critère
     dominant du score à l'émission (ce qui a VRAIMENT déclenché le call), à défaut le
@@ -1439,20 +1456,11 @@ def _raison_orientation(
     de critères tracés (zéro invention ; jamais une news lambda)."""
     if not s.jours:
         return "—"
-    from bilan_jour import load_conviction_records  # noqa: PLC0415
-    jour = s.jours[0]
     if conv_cache is None:
         conv_cache = {}
-    if jour not in conv_cache:
-        try:
-            conv_cache[jour] = load_conviction_records(jour)
-        except Exception:  # noqa: BLE001 — best-effort
-            conv_cache[jour] = {}
-    rec = conv_cache[jour].get((actif, "7j")) or {}
-    drivers = _drivers_reels(rec, s.direction)
-    if not drivers:
+    raison = _drivers_segment(actif, s.direction, s.jours[0], conv_cache)
+    if not raison:
         return "—"
-    raison = " + ".join(drivers)
     return (f"bascule {s.direction} : {raison}" if flip else raison)
 
 
@@ -1519,33 +1527,6 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
         )
     L.append("")
 
-    # --- Propositions d'ajustement (à valider Thomas) — actionnable, on garde ---
-    L.append("### Propositions d'ajustement (à valider Thomas)")
-    L.append("")
-    if bilan.propositions:
-        for p in bilan.propositions:
-            L.append(f"#### Proposition P{p['n']} · {p['titre']}")
-            L.append("")
-            L.append(f"**Type** : {p['type']}")
-            L.append(f"**Actif(s) concerné(s)** : {p['actifs']}")
-            L.append(f"**Critère(s) concerné(s)** : {p['criteres']}")
-            L.append(f"**Constat** : {p['constat']}")
-            L.append(f"**Proposition** : {p['proposition']}")
-            L.append(f"**Risque** : {p['risque']}")
-            L.append(f"**Validation requise** : {p['validation']}")
-            L.append("")
-            L.append("- [ ] Thomas valide · appliquer au prochain run")
-            L.append("- [ ] Thomas refuse · garder en observation")
-            L.append("- [ ] Thomas demande plus de données · reporter à S+1")
-            L.append("")
-    else:
-        L.append(
-            "Aucun ajustement proposé cette semaine : toutes les cellules avec assez de "
-            "paris mesurés restent au-dessus du seuil de confiance. On continue de mesurer "
-            "avant d'agir."
-        )
-    L.append("")
-
     # ===================================================================
     # SECTION 5 — Les learnings de la semaine
     # ===================================================================
@@ -1564,6 +1545,49 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
         L.append(
             "Pas de learning net cette semaine : échantillon insuffisant (warm-up). "
             "On continue de mesurer avant d'agir."
+        )
+    L.append("")
+
+    # ===================================================================
+    # SECTION 6 — Ajustements proposés (APRÈS les learnings : ce sont les
+    # changements de RÈGLE qui en découlent, à valider par Thomas). Distincts des
+    # learnings : un learning ORIENTE la semaine ; une proposition ne se déclenche
+    # que lorsqu'une cellule franchit le seuil STATISTIQUE (N indépendant suffisant
+    # sous le seuil de confiance). D'où « aucune proposition » possible malgré des
+    # learnings — c'est normal, on n'altère le moteur qu'avec une preuve chiffrée.
+    # ===================================================================
+    L.append("## 6. Ajustements proposés (à valider Thomas)")
+    L.append("")
+    if bilan.propositions:
+        L.append(
+            "> Changements de règle déclenchés par une preuve statistique (≠ learnings, "
+            "qui orientent sans encore changer le moteur). À valider avant application."
+        )
+        L.append("")
+        for p in bilan.propositions:
+            L.append(f"### Proposition P{p['n']} · {p['titre']}")
+            L.append("")
+            L.append(f"**Type** : {p['type']}")
+            L.append(f"**Actif(s) concerné(s)** : {p['actifs']}")
+            L.append(f"**Critère(s) concerné(s)** : {p['criteres']}")
+            L.append(f"**Constat** : {p['constat']}")
+            L.append(f"**Proposition** : {p['proposition']}")
+            L.append(f"**Risque** : {p['risque']}")
+            L.append(f"**Validation requise** : {p['validation']}")
+            L.append("")
+            L.append("- [ ] Thomas valide · appliquer au prochain run")
+            L.append("- [ ] Thomas refuse · garder en observation")
+            L.append("- [ ] Thomas demande plus de données · reporter à S+1")
+            L.append("")
+    else:
+        L.append(
+            "Aucun changement de RÈGLE proposé cette semaine — et c'est cohérent avec les "
+            "learnings ci-dessus : ceux-ci ORIENTENT (ils se confirment sur plusieurs "
+            "semaines avant de devenir une règle), mais une proposition formelle n'est "
+            "déclenchée que lorsqu'une cellule franchit le seuil statistique (assez de "
+            "paris indépendants ET borne de confiance sous le seuil). Tant qu'aucune ne "
+            "l'a franchi, on applique les learnings à la main et on continue de mesurer "
+            "avant de toucher au moteur."
         )
     L.append("")
 
@@ -1784,32 +1808,39 @@ def _news_actif_jour(actif: str, jour: date, sens: Optional[str] = None) -> Opti
 
 
 def _points_forts(bilan: BilanSemaine) -> List[str]:
-    """SECTION 3 — ce qu'on a bien fait (définition fondateur S9).
+    """SECTION 3 — ce qu'on a bien fait, et POURQUOI (symétrique de la section 4).
 
-    Un succès = mouvement de PLUS DE 1 % capté DANS LE BON SENS (les deux conditions
-    sont primordiales). Vrai pour les top 3 (24h) ET pour les tendances (7j). On
-    précise la news relative s'il y en a une. Zéro invention."""
+    Un succès = mouvement de PLUS DE 1 % capté DANS LE BON SENS. Pour CHAQUE réussite
+    on dit le POURQUOI réel : « Pris sur : {drivers du score} » (ce qui a vraiment
+    déclenché le bon call, decision-log) + « Catalyseur confirmant : {news cohérente} »
+    si une news high allait dans notre sens. Vrai pour les top 3 (24h) ET les
+    tendances (7j). Zéro invention (driver/news absent → on n'écrit rien de faux)."""
     pts: List[str] = []
 
     # Top 3 (24h) : gain directionnel > 1 % (donc dans le bon sens, et matériel).
     for p in bilan.picks:
         if p.mouvement_dir is None or p.mouvement_dir <= _SEUIL_BIEN_FAIT_PCT:
             continue
-        ligne = f"{p.actif} {p.call} (24h) : {_fmt_signed_pct(p.mouvement_dir)} dans le bon sens"
-        if p.cause_pro:
-            ligne += f", sur la news : {p.cause_pro}"
+        ligne = (f"{p.actif} {p.call} (24h) : {_fmt_signed_pct(p.mouvement_dir)} dans le "
+                 f"bon sens. Pris sur : {_raison_pick(p)}")
+        if p.cause_pro:  # news high allant dans notre sens = catalyseur qui a confirmé
+            ligne += f". Catalyseur confirmant : {p.cause_pro}"
         pts.append(ligne + ".")
 
     # Tendances (7j) : phase de plus de 1 % dans le sens de la tendance.
+    conv_cache: Dict[date, Dict[Tuple[str, str], dict]] = {}
     for t in bilan.tendances:
         for s in t.segments:
             if s.perf_pct is None or s.perf_pct <= _SEUIL_BIEN_FAIT_PCT:
                 continue
             ligne = (f"Tendance {t.actif} {s.direction} ({_fmt_jours_segment(s.jours)}) : "
                      f"{_fmt_signed_pct(s.perf_pct)} dans le bon sens")
+            pourquoi = _drivers_segment(t.actif, s.direction, s.jours[0], conv_cache) if s.jours else None
+            if pourquoi:
+                ligne += f". Pris sur : {pourquoi}"
             news = _news_actif_jour(t.actif, s.jours[-1], s.direction) if s.jours else None
             if news:
-                ligne += f", sur la news : {news}"
+                ligne += f". Catalyseur confirmant : {news}"
             pts.append(ligne + ".")
 
     if not pts:

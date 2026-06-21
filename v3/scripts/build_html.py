@@ -799,6 +799,23 @@ def render_html(
   .fold-section[open] > summary::before {{ transform: rotate(90deg); }}
   .fold-section > *:not(summary) {{ padding-left: 14px; padding-right: 14px; }}
   .fold-section > .table-wrap {{ margin-left: 14px; margin-right: 14px; }}
+  /* Annexe technique du bilan semaine — repliée, même langage visuel que les
+     folds. Sort les tableaux denses des sections d'analyse (3/4). */
+  .weekly-annex {{
+    border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-sm);
+    margin: 28px 0 0 0; background: var(--bg-panel); padding: 0 16px;
+  }}
+  .weekly-annex > summary {{
+    cursor: pointer; padding: 12px 0; font-weight: 700; color: var(--text);
+    list-style: none; user-select: none;
+  }}
+  .weekly-annex > summary::-webkit-details-marker {{ display: none; }}
+  .weekly-annex > summary::before {{
+    content: "▸"; display: inline-block; margin-right: 8px;
+    transition: transform 0.15s ease; color: var(--text-muted);
+  }}
+  .weekly-annex[open] > summary::before {{ transform: rotate(90deg); }}
+  .weekly-annex h3 {{ font-size: 14.5px; }}
   /* Navigation des vues (Historique) en tête de sidebar */
   #nav-views {{ list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--border); }}
   .nav-view-link {{

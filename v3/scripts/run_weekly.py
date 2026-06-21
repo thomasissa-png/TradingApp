@@ -767,16 +767,27 @@ def _render_section1_selection(bilan: BilanSemaine, L: List[str]) -> None:
     L.append("")
 
 
+def _verdict_segment(perf: Optional[float]) -> str:
+    """Verdict visuel d'une phase de tendance : ✅ gagnant / ❌ perdant / ⚪ neutre
+    / — sans donnée. Seuil de matérialité partagé (_PERF_MATERIELLE_PCT) : sous le
+    seuil = mouvement négligeable (⚪), pas une vraie réussite/échec."""
+    if perf is None:
+        return "—"
+    if abs(perf) < _PERF_MATERIELLE_PCT:
+        return "⚪"
+    return "✅" if perf > 0 else "❌"
+
+
 def _render_section2_tendances(bilan: BilanSemaine, L: List[str]) -> None:
-    """SECTION 2 — Performance par TENDANCE 7j, par actif."""
+    """SECTION 2 — Performance par TENDANCE 7j, par actif (tableau visuel)."""
     L.append("## 2. Performance par tendance 7 jours, par actif")
     L.append("")
     L.append(
-        "> Pour chaque actif, la semaine est découpée en phases de direction 7j "
-        "constante. À chaque bascule (LONG vers SHORT ou l'inverse) commence une "
-        "nouvelle phase. La performance d'une phase = mouvement dans le sens de la "
-        "tendance, depuis le prix d'émission du jour de prise jusqu'au dernier prix "
-        "de la phase. Prix de référence manquant : « — » (jamais inventé)."
+        "> Une ligne par phase de direction 7j constante. À chaque bascule (LONG "
+        "vers SHORT ou l'inverse) commence une nouvelle phase. Perf = mouvement "
+        "dans le sens de la tendance, du prix d'émission du jour de prise au dernier "
+        "prix de la phase. ✅ gagnant · ❌ perdant · ⚪ négligeable · — prix manquant "
+        "(jamais inventé)."
     )
     L.append("")
     tendances = [t for t in bilan.tendances if t.segments]
@@ -787,20 +798,17 @@ def _render_section2_tendances(bilan: BilanSemaine, L: List[str]) -> None:
         )
         L.append("")
         return
+    L.append("| Actif | Tendance | Période | Perf (sens tendance) | Résultat |")
+    L.append("|---|---|---|---|---|")
     for t in tendances:
-        morceaux: List[str] = []
-        for s in t.segments:
-            libelle = _fmt_jours_segment(s.jours)
+        for i, s in enumerate(t.segments):
+            # Actif affiché une seule fois par groupe (lecture en colonnes).
+            actif_cell = f"**{t.actif}**" if i == 0 else ""
+            tendance_cell = s.direction + (" (en cours)" if s.en_cours else "")
+            periode = _fmt_jours_segment(s.jours)
             perf = _fmt_signed_pct(s.perf_pct)
-            suffixe = " (en cours)" if s.en_cours else ""
-            morceaux.append(f"{s.direction} ({libelle}){suffixe} {perf}")
-        nb = len(t.segments)
-        bascules = nb - 1
-        bascule_txt = (
-            f" ({bascules} bascule" + ("s)" if bascules > 1 else ")")
-            if bascules >= 1 else " (direction stable)"
-        )
-        L.append(f"- **{t.actif}** : " + " · ".join(morceaux) + bascule_txt)
+            verdict = _verdict_segment(s.perf_pct)
+            L.append(f"| {actif_cell} | {tendance_cell} | {periode} | {perf} | {verdict} |")
     L.append("")
 
 
@@ -830,7 +838,10 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     _render_section2_tendances(bilan, L)
 
     # ===================================================================
-    # SECTION 3 — Ce qu'on a bien fait cette semaine
+    # SECTION 3 — Ce qu'on a bien fait cette semaine (analyse + POURQUOI)
+    # Recentrée : uniquement l'analyse de ce qui a marché, avec la cause
+    # traçable. Le détail win rate (tables) vit sur la page Performance et,
+    # in extenso, dans l'annexe technique repliée en pied de bilan.
     # ===================================================================
     L.append("## 3. Ce qu'on a bien fait cette semaine")
     L.append("")
@@ -845,58 +856,11 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
         )
     L.append("")
 
-    # --- Détail : Win rate de la semaine (archive hebdo prise telle quelle, CA-W2) ---
-    L.append("### Win rate de la semaine")
-    L.append("")
-    archive = _read_weekly_archive(bilan.iso)
-    if archive:
-        L.append(f"> Source : `win-rate-{bilan.iso}.md` (archive hebdo, prise telle quelle).")
-        L.append("")
-        # On insère le corps de l'archive (sans son titre H1).
-        body = "\n".join(
-            ln for ln in archive.splitlines() if not ln.startswith("# ")
-        ).strip()
-        L.append(body)
-    else:
-        L.append(f"> Archive `win-rate-{bilan.iso}.md` absente · produite au prochain run Journaliste.")
-    L.append("")
-
-    # --- Win rate par conviction (§4.7 / CA-W6) ---
-    L.append("### Win rate par conviction")
-    L.append("")
-    L.append("| Conviction | N paris | Win rate | Interprétation |")
-    L.append("|---|---|---|---|")
-    tf = _fmt_pct(bilan.taux_forte) if bilan.n_forte >= 3 else "— (N insuffisant)"
-    tw = _fmt_pct(bilan.taux_faible_conv) if bilan.n_faible_conv >= 3 else "— (N insuffisant)"
-    interp_f = _interp_conviction(bilan.taux_forte, bilan.n_forte, forte=True)
-    interp_w = _interp_conviction(bilan.taux_faible_conv, bilan.n_faible_conv, forte=False)
-    L.append(f"| Forte (|score| ≥ seuil, 0 drapeau ◧/⇆/↯/~) | {bilan.n_forte} | {tf} | {interp_f} |")
-    L.append(f"| Faible (quasi-neutre, mono-critère, coin-flip) | {bilan.n_faible_conv} | {tw} | {interp_w} |")
-    L.append("")
-
-    # --- Cellules porteuses (ce qui marche, §4.6) ---
-    L.append("### Cellules porteuses (ce qui marche)")
-    L.append("")
-    porteuses = sorted(
-        [c for c in bilan.cellules if c.porteuse],
-        key=lambda c: (c.win_rate if c.win_rate is not None else 0.0),
-        reverse=True,
-    )
-    if porteuses:
-        L.append("| Actif | Horizon | Win rate | WR tradable | N_eff | Signal |")
-        L.append("|---|---|---|---|---|---|")
-        for c in porteuses:
-            L.append(
-                f"| {c.actif} | {c.horizon} | {_fmt_pct(c.win_rate)} | "
-                f"{_fmt_pct(c.wr_tradable)} | {c.n_eff} | "
-                f"solide (≥ {WINRATE_PORTEUSE:.0f}% sur N_eff ≥ {N_EFF_PORTEUSE}) |"
-            )
-    else:
-        L.append(f"Aucune cellule avec N_eff ≥ {N_EFF_PORTEUSE} et win rate ≥ {WINRATE_PORTEUSE:.0f}% · observer.")
-    L.append("")
-
     # ===================================================================
-    # SECTION 4 — Ce qu'on doit améliorer
+    # SECTION 4 — Ce qu'on doit améliorer (analyse + POURQUOI + propositions)
+    # Recentrée : les faiblesses avec leur cause, puis les propositions
+    # actionnables à valider. Le monitoring fin (cellules à surveiller,
+    # warm-up, news vs quant) descend dans l'annexe technique.
     # ===================================================================
     L.append("## 4. Ce qu'on doit améliorer")
     L.append("")
@@ -911,32 +875,12 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
         )
     L.append("")
 
-    # --- Cellules à surveiller ---
-    L.append("### Cellules à surveiller")
-    L.append("")
-    surveiller = sorted(
-        [c for c in bilan.cellules if c.candidate_faible],
-        key=lambda c: (c.win_rate if c.win_rate is not None else 100.0),
-    )
-    if surveiller:
-        L.append("| Actif | Horizon | Raison | Win rate | N_eff | Wilson_low |")
-        L.append("|---|---|---|---|---|---|")
-        for c in surveiller:
-            raison = "faible confirmée (≥2 sem.)" if c.faible_confirmee else "candidate (1ère sem.)"
-            L.append(
-                f"| {c.actif} | {c.horizon} | {raison} | {_fmt_pct(c.win_rate)} | "
-                f"{c.n_eff} | {_fmt_pct(c.wilson_low)} |"
-            )
-    else:
-        L.append("Aucune cellule sous le seuil de détection (N_eff ≥ 10 ET Wilson_low < 50%).")
-    L.append("")
-
-    # --- Propositions d'ajustement (à valider Thomas) ---
+    # --- Propositions d'ajustement (à valider Thomas) — actionnable, on garde ---
     L.append("### Propositions d'ajustement (à valider Thomas)")
     L.append("")
     if bilan.propositions:
         for p in bilan.propositions:
-            L.append(f"#### Proposition P{p['n']} — {p['titre']}")
+            L.append(f"#### Proposition P{p['n']} · {p['titre']}")
             L.append("")
             L.append(f"**Type** : {p['type']}")
             L.append(f"**Actif(s) concerné(s)** : {p['actifs']}")
@@ -959,6 +903,114 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
         )
     L.append("")
 
+    # ===================================================================
+    # SECTION 5 — Les learnings de la semaine
+    # ===================================================================
+    L.append("## 5. Les learnings de la semaine")
+    L.append("")
+    L.append(
+        "> Synthèse actionnable et déterministe, dérivée des sections 1 à 4. "
+        "Chaque learning repose sur un seuil chiffré franchi (jamais d'interprétation libre)."
+    )
+    L.append("")
+    learnings = _learnings_semaine(bilan)
+    if learnings:
+        for ln in learnings:
+            L.append(f"- {ln}")
+    else:
+        L.append(
+            "Pas de learning net cette semaine : échantillon insuffisant (warm-up). "
+            "On continue de mesurer avant d'agir."
+        )
+    L.append("")
+
+    # ===================================================================
+    # ANNEXE TECHNIQUE — repliée par défaut (détail de mesure, pour qui veut
+    # creuser). Sort les tableaux denses des sections 3/4 pour qu'elles restent
+    # de l'ANALYSE. Rendu : <details> HTML (marked le laisse passer tel quel).
+    # ===================================================================
+    _render_annexe_technique(bilan, L)
+
+    return "\n".join(L)
+
+
+def _render_annexe_technique(bilan: BilanSemaine, L: List[str]) -> None:
+    """Détail de mesure dense, replié — déplacé hors des sections 3/4 (analyse)."""
+    L.append('<details class="weekly-annex">')
+    L.append("<summary>Annexe technique · détail de mesure (replié)</summary>")
+    L.append("")
+    L.append(
+        "> Le détail win rate par cellule est aussi consultable sur la page "
+        "**Performance**. Ci-dessous : la photo figée de la semaine."
+    )
+    L.append("")
+
+    # --- Win rate de la semaine (archive hebdo prise telle quelle) ---
+    L.append("### Win rate de la semaine")
+    L.append("")
+    archive = _read_weekly_archive(bilan.iso)
+    if archive:
+        L.append(f"> Source : `win-rate-{bilan.iso}.md` (archive hebdo, prise telle quelle).")
+        L.append("")
+        body = "\n".join(ln for ln in archive.splitlines() if not ln.startswith("# ")).strip()
+        L.append(body)
+    else:
+        L.append(f"> Archive `win-rate-{bilan.iso}.md` absente · produite au prochain run Journaliste.")
+    L.append("")
+
+    # --- Win rate par conviction ---
+    L.append("### Win rate par conviction")
+    L.append("")
+    L.append("| Conviction | N paris | Win rate | Interprétation |")
+    L.append("|---|---|---|---|")
+    tf = _fmt_pct(bilan.taux_forte) if bilan.n_forte >= 3 else "— (N insuffisant)"
+    tw = _fmt_pct(bilan.taux_faible_conv) if bilan.n_faible_conv >= 3 else "— (N insuffisant)"
+    interp_f = _interp_conviction(bilan.taux_forte, bilan.n_forte, forte=True)
+    interp_w = _interp_conviction(bilan.taux_faible_conv, bilan.n_faible_conv, forte=False)
+    L.append(f"| Forte (|score| ≥ seuil, 0 drapeau ◧/⇆/↯/~) | {bilan.n_forte} | {tf} | {interp_f} |")
+    L.append(f"| Faible (quasi-neutre, mono-critère, coin-flip) | {bilan.n_faible_conv} | {tw} | {interp_w} |")
+    L.append("")
+
+    # --- Cellules porteuses ---
+    L.append("### Cellules porteuses (ce qui marche)")
+    L.append("")
+    porteuses = sorted(
+        [c for c in bilan.cellules if c.porteuse],
+        key=lambda c: (c.win_rate if c.win_rate is not None else 0.0), reverse=True,
+    )
+    if porteuses:
+        L.append("| Actif | Horizon | Win rate | WR tradable | N_eff | Signal |")
+        L.append("|---|---|---|---|---|---|")
+        for c in porteuses:
+            L.append(
+                f"| {c.actif} | {c.horizon} | {_fmt_pct(c.win_rate)} | "
+                f"{_fmt_pct(c.wr_tradable)} | {c.n_eff} | "
+                f"solide (≥ {WINRATE_PORTEUSE:.0f}% sur N_eff ≥ {N_EFF_PORTEUSE}) |"
+            )
+    else:
+        L.append(f"Aucune cellule avec N_eff ≥ {N_EFF_PORTEUSE} et win rate ≥ {WINRATE_PORTEUSE:.0f}% · observer.")
+    L.append("")
+
+    # --- Cellules à surveiller ---
+    L.append("### Cellules à surveiller")
+    L.append("")
+    surveiller = sorted(
+        [c for c in bilan.cellules if c.candidate_faible],
+        key=lambda c: (c.win_rate if c.win_rate is not None else 100.0),
+    )
+    if surveiller:
+        L.append("| Actif | Horizon | Raison | Win rate | N_eff | Wilson_low |")
+        L.append("|---|---|---|---|---|---|")
+        for c in surveiller:
+            raison = "faible confirmée (≥2 sem.)" if c.faible_confirmee else "candidate (1ère sem.)"
+            L.append(
+                f"| {c.actif} | {c.horizon} | {raison} | {_fmt_pct(c.win_rate)} | "
+                f"{c.n_eff} | {_fmt_pct(c.wilson_low)} |"
+            )
+    else:
+        L.append("Aucune cellule sous le seuil de détection (N_eff ≥ 10 ET Wilson_low < 50%).")
+    L.append("")
+
     # --- Observations sans proposition ---
     L.append("### Observations sans proposition")
     L.append("")
@@ -969,7 +1021,7 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
         L.append("Rien en zone d'observation cette semaine.")
     L.append("")
 
-    # --- Dates de sortie de warm-up (§6.2) ---
+    # --- Sortie de warm-up par horizon ---
     L.append("### Sortie de warm-up par horizon")
     L.append("")
     L.append("| Horizon | Date estimée de significativité |")
@@ -984,10 +1036,7 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     )
     L.append("")
 
-    # --- Justesse des news vs quant (informatif, mesure-only) ---
-    # Vue LÉGÈRE : win-rate news-driven vs quant-pures PAR HORIZON, même garde-fou
-    # N<15 → « en chauffe ». Lecture seule de measures-log (+ fallback decision-log
-    # pour les mesures pré-instrumentation). N'influence AUCUNE proposition Manager.
+    # --- Justesse des news vs quant (informatif) ---
     L.append("### Justesse des news vs quant (informatif)")
     L.append("")
     L.append(
@@ -1012,29 +1061,8 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
         logger.warning("vue news vs quant KO (non bloquant) : %s", e)
         L.append("> Vue indisponible ce run (lecture measures-log/decision-log).")
     L.append("")
-
-    # ===================================================================
-    # SECTION 5 — Les learnings de la semaine
-    # ===================================================================
-    L.append("## 5. Les learnings de la semaine")
+    L.append("</details>")
     L.append("")
-    L.append(
-        "> Synthèse actionnable et déterministe, dérivée des sections 1 à 4. "
-        "Chaque learning repose sur un seuil chiffré franchi (jamais d'interprétation libre)."
-    )
-    L.append("")
-    learnings = _learnings_semaine(bilan)
-    if learnings:
-        for ln in learnings:
-            L.append(f"- {ln}")
-    else:
-        L.append(
-            "Pas de learning net cette semaine : échantillon insuffisant (warm-up). "
-            "On continue de mesurer avant d'agir."
-        )
-    L.append("")
-
-    return "\n".join(L)
 
 
 # ---------------------------------------------------------------------------
@@ -1051,13 +1079,39 @@ def _segments_signes(bilan: BilanSemaine) -> Tuple[List[str], List[str]]:
     gagnants: List[str] = []
     perdants: List[str] = []
     for t in bilan.tendances:
-        for s in t.segments:
+        n_seg = len(t.segments)
+        for i, s in enumerate(t.segments):
             p = s.perf_pct
             if p is None or abs(p) < _PERF_MATERIELLE_PCT:
                 continue
-            libelle = f"{t.actif} {s.direction} ({_fmt_jours_segment(s.jours)}) {_fmt_signed_pct(p)}"
+            cause = _cause_segment(s, i, n_seg, gagnant=(p > 0))
+            libelle = (
+                f"{t.actif} {s.direction} ({_fmt_jours_segment(s.jours)}) "
+                f"{_fmt_signed_pct(p)} · {cause}"
+            )
             (gagnants if p > 0 else perdants).append(libelle)
     return gagnants, perdants
+
+
+def _cause_segment(s: "SegmentTendance", idx: int, n_seg: int, gagnant: bool) -> str:
+    """POURQUOI traçable d'une phase, dérivé de la STRUCTURE des segments (zéro
+    invention) : direction stable (continuation) vs bascule (changement de
+    tendance capté ou subi). C'est la seule cause déductible des prix + du
+    decision-log, sans interprétation libre."""
+    suivi_dun_flip = idx < n_seg - 1          # une autre phase suit → bascule après
+    issu_dun_flip = idx > 0                    # cette phase succède à une bascule
+    if gagnant:
+        if n_seg == 1:
+            return "tendance stable tenue (le directionnel s'est prolongé dans le bon sens)"
+        if issu_dun_flip:
+            return f"bascule {s.direction} captée (le retournement a été suivi à temps)"
+        return "phase de tendance bien suivie avant bascule"
+    # perdant
+    if suivi_dun_flip:
+        return "tendance retournée contre le call (une bascule a suivi cette phase)"
+    if issu_dun_flip:
+        return "bascule prise à contre-sens (le retournement n'a pas payé)"
+    return "le mouvement est allé contre la direction tenue sur la phase"
 
 
 def _points_forts(bilan: BilanSemaine) -> List[str]:

@@ -291,6 +291,78 @@ def test_5_sections_aucun_montant(monkeypatch, tmp_path):
         assert token not in md, f"métrique monétaire interdite : {token}"
 
 
+# ---------------------------------------------------------------------------
+# Refonte S9 vague 5 — section 2 en TABLEAU visuel + POURQUOI + annexe repliée
+# ---------------------------------------------------------------------------
+
+def test_verdict_segment_glyphes():
+    assert rw._verdict_segment(None) == "—"      # prix manquant
+    assert rw._verdict_segment(0.2) == "⚪"        # sous le seuil = négligeable
+    assert rw._verdict_segment(1.5) == "✅"        # gagnant
+    assert rw._verdict_segment(-1.5) == "❌"       # perdant
+
+
+def test_cause_segment_pourquoi_tracable():
+    s = rw.SegmentTendance(direction="SHORT", jours=[date(2026, 6, 15)])
+    # Direction stable gagnante (1 seul segment) = continuation.
+    assert "stable" in rw._cause_segment(s, 0, 1, gagnant=True)
+    # Phase perdante suivie d'une bascule = tendance retournée.
+    assert "retourn" in rw._cause_segment(s, 0, 2, gagnant=False)
+    # Phase gagnante issue d'une bascule = bascule captée.
+    assert "captée" in rw._cause_segment(s, 1, 2, gagnant=True)
+
+
+def test_section2_est_un_tableau_avec_verdicts():
+    seg1 = rw.SegmentTendance(direction="LONG", jours=[date(2026, 6, 15)],
+                              prix_debut=100.0, prix_fin=102.0)              # +2 % ✅
+    seg2 = rw.SegmentTendance(direction="SHORT", jours=[date(2026, 6, 16)],
+                              prix_debut=102.0, prix_fin=102.05, en_cours=True)  # ~0 % ⚪
+    t = rw.TendanceActif(actif="Or", ticker="GC=F", segments=[seg1, seg2])
+    L: list = []
+    rw._render_section2_tendances(SimpleNamespace(tendances=[t]), L)
+    md = "\n".join(L)
+    # En-tête de tableau (plus de liste à puces).
+    assert "| Actif | Tendance | Période | Perf (sens tendance) | Résultat |" in md
+    assert "**Or**" in md
+    assert "✅" in md and "⚪" in md            # gagne/perd visibles d'un coup d'œil
+    assert "(en cours)" in md                   # phase en cours marquée
+
+
+def test_points_forts_incluent_le_pourquoi():
+    # Or SHORT stable gagnant → un point fort avec sa cause (continuation).
+    seg = rw.SegmentTendance(direction="SHORT", jours=[date(2026, 6, 15)],
+                             prix_debut=100.0, prix_fin=95.0)  # +5 % dans le sens SHORT
+    t = rw.TendanceActif(actif="Or", ticker="GC=F", segments=[seg])
+    forts = rw._points_forts(SimpleNamespace(
+        tendances=[t], selection=None, cellules=[],
+        n_forte=0, taux_forte=None,
+    ))
+    blob = " ".join(forts)
+    assert "Or SHORT" in blob
+    assert "stable" in blob or "tenue" in blob   # le POURQUOI est présent
+
+
+def test_annexe_technique_repliee_hors_sections_analyse(monkeypatch, tmp_path):
+    _patch_full(monkeypatch, tmp_path)
+    bilan = rw.build_bilan_semaine(
+        now=NOW, fiches={}, fetch_price=None, state_dir=tmp_path, persist_state=False
+    )
+    md = bilan.markdown
+    assert '<details class="weekly-annex">' in md
+    assert "</details>" in md
+    idx_annex = md.index('<details class="weekly-annex">')
+    # Les tableaux denses descendent DANS l'annexe (après le <details>).
+    for bloc in ("### Win rate par conviction", "### Cellules à surveiller",
+                 "### Sortie de warm-up par horizon", "### Justesse des news vs quant"):
+        assert bloc in md and md.index(bloc) > idx_annex, f"{bloc} doit être dans l'annexe"
+    # Les sections 3/4 (avant l'annexe) restent de l'ANALYSE : pas ces tables.
+    section34 = md[md.index("## 3."):idx_annex]
+    assert "### Win rate par conviction" not in section34
+    assert "### Cellules à surveiller" not in section34
+    # Mais les propositions actionnables restent en section 4.
+    assert "### Propositions d'ajustement" in section34
+
+
 def test_manager_n_applique_rien_avec_segmentation(monkeypatch, tmp_path):
     """CA-W4 sur le chemin segmentation : aucune écriture v3/config/ (re-vérif)."""
     import subprocess

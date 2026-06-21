@@ -56,6 +56,9 @@ BILAN_SEMAINE_DIR = ROOT / "data" / "bilan-semaine"
 # N'est PAS un fichier de config : c'est une donnée de mesure (v3/data/).
 MANAGER_STATE_DIR = BILAN_SEMAINE_DIR / ".state"
 PERFORMANCE_WEEKLY_DIR = ROOT / "data" / "performance" / "weekly"
+DECISION_LOG_DIR = ROOT / "data" / "decision-log"
+PRIX_EMISSION_DIR = ROOT / "data" / "prix-emission"
+PRIX_OUVERTURE_DIR = ROOT / "data" / "prix-ouverture"
 
 # --- Seuils de détection du Manager (§4.3) ---------------------------------
 # Cellule faible : N_eff >= N_EFF_PROPOSE ET Wilson_low < WILSON_FAIBLE,
@@ -107,6 +110,8 @@ class BilanSemaine:
     taux_faible_conv: Optional[float] = None
     propositions: List[Dict[str, Any]] = field(default_factory=list)
     observations: List[str] = field(default_factory=list)
+    selection: Optional["SelectionSemaine"] = None
+    tendances: List["TendanceActif"] = field(default_factory=list)
     markdown: str = ""
 
 
@@ -261,6 +266,289 @@ def _conviction_semaine(
 
 
 # ---------------------------------------------------------------------------
+# SECTION 1 — Performance des 24h sélectionnés (la semaine)
+# ---------------------------------------------------------------------------
+# Agrégat hebdo de nos « top du jour » (selection_du_jour: true, horizon 24h) :
+#   - win rate de la sélection (réutilise bilan_jour.win_rate_selection cumulé) ;
+#   - ampleur moyenne en % des sélections gagnantes / perdantes (mouvement
+#     directionnel signé, WIN RATE ONLY = % de mouvement, jamais d'€).
+# Zéro invention : une cellule dont le prix de réf ou le prix d'échéance manque
+# est exclue de l'ampleur (mais reste comptée dans le win rate via son outcome).
+
+@dataclass
+class SelectionSemaine:
+    """Agrégat hebdo de la Sélection du jour (24h). WIN RATE ONLY."""
+    n_select: int = 0           # sélections conclusives (VRAI+FAUSSE)
+    n_vrai: int = 0             # sélections VRAI
+    ampleurs_gagnantes: List[float] = field(default_factory=list)  # % >= 0
+    ampleurs_perdantes: List[float] = field(default_factory=list)  # % < 0
+
+    @property
+    def win_rate(self) -> Optional[float]:
+        return round(self.n_vrai / self.n_select * 100.0, 1) if self.n_select else None
+
+    @property
+    def ampleur_moy_gagnantes(self) -> Optional[float]:
+        v = self.ampleurs_gagnantes
+        return round(sum(v) / len(v), 2) if v else None
+
+    @property
+    def ampleur_moy_perdantes(self) -> Optional[float]:
+        v = self.ampleurs_perdantes
+        return round(sum(v) / len(v), 2) if v else None
+
+
+def _mouvement_directionnel_pct(m: Any) -> Optional[float]:
+    """% de mouvement DANS LE SENS du call (signe LONG=+1 / SHORT=−1).
+
+    `signe × (prix_courant − prix_emission) / prix_emission × 100`. None si un
+    prix manque ou si la direction n'est pas LONG/SHORT (zéro invention).
+    """
+    direction = getattr(m.cell, "conclusion", None)
+    if direction not in ("LONG", "SHORT"):
+        return None
+    pe = m.prix_emission
+    pc = m.prix_courant
+    if not isinstance(pe, (int, float)) or not isinstance(pc, (int, float)) or pe == 0:
+        return None
+    signe = 1.0 if direction == "LONG" else -1.0
+    return signe * (pc - pe) / pe * 100.0
+
+
+def selection_semaine(
+    measures: List[Any], now: datetime, decision_log_dir: Path = DECISION_LOG_DIR
+) -> SelectionSemaine:
+    """Agrège la Sélection du jour (24h) sur la semaine ISO de `now`.
+
+    Réutilise bilan_jour.load_selection_map (par jour de décision) — zéro
+    recalcul du critère de sélection. Le win rate cumule VRAI/FAUSSE des cellules
+    sélectionnées ; l'ampleur sépare gagnantes/perdantes par le mouvement signé.
+    """
+    from journaliste import (  # noqa: PLC0415
+        iso_week_bounds, OUTCOME_VRAI, OUTCOME_FAUSSE,
+    )
+    from bilan_jour import load_selection_map  # noqa: PLC0415
+    from datetime import timedelta  # noqa: PLC0415
+
+    monday, sunday = iso_week_bounds(now)
+    res = SelectionSemaine()
+    sel_cache: Dict[date, Dict[Tuple[str, str], bool]] = {}
+
+    for m in measures:
+        if m.horizon != "24h":
+            continue
+        if m.outcome not in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            continue
+        # Jour de décision d'un call 24h = échéance − 1 jour.
+        decision_day = m.echeance - timedelta(days=1)
+        if not (monday <= m.echeance <= sunday):
+            continue
+        if decision_day not in sel_cache:
+            sel_cache[decision_day] = (
+                load_selection_map(decision_day, decision_log_dir)
+                if decision_log_dir else load_selection_map(decision_day)
+            )
+        if not sel_cache[decision_day].get((m.cell.actif_name, m.horizon), False):
+            continue
+        res.n_select += 1
+        if m.outcome == OUTCOME_VRAI:
+            res.n_vrai += 1
+        mv = _mouvement_directionnel_pct(m)
+        if mv is None:
+            continue  # prix manquant -> exclu de l'ampleur (zéro invention)
+        if mv >= 0:
+            res.ampleurs_gagnantes.append(mv)
+        else:
+            res.ampleurs_perdantes.append(mv)
+    return res
+
+
+# ---------------------------------------------------------------------------
+# SECTION 2 — Performance par TENDANCE 7j, par actif (cœur de la demande)
+# ---------------------------------------------------------------------------
+# Pour chaque actif : segmenter la semaine en phases de direction 7j CONSTANTE,
+# et donner la perf directionnelle de chaque phase, mesurée depuis le prix de
+# DÉBUT de segment (émission du jour de prise/bascule) jusqu'à la fin (veille de
+# la bascule) ou « maintenant » (dernier prix dispo). Agrégé par cle_courante =
+# ticker_principal (L023). WIN RATE ONLY = % directionnel, jamais d'€. Zéro
+# invention : prix de réf manquant -> segment perf « — ».
+
+@dataclass
+class SegmentTendance:
+    direction: str              # "LONG" / "SHORT"
+    jours: List[date]           # jours de bourse du segment, ordonnés
+    prix_debut: Optional[float] = None
+    prix_fin: Optional[float] = None
+    en_cours: bool = False
+
+    @property
+    def perf_pct(self) -> Optional[float]:
+        """% de mouvement DANS LE SENS de la tendance. None si prix manquant."""
+        pd, pf = self.prix_debut, self.prix_fin
+        if not isinstance(pd, (int, float)) or not isinstance(pf, (int, float)) or pd == 0:
+            return None
+        signe = 1.0 if self.direction == "LONG" else -1.0
+        return round(signe * (pf - pd) / pd * 100.0, 2)
+
+
+@dataclass
+class TendanceActif:
+    actif: str
+    ticker: Optional[str]
+    segments: List[SegmentTendance] = field(default_factory=list)
+
+
+def _decision_7j_du_jour(
+    day: date, decision_log_dir: Path = DECISION_LOG_DIR
+) -> Dict[str, str]:
+    """Direction 7j (LONG/SHORT) par NOM d'actif, dernier record du jour `day`.
+
+    Lit tous les fichiers decision-log `{day}-*.jsonl`, dernier record gagne (comme
+    load_selection_map / load_conviction_map). Jour sans log -> dict vide (sauté,
+    zéro invention).
+    """
+    out: Dict[str, str] = {}
+    if not decision_log_dir.exists():
+        return out
+    prefix = day.isoformat()
+    for fp in sorted(decision_log_dir.glob(f"{prefix}-*.jsonl")):
+        try:
+            for line in fp.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(rec, dict) or rec.get("bulletin_date") != prefix:
+                    continue
+                if rec.get("horizon") != "7j":
+                    continue
+                actif = rec.get("actif")
+                conc = rec.get("conclusion_pm1")
+                if actif and conc in ("LONG", "SHORT"):
+                    out[str(actif)] = conc
+        except OSError as e:
+            logger.warning("decision-log illisible %s : %s", fp, e)
+    return out
+
+
+def _prix_du_jour(
+    ticker: str,
+    day: date,
+    prix_emission_dir: Path = PRIX_EMISSION_DIR,
+    prix_ouverture_dir: Path = PRIX_OUVERTURE_DIR,
+) -> Optional[float]:
+    """Prix d'émission du jour pour `ticker` (point d'exécution 7h, « bon prix »).
+
+    Priorité : prix-emission/{day}*.json (tout suffixe horaire, ex. -07h/-08h),
+    fallback prix-ouverture/{day}.json. None si introuvable (zéro invention).
+    """
+    if not ticker:
+        return None
+    # prix-emission : la date peut porter un suffixe horaire variable (-07h…).
+    candidates = sorted(prix_emission_dir.glob(f"{day.isoformat()}*.json"))
+    # On préfère le fichier sans suffixe puis le plus matinal (tri lexical OK : 07h<08h).
+    exact = prix_emission_dir / f"{day.isoformat()}.json"
+    ordered = ([exact] if exact.exists() else []) + [c for c in candidates if c != exact]
+    for fp in ordered:
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict) and ticker in data:
+            try:
+                return float(data[ticker])
+            except (TypeError, ValueError):
+                pass
+    fp = prix_ouverture_dir / f"{day.isoformat()}.json"
+    if fp.exists():
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and ticker in data:
+                return float(data[ticker])
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            pass
+    return None
+
+
+def tendances_par_actif(
+    now: datetime,
+    fiches: Optional[Dict[str, dict]] = None,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+    prix_emission_dir: Path = PRIX_EMISSION_DIR,
+    prix_ouverture_dir: Path = PRIX_OUVERTURE_DIR,
+) -> List[TendanceActif]:
+    """Segmente la semaine ISO en phases de direction 7j CONSTANTE, par actif.
+
+    Pour chaque jour de bourse de la semaine, lit la direction 7j de chaque actif
+    (decision-log). Des jours consécutifs de même direction = un segment ; un
+    changement = bascule = nouveau segment. Le prix de DÉBUT de segment = prix
+    d'émission du 1er jour du segment ; le prix de FIN = prix d'émission du dernier
+    jour du segment (veille de la bascule, ou « maintenant » = dernier dispo pour
+    le segment en cours). Perf = % directionnel signé. Prix manquant -> perf « — ».
+    """
+    from journaliste import iso_week_bounds, load_fiches  # noqa: PLC0415
+    from datetime import timedelta  # noqa: PLC0415
+
+    fiches = fiches if fiches is not None else load_fiches()
+    monday, sunday = iso_week_bounds(now)
+    # Map nom d'actif -> ticker_principal (cle_courante, L023).
+    ticker_par_actif: Dict[str, str] = {}
+    for fiche in fiches.values():
+        nom = (fiche.get("actif") or "").strip()
+        tk = fiche.get("ticker_principal")
+        if nom and tk:
+            ticker_par_actif[nom] = tk
+
+    # Direction 7j par jour de bourse de la semaine (jours sans log = sautés).
+    jours = []
+    d = monday
+    while d <= sunday:
+        dirs = _decision_7j_du_jour(d, decision_log_dir)
+        if dirs:
+            jours.append((d, dirs))
+        d += timedelta(days=1)
+
+    # Liste ordonnée et stable des actifs vus cette semaine.
+    actifs_vus: List[str] = []
+    for _d, dirs in jours:
+        for a in dirs:
+            if a not in actifs_vus:
+                actifs_vus.append(a)
+    actifs_vus.sort()
+
+    resultats: List[TendanceActif] = []
+    last_day = jours[-1][0] if jours else None
+
+    for actif in actifs_vus:
+        ticker = ticker_par_actif.get(actif)
+        ta = TendanceActif(actif=actif, ticker=ticker)
+        seg: Optional[SegmentTendance] = None
+        for d, dirs in jours:
+            direction = dirs.get(actif)
+            if direction is None:
+                continue  # actif non jugé ce jour -> sauté (zéro invention)
+            if seg is None or direction != seg.direction:
+                seg = SegmentTendance(direction=direction, jours=[d])
+                ta.segments.append(seg)
+            else:
+                seg.jours.append(d)
+        # Prix de début/fin de chaque segment.
+        for s in ta.segments:
+            s.prix_debut = _prix_du_jour(
+                ticker, s.jours[0], prix_emission_dir, prix_ouverture_dir
+            ) if ticker else None
+            s.prix_fin = _prix_du_jour(
+                ticker, s.jours[-1], prix_emission_dir, prix_ouverture_dir
+            ) if ticker else None
+            s.en_cours = bool(s is ta.segments[-1] and last_day in s.jours)
+        resultats.append(ta)
+    return resultats
+
+
+# ---------------------------------------------------------------------------
 # Propositions du Manager (§4.5) — PROPOSE, n'applique JAMAIS
 # ---------------------------------------------------------------------------
 # Champs obligatoires (CA-W3) : Type, Actif(s), Critère(s), Constat, Proposition,
@@ -289,8 +577,8 @@ def build_propositions(cellules: List[CelluleObs]) -> List[Dict[str, Any]]:
         wl = _fmt_pct(c.wilson_low)
         props.append({
             "n": i,
-            "titre": f"{c.actif} {c.horizon} — cellule faible 2 semaines",
-            "type": "Note d'observation — ajustement à instruire (Thomas tranche le levier)",
+            "titre": f"{c.actif} {c.horizon} · cellule faible 2 semaines",
+            "type": "Note d'observation · ajustement à instruire (Thomas tranche le levier)",
             "actifs": c.actif,
             "criteres": "à déterminer depuis le decision-log (critère dominant de la cellule)",
             "constat": (
@@ -306,7 +594,7 @@ def build_propositions(cellules: List[CelluleObs]) -> List[Dict[str, Any]]:
             ),
             "risque": (
                 "Sur-réaction à un régime de marché conjoncturel. N_eff reste "
-                "modeste — un ajustement de poids peut dégrader une autre période."
+                "modeste · un ajustement de poids peut dégrader une autre période."
             ),
             "validation": "Thomas OUI/NON avant toute modification de config YAML",
         })
@@ -364,11 +652,14 @@ def build_bilan_semaine(
     )
 
     conv = _conviction_semaine(measures, now)
+    sel = selection_semaine(measures, now)
+    tend = tendances_par_actif(now, fiches=fiches)
 
     bilan = BilanSemaine(
         iso=iso, lundi=monday, dimanche=sunday, now=now, cellules=cellules,
         n_forte=conv.n_forte, taux_forte=conv.taux_forte,
         n_faible_conv=conv.n_faible, taux_faible_conv=conv.taux_faible,
+        selection=sel, tendances=tend,
     )
 
     propositions = [p for p in build_propositions(cellules) if proposition_valide(p)]
@@ -381,7 +672,7 @@ def build_bilan_semaine(
             bilan.observations.append(
                 f"{c.actif} {c.horizon} : candidate faible cette semaine "
                 f"(win rate {_fmt_pct(c.win_rate)}, N_eff {c.n_eff}, "
-                f"Wilson_low {_fmt_pct(c.wilson_low)}) — 1ère semaine, "
+                f"Wilson_low {_fmt_pct(c.wilson_low)}) · 1ère semaine, "
                 f"PAS de proposition (attendre confirmation S+1)."
             )
         elif (
@@ -391,7 +682,7 @@ def build_bilan_semaine(
         ):
             bilan.observations.append(
                 f"{c.actif} {c.horizon} : sous surveillance (N_eff {c.n_eff} "
-                f"entre {N_EFF_OBSERVE}-{N_EFF_PROPOSE - 1}) — observation, "
+                f"entre {N_EFF_OBSERVE}-{N_EFF_PROPOSE - 1}) · observation, "
                 f"PAS de proposition (mesurer avant d'agir)."
             )
 
@@ -419,22 +710,142 @@ def _read_weekly_archive(iso: str) -> Optional[str]:
         return None
 
 
+def _fmt_signed_pct(v: Optional[float]) -> str:
+    """% signé à la française (« +1,5 % », « -0,8 % »). « — » si None (placeholder)."""
+    if not isinstance(v, (int, float)):
+        return "—"
+    # Normalise le zéro négatif (-0.0) en zéro positif (cosmétique).
+    if v == 0:
+        v = 0.0
+    s = f"{v:+.1f}".replace(".", ",")
+    return f"{s} %"
+
+
+def _fmt_jours_segment(jours: List[date]) -> str:
+    """Étiquette lisible des jours d'un segment (« lun→mer », « jeu »)."""
+    JJ = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
+    if not jours:
+        return "—"
+    debut = JJ[jours[0].weekday()]
+    fin = JJ[jours[-1].weekday()]
+    return debut if debut == fin else f"{debut}→{fin}"
+
+
+def _render_section1_selection(bilan: BilanSemaine, L: List[str]) -> None:
+    """SECTION 1 — Performance des 24h sélectionnés (la semaine)."""
+    L.append("## 1. Performance des 24h sélectionnés (la semaine)")
+    L.append("")
+    L.append(
+        "> Nos « top du jour » (la Sélection, horizon 24h) agrégés sur la semaine : "
+        "taux de réussite et ampleur moyenne du mouvement, en pourcentage (jamais en euros)."
+    )
+    L.append("")
+    s = bilan.selection
+    if s is None or s.n_select == 0:
+        L.append(
+            "Aucune sélection 24h jugée cette semaine (pas de top du jour conclusif "
+            "sur les jours de bourse écoulés)."
+        )
+        L.append("")
+        return
+    wr = _fmt_pct(s.win_rate)
+    L.append("| Indicateur | Valeur |")
+    L.append("|---|---|")
+    L.append(f"| Win rate de la sélection | {wr} ({s.n_vrai}/{s.n_select} jugées) |")
+    ng = len(s.ampleurs_gagnantes)
+    npd = len(s.ampleurs_perdantes)
+    amp_g = _fmt_signed_pct(s.ampleur_moy_gagnantes) if ng else "—"
+    amp_p = _fmt_signed_pct(s.ampleur_moy_perdantes) if npd else "—"
+    L.append(f"| Ampleur moyenne des sélections gagnantes | {amp_g} ({ng}) |")
+    L.append(f"| Ampleur moyenne des sélections perdantes | {amp_p} ({npd}) |")
+    L.append("")
+    L.append(
+        "> Ampleur = moyenne du mouvement dans le sens du call (signe selon LONG/SHORT), "
+        "depuis le prix de référence d'émission. Sélection dont un prix manque = exclue "
+        "de l'ampleur (zéro donnée fabriquée)."
+    )
+    L.append("")
+
+
+def _render_section2_tendances(bilan: BilanSemaine, L: List[str]) -> None:
+    """SECTION 2 — Performance par TENDANCE 7j, par actif."""
+    L.append("## 2. Performance par tendance 7 jours, par actif")
+    L.append("")
+    L.append(
+        "> Pour chaque actif, la semaine est découpée en phases de direction 7j "
+        "constante. À chaque bascule (LONG vers SHORT ou l'inverse) commence une "
+        "nouvelle phase. La performance d'une phase = mouvement dans le sens de la "
+        "tendance, depuis le prix d'émission du jour de prise jusqu'au dernier prix "
+        "de la phase. Prix de référence manquant : « — » (jamais inventé)."
+    )
+    L.append("")
+    tendances = [t for t in bilan.tendances if t.segments]
+    if not tendances:
+        L.append(
+            "Aucune direction 7j lisible cette semaine (decision-log absent sur les "
+            "jours écoulés) : rien à segmenter."
+        )
+        L.append("")
+        return
+    for t in tendances:
+        morceaux: List[str] = []
+        for s in t.segments:
+            libelle = _fmt_jours_segment(s.jours)
+            perf = _fmt_signed_pct(s.perf_pct)
+            suffixe = " (en cours)" if s.en_cours else ""
+            morceaux.append(f"{s.direction} ({libelle}){suffixe} {perf}")
+        nb = len(t.segments)
+        bascules = nb - 1
+        bascule_txt = (
+            f" ({bascules} bascule" + ("s)" if bascules > 1 else ")")
+            if bascules >= 1 else " (direction stable)"
+        )
+        L.append(f"- **{t.actif}** : " + " · ".join(morceaux) + bascule_txt)
+    L.append("")
+
+
 def render_bilan_semaine(bilan: BilanSemaine) -> str:
     L: List[str] = []
     # [I-7 audit visuel 12/06] : H1 pour tous les rapports (harmonisation des
     # niveaux de titre — le bilan semaine était en H2). Le range lundi→dimanche
     # reste présent (lu par build_html.weekHumanTitle pour le titre humain).
-    L.append(f"# Bilan semaine — {bilan.iso} ({bilan.lundi.isoformat()} → {bilan.dimanche.isoformat()})")
+    L.append(f"# Bilan semaine · {bilan.iso} ({bilan.lundi.isoformat()} → {bilan.dimanche.isoformat()})")
     L.append("")
     L.append(f"- Généré : {horodatage_fr(bilan.now)} (dimanche 18h Paris)")
-    L.append("- WIN RATE ONLY — aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.")
+    L.append("- WIN RATE ONLY · aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.")
     L.append(
-        "- WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) — inclut les jours "
+        "- WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) · inclut les jours "
         "sous seuil où une position aurait quand même été prise (toujours ≤ Win rate)."
     )
     L.append("")
 
-    # --- Win rate de la semaine (archive hebdo prise telle quelle, CA-W2) ---
+    # ===================================================================
+    # SECTION 1 — Performance des 24h sélectionnés (la semaine)
+    # ===================================================================
+    _render_section1_selection(bilan, L)
+
+    # ===================================================================
+    # SECTION 2 — Performance par tendance 7j, par actif
+    # ===================================================================
+    _render_section2_tendances(bilan, L)
+
+    # ===================================================================
+    # SECTION 3 — Ce qu'on a bien fait cette semaine
+    # ===================================================================
+    L.append("## 3. Ce qu'on a bien fait cette semaine")
+    L.append("")
+    points_forts = _points_forts(bilan)
+    if points_forts:
+        for p in points_forts:
+            L.append(f"- {p}")
+    else:
+        L.append(
+            "Rien de statistiquement notable cette semaine (warm-up, N encore "
+            "modeste sur la plupart des cellules)."
+        )
+    L.append("")
+
+    # --- Détail : Win rate de la semaine (archive hebdo prise telle quelle, CA-W2) ---
     L.append("### Win rate de la semaine")
     L.append("")
     archive = _read_weekly_archive(bilan.iso)
@@ -447,7 +858,7 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
         ).strip()
         L.append(body)
     else:
-        L.append(f"> Archive `win-rate-{bilan.iso}.md` absente — produite au prochain run Journaliste.")
+        L.append(f"> Archive `win-rate-{bilan.iso}.md` absente · produite au prochain run Journaliste.")
     L.append("")
 
     # --- Win rate par conviction (§4.7 / CA-W6) ---
@@ -481,7 +892,23 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
                 f"solide (≥ {WINRATE_PORTEUSE:.0f}% sur N_eff ≥ {N_EFF_PORTEUSE}) |"
             )
     else:
-        L.append(f"Aucune cellule avec N_eff ≥ {N_EFF_PORTEUSE} et win rate ≥ {WINRATE_PORTEUSE:.0f}% — observer.")
+        L.append(f"Aucune cellule avec N_eff ≥ {N_EFF_PORTEUSE} et win rate ≥ {WINRATE_PORTEUSE:.0f}% · observer.")
+    L.append("")
+
+    # ===================================================================
+    # SECTION 4 — Ce qu'on doit améliorer
+    # ===================================================================
+    L.append("## 4. Ce qu'on doit améliorer")
+    L.append("")
+    points_faibles = _points_faibles(bilan)
+    if points_faibles:
+        for p in points_faibles:
+            L.append(f"- {p}")
+    else:
+        L.append(
+            "Aucun point faible confirmé cette semaine (aucune cellule sous le seuil "
+            "de détection ni tendance perdante marquée)."
+        )
     L.append("")
 
     # --- Cellules à surveiller ---
@@ -519,9 +946,9 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
             L.append(f"**Risque** : {p['risque']}")
             L.append(f"**Validation requise** : {p['validation']}")
             L.append("")
-            L.append("- [ ] Thomas valide — appliquer au prochain run")
-            L.append("- [ ] Thomas refuse — garder en observation")
-            L.append("- [ ] Thomas demande plus de données — reporter à S+1")
+            L.append("- [ ] Thomas valide · appliquer au prochain run")
+            L.append("- [ ] Thomas refuse · garder en observation")
+            L.append("- [ ] Thomas demande plus de données · reporter à S+1")
             L.append("")
     else:
         L.append(
@@ -566,7 +993,7 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     L.append(
         "> Mesure SÉPARÉE de la justesse des calls *dominés par les news* "
         "(`ratio_news` > 50 % à l'émission) vs les calls *quant-purs*, par horizon. "
-        "Informatif uniquement — n'alimente aucune proposition. Garde-fou : "
+        "Informatif uniquement · n'alimente aucune proposition. Garde-fou : "
         f"N < {_NEWS_MIN_N} ⇒ « en chauffe », jamais présenté comme significatif."
     )
     L.append("")
@@ -586,7 +1013,175 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
         L.append("> Vue indisponible ce run (lecture measures-log/decision-log).")
     L.append("")
 
+    # ===================================================================
+    # SECTION 5 — Les learnings de la semaine
+    # ===================================================================
+    L.append("## 5. Les learnings de la semaine")
+    L.append("")
+    L.append(
+        "> Synthèse actionnable et déterministe, dérivée des sections 1 à 4. "
+        "Chaque learning repose sur un seuil chiffré franchi (jamais d'interprétation libre)."
+    )
+    L.append("")
+    learnings = _learnings_semaine(bilan)
+    if learnings:
+        for ln in learnings:
+            L.append(f"- {ln}")
+    else:
+        L.append(
+            "Pas de learning net cette semaine : échantillon insuffisant (warm-up). "
+            "On continue de mesurer avant d'agir."
+        )
+    L.append("")
+
     return "\n".join(L)
+
+
+# ---------------------------------------------------------------------------
+# Synthèses des sections 3/4/5 (déterministes, dérivées des chiffres réels)
+# ---------------------------------------------------------------------------
+
+def _segments_signes(bilan: BilanSemaine) -> Tuple[List[str], List[str]]:
+    """(gagnants, perdants) parmi les segments de tendance avec perf mesurable.
+
+    Seuil de matérialité : |perf| >= _PERF_MATERIELLE_PCT (un segment à 0 % ou
+    sous le seuil = mouvement négligeable, pas un learning). Zéro invention :
+    segment sans perf (« — ») ignoré.
+    """
+    gagnants: List[str] = []
+    perdants: List[str] = []
+    for t in bilan.tendances:
+        for s in t.segments:
+            p = s.perf_pct
+            if p is None or abs(p) < _PERF_MATERIELLE_PCT:
+                continue
+            libelle = f"{t.actif} {s.direction} ({_fmt_jours_segment(s.jours)}) {_fmt_signed_pct(p)}"
+            (gagnants if p > 0 else perdants).append(libelle)
+    return gagnants, perdants
+
+
+def _points_forts(bilan: BilanSemaine) -> List[str]:
+    """SECTION 3 — ce qui MARCHE, chiffré (cellules porteuses + sélection + tendances+)."""
+    pts: List[str] = []
+    s = bilan.selection
+    if s is not None and s.n_select >= 3 and s.win_rate is not None and s.win_rate >= 60.0:
+        pts.append(
+            f"La Sélection 24h tient le rythme : win rate {_fmt_pct(s.win_rate)} "
+            f"sur {s.n_select} top du jour jugés."
+        )
+    porteuses = sorted(
+        [c for c in bilan.cellules if c.porteuse],
+        key=lambda c: (c.win_rate if c.win_rate is not None else 0.0), reverse=True,
+    )
+    if porteuses:
+        noms = ", ".join(f"{c.actif} {c.horizon} ({_fmt_pct(c.win_rate)})" for c in porteuses[:4])
+        pts.append(f"Cellules porteuses (≥ {WINRATE_PORTEUSE:.0f}%) : {noms}.")
+    if (
+        bilan.n_forte >= 3 and bilan.taux_forte is not None and bilan.taux_forte >= 70.0
+    ):
+        pts.append(
+            f"La conviction forte paie : {_fmt_pct(bilan.taux_forte)} de réussite "
+            f"sur {bilan.n_forte} paris à conviction forte."
+        )
+    gagnants, _ = _segments_signes(bilan)
+    if gagnants:
+        pts.append("Tendances 7j bien suivies : " + " ; ".join(gagnants[:4]) + ".")
+    return pts
+
+
+def _points_faibles(bilan: BilanSemaine) -> List[str]:
+    """SECTION 4 — ce qu'on doit améliorer (cellules à surveiller + tendances−)."""
+    pts: List[str] = []
+    confirmees = [c for c in bilan.cellules if c.faible_confirmee]
+    if confirmees:
+        noms = ", ".join(f"{c.actif} {c.horizon} ({_fmt_pct(c.win_rate)})" for c in confirmees)
+        pts.append(
+            f"Cellules faibles confirmées (≥ {SEMAINES_CONSECUTIVES} semaines) : {noms} "
+            "(une proposition d'ajustement est à instruire ci-dessous)."
+        )
+    candidates = [c for c in bilan.cellules if c.candidate_faible and not c.faible_confirmee]
+    if candidates:
+        noms = ", ".join(f"{c.actif} {c.horizon}" for c in candidates)
+        pts.append(f"À confirmer la semaine prochaine (1ère semaine faible) : {noms}.")
+    _, perdants = _segments_signes(bilan)
+    if perdants:
+        pts.append("Tendances 7j à contre-sens cette semaine : " + " ; ".join(perdants[:4]) + ".")
+    s = bilan.selection
+    if s is not None and s.n_select >= 3 and s.win_rate is not None and s.win_rate < 50.0:
+        pts.append(
+            f"La Sélection 24h a déçu : win rate {_fmt_pct(s.win_rate)} sur "
+            f"{s.n_select} top jugés (revoir les critères de sélection)."
+        )
+    return pts
+
+
+def _learnings_semaine(bilan: BilanSemaine) -> List[str]:
+    """SECTION 5 — learnings actionnables, dérivés des sections 1-4 (déterministe)."""
+    out: List[str] = []
+    s = bilan.selection
+    # Sélection trop prudente : peu de top jugés mais bon win rate.
+    if s is not None and 1 <= s.n_select <= 2 and s.win_rate is not None and s.win_rate >= 60.0:
+        out.append(
+            f"Sélection peut-être trop prudente : seulement {s.n_select} top jugé(s) "
+            f"cette semaine pour un win rate de {_fmt_pct(s.win_rate)} (marge pour "
+            "élargir la sélection sans dégrader la qualité, à confirmer sur plus de N)."
+        )
+    # Ampleur asymétrique gagnantes vs perdantes (sorties tardives).
+    if s is not None:
+        ag = s.ampleur_moy_gagnantes
+        ap = s.ampleur_moy_perdantes
+        if ag is not None and ap is not None and abs(ap) > ag:
+            out.append(
+                f"Pertes plus amples que les gains sur la sélection ({_fmt_signed_pct(ap)} "
+                f"vs {_fmt_signed_pct(ag)}) : signe possible de sorties tardives à surveiller."
+            )
+    # Conviction forte vs faible : l'écart confirme-t-il le tri ?
+    if (
+        bilan.n_forte >= 3 and bilan.n_faible_conv >= 3
+        and bilan.taux_forte is not None and bilan.taux_faible_conv is not None
+    ):
+        if bilan.taux_forte > bilan.taux_faible_conv:
+            out.append(
+                f"Le tri par conviction fonctionne : forte {_fmt_pct(bilan.taux_forte)} "
+                f"vs faible {_fmt_pct(bilan.taux_faible_conv)} (garder le garde-fou "
+                "qui écarte les paris faibles)."
+            )
+        elif bilan.taux_faible_conv > bilan.taux_forte:
+            out.append(
+                f"Anomalie de conviction : faible {_fmt_pct(bilan.taux_faible_conv)} "
+                f"au-dessus de forte {_fmt_pct(bilan.taux_forte)}, à instruire (le tri "
+                "n'a pas discriminé cette semaine, N encore modeste)."
+            )
+    # Tendances 7j : bilan gagnants vs perdants par actif.
+    gagnants, perdants = _segments_signes(bilan)
+    if gagnants and not perdants:
+        out.append(
+            f"Tendances 7j toutes dans le bon sens cette semaine ({len(gagnants)} phase(s) "
+            "matérielle(s) gagnante(s)) : le trend-following directionnel a payé."
+        )
+    elif perdants and not gagnants:
+        out.append(
+            f"Tendances 7j à contre-sens cette semaine ({len(perdants)} phase(s) perdante(s)) : "
+            "vérifier les bascules tardives sur les actifs concernés."
+        )
+    elif gagnants and perdants:
+        out.append(
+            f"Tendances 7j mitigées : {len(gagnants)} phase(s) gagnante(s) contre "
+            f"{len(perdants)} perdante(s), l'edge directionnel n'est pas homogène par actif."
+        )
+    # Cellules faibles persistantes -> learning de pilotage.
+    if any(c.faible_confirmee for c in bilan.cellules):
+        out.append(
+            "Au moins une cellule reste sous l'objectif sur 2 semaines : le Manager a "
+            "préparé une proposition (section 4), Thomas tranche, rien n'est appliqué "
+            "automatiquement."
+        )
+    return out
+
+
+# Seuil de matérialité d'un mouvement de tendance (% directionnel) pour qu'il
+# compte comme learning. En-dessous = bruit, ignoré (zéro sur-interprétation).
+_PERF_MATERIELLE_PCT = 0.5
 
 
 # Garde-fou honnêteté partagé avec le rapport backfill (cohérence du seuil).

@@ -118,6 +118,7 @@ class BilanSemaine:
     tendances: List["TendanceActif"] = field(default_factory=list)
     picks: List["PickSemaine"] = field(default_factory=list)  # post-mortem causal (S9)
     edge_familles: List["EdgeFamille"] = field(default_factory=list)  # où concentrer (S9)
+    detail_24h: List["Detail24hActif"] = field(default_factory=list)  # grille 24h/actif (S9)
     markdown: str = ""
 
 
@@ -659,6 +660,68 @@ def edge_par_famille(
     )
 
 
+@dataclass
+class Detail24hActif:
+    """Détail des calls 24h de la semaine pour UN actif (grille jour par jour)."""
+    actif: str
+    par_jour: Dict[int, Tuple[str, str]] = field(default_factory=dict)  # weekday -> (direction, outcome)
+    n_vrai: int = 0
+    n_concl: int = 0  # VRAI + FAUSSE
+
+    @property
+    def bilan(self) -> str:
+        return f"{self.n_vrai}/{self.n_concl}" if self.n_concl else "—"
+
+
+def detail_24h_par_actif(
+    now: datetime,
+    measures_log: Path = MEASURES_LOG,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+) -> List[Detail24hActif]:
+    """Détail des calls 24h de la semaine, par actif, jour par jour (équivalent
+    pour le 24h du tableau des tendances 7j). Un call est rangé sur le jour de son
+    ÉCHÉANCE (le jour où il s'est joué). Tous les actifs jugés, pas seulement le
+    top 3. Dédup (actif, échéance). Zéro invention : jour sans call = absent."""
+    from journaliste import iso_week_bounds, OUTCOME_VRAI, OUTCOME_FAUSSE  # noqa: PLC0415
+
+    monday, sunday = iso_week_bounds(now)
+    if not measures_log.exists():
+        return []
+    records: Dict[Tuple[str, str], dict] = {}
+    for line in measures_log.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(r, dict) or r.get("horizon") != "24h":
+            continue
+        records[(str(r.get("actif")), str(r.get("echeance")))] = r  # dédup, dernier
+
+    par_actif: Dict[str, Detail24hActif] = {}
+    for r in records.values():
+        try:
+            ech = date.fromisoformat(str(r.get("echeance")))
+        except (TypeError, ValueError):
+            continue
+        if not (monday <= ech <= sunday) or ech.weekday() > 4:  # Lun-Ven seulement
+            continue
+        outcome = str(r.get("outcome") or "")
+        direction = str(r.get("conclusion") or "")
+        if direction not in ("LONG", "SHORT"):
+            continue
+        d = par_actif.setdefault(str(r.get("actif")), Detail24hActif(actif=str(r.get("actif"))))
+        d.par_jour[ech.weekday()] = (direction, outcome)
+        if outcome == OUTCOME_VRAI:
+            d.n_vrai += 1
+            d.n_concl += 1
+        elif outcome == OUTCOME_FAUSSE:
+            d.n_concl += 1
+    return sorted(par_actif.values(), key=lambda d: d.actif)
+
+
 # ---------------------------------------------------------------------------
 # SECTION 2 — Performance par TENDANCE 7j, par actif (cœur de la demande)
 # ---------------------------------------------------------------------------
@@ -960,12 +1023,14 @@ def build_bilan_semaine(
     tend = tendances_par_actif(now, fiches=fiches)
     picks = _enrich_picks_semaine(now)
     edge_fam = edge_par_famille(fiches=fiches)
+    detail24 = detail_24h_par_actif(now)
 
     bilan = BilanSemaine(
         iso=iso, lundi=monday, dimanche=sunday, now=now, cellules=cellules,
         n_forte=conv.n_forte, taux_forte=conv.taux_forte,
         n_faible_conv=conv.n_faible, taux_faible_conv=conv.taux_faible,
         selection=sel, tendances=tend, picks=picks, edge_familles=edge_fam,
+        detail_24h=detail24,
     )
 
     propositions = [p for p in build_propositions(cellules) if proposition_valide(p)]
@@ -1071,6 +1136,42 @@ def _render_section1_selection(bilan: BilanSemaine, L: List[str]) -> None:
         )
         L.append("")
     _render_edge_familles(bilan, L)
+    _render_detail_24h(bilan, L)
+
+
+def _render_detail_24h(bilan: BilanSemaine, L: List[str]) -> None:
+    """Détail 24h de la semaine, par actif, jour par jour (équivalent 24h du
+    tableau des tendances 7j). Grille Actif × Lun→Ven : direction + verdict."""
+    details = [d for d in bilan.detail_24h if d.par_jour]
+    if not details:
+        return
+    L.append("### Détail 24h de la semaine, par actif")
+    L.append("")
+    L.append(
+        "> Tous nos calls 24h de la semaine, jour par jour (rangés au jour où ils se "
+        "sont joués). ✅ juste · ❌ faux · ⚪ non concluant · — pas de call. La colonne "
+        "Bilan = nombre de calls justes sur les calls tranchés."
+    )
+    L.append("")
+    L.append("| Actif | Lun | Mar | Mer | Jeu | Ven | Bilan |")
+    L.append("|---|---|---|---|---|---|---|")
+    for d in details:
+        cells = []
+        for wd in range(5):  # lundi(0) → vendredi(4)
+            cell = d.par_jour.get(wd)
+            if not cell:
+                cells.append("—")
+                continue
+            direction, outcome = cell
+            if outcome == "VRAI":
+                glyph = "✅"
+            elif outcome in ("FAUSSE", "FAUX"):
+                glyph = "❌"
+            else:
+                glyph = "⚪"
+            cells.append(f"{direction} {glyph}")
+        L.append(f"| {d.actif} | " + " | ".join(cells) + f" | {d.bilan} |")
+    L.append("")
 
 
 def _render_edge_familles(bilan: BilanSemaine, L: List[str]) -> None:

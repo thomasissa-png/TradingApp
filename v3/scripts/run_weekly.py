@@ -664,7 +664,9 @@ def edge_par_famille(
 class Detail24hActif:
     """Détail des calls 24h de la semaine pour UN actif (grille jour par jour)."""
     actif: str
-    par_jour: Dict[int, Tuple[str, str]] = field(default_factory=dict)  # weekday -> (direction, outcome)
+    # weekday -> (direction, outcome, perf_dir) ; perf_dir = % de gain/perte dans
+    # le sens du call (signe selon LONG/SHORT), None si prix manquant.
+    par_jour: Dict[int, Tuple[str, str, Optional[float]]] = field(default_factory=dict)
     n_vrai: int = 0
     n_concl: int = 0  # VRAI + FAUSSE
 
@@ -712,8 +714,11 @@ def detail_24h_par_actif(
         direction = str(r.get("conclusion") or "")
         if direction not in ("LONG", "SHORT"):
             continue
+        rp = r.get("realized_pct")
+        perf_dir = (round((1.0 if direction == "LONG" else -1.0) * float(rp), 2)
+                    if isinstance(rp, (int, float)) else None)
         d = par_actif.setdefault(str(r.get("actif")), Detail24hActif(actif=str(r.get("actif"))))
-        d.par_jour[ech.weekday()] = (direction, outcome)
+        d.par_jour[ech.weekday()] = (direction, outcome, perf_dir)
         if outcome == OUTCOME_VRAI:
             d.n_vrai += 1
             d.n_concl += 1
@@ -1149,8 +1154,9 @@ def _render_detail_24h(bilan: BilanSemaine, L: List[str]) -> None:
     L.append("")
     L.append(
         "> Tous nos calls 24h de la semaine, jour par jour (rangés au jour où ils se "
-        "sont joués). ✅ juste · ❌ faux · ⚪ non concluant · — pas de call. La colonne "
-        "Bilan = nombre de calls justes sur les calls tranchés."
+        "sont joués). Chaque case = direction, **% de gain/perte dans le sens du call** "
+        "(le plus important) et verdict ✅ juste · ❌ faux · ⚪ non concluant. « — » = pas "
+        "de call. Bilan = calls justes sur les calls tranchés."
     )
     L.append("")
     L.append("| Actif | Lun | Mar | Mer | Jeu | Ven | Bilan |")
@@ -1162,14 +1168,14 @@ def _render_detail_24h(bilan: BilanSemaine, L: List[str]) -> None:
             if not cell:
                 cells.append("—")
                 continue
-            direction, outcome = cell
+            direction, outcome, perf = cell
             if outcome == "VRAI":
                 glyph = "✅"
             elif outcome in ("FAUSSE", "FAUX"):
                 glyph = "❌"
             else:
                 glyph = "⚪"
-            cells.append(f"{direction} {glyph}")
+            cells.append(f"{direction} {_fmt_signed_pct(perf)} {glyph}")
         L.append(f"| {d.actif} | " + " | ".join(cells) + f" | {d.bilan} |")
     L.append("")
 

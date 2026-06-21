@@ -473,36 +473,37 @@ def test_detail_24h_par_actif_grille(tmp_path):
     log = tmp_path / "measures-log.jsonl"
     _write_measures_log(log, [
         {"actif": "Or", "horizon": "24h", "conclusion": "SHORT", "outcome": "VRAI",
-         "echeance": "2026-06-16", "bulletin_date": "2026-06-15"},          # mardi
+         "realized_pct": -2.0, "echeance": "2026-06-16", "bulletin_date": "2026-06-15"},   # mardi
         {"actif": "Or", "horizon": "24h", "conclusion": "SHORT", "outcome": "FAUSSE",
-         "echeance": "2026-06-17", "bulletin_date": "2026-06-16"},          # mercredi
+         "realized_pct": 1.5, "echeance": "2026-06-17", "bulletin_date": "2026-06-16"},     # mercredi
         {"actif": "Or", "horizon": "24h", "conclusion": "LONG", "outcome": "non-conclusive",
-         "echeance": "2026-06-18", "bulletin_date": "2026-06-17"},          # jeudi
+         "realized_pct": None, "echeance": "2026-06-18", "bulletin_date": "2026-06-17"},    # jeudi
         {"actif": "Or", "horizon": "24h", "conclusion": "SHORT", "outcome": "VRAI",
-         "echeance": "2026-06-20", "bulletin_date": "2026-06-19"},          # samedi → exclu
+         "realized_pct": -1.0, "echeance": "2026-06-20", "bulletin_date": "2026-06-19"},    # samedi → exclu
     ])
     res = rw.detail_24h_par_actif(NOW, measures_log=log)
     assert len(res) == 1
     d = res[0]
     assert d.actif == "Or"
-    assert d.par_jour[1] == ("SHORT", "VRAI")        # mardi
-    assert d.par_jour[2] == ("SHORT", "FAUSSE")      # mercredi
-    assert d.par_jour[3][1] == "non-conclusive"      # jeudi
-    assert 5 not in d.par_jour                        # samedi exclu
-    assert d.n_vrai == 1 and d.n_concl == 2          # non-conclusive hors bilan
+    # (direction, outcome, perf_dir) ; perf_dir = signe(call) × realized_pct.
+    assert d.par_jour[1] == ("SHORT", "VRAI", 2.0)      # mardi : SHORT, -2 % brut → +2 %
+    assert d.par_jour[2] == ("SHORT", "FAUSSE", -1.5)   # mercredi : SHORT, +1,5 % → -1,5 %
+    assert d.par_jour[3][1] == "non-conclusive" and d.par_jour[3][2] is None  # jeudi, prix absent
+    assert 5 not in d.par_jour                           # samedi exclu
+    assert d.n_vrai == 1 and d.n_concl == 2             # non-conclusive hors bilan
     assert d.bilan == "1/2"
 
 
 def test_render_detail_24h_dans_section1():
     """Le rendu Section 1 inclut la grille 24h par actif quand des calls existent."""
-    d = rw.Detail24hActif(actif="Or", par_jour={0: ("SHORT", "VRAI")}, n_vrai=1, n_concl=1)
+    d = rw.Detail24hActif(actif="Or", par_jour={0: ("SHORT", "VRAI", 2.2)}, n_vrai=1, n_concl=1)
     bilan = SimpleNamespace(detail_24h=[d])
     L: list = []
     rw._render_detail_24h(bilan, L)
     md = "\n".join(L)
     assert "### Détail 24h de la semaine, par actif" in md
     assert "| Actif | Lun | Mar | Mer | Jeu | Ven | Bilan |" in md
-    assert "SHORT ✅" in md
+    assert "SHORT +2,2 % ✅" in md   # direction + % de gain/perte + verdict
 
 
 def test_section4_alerte_evenement_programme():

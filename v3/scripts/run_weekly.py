@@ -429,6 +429,7 @@ class PickSemaine:
     quasi_neutre: bool = False
     cause_news: Optional[str] = None     # résumé de la news high du jour (ou None)
     evenement_programme: Optional[str] = None  # nom de l'événement calendaire majeur (ou None)
+    famille: Optional[str] = None        # famille granulaire de la fiche (ex. métaux-précieux)
 
     @property
     def vrai(self) -> bool:
@@ -1122,6 +1123,14 @@ def build_bilan_semaine(
     sel = selection_semaine(now)
     tend = tendances_par_actif(now, fiches=fiches)
     picks = _enrich_picks_semaine(now)
+    # Famille granulaire par pick (sert au learning « biais LONG métaux », S-MÉTAUX).
+    _fam_par_cle = {
+        cle: str((f or {}).get("famille") or "").strip().lower()
+        for cle, f in (fiches or {}).items()
+    }
+    for _p in picks:
+        if _p.fiche_key and _p.fiche_key in _fam_par_cle:
+            _p.famille = _fam_par_cle[_p.fiche_key] or None
     edge_fam = edge_par_famille(fiches=fiches)
     detail24 = detail_24h_par_actif(now)
     rates = mouvements_rates_semaine(now)
@@ -1832,51 +1841,100 @@ def _learnings_semaine(bilan: BilanSemaine) -> List[str]:
     picks = bilan.picks
 
     # === SYNTHÈSE (en tête) : ce qu'on doit retenir des sections 1 à 4. ===
+    # NB : on NE classe PLUS les actifs en « gagnants / perdants » sur une semaine
+    # (1-2 paris par actif = bruit, pas un edge — verdict unanime des 3 experts).
+    # Le win rate appartient au PROCESS, pas à l'actif. On raisonne donc par rang,
+    # par type de signal et par contexte, jamais par actif sur N hebdo.
 
-    # S-A — où on gagne / où on perd nettement (depuis la grille 24h par actif).
-    det = [d for d in bilan.detail_24h if d.n_concl >= 3]
-    gagnants_act = [d.actif for d in det if d.n_vrai == d.n_concl]   # 100 % sur ≥ 3
-    perdants_act = [d.actif for d in det if d.n_vrai == 0]            # 0 % sur ≥ 3
-    if gagnants_act or perdants_act:
-        bouts = []
-        if gagnants_act:
-            bouts.append("on gagne nettement sur " + ", ".join(gagnants_act))
-        if perdants_act:
-            bouts.append("on perd nettement sur " + ", ".join(perdants_act))
-        out.append(
-            "À retenir : " + " ; ".join(bouts) + " → prioriser les premiers dans le "
-            "top 3, se méfier des seconds."
-        )
+    # S-CADRE (Analyst) — le garde-fou OUVRE la section : il pose le cadre avant
+    # toute observation. Aucun chiffre hebdo n'est significatif seul ; un learning
+    # ORIENTE, il ne devient une règle de fond qu'après ~50 paris cumulés.
+    out.append(
+        "Cadre de lecture : avec ~8 paris/semaine, AUCUN chiffre ci-dessous n'est "
+        "significatif seul (un win rate hebdo de 30 à 80 % reste compatible avec "
+        "50 % réel). Ces learnings ORIENTENT la semaine ; on ne bascule une piste en "
+        "règle de fond qu'après ~50 paris cumulés (≈ 10 semaines) — chaque piste "
+        "ci-dessous précise son déclencheur chiffré."
+    )
 
-    # S-B — opportunités ratées (gros mouvements hors top 3).
+    # S-RANG — le meilleur pari du jour (Top 1) gagne-t-il nettement plus que le
+    # Top 3 ? Si oui, c'est LE levier vers 70 % : concentrer sur le Top 1.
+    top1 = _top1_picks(picks)
+    nv1, nt1, _ = _agg_picks(top1)
+    nv3, nt3, _ = _agg_picks(picks)
+    if nt1 >= 2 and nt3 > nt1:
+        wr1, wr3 = nv1 / nt1 * 100.0, nv3 / nt3 * 100.0
+        if wr1 - wr3 >= 15.0:
+            out.append(
+                f"Le meilleur pari du jour (Top 1) gagne {wr1:.0f}% ({nv1}/{nt1}) contre "
+                f"{wr3:.0f}% ({nv3}/{nt3}) pour le Top 3 : le 2e/3e choix tire le win rate "
+                "vers le bas. Action testable dès maintenant : concentrer sur le Top 1 "
+                "(privilégier 1 pari principal/jour plutôt que 3). Échantillon minuscule "
+                f"(N={nt1}) — DÉCLENCHEUR pour passer en Top-1-only durable : l'écart tient "
+                "sur ≥ 20 paris cumulés (≈ 3-4 semaines)."
+            )
+
+    # S-B — opportunités ratées (gros mouvements hors top 3). On normalise (Analyst) :
+    # le ratio bons-calls-sous-classés / total est plus parlant que le comptage brut.
     rates = bilan.mouvements_rates
     sous_classes = [m for m in rates if "opportunité ratée" in m.raison]
     if rates:
-        détail = f", dont {len(sous_classes)} bon(s) call(s) sous-classé(s)" if sous_classes else ""
+        if sous_classes:
+            part = len(sous_classes) / len(rates) * 100.0
+            détail = f", dont {len(sous_classes)}/{len(rates)} ({part:.0f}%) bons calls sous-classés"
+        else:
+            détail = ""
         out.append(
             f"On a raté {len(rates)} mouvement(s) de plus de 1 % hors top 3{détail} : "
-            "revoir le classement pour ne pas laisser un bon signal hors sélection."
+            "revoir le classement — mais ne remonter que les signaux SOLIDES "
+            "(multi-critère ou portés par une news), jamais les mono-critère / "
+            "coin-flip, qui restent exclus à raison même quand ils gagnent."
         )
 
-    # S-C — paris perdus un jour d'événement programmé (faute évitable).
+    # S-MÉTAUX (News Trader) — biais directionnel HAUSSIER sur les métaux qui a coûté.
+    # Un repricing Fed est un RÉGIME (dollar/taux en tendance sur plusieurs jours),
+    # pas un événement ponctuel : la règle FOMC ne le couvre pas. Observation ancrée
+    # (vrais LONG métaux perdus) + directive de vérification macro (zéro invention).
+    METAUX = {"métaux-précieux", "métaux-industriels"}
+    long_met_perdus = [
+        p for p in picks
+        if not p.vrai and p.call == "LONG" and (p.famille or "").lower() in METAUX
+    ]
+    if len(long_met_perdus) >= 2:
+        noms = ", ".join(f"{p.actif} ({_fmt_signed_pct(p.realized_pct)})" for p in long_met_perdus)
+        out.append(
+            f"Biais LONG métaux qui a coûté : {len(long_met_perdus)} paris LONG sur les "
+            f"métaux perdus cette semaine ({noms}). En régime de hausse du dollar et des "
+            "taux (repricing Fed), ne PAS acheter le contre-pied haussier des métaux : "
+            "vérifier la tendance dollar/taux 5-10 jours avant tout LONG métal — en régime "
+            "hawkish, la macro domine le signal quant. DÉCLENCHEUR : si le pattern se "
+            "répète, ajouter un filtre « vent macro contraire » au scoring."
+        )
+
+    # S-NOTRADE — règle de précaution « jour blanc » (Spéculateur + Analyst). Couvre
+    # les jours de verdict programmé ET les Top 1 sans signal solide. Précaution
+    # ASSUMÉE : pas de déclencheur chiffré ici (contrairement aux autres pistes) car
+    # éviter un risque connu à l'avance ne coûte rien — confirmation non requise.
     evt_perdus = [p for p in picks if not p.vrai and p.evenement_programme]
-    if evt_perdus:
+    top1_faibles = [p for p in top1 if p.drapeau_faible and not p.news_driven]
+    if evt_perdus or top1_faibles:
+        if evt_perdus:
+            preuve = (f" Cette semaine : {len(evt_perdus)} pari(s) perdu(s) un jour "
+                      f"d'événement programmé (ex. {evt_perdus[0].evenement_programme}) — "
+                      "le cas type à passer en flat.")
+        else:
+            preuve = (f" Cette semaine : le meilleur pari du jour reposait sur un signal "
+                      f"faible ({top1_faibles[0].actif}) — à ne pas jouer.")
         out.append(
-            f"{len(evt_perdus)} pari(s) perdu(s) un jour d'événement programmé "
-            f"(ex. {evt_perdus[0].evenement_programme}) : baisser la certitude, voire "
-            "écarter du top 3, les jours de grosse échéance connue à l'avance."
+            "Règle de NO-TRADE (jour blanc), à appliquer SANS attendre de confirmation "
+            "(éviter un risque connu ne coûte rien) : aucun pari directionnel un jour de "
+            "verdict programmé (FOMC, BCE, OPEP, NFP, CPI…), NI quand le meilleur pari du "
+            "jour (Top 1) n'est porté par aucun signal solide (mono-critère ou coin-flip "
+            "seul). On sort l'actif, on ne le joue pas dégradé." + preuve
         )
 
-    # Règle 5.1 — drapeaux de signal faible qui ratent.
-    picks_drap = [p for p in picks if p.drapeau_faible]
-    rates_drap = [p for p in picks_drap if not p.vrai]
-    if rates_drap:
-        out.append(
-            f"Les picks au signal faible (coin-flip / mono-critère) ont raté "
-            f"{len(rates_drap)}/{len(picks_drap)} fois cette semaine. À surveiller : si le "
-            "pattern se confirme la semaine prochaine, durcir le filtre (un signal faible "
-            "ne passe pas dans le top 3)."
-        )
+    # (L'ancienne Règle 5.1 « drapeaux de signal faible » est supprimée : la règle
+    # NO-TRADE ci-dessus + le filtre « signaux solides » de S-B la couvrent déjà.)
 
     # Règle 5.2 — news-driven vs quant-pur sur les picks de la semaine.
     nd = [p for p in picks if p.news_driven]
@@ -1885,13 +1943,23 @@ def _learnings_semaine(bilan: BilanSemaine) -> List[str]:
         def _wr(lst):
             return (sum(1 for p in lst if p.vrai) / len(lst) * 100.0) if lst else None
         wn, wq = _wr(nd), _wr(qp)
+        # Flag N<3 inline (Analyst) : un 100 % sur 2 paris n'est pas interprétable.
+        def _seg(label: str, wr: float, n: int) -> str:
+            return f"{label} {wr:.0f}% ({n}{', non interprétable' if n < 3 else ''})"
         morceaux = []
         if wn is not None:
-            morceaux.append(f"news-driven {wn:.0f}% ({len(nd)})")
+            morceaux.append(_seg("news-driven", wn, len(nd)))
         if wq is not None:
-            morceaux.append(f"quant-pur {wq:.0f}% ({len(qp)})")
+            morceaux.append(_seg("quant-pur", wq, len(qp)))
         verdict = ""
-        if wn is not None and wq is not None and (len(nd) < 3 or len(qp) < 3):
+        # Signal poison repéré par le Spéculateur : un call quant-pur sans news ni
+        # multi-critère qui plafonne ≈ pile-ou-face. On le pointe même à N faible.
+        if wq is not None and wq <= 40.0 and len(qp) >= 2:
+            verdict = (" Le quant-pur se comporte comme un pile-ou-face : candidat à "
+                       "écarter du top 3 s'il n'est ni porté par une news ni multi-critère. "
+                       "DÉCLENCHEUR : s'il reste ≤ 40 % sur ≥ 20 paris cumulés, l'exclure "
+                       "du top 3 en dur.")
+        elif wn is not None and wq is not None and (len(nd) < 3 or len(qp) < 3):
             verdict = " N encore faible dans un segment, ne pas généraliser."
         elif wn is not None and wq is not None:
             verdict = (" Le flair news a mieux payé." if wn > wq
@@ -1925,12 +1993,14 @@ def _learnings_semaine(bilan: BilanSemaine) -> List[str]:
             "60% sur plus de paris, envisager d'élargir un peu le top 3."
         )
 
-    # Règle 5.6 — fallback unique.
-    if not out:
+    # Règle 5.6 — fallback : aucune piste au-delà du cadre de lecture (out[0]).
+    if len(out) == 1:
         out.append(
-            "Pas de learning net cette semaine : trop peu de paris par catégorie (warm-up) "
+            "Pas de piste nette cette semaine : trop peu de paris par catégorie (warm-up) "
             "pour conclure de façon fiable. On continue de mesurer."
         )
+
+    # Cadre de lecture (S-CADRE) en tête + au plus 4 pistes derrière.
     return out[:5]
 
 

@@ -617,6 +617,77 @@ def test_section5_learning_news_vs_quant():
     assert "news-driven" in blob and "quant-pur" in blob
 
 
+def test_section5_cadre_de_lecture_ouvre_la_section():
+    """Le garde-fou statistique (Analyst) OUVRE TOUJOURS la section 5 (cadre avant chiffres)."""
+    learnings = rw._learnings_semaine(_bilan_stub([]))
+    assert learnings[0].startswith("Cadre de lecture")
+    assert "50 paris cumulés" in learnings[0]
+    assert len(learnings) <= 5
+
+
+def test_section5_learning_rang_top1_vs_top3():
+    """S-RANG : si le Top 1 gagne nettement plus que le Top 3, le dire (levier 70 %)."""
+    lun, mar, mer = date(2026, 6, 15), date(2026, 6, 16), date(2026, 6, 17)
+    picks = [
+        _pick("Or", "SHORT", "VRAI", 0.0, score=5.0, bdate=lun),   # top1 lun
+        _pick("Blé", "SHORT", "FAUSSE", 0.0, score=1.0, bdate=lun),
+        _pick("Cuivre", "LONG", "VRAI", 0.0, score=5.0, bdate=mar),  # top1 mar
+        _pick("VIX", "SHORT", "FAUSSE", 0.0, score=1.0, bdate=mar),
+        _pick("Pétrole (Brent)", "SHORT", "VRAI", 0.0, score=5.0, bdate=mer),  # top1 mer
+        _pick("S&P 500", "LONG", "FAUSSE", 0.0, score=1.0, bdate=mer),
+    ]
+    blob = " ".join(rw._learnings_semaine(_bilan_stub(picks)))
+    assert "Top 1" in blob and "concentrer sur le Top 1" in blob
+    assert "DÉCLENCHEUR" in blob and "20 paris" in blob   # seuil de bascule chiffré
+
+
+def test_section5_learning_biais_long_metaux():
+    """S-MÉTAUX (News Trader) : ≥ 2 LONG métaux perdus → alerte contre-pied haussier."""
+    p1 = _pick("Argent", "LONG", "FAUSSE", 0.10, mv=-8.7)
+    p1.famille = "métaux-précieux"
+    p2 = _pick("Cuivre", "LONG", "FAUSSE", 0.10, mv=-3.0)
+    p2.famille = "métaux-industriels"
+    blob = " ".join(rw._learnings_semaine(_bilan_stub([p1, p2])))
+    assert "Biais LONG métaux" in blob and "repricing Fed" in blob
+    assert "dollar" in blob   # directive de vérification macro
+
+
+def test_section5_regle_no_trade_jour_blanc():
+    """S-NOTRADE : jour de verdict programmé OU Top 1 sans signal solide → jour blanc.
+    Règle de précaution explicite (sans déclencheur chiffré, assumé)."""
+    blob = " ".join(rw._learnings_semaine(_bilan_stub([
+        _pick("S&P 500", "LONG", "FAUSSE", 0.10, evt="Décision de taux Fed (FOMC)"),
+    ])))
+    assert "NO-TRADE" in blob and "jour blanc" in blob
+    assert "FOMC" in blob and "SANS attendre de confirmation" in blob
+
+
+def test_section5_no_trade_top1_signal_faible():
+    """S-NOTRADE se déclenche aussi quand le Top 1 ne tient que sur un signal faible."""
+    blob = " ".join(rw._learnings_semaine(_bilan_stub([
+        _pick("Cacao", "LONG", "FAUSSE", 0.10, coin_flip=True),
+    ])))
+    assert "NO-TRADE" in blob and "signal faible" in blob
+
+
+def test_section5_opportunites_ratees_caveat_mono_critere():
+    """S-B : ne remonter que les signaux solides, jamais les mono-critère."""
+    mr = rw.MouvementRate(actif="Pétrole (Brent)", jour=date(2026, 6, 15), call="SHORT",
+                          perf_dir=10.5, variation_brute=-10.5,
+                          raison="bon call NON classé dans le top 3 ... opportunité ratée")
+    blob = " ".join(rw._learnings_semaine(_bilan_stub([], mouvements_rates=[mr])))
+    assert "signaux SOLIDES" in blob and "mono-critère" in blob
+
+
+def test_section5_quant_pur_pile_ou_face():
+    """5.2 : un quant-pur qui plafonne ≤ 40 % est pointé comme un pile-ou-face à écarter."""
+    blob = " ".join(rw._learnings_semaine(_bilan_stub([
+        _pick("Café (Arabica)", "SHORT", "FAUSSE", 0.10),
+        _pick("Blé", "SHORT", "FAUSSE", 0.05),
+    ])))
+    assert "pile-ou-face" in blob
+
+
 def test_manager_n_applique_rien_avec_segmentation(monkeypatch, tmp_path):
     """CA-W4 sur le chemin segmentation : aucune écriture v3/config/ (re-vérif)."""
     import subprocess

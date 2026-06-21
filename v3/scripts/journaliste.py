@@ -3116,6 +3116,12 @@ def measure_to_record(m: Measure) -> Dict[str, Any]:
         "score": cell.score,
         "outcome": m.outcome,
         "realized_pct": m.delta_pct,
+        # Prix de DÉPART (émission/ouverture) et de SORTIE (clôture à l'échéance) :
+        # toujours tracés pour le tableau « Variations 24h » ET pour auditer la
+        # mesure (realized_pct doit valoir (sortie − départ) / départ). None si un
+        # prix manque (zéro invention).
+        "prix_emission": m.prix_emission,
+        "prix_echeance": m.prix_courant,
         "is_flip": m.is_flip,
         "echeance": m.echeance.isoformat(),
         # Provenance news QUANTIFIÉE (mesure de justesse news vs quant — additif,
@@ -3244,6 +3250,14 @@ def run(
         logger.info("measures-log.jsonl écrit : %s (%d mesures)", measures_log_path, len(measures))
     except Exception as e:  # noqa: BLE001
         logger.warning("measures-log KO (non bloquant) : %s", e)
+
+    # Onglet « Variations 24h » (> 1 %) — reconstruit depuis le measures-log frais.
+    # Lazy import (bilan_jour importe journaliste → éviter le cycle). Best-effort.
+    try:
+        from bilan_jour import write_variations_24h  # noqa: PLC0415
+        write_variations_24h(now=now)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("variations-24h KO (non bloquant) : %s", e)
 
     # Calibration (best-effort, non bloquant)
     try:

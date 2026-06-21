@@ -344,3 +344,59 @@ def test_render_sortie_timing_visible_en_section1():
     b.perf_top3 = [_perf("Argent", "LONG", 1.2, 2.5, "12h", vendre="Pas vendre")]
     md = "\n".join(bj._render_sortie_timing(b))
     assert "clôturé TROP TARD" in md and "pic +2.50% à 12h" in md
+
+
+# ===========================================================================
+# Onglet « Variations 24h > 1 % »
+# ===========================================================================
+
+def _write_measures(tmp: Path, rows: list) -> Path:
+    import json as _j
+    p = tmp / "measures-log.jsonl"
+    p.write_text("\n".join(_j.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
+    return p
+
+
+def test_variations_24h_filtre_tri_et_prix(tmp_path: Path):
+    log = _write_measures(tmp_path, [
+        {"actif": "Or", "horizon": "24h", "conclusion": "SHORT", "realized_pct": -4.2,
+         "prix_emission": 4500.0, "prix_echeance": 4311.0, "echeance": "2026-06-18", "bulletin_date": "2026-06-17"},
+        {"actif": "S&P 500", "horizon": "24h", "conclusion": "LONG", "realized_pct": 2.0,
+         "prix_emission": 5800.0, "prix_echeance": 5916.0, "echeance": "2026-06-17", "bulletin_date": "2026-06-16"},
+        {"actif": "Blé", "horizon": "24h", "conclusion": "SHORT", "realized_pct": 0.3,  # < 1 % → exclu
+         "echeance": "2026-06-18", "bulletin_date": "2026-06-17"},
+        {"actif": "Or", "horizon": "7j", "conclusion": "SHORT", "realized_pct": -9.0,    # pas 24h → exclu
+         "echeance": "2026-06-18", "bulletin_date": "2026-06-17"},
+    ])
+    vs = bj.variations_24h_significatives(
+        measures_log_path=log, decision_log_dir=tmp_path / "none", events_path=tmp_path / "noevents.md",
+    )
+    assert [v.actif for v in vs] == ["Or", "S&P 500"]          # récent → ancien, > 1 %, 24h only
+    assert vs[0].sens == "baisse" and vs[0].prix_depart == 4500.0 and vs[0].prix_sortie == 4311.0
+    assert vs[1].sens == "hausse" and vs[1].variation_pct == 2.0
+    assert all(v.joue is False for v in vs)                    # aucune sélection fournie
+
+
+def test_variations_24h_joue_via_selection(tmp_path: Path):
+    import json as _j
+    log = _write_measures(tmp_path, [
+        {"actif": "Or", "horizon": "24h", "conclusion": "SHORT", "realized_pct": -4.2,
+         "echeance": "2026-06-18", "bulletin_date": "2026-06-17"},
+    ])
+    dlog = tmp_path / "decision-log"
+    dlog.mkdir()
+    (dlog / "2026-06-17-0700.jsonl").write_text(
+        _j.dumps({"bulletin_date": "2026-06-17", "actif": "Or", "horizon": "24h",
+                  "selection_du_jour": True}) + "\n", encoding="utf-8")
+    vs = bj.variations_24h_significatives(
+        measures_log_path=log, decision_log_dir=dlog, events_path=tmp_path / "noevents.md")
+    assert vs[0].joue is True and vs[0].call == "SHORT"
+
+
+def test_render_variations_24h_colonnes():
+    v = bj.Variation24h(jour=date(2026, 6, 18), actif="Or", sens="baisse",
+                        prix_depart=4500.0, prix_sortie=4311.0, variation_pct=-4.2,
+                        joue=True, call="SHORT", raison="Fed hawkish")
+    md = bj.render_variations_24h([v])
+    assert "| Jour | Actif | Sens | Prix départ | Prix sortie | Variation | Joué | Raison du mouvement |" in md
+    assert "Or | ↓ baisse | 4500 | 4311 | -4.20% | Oui · SHORT | Fed hawkish" in md

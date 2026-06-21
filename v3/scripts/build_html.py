@@ -312,6 +312,17 @@ def load_performance_md(path: Path = PERFORMANCE_MD_FILE) -> Optional[str]:
     return _read_md(path)
 
 
+VARIATIONS_MD_FILE = ROOT / "data" / "variations-24h.md"
+
+
+def load_variations_md(path: Path = VARIATIONS_MD_FILE) -> Optional[str]:
+    """Lit le tableau « Variations 24h > 1 % » (markdown brut), ou None si absent
+    (onglet alors vide : « le tableau se remplira jour après jour »)."""
+    if not path.exists():
+        return None
+    return _read_md(path)
+
+
 def _entries_to_js(entries: List[Dict[str, str]], meta_keys: List[str]) -> str:
     """Sérialise une liste d'entrées {meta..., markdown} en tableau JS.
 
@@ -335,6 +346,7 @@ def render_html(
     weekly: Optional[Dict[str, str]] = None,
     weeklies: Optional[List[Dict[str, str]]] = None,
     performance_md: Optional[str] = None,
+    variations_md: Optional[str] = None,
 ) -> str:
     """Génère le HTML autonome."""
     # Timestamp de génération en libellé FR lisible (refonte S9 : plus de format
@@ -375,6 +387,12 @@ def render_html(
         winrate_js = "`" + escape_for_js_template_literal(performance_md) + "`"
     else:
         winrate_js = "null"
+
+    # Onglet « Variations 24h » (> 1 %) : markdown brut embarqué (même pipeline).
+    if variations_md:
+        variations_js = "`" + escape_for_js_template_literal(variations_md) + "`"
+    else:
+        variations_js = "null"
 
     embedded = len(payload)
     truncated_note = ""
@@ -1051,6 +1069,7 @@ def render_html(
       <li><a href="#vue=aujourdhui" id="nav-today" class="nav-view-link">📅 Aujourd'hui</a></li>
       <li><a href="#vue=semaine" id="nav-week" class="nav-view-link">🗓️ Bilan semaine</a></li>
       <li><a href="#vue=performance" id="nav-history" class="nav-view-link">📊 Performance</a></li>
+      <li><a href="#vue=variations" id="nav-variations" class="nav-view-link">📈 Variations 24h</a></li>
     </ul>
     <div class="nav-section-label">Bulletins</div>
     <ul id="bulletin-list"></ul>
@@ -1145,6 +1164,12 @@ def render_html(
         </div>
         <p id="history-empty" hidden></p>
       </section>
+      <section id="variations-view" hidden aria-label="Variations 24h de nos actifs (mouvements de plus de 1%)">
+        <h1>📈 Variations 24h</h1>
+        <p class="lead">Toutes les variations 24h de nos actifs de plus de 1 %, du plus récent au plus ancien : le jour, l'actif, le sens, le prix de départ et de sortie, la variation, si on l'a joué, et la raison du mouvement.</p>
+        <div id="variations-content"></div>
+        <p id="variations-empty" hidden></p>
+      </section>
       <p class="gen-meta" aria-label="Date de génération de la page">
         Page générée le <time datetime="{generated_at_iso}">{generated_at}</time>{truncated_note}
       </p>
@@ -1159,6 +1184,7 @@ const WEEKLIES = {weeklies_js}; // tous les bilans de semaine (datés au dimanch
 const MEASURES = {measures_js};
 const PERF_AB = {perf_ab_js};
 const WINRATE_MD = {winrate_js};   // tableau win-rate-only (performance.md) ou null
+const VARIATIONS_MD = {variations_js};   // grand tableau « Variations 24h > 1 % » ou null
 
 // Colorisation idempotente des cellules de tableau :
 // - "LONG" / "SHORT" enveloppés dans <span class="dir-long|dir-short">
@@ -2046,7 +2072,7 @@ function clearAuxNavActive() {{
 // bulletin + sa chrome (légende, sous-nav, aide) et n'affiche QUE la section
 // demandée. `sectionId` = id de la <section> à afficher.
 function showAuxView(sectionId, navId) {{
-  ['today-view', 'week-view', 'history-view'].forEach(s => {{
+  ['today-view', 'week-view', 'history-view', 'variations-view'].forEach(s => {{
     const el = document.getElementById(s);
     if (el) el.hidden = (s !== sectionId);
   }});
@@ -2063,6 +2089,7 @@ function showAuxView(sectionId, navId) {{
   const AUX_TITLES = {{
     'nav-today': 'Aujourd\\'hui',
     'nav-week': 'Bilan semaine', 'nav-history': 'Performance',
+    'nav-variations': 'Variations 24h',
   }};
   document.title = `${{AUX_TITLES[navId] || 'Vue'}} · TradingApp v3`;
   renderList(null);
@@ -2072,7 +2099,7 @@ function showAuxView(sectionId, navId) {{
 
 // Quitte toute vue auxiliaire et restaure la vue bulletin (légende, aide…).
 function hideAuxViews() {{
-  ['today-view', 'week-view', 'history-view'].forEach(s => {{
+  ['today-view', 'week-view', 'history-view', 'variations-view'].forEach(s => {{
     const el = document.getElementById(s);
     if (el) el.hidden = true;
   }});
@@ -2115,6 +2142,28 @@ function showHistory() {{
   renderHistoryTable();
   showAuxView('history-view', 'nav-history');
   history.replaceState(null, '', '#vue=performance');
+}}
+// Onglet « Variations 24h » : un grand tableau des mouvements 24h > 1 %, rendu
+// depuis le markdown embarqué (VARIATIONS_MD), même pipeline que les autres vues.
+function buildVariationsView() {{
+  const content = document.getElementById('variations-content');
+  const empty = document.getElementById('variations-empty');
+  if (!content) return;
+  if (!VARIATIONS_MD) {{
+    content.innerHTML = '';
+    if (empty) {{ empty.hidden = false; empty.textContent = 'Aucune variation 24h de plus de 1 % enregistrée pour le moment : le tableau se remplira jour après jour.'; }}
+    return;
+  }}
+  if (empty) empty.hidden = true;
+  // On retire le H1 du markdown (la vue a déjà son titre) : rendu à partir du 1er « _ » d'intro ou du tableau.
+  const md = VARIATIONS_MD;
+  const idx = md.search(/^(\\||_|##) /m);
+  renderMarkdownInto(content, idx > 0 ? md.slice(idx) : md);
+}}
+function showVariations() {{
+  buildVariationsView();
+  showAuxView('variations-view', 'nav-variations');
+  history.replaceState(null, '', '#vue=variations');
 }}
 
 // --- Rendu markdown mutualisé (suivis, bilans, semaine) -------------------
@@ -2494,6 +2543,7 @@ function closeSidebarMobile() {{
   if (rawHash === 'vue=aujourdhui') {{ showToday(); return; }}
   if (rawHash === 'vue=semaine') {{ showWeek(); return; }}
   if (rawHash === 'vue=performance' || rawHash === 'vue=historique' || rawHash === 'vue=resultats') {{ showHistory(); return; }}
+  if (rawHash === 'vue=variations') {{ showVariations(); return; }}
 
   const days = listDays();
   if (days.length === 0) {{
@@ -2529,9 +2579,11 @@ def main() -> int:
     weeklies = build_weeklies_payload()
     weekly = weeklies[0] if weeklies else None
     performance_md = load_performance_md()
+    variations_md = load_variations_md()
     html = render_html(
         payload, total, measures=measures, perf_ab=perf_ab,
         reports=reports, weekly=weekly, weeklies=weeklies, performance_md=performance_md,
+        variations_md=variations_md,
     )
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(html, encoding="utf-8")

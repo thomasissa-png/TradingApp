@@ -49,6 +49,11 @@ BILAN_JOUR_DIR = ROOT / "data" / "bilan-jour"
 # les relevés intraday 12h/18h). Persisté comme measures-log (source de vérité).
 SORTIE_TIMING_LOG = ROOT / "data" / "sortie-timing-log.jsonl"
 MANAGER_CONFIG_FILE = ROOT / "config" / "manager.yaml"
+# Onglet « Variations 24h » : un grand tableau de TOUTES les variations 24h > 1 %
+# de nos actifs (récent → ancien), reconstruit du measures-log à chaque run.
+MEASURES_LOG_FILE = ROOT / "data" / "measures-log.jsonl"
+VARIATIONS_24H_FILE = ROOT / "data" / "variations-24h.md"
+SEUIL_VARIATION_PCT = 1.0
 
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
@@ -1918,6 +1923,138 @@ def write_bilan_jour(bilan: BilanJour, base_dir: Path = BILAN_JOUR_DIR) -> Path:
     return out_path
 
 
+# ===========================================================================
+# Onglet « Variations 24h » — un grand tableau de TOUTES les variations 24h > 1 %
+# de nos actifs, du plus récent au plus ancien. Pour chaque mouvement : le jour,
+# l'actif, le sens, le prix de départ, la variation, si on l'a joué, et la raison
+# du mouvement (news cohérente avec le sens). Reconstruit du measures-log.
+# ===========================================================================
+
+@dataclass
+class Variation24h:
+    jour: date                     # échéance (jour où la variation 24h est constatée)
+    actif: str
+    sens: str                      # "hausse" / "baisse"
+    prix_depart: Optional[float]   # prix d'émission (départ)
+    prix_sortie: Optional[float]   # prix à l'échéance (sortie)
+    variation_pct: float           # variation brute signée (realized_pct)
+    joue: bool                     # l'actif était-il dans le top 3 du jour ?
+    call: Optional[str]            # notre call si joué (LONG/SHORT)
+    raison: Optional[str]          # news cohérente avec le sens du mouvement (ou None)
+
+
+def variations_24h_significatives(
+    measures_log_path: Path = MEASURES_LOG_FILE,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+    events_path: Optional[Path] = None,
+    seuil_pct: float = SEUIL_VARIATION_PCT,
+) -> List[Variation24h]:
+    """TOUTES les variations 24h de nos actifs dont |mouvement| > `seuil_pct`,
+    triées du plus RÉCENT au plus ANCIEN. Lecture seule du measures-log + jointure
+    sélection (joué ou non) + news cohérente avec le sens (raison). Zéro invention :
+    prix/raison absents → None."""
+    if not measures_log_path.exists():
+        return []
+    # Dédup par (actif, échéance) : on garde le dernier enregistrement.
+    records: Dict[Tuple[str, str], dict] = {}
+    for line in measures_log_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(r, dict) or r.get("horizon") != "24h":
+            continue
+        rp = r.get("realized_pct")
+        if not isinstance(rp, (int, float)) or abs(rp) < seuil_pct:
+            continue
+        records[(str(r.get("actif")), str(r.get("echeance")))] = r
+
+    sel_cache: Dict[date, Dict[Tuple[str, str], bool]] = {}
+    out: List[Variation24h] = []
+    for r in records.values():
+        try:
+            ech = date.fromisoformat(str(r.get("echeance")))
+        except (TypeError, ValueError):
+            continue
+        try:
+            bdate = date.fromisoformat(str(r.get("bulletin_date")))
+        except (TypeError, ValueError):
+            bdate = None
+        actif = str(r.get("actif"))
+        rp = float(r.get("realized_pct"))
+        sens_move = "LONG" if rp > 0 else "SHORT"   # hausse → LONG, baisse → SHORT
+        # Joué ou non : présent dans le top 3 du jour d'émission.
+        joue, call = False, r.get("conclusion")
+        if bdate is not None:
+            if bdate not in sel_cache:
+                sel_cache[bdate] = load_selection_map(bdate, decision_log_dir)
+            joue = bool(sel_cache[bdate].get((actif, "24h"), False))
+        # Raison du mouvement : news high COHÉRENTE avec le sens du mouvement.
+        raison = None
+        if bdate is not None:
+            try:
+                raison = cause_news_high_dir(actif, bdate, sens_move, None, events_path)
+            except Exception:  # noqa: BLE001 — best-effort
+                raison = None
+        out.append(Variation24h(
+            jour=ech, actif=actif,
+            sens="hausse" if rp > 0 else "baisse",
+            prix_depart=(r.get("prix_emission") if isinstance(r.get("prix_emission"), (int, float)) else None),
+            prix_sortie=(r.get("prix_echeance") if isinstance(r.get("prix_echeance"), (int, float)) else None),
+            variation_pct=round(rp, 2),
+            joue=joue, call=(str(call) if call in ("LONG", "SHORT") else None),
+            raison=raison,
+        ))
+    out.sort(key=lambda v: (v.jour, v.actif), reverse=True)  # récent → ancien
+    return out
+
+
+def render_variations_24h(variations: List[Variation24h], now: Optional[datetime] = None) -> str:
+    """Markdown : un seul grand tableau des variations 24h > 1 % (récent → ancien)."""
+    now = now or datetime.now(PARIS_TZ)
+    JJ = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
+    L: List[str] = ["# Variations 24h de nos actifs (mouvements de plus de 1 %)", ""]
+    L.append(f"_Généré : {horodatage_fr(now)} (Europe/Paris) · du plus récent au plus ancien._")
+    L.append("")
+    L.append(
+        "_Toutes les variations 24h de nos 12 actifs dépassant 1 % (en valeur "
+        "absolue). « Joué » = l'actif était dans le top 3 du jour (avec notre call). "
+        "« Raison » = la news cohérente avec le sens du mouvement (« — » si non tracée)._"
+    )
+    L.append("")
+    if not variations:
+        L.append("Aucune variation 24h de plus de 1 % enregistrée pour l'instant.")
+        L.append("")
+        return "\n".join(L)
+    L.append("| Jour | Actif | Sens | Prix départ | Prix sortie | Variation | Joué | Raison du mouvement |")
+    L.append("|---|---|---|---|---|---|---|---|")
+
+    def _fp(v: Optional[float]) -> str:
+        return f"{v:.4g}" if isinstance(v, (int, float)) else "—"
+
+    for v in variations:
+        jour = f"{JJ[v.jour.weekday()]} {v.jour.strftime('%d/%m')}"
+        sens = "↑ hausse" if v.sens == "hausse" else "↓ baisse"
+        joue = (f"Oui · {v.call}" if (v.joue and v.call) else "Oui" if v.joue else "Non")
+        L.append(
+            f"| {jour} | {v.actif} | {sens} | {_fp(v.prix_depart)} | {_fp(v.prix_sortie)} | "
+            f"{v.variation_pct:+.2f}% | {joue} | {v.raison or '—'} |"
+        )
+    L.append("")
+    return "\n".join(L)
+
+
+def write_variations_24h(path: Path = VARIATIONS_24H_FILE, **kwargs) -> Path:
+    """Reconstruit et écrit data/variations-24h.md. Best-effort, jamais bloquant."""
+    variations = variations_24h_significatives()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render_variations_24h(variations, **kwargs) + "\n", encoding="utf-8")
+    return path
+
+
 __all__ = [
     "BilanJour",
     "WinRateConviction",
@@ -1936,4 +2073,10 @@ __all__ = [
     "compute_gros_moves_autres",
     "compute_apprentissage_jour",
     "reason_non_selection",
+    # Onglet « Variations 24h » (> 1 %).
+    "Variation24h",
+    "variations_24h_significatives",
+    "render_variations_24h",
+    "write_variations_24h",
+    "VARIATIONS_24H_FILE",
 ]

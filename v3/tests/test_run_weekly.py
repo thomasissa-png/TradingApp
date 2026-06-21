@@ -75,8 +75,11 @@ def test_petit_N_aucune_proposition(monkeypatch, tmp_path):
         now=NOW, fiches={}, fetch_price=None, state_dir=tmp_path, persist_state=False
     )
     assert bilan.propositions == []
-    # Mais c'est bien en observation.
-    assert any("Cuivre 24h" in o and "observation" in o for o in bilan.observations)
+    # Mais c'est bien en observation (wording S9 : « pas assez pour conclure »).
+    assert any(
+        "Cuivre 24h" in o and "pas assez pour conclure" in o
+        for o in bilan.observations
+    )
 
 
 def test_premiere_semaine_aucune_proposition(monkeypatch, tmp_path):
@@ -89,7 +92,11 @@ def test_premiere_semaine_aucune_proposition(monkeypatch, tmp_path):
         now=NOW, fiches={}, fetch_price=None, state_dir=tmp_path, persist_state=True
     )
     assert bilan.propositions == []
-    assert any("S&P 500 24h" in o and "1ère semaine" in o for o in bilan.observations)
+    # Wording S9 : « en observation » + « la semaine prochaine » (plus de jargon).
+    assert any(
+        "S&P 500 24h" in o and "en observation" in o and "semaine prochaine" in o
+        for o in bilan.observations
+    )
 
 
 def test_deux_semaines_consecutives_genere_proposition(monkeypatch, tmp_path):

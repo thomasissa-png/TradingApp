@@ -116,6 +116,7 @@ class BilanSemaine:
     observations: List[str] = field(default_factory=list)
     selection: Optional["SelectionSemaine"] = None
     tendances: List["TendanceActif"] = field(default_factory=list)
+    picks: List["PickSemaine"] = field(default_factory=list)  # post-mortem causal (S9)
     markdown: str = ""
 
 
@@ -401,6 +402,137 @@ def selection_semaine(
 
 
 # ---------------------------------------------------------------------------
+# POST-MORTEM CAUSAL — un pick enrichi = la jointure mesure ↔ drivers d'émission
+# (spec data-analyst v3/docs/reco/bilan-hebdo-analyse-s9.md). C'est ce qui permet
+# de dire POURQUOI un top a marché ou raté : news-driven vs quant-pur, drapeau de
+# signal faible suivi à tort, et la news réelle qui a bougé l'actif. Zéro invention.
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PickSemaine:
+    """Un pick de la Sélection 24h jugé cette semaine, enrichi de sa cause."""
+    actif: str
+    call: str                            # LONG / SHORT
+    outcome: str                         # VRAI / FAUSSE
+    realized_pct: Optional[float]        # mouvement brut signé
+    mouvement_dir: Optional[float]       # signe(call) × realized_pct (favorable si ≥ 0)
+    bulletin_date: date
+    ratio_news: Optional[float]          # 0-1, part de news à l'émission
+    mono_critere: bool = False
+    mono_critere_nom: Optional[str] = None
+    coin_flip: bool = False
+    quasi_neutre: bool = False
+    cause_news: Optional[str] = None     # résumé de la news high du jour (ou None)
+
+    @property
+    def vrai(self) -> bool:
+        return self.outcome == "VRAI"
+
+    @property
+    def news_driven(self) -> bool:
+        return isinstance(self.ratio_news, (int, float)) and self.ratio_news > 0.50
+
+    @property
+    def drapeau_faible(self) -> Optional[str]:
+        """Libellé du drapeau de signal faible (priorité coin-flip > mono > quasi)."""
+        if self.coin_flip:
+            return "coin-flip"
+        if self.mono_critere:
+            return (f"mono-critère : {self.mono_critere_nom}"
+                    if self.mono_critere_nom else "mono-critère")
+        if self.quasi_neutre:
+            return "quasi-neutre"
+        return None
+
+
+def _enrich_picks_semaine(
+    now: datetime,
+    measures_log: Path = MEASURES_LOG,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+    events_path: Optional[Path] = None,
+) -> List[PickSemaine]:
+    """Picks de la Sélection 24h jugés cette semaine, enrichis (cause news +
+    drapeaux d'émission). Même socle que selection_semaine (journal persisté +
+    selection_du_jour) ; ajoute la jointure decision-log et la news via
+    cause_news_high_apres. Dégradation propre : champ absent → None/False."""
+    from journaliste import iso_week_bounds, OUTCOME_VRAI, OUTCOME_FAUSSE  # noqa: PLC0415
+    from bilan_jour import (  # noqa: PLC0415
+        load_selection_map, load_conviction_records, cause_news_high_apres,
+    )
+    from datetime import timedelta  # noqa: PLC0415
+
+    monday, sunday = iso_week_bounds(now)
+    picks: List[PickSemaine] = []
+    if not measures_log.exists():
+        return picks
+
+    records: Dict[Tuple[str, str, str], dict] = {}
+    for line in measures_log.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(r, dict) or r.get("horizon") != "24h":
+            continue
+        records[(str(r.get("actif")), "24h", str(r.get("echeance")))] = r
+
+    sel_cache: Dict[date, Dict[Tuple[str, str], bool]] = {}
+    conv_cache: Dict[date, Dict[Tuple[str, str], dict]] = {}
+    for r in records.values():
+        if r.get("outcome") not in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            continue
+        try:
+            ech = date.fromisoformat(str(r.get("echeance")))
+        except (TypeError, ValueError):
+            continue
+        if not (monday <= ech <= sunday):
+            continue
+        try:
+            bdate = date.fromisoformat(str(r.get("bulletin_date")))
+        except (TypeError, ValueError):
+            bdate = ech - timedelta(days=1)
+        actif = str(r.get("actif"))
+        if bdate not in sel_cache:
+            sel_cache[bdate] = load_selection_map(bdate, decision_log_dir)
+        if not sel_cache[bdate].get((actif, "24h"), False):
+            continue
+        if bdate not in conv_cache:
+            conv_cache[bdate] = load_conviction_records(bdate, decision_log_dir)
+        rec = conv_cache[bdate].get((actif, "24h")) or {}
+        # ratio_news : on prend le driver d'émission p2_M7_ratio_news (proportion
+        # 0-1 bien définie). PAS le champ measures-log « ratio_news » : c'est une
+        # autre métrique non normalisée (valeurs > 1, jusqu'à ~480) → inutilisable
+        # comme proportion. Absent → None (pas de classification news/quant).
+        ratio = rec.get("p2_M7_ratio_news") if rec else None
+        call = r.get("conclusion")
+        rp = r.get("realized_pct")
+        mv = ((1.0 if call == "LONG" else -1.0) * float(rp)
+              if isinstance(rp, (int, float)) and call in ("LONG", "SHORT") else None)
+        cause = None
+        try:
+            cause = cause_news_high_apres(actif, bdate, None, events_path)
+        except Exception:  # noqa: BLE001 — cause best-effort, jamais bloquante
+            cause = None
+        picks.append(PickSemaine(
+            actif=actif, call=str(call), outcome=str(r.get("outcome")),
+            realized_pct=round(float(rp), 2) if isinstance(rp, (int, float)) else None,
+            mouvement_dir=round(mv, 2) if mv is not None else None,
+            bulletin_date=bdate,
+            ratio_news=float(ratio) if isinstance(ratio, (int, float)) else None,
+            mono_critere=bool(rec.get("mono_critere_dominant", False)),
+            mono_critere_nom=rec.get("mono_critere_nom"),
+            coin_flip=bool(rec.get("coin_flip", False)),
+            quasi_neutre=bool(rec.get("quasi_neutre", False)),
+            cause_news=cause,
+        ))
+    picks.sort(key=lambda p: (p.bulletin_date, p.actif))
+    return picks
+
+
+# ---------------------------------------------------------------------------
 # SECTION 2 — Performance par TENDANCE 7j, par actif (cœur de la demande)
 # ---------------------------------------------------------------------------
 # Pour chaque actif : segmenter la semaine en phases de direction 7j CONSTANTE,
@@ -619,29 +751,29 @@ def build_propositions(cellules: List[CelluleObs]) -> List[Dict[str, Any]]:
     )
     for i, c in enumerate(faibles, start=1):
         wr = _fmt_pct(c.win_rate)
-        wl = _fmt_pct(c.wilson_low)
         props.append({
             "n": i,
-            "titre": f"{c.actif} {c.horizon} · cellule faible 2 semaines",
-            "type": "Note d'observation · ajustement à instruire (Thomas tranche le levier)",
+            "titre": f"{c.actif} {c.horizon} · faiblesse confirmée sur 2 semaines",
+            "type": "Ajustement à instruire (Thomas tranche le levier, rien n'est appliqué seul)",
             "actifs": c.actif,
-            "criteres": "à déterminer depuis le decision-log (critère dominant de la cellule)",
+            "criteres": "critère dominant à identifier dans le decision-log de la cellule",
             "constat": (
-                f"Win rate {wr} sur {c.n_eff} paris indépendants, "
-                f"Wilson_low {wl} < {WILSON_FAIBLE:.0f}%, observé sur "
-                f">= {SEMAINES_CONSECUTIVES} semaines consécutives."
+                f"{c.actif} {c.horizon} : {wr} de réussite sur {c.n_eff} paris mesurés. "
+                "Sur les deux dernières semaines, même en étant prudent sur la marge "
+                "d'erreur, la cellule reste sous 50% : ce n'est pas un coup de malchance "
+                "passager, c'est une faiblesse structurelle."
             ),
             "proposition": (
-                f"Revoir la pondération des critères de {c.actif} {c.horizon} "
-                f"(réduire le poids du critère qui tire dans le mauvais sens, "
-                f"identifié au decision-log). Modification de config à valider "
-                f"avant application."
+                f"Revoir les critères de {c.actif} {c.horizon} : le système n'a pas "
+                "correctement discriminé sur 2 semaines. Analyser le decision-log pour "
+                "repérer le critère qui tire dans le mauvais sens, puis ajuster son poids "
+                "dans la config de l'actif. Thomas valide avant toute modification."
             ),
             "risque": (
-                "Sur-réaction à un régime de marché conjoncturel. N_eff reste "
-                "modeste · un ajustement de poids peut dégrader une autre période."
+                "Sur-réaction à un régime de marché passager : le nombre de paris reste "
+                "modeste, un ajustement de poids peut dégrader une autre période."
             ),
-            "validation": "Thomas OUI/NON avant toute modification de config YAML",
+            "validation": "Thomas OUI / NON avant toute modification de config",
         })
     return props
 
@@ -699,12 +831,13 @@ def build_bilan_semaine(
     conv = _conviction_semaine(measures, now)
     sel = selection_semaine(now)
     tend = tendances_par_actif(now, fiches=fiches)
+    picks = _enrich_picks_semaine(now)
 
     bilan = BilanSemaine(
         iso=iso, lundi=monday, dimanche=sunday, now=now, cellules=cellules,
         n_forte=conv.n_forte, taux_forte=conv.taux_forte,
         n_faible_conv=conv.n_faible, taux_faible_conv=conv.taux_faible,
-        selection=sel, tendances=tend,
+        selection=sel, tendances=tend, picks=picks,
     )
 
     propositions = [p for p in build_propositions(cellules) if proposition_valide(p)]
@@ -715,10 +848,10 @@ def build_bilan_semaine(
     for c in cellules:
         if c.candidate_faible and not c.faible_confirmee:
             bilan.observations.append(
-                f"{c.actif} {c.horizon} : candidate faible cette semaine "
-                f"(win rate {_fmt_pct(c.win_rate)}, N_eff {c.n_eff}, "
-                f"Wilson_low {_fmt_pct(c.wilson_low)}) · 1ère semaine, "
-                f"PAS de proposition (attendre confirmation S+1)."
+                f"{c.actif} {c.horizon} : en observation cette semaine "
+                f"({_fmt_pct(c.win_rate)} de réussite sur {c.n_eff} paris). Si la "
+                "faiblesse se confirme la semaine prochaine, une proposition "
+                "d'ajustement sera préparée."
             )
         elif (
             N_EFF_OBSERVE <= c.n_eff < N_EFF_PROPOSE
@@ -726,9 +859,8 @@ def build_bilan_semaine(
             and c.wilson_low < WILSON_FAIBLE
         ):
             bilan.observations.append(
-                f"{c.actif} {c.horizon} : sous surveillance (N_eff {c.n_eff} "
-                f"entre {N_EFF_OBSERVE}-{N_EFF_PROPOSE - 1}) · observation, "
-                f"PAS de proposition (mesurer avant d'agir)."
+                f"{c.actif} {c.horizon} : seulement {c.n_eff} paris mesurés, pas assez "
+                f"pour conclure. On attend {N_EFF_PROPOSE} paris avant d'agir."
             )
 
     bilan.markdown = render_bilan_semaine(bilan)
@@ -941,10 +1073,9 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
             L.append("")
     else:
         L.append(
-            "Aucune proposition cette semaine : aucune cellule faible confirmée "
-            f"sur ≥ {SEMAINES_CONSECUTIVES} semaines consécutives "
-            f"(N_eff ≥ {N_EFF_PROPOSE} ET Wilson_low < {WILSON_FAIBLE:.0f}%). "
-            "Le Manager n'invente pas d'ajustement sur petit N (mesurer avant d'agir)."
+            "Aucun ajustement proposé cette semaine : toutes les cellules avec assez de "
+            "paris mesurés restent au-dessus du seuil de confiance. On continue de mesurer "
+            "avant d'agir."
         )
     L.append("")
 
@@ -1159,123 +1290,205 @@ def _cause_segment(s: "SegmentTendance", idx: int, n_seg: int, gagnant: bool) ->
     return "le mouvement est allé contre la direction tenue sur la phase"
 
 
+def _ratio_pct(p: "PickSemaine") -> str:
+    """Ratio news en % entier, ou '?' si non disponible (zéro invention)."""
+    return f"{p.ratio_news * 100:.0f}%" if isinstance(p.ratio_news, (int, float)) else "?"
+
+
 def _points_forts(bilan: BilanSemaine) -> List[str]:
-    """SECTION 3 — ce qui MARCHE, chiffré (cellules porteuses + sélection + tendances+)."""
+    """SECTION 3 — ce qui a marché et POURQUOI (post-mortem causal, spec S9).
+
+    Priorité : cause tracée par pick (3.1) > bascules captées / continuations
+    (3.2) > conviction (3.3) > comptage sélection (3.4, seulement si rien d'autre).
+    """
     pts: List[str] = []
-    s = bilan.selection
-    if s is not None and s.n_select >= 3 and s.win_rate is not None and s.win_rate >= 60.0:
+    gagnants_pick = [p for p in bilan.picks if p.vrai]
+
+    # Règle 3.1 — picks gagnants, cause par pick (news-driven / quant / paradoxe).
+    for p in gagnants_pick:
+        drap = p.drapeau_faible
+        if p.vrai and drap:  # paradoxe : succès sur signal classé faible
+            pts.append(
+                f"{p.actif} {p.call} a gagné MALGRÉ un signal classé faible "
+                f"(drapeau {drap}). Pas de conclusion : on garde le garde-fou, un "
+                "coup réussi ne valide pas un signal faible."
+            )
+        elif p.news_driven and p.cause_news:
+            pts.append(
+                f"{p.actif} {p.call} : bon flair news (part news {_ratio_pct(p)}). "
+                f"{p.cause_news} a poussé dans notre sens."
+            )
+        elif p.news_driven:
+            pts.append(
+                f"{p.actif} {p.call} : call orienté news (part news {_ratio_pct(p)}), "
+                "le marché est allé dans notre sens (catalyseur précis non tracé)."
+            )
+        else:
+            pts.append(
+                f"{p.actif} {p.call} : call quant-pur confirmé (part news {_ratio_pct(p)}), "
+                "le mouvement a suivi nos critères de tendance, sans news déterminante."
+            )
+
+    # Règle 3.2 — tendances 7j gagnantes (continuation / bascule captée).
+    gagnants_seg, _ = _segments_signes(bilan)
+    if gagnants_seg:
+        pts.append("Tendances 7j bien suivies : " + " ; ".join(gagnants_seg[:3]) + ".")
+
+    # Règle 3.3 — conviction forte qui paie.
+    if bilan.n_forte >= 3 and bilan.taux_forte is not None and bilan.taux_forte >= 70.0:
         pts.append(
-            f"La Sélection 24h tient le rythme : win rate {_fmt_pct(s.win_rate)} "
-            f"sur {s.n_select} top du jour jugés."
-        )
-    porteuses = sorted(
-        [c for c in bilan.cellules if c.porteuse],
-        key=lambda c: (c.win_rate if c.win_rate is not None else 0.0), reverse=True,
-    )
-    if porteuses:
-        noms = ", ".join(f"{c.actif} {c.horizon} ({_fmt_pct(c.win_rate)})" for c in porteuses[:4])
-        pts.append(f"Cellules porteuses (≥ {WINRATE_PORTEUSE:.0f}%) : {noms}.")
-    if (
-        bilan.n_forte >= 3 and bilan.taux_forte is not None and bilan.taux_forte >= 70.0
-    ):
-        pts.append(
-            f"La conviction forte paie : {_fmt_pct(bilan.taux_forte)} de réussite "
+            f"Le tri par conviction a payé : {_fmt_pct(bilan.taux_forte)} de réussite "
             f"sur {bilan.n_forte} paris à conviction forte."
         )
-    gagnants, _ = _segments_signes(bilan)
-    if gagnants:
-        pts.append("Tendances 7j bien suivies : " + " ; ".join(gagnants[:4]) + ".")
-    return pts
+
+    # Règle 3.4 — filet : comptage sélection, seulement si rien de causal au-dessus.
+    s = bilan.selection
+    if not pts and s is not None and s.n_select >= 3 and s.win_rate is not None and s.win_rate >= 60.0:
+        pts.append(
+            f"La Sélection 24h tient : {_fmt_pct(s.win_rate)} sur {s.n_select} tops jugés "
+            f"({s.n_vrai} gagnants)."
+        )
+    return pts[:4]
 
 
 def _points_faibles(bilan: BilanSemaine) -> List[str]:
-    """SECTION 4 — ce qu'on doit améliorer (cellules à surveiller + tendances−)."""
+    """SECTION 4 — ce qu'on doit améliorer et POURQUOI (post-mortem causal, spec S9).
+
+    Pick perdant par pick : news ratée (CAS A), signal faible suivi à tort (CAS B),
+    ou call quant solide raté (CAS C). Puis tendances perdantes, alarme sélection,
+    cellules faibles (reformulées sans jargon Wilson).
+    """
     pts: List[str] = []
+    perdants_pick = [p for p in bilan.picks if not p.vrai]
+
+    # Règle 4.1 — picks perdants, cause par pick.
+    for p in perdants_pick:
+        drap = p.drapeau_faible
+        if p.news_driven and p.cause_news:  # CAS A : news ratée
+            pts.append(
+                f"{p.actif} {p.call} raté : call orienté news (part news {_ratio_pct(p)}). "
+                f"{p.cause_news} a dominé le marché à CONTRE-SENS de notre position. Ce "
+                "catalyseur n'était pas (ou mal) pris dans notre synthèse."
+            )
+        elif p.news_driven:  # CAS A bis : news-driven mais aucun catalyseur tracé
+            pts.append(
+                f"{p.actif} {p.call} raté : call orienté news (part news {_ratio_pct(p)}) "
+                "mais aucun catalyseur tracé dans l'events-log. Mouvement adverse inexpliqué."
+            )
+        elif drap:  # CAS B : signal faible suivi à tort
+            pts.append(
+                f"{p.actif} {p.call} raté : pari pris sur un signal classé FAIBLE "
+                f"(drapeau {drap}). Ce type de signal ne devrait pas entrer dans la Sélection."
+            )
+        elif p.cause_news:  # CAS C : quant solide raté, mais une news adverse existait
+            pts.append(
+                f"{p.actif} {p.call} raté : signal quant solide (aucun drapeau), mais "
+                f"{p.cause_news} l'a contre-pied. News possiblement sous-pondérée au scoring."
+            )
+        else:  # CAS C bis : quant solide raté, cause non identifiée
+            pts.append(
+                f"{p.actif} {p.call} raté : signal quant solide (aucun drapeau), cause non "
+                "identifiée (aucune news high tracée). À revoir si le pattern se répète."
+            )
+
+    # Règle 4.2 — tendances 7j à contre-sens (retournement subi / faux flip).
+    _, perdants_seg = _segments_signes(bilan)
+    if perdants_seg:
+        pts.append("Tendances 7j à contre-sens : " + " ; ".join(perdants_seg[:3]) + ".")
+
+    # Règle 4.3 — alarme globale sélection (complète, ne duplique pas les actifs cités).
+    s = bilan.selection
+    if s is not None and s.n_select >= 3 and s.win_rate is not None and s.win_rate < 50.0 \
+            and not perdants_pick:
+        pts.append(
+            f"La Sélection 24h sous la barre : {_fmt_pct(s.win_rate)} sur {s.n_select} tops jugés."
+        )
+
+    # Règle 4.5 — cellules faibles confirmées (sans jargon Wilson).
     confirmees = [c for c in bilan.cellules if c.faible_confirmee]
     if confirmees:
         noms = ", ".join(f"{c.actif} {c.horizon} ({_fmt_pct(c.win_rate)})" for c in confirmees)
         pts.append(
-            f"Cellules faibles confirmées (≥ {SEMAINES_CONSECUTIVES} semaines) : {noms} "
-            "(une proposition d'ajustement est à instruire ci-dessous)."
+            f"Cellules faibles sur 2 semaines : {noms}. Pas un coup de malchance passager, "
+            "une faiblesse structurelle : une proposition d'ajustement est ci-dessous."
         )
-    candidates = [c for c in bilan.cellules if c.candidate_faible and not c.faible_confirmee]
-    if candidates:
-        noms = ", ".join(f"{c.actif} {c.horizon}" for c in candidates)
-        pts.append(f"À confirmer la semaine prochaine (1ère semaine faible) : {noms}.")
-    _, perdants = _segments_signes(bilan)
-    if perdants:
-        pts.append("Tendances 7j à contre-sens cette semaine : " + " ; ".join(perdants[:4]) + ".")
-    s = bilan.selection
-    if s is not None and s.n_select >= 3 and s.win_rate is not None and s.win_rate < 50.0:
-        pts.append(
-            f"La Sélection 24h a déçu : win rate {_fmt_pct(s.win_rate)} sur "
-            f"{s.n_select} top jugés (revoir les critères de sélection)."
-        )
-    return pts
+    return pts[:4]
 
 
 def _learnings_semaine(bilan: BilanSemaine) -> List[str]:
-    """SECTION 5 — learnings actionnables, dérivés des sections 1-4 (déterministe)."""
+    """SECTION 5 — learnings actionnables ([observation chiffrée] + [action à J+7]).
+
+    Max 3. Priorité : drapeaux (5.1) > news vs quant (5.2) > conviction (5.4) >
+    prudence sélection (5.5) > fallback (5.6).
+    """
     out: List[str] = []
+    picks = bilan.picks
+
+    # Règle 5.1 — drapeaux de signal faible qui ratent.
+    picks_drap = [p for p in picks if p.drapeau_faible]
+    rates_drap = [p for p in picks_drap if not p.vrai]
+    if rates_drap:
+        out.append(
+            f"Les picks au signal faible (coin-flip / mono-critère) ont raté "
+            f"{len(rates_drap)}/{len(picks_drap)} fois cette semaine. À surveiller : si le "
+            "pattern se confirme la semaine prochaine, durcir le filtre (un signal faible "
+            "ne passe pas dans le top 3)."
+        )
+
+    # Règle 5.2 — news-driven vs quant-pur sur les picks de la semaine.
+    nd = [p for p in picks if p.news_driven]
+    qp = [p for p in picks if p.ratio_news is not None and not p.news_driven]
+    if len(nd) >= 2 or len(qp) >= 2:
+        def _wr(lst):
+            return (sum(1 for p in lst if p.vrai) / len(lst) * 100.0) if lst else None
+        wn, wq = _wr(nd), _wr(qp)
+        morceaux = []
+        if wn is not None:
+            morceaux.append(f"news-driven {wn:.0f}% ({len(nd)})")
+        if wq is not None:
+            morceaux.append(f"quant-pur {wq:.0f}% ({len(qp)})")
+        verdict = ""
+        if wn is not None and wq is not None and (len(nd) < 3 or len(qp) < 3):
+            verdict = " N encore faible dans un segment, ne pas généraliser."
+        elif wn is not None and wq is not None:
+            verdict = (" Le flair news a mieux payé." if wn > wq
+                       else " Le quant a mieux performé que les calls news." if wq > wn
+                       else " Égalité news / quant cette semaine.")
+        out.append("Calls cette semaine : " + ", ".join(morceaux) + "." + verdict)
+
+    # Règle 5.4 — conviction forte vs faible (écart > 10 pts).
+    if (bilan.n_forte >= 3 and bilan.n_faible_conv >= 3
+            and bilan.taux_forte is not None and bilan.taux_faible_conv is not None):
+        ecart = bilan.taux_forte - bilan.taux_faible_conv
+        if ecart > 10:
+            out.append(
+                f"La conviction forte a bien discriminé ({_fmt_pct(bilan.taux_forte)} vs "
+                f"{_fmt_pct(bilan.taux_faible_conv)} en faible) : ne pas assouplir le filtre."
+            )
+        elif ecart < -10:
+            out.append(
+                f"Anomalie : la conviction faible ({_fmt_pct(bilan.taux_faible_conv)}) dépasse "
+                f"la forte ({_fmt_pct(bilan.taux_forte)}). N encore modeste, à surveiller sans "
+                "conclure avant plus de paris."
+            )
+
+    # Règle 5.5 — sélection peut-être trop prudente.
     s = bilan.selection
-    # Sélection trop prudente : peu de top jugés mais bon win rate.
-    if s is not None and 1 <= s.n_select <= 2 and s.win_rate is not None and s.win_rate >= 60.0:
+    if (len(out) < 3 and s is not None and 1 <= s.n_select <= 2
+            and s.win_rate is not None and s.win_rate >= 60.0):
         out.append(
-            f"Sélection peut-être trop prudente : seulement {s.n_select} top jugé(s) "
-            f"cette semaine pour un win rate de {_fmt_pct(s.win_rate)} (marge pour "
-            "élargir la sélection sans dégrader la qualité, à confirmer sur plus de N)."
+            f"Seulement {s.n_select} pick(s) jugé(s) pour {_fmt_pct(s.win_rate)} de réussite : "
+            "sélection peut-être trop prudente. À surveiller : si le taux tient au-dessus de "
+            "60% sur plus de paris, envisager d'élargir un peu le top 3."
         )
-    # Ampleur asymétrique gagnantes vs perdantes (sorties tardives).
-    if s is not None:
-        ag = s.ampleur_moy_gagnantes
-        ap = s.ampleur_moy_perdantes
-        if ag is not None and ap is not None and abs(ap) > ag:
-            out.append(
-                f"Pertes plus amples que les gains sur la sélection ({_fmt_signed_pct(ap)} "
-                f"vs {_fmt_signed_pct(ag)}) : signe possible de sorties tardives à surveiller."
-            )
-    # Conviction forte vs faible : l'écart confirme-t-il le tri ?
-    if (
-        bilan.n_forte >= 3 and bilan.n_faible_conv >= 3
-        and bilan.taux_forte is not None and bilan.taux_faible_conv is not None
-    ):
-        if bilan.taux_forte > bilan.taux_faible_conv:
-            out.append(
-                f"Le tri par conviction fonctionne : forte {_fmt_pct(bilan.taux_forte)} "
-                f"vs faible {_fmt_pct(bilan.taux_faible_conv)} (garder le garde-fou "
-                "qui écarte les paris faibles)."
-            )
-        elif bilan.taux_faible_conv > bilan.taux_forte:
-            out.append(
-                f"Anomalie de conviction : faible {_fmt_pct(bilan.taux_faible_conv)} "
-                f"au-dessus de forte {_fmt_pct(bilan.taux_forte)}, à instruire (le tri "
-                "n'a pas discriminé cette semaine, N encore modeste)."
-            )
-    # Tendances 7j : bilan gagnants vs perdants par actif.
-    gagnants, perdants = _segments_signes(bilan)
-    if gagnants and not perdants:
+
+    # Règle 5.6 — fallback unique.
+    if not out:
         out.append(
-            f"Tendances 7j toutes dans le bon sens cette semaine ({len(gagnants)} phase(s) "
-            "matérielle(s) gagnante(s)) : le trend-following directionnel a payé."
+            "Pas de learning net cette semaine : trop peu de paris par catégorie (warm-up) "
+            "pour conclure de façon fiable. On continue de mesurer."
         )
-    elif perdants and not gagnants:
-        out.append(
-            f"Tendances 7j à contre-sens cette semaine ({len(perdants)} phase(s) perdante(s)) : "
-            "vérifier les bascules tardives sur les actifs concernés."
-        )
-    elif gagnants and perdants:
-        out.append(
-            f"Tendances 7j mitigées : {len(gagnants)} phase(s) gagnante(s) contre "
-            f"{len(perdants)} perdante(s), l'edge directionnel n'est pas homogène par actif."
-        )
-    # Cellules faibles persistantes -> learning de pilotage.
-    if any(c.faible_confirmee for c in bilan.cellules):
-        out.append(
-            "Au moins une cellule reste sous l'objectif sur 2 semaines : le Manager a "
-            "préparé une proposition (section 4), Thomas tranche, rien n'est appliqué "
-            "automatiquement."
-        )
-    return out
+    return out[:3]
 
 
 # Seuil de matérialité d'un mouvement de tendance (% directionnel) pour qu'il

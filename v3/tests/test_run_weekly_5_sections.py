@@ -385,7 +385,7 @@ def test_points_forts_incluent_le_pourquoi():
                              prix_debut=100.0, prix_fin=95.0)  # +5 % dans le sens SHORT
     t = rw.TendanceActif(actif="Or", ticker="GC=F", segments=[seg])
     forts = rw._points_forts(SimpleNamespace(
-        tendances=[t], selection=None, cellules=[],
+        tendances=[t], selection=None, cellules=[], picks=[],
         n_forte=0, taux_forte=None,
     ))
     blob = " ".join(forts)
@@ -412,6 +412,76 @@ def test_annexe_technique_repliee_hors_sections_analyse(monkeypatch, tmp_path):
     assert "### Cellules à surveiller" not in section34
     # Mais les propositions actionnables restent en section 4.
     assert "### Propositions d'ajustement" in section34
+
+
+# ---------------------------------------------------------------------------
+# Post-mortem CAUSAL (spec data-analyst S9) — sections 3/4/5 pick par pick
+# ---------------------------------------------------------------------------
+
+def _pick(actif, call, outcome, ratio_news, *, mono=False, mono_nom=None,
+          coin_flip=False, quasi=False, cause=None, mv=1.0):
+    return rw.PickSemaine(
+        actif=actif, call=call, outcome=outcome, realized_pct=mv, mouvement_dir=mv,
+        bulletin_date=date(2026, 6, 16), ratio_news=ratio_news,
+        mono_critere=mono, mono_critere_nom=mono_nom, coin_flip=coin_flip,
+        quasi_neutre=quasi, cause_news=cause,
+    )
+
+
+def _bilan_stub(picks):
+    return SimpleNamespace(
+        picks=picks, tendances=[], selection=None, cellules=[],
+        n_forte=0, taux_forte=None, n_faible_conv=0, taux_faible_conv=None,
+    )
+
+
+def test_pick_semaine_proprietes():
+    p = _pick("Or", "SHORT", "VRAI", 0.71, mono=True, mono_nom="Tendance 20j")
+    assert p.vrai is True
+    assert p.news_driven is True              # 0.71 > 0.50
+    assert p.drapeau_faible == "mono-critère : Tendance 20j"
+    # Priorité coin-flip > mono > quasi.
+    p2 = _pick("Blé", "LONG", "FAUSSE", 0.0, mono=True, coin_flip=True)
+    assert p2.news_driven is False
+    assert p2.drapeau_faible == "coin-flip"
+
+
+def test_section3_causal_par_pick():
+    forts = rw._points_forts(_bilan_stub([
+        _pick("Pétrole (Brent)", "SHORT", "VRAI", 0.71, cause="Stocks US en forte hausse"),
+        _pick("Or", "SHORT", "VRAI", 0.18),                       # quant-pur
+        _pick("Blé", "LONG", "VRAI", 0.0, mono=True, mono_nom="Tendance 20j"),  # paradoxe
+    ]))
+    blob = " ".join(forts)
+    assert "bon flair news" in blob and "Stocks US en forte hausse" in blob
+    assert "quant-pur confirmé" in blob
+    assert "MALGRÉ un signal classé faible" in blob
+
+
+def test_section4_causal_news_ratee_et_signal_faible():
+    faibles = rw._points_faibles(_bilan_stub([
+        # CAS A : news ratée (news-driven + cause adverse).
+        _pick("S&P 500", "LONG", "FAUSSE", 0.62, cause="Ventes au détail chinoises en baisse"),
+        # CAS B : signal faible suivi à tort (quant + drapeau).
+        _pick("Blé", "SHORT", "FAUSSE", 0.0, mono=True, mono_nom="Tendance du blé (20 jours)"),
+        # CAS C : quant solide raté, cause non identifiée.
+        _pick("Café (Arabica)", "SHORT", "FAUSSE", 0.10),
+    ]))
+    blob = " ".join(faibles)
+    assert "CONTRE-SENS" in blob and "Ventes au détail chinoises en baisse" in blob
+    assert "signal classé FAIBLE" in blob and "Tendance du blé (20 jours)" in blob
+    assert "cause non identifiée" in blob
+
+
+def test_section5_learning_news_vs_quant():
+    learnings = rw._learnings_semaine(_bilan_stub([
+        _pick("Pétrole (Brent)", "SHORT", "VRAI", 0.71),
+        _pick("S&P 500", "LONG", "VRAI", 0.62),
+        _pick("Or", "SHORT", "VRAI", 0.18),
+        _pick("Café (Arabica)", "SHORT", "FAUSSE", 0.10),
+    ]))
+    blob = " ".join(learnings)
+    assert "news-driven" in blob and "quant-pur" in blob
 
 
 def test_manager_n_applique_rien_avec_segmentation(monkeypatch, tmp_path):

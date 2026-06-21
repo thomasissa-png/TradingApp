@@ -507,8 +507,9 @@ def test_detail_24h_par_actif_grille(tmp_path):
     d = res[0]
     assert d.actif == "Or"
     # (direction, outcome, perf_dir) ; perf_dir = signe(call) × realized_pct.
-    assert d.par_jour[1] == ("SHORT", "VRAI", 2.0)      # mardi : SHORT, -2 % brut → +2 %
-    assert d.par_jour[2] == ("SHORT", "FAUSSE", -1.5)   # mercredi : SHORT, +1,5 % → -1,5 %
+    # 3e élément = variation BRUTE de l'actif (pas le sens du call).
+    assert d.par_jour[1] == ("SHORT", "VRAI", -2.0)     # mardi : l'actif a baissé de 2 % (SHORT gagne)
+    assert d.par_jour[2] == ("SHORT", "FAUSSE", 1.5)    # mercredi : l'actif a monté de 1,5 % (SHORT perd)
     assert d.par_jour[3][1] == "non-conclusive" and d.par_jour[3][2] is None  # jeudi, prix absent
     assert 5 not in d.par_jour                           # samedi exclu
     assert d.n_vrai == 1 and d.n_concl == 2             # non-conclusive hors bilan

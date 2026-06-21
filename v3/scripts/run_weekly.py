@@ -756,8 +756,9 @@ def edge_par_famille(
 class Detail24hActif:
     """Détail des calls 24h de la semaine pour UN actif (grille jour par jour)."""
     actif: str
-    # weekday -> (direction, outcome, perf_dir) ; perf_dir = % de gain/perte dans
-    # le sens du call (signe selon LONG/SHORT), None si prix manquant.
+    # weekday -> (direction, outcome, variation) ; variation = % de mouvement BRUT
+    # de l'actif (monte → +, baisse → −), None si prix manquant. Le verdict
+    # (outcome) dit si le call était dans le bon sens.
     par_jour: Dict[int, Tuple[str, str, Optional[float]]] = field(default_factory=dict)
     n_vrai: int = 0
     n_concl: int = 0  # VRAI + FAUSSE
@@ -806,11 +807,11 @@ def detail_24h_par_actif(
         direction = str(r.get("conclusion") or "")
         if direction not in ("LONG", "SHORT"):
             continue
+        # Variation BRUTE de l'actif (monte → +, baisse → −), pas le sens du call.
         rp = r.get("realized_pct")
-        perf_dir = (round((1.0 if direction == "LONG" else -1.0) * float(rp), 2)
-                    if isinstance(rp, (int, float)) else None)
+        variation = round(float(rp), 2) if isinstance(rp, (int, float)) else None
         d = par_actif.setdefault(str(r.get("actif")), Detail24hActif(actif=str(r.get("actif"))))
-        d.par_jour[ech.weekday()] = (direction, outcome, perf_dir)
+        d.par_jour[ech.weekday()] = (direction, outcome, variation)
         if outcome == OUTCOME_VRAI:
             d.n_vrai += 1
             d.n_concl += 1
@@ -1232,13 +1233,31 @@ def _render_picks_par_jour(picks: List["PickSemaine"], L: List[str]) -> None:
                        -(abs(p.score) if isinstance(p.score, (int, float)) else -1.0),
                        p.actif),
     )
-    L.append("| Jour | Actif | Call | % (sens du call) | Résultat |")
-    L.append("|---|---|---|---|---|")
+    L.append("| Jour | Actif | Call | Variation actif | Résultat | Raison |")
+    L.append("|---|---|---|---|---|---|")
     for p in rows:
         jour = f"{JJ[p.bulletin_date.weekday()]} {p.bulletin_date.day}"
         glyph = "✅" if p.vrai else ("❌" if p.outcome in ("FAUSSE", "FAUX") else "⚪")
-        L.append(f"| {jour} | {p.actif} | {p.call} | {_fmt_signed_pct(p.mouvement_dir)} | {glyph} |")
+        # Variation BRUTE de l'actif (monte → +, baisse → −), pas le sens du call.
+        # Le ✅/❌ dit si notre call (LONG/SHORT) était dans le bon sens.
+        L.append(
+            f"| {jour} | {p.actif} | {p.call} | {_fmt_signed_pct(p.realized_pct)} | "
+            f"{glyph} | {_raison_pick(p)} |"
+        )
     L.append("")
+
+
+def _raison_pick(p: "PickSemaine") -> str:
+    """Raison (le moteur) d'un pick, pour le tableau Top 1/Top 3 : la news qui a
+    bougé l'actif si elle est tracée, sinon le type de signal (orienté news /
+    quant-pur / signal faible). Zéro invention."""
+    if p.cause_news:
+        return p.cause_news
+    if p.news_driven:
+        return f"orienté news ({_ratio_pct(p)})"
+    if p.drapeau_faible:
+        return f"signal faible ({p.drapeau_faible})"
+    return "quant-pur"
 
 
 def _render_agg_picks(picks: List["PickSemaine"], L: List[str]) -> None:
@@ -1255,8 +1274,9 @@ def _render_section1_selection(bilan: BilanSemaine, L: List[str]) -> None:
     L.append(
         "> Nos paris 24h de la semaine, triés PAR JOUR. **Top 1** = le meilleur pari de "
         "chaque jour (1 par jour de bourse, ~5/semaine) ; **Top 3** = les trois retenus. "
-        "Win rate = % de calls justes · ampleur = % moyen de gain/perte dans le sens du "
-        "call (jamais d'euros)."
+        "**Variation actif** = mouvement RÉEL de l'actif sur 24h (monte → +, baisse → −) ; "
+        "le ✅/❌ dit si notre call (LONG/SHORT) était dans le bon sens. Win rate = % de "
+        "calls justes · ampleur = % moyen favorable (jamais d'euros)."
     )
     L.append("")
     picks = bilan.picks
@@ -1290,9 +1310,9 @@ def _render_detail_24h(bilan: BilanSemaine, L: List[str]) -> None:
     L.append("")
     L.append(
         "> Tous nos calls 24h de la semaine, jour par jour (rangés au jour où ils se "
-        "sont joués). Chaque case = direction, **% de gain/perte dans le sens du call** "
-        "(le plus important) et verdict ✅ juste · ❌ faux · ⚪ non concluant. « — » = pas "
-        "de call. Bilan = calls justes sur les calls tranchés."
+        "sont joués). Chaque case = direction, **variation RÉELLE de l'actif** (monte → "
+        "+, baisse → −) et verdict ✅ juste · ❌ faux · ⚪ non concluant. « — » = pas de "
+        "call. Bilan = calls justes sur les calls tranchés."
     )
     L.append("")
     L.append("| Actif | Lun | Mar | Mer | Jeu | Ven | Bilan |")

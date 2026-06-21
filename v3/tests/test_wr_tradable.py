@@ -213,3 +213,48 @@ def test_bilan_jour_wr_tradable_formule():
     assert wr_conclusif == pytest.approx(66.7, abs=0.1)
     assert wr_tradable == pytest.approx(46.2, abs=0.1)
     assert wr_tradable <= wr_conclusif
+
+
+# ---------------------------------------------------------------------------
+# WR significatif (>= 0,5 % de mouvement favorable) — KPI ajouté pour tous les
+# rapports : un call juste mais quasi-plat n'est pas une vraie réussite tradable.
+# ---------------------------------------------------------------------------
+
+def _measure_delta(outcome: str, echeance: date, delta: float, conc: str = "LONG") -> jr.Measure:
+    cell = jr.BulletinCell(
+        bulletin_date=echeance - timedelta(days=1),
+        actif_name="Pétrole (Brent)", horizon="24h", conclusion=conc, score=1.0,
+    )
+    return jr.Measure(
+        cell=cell, fiche_key="petrole", ticker="BZ=F", horizon="24h",
+        echeance=echeance, prix_emission=100.0, prix_courant=100.0 + delta,
+        seuil_pct=0.0, delta_pct=delta, outcome=outcome,
+    )
+
+
+def test_wr_significatif_exclut_les_calls_justes_mais_plats():
+    base = date(2026, 6, 1)
+    ms = [
+        _measure_delta(jr.OUTCOME_VRAI, base, 2.0),               # vrai gain >= 0,5 %
+        _measure_delta(jr.OUTCOME_VRAI, base + timedelta(days=1), 0.3),  # juste mais plat (< 0,5 %)
+        _measure_delta(jr.OUTCOME_VRAI, base + timedelta(days=2), 1.5),  # vrai gain >= 0,5 %
+        _measure_delta(jr.OUTCOME_FAUSSE, base + timedelta(days=3), -1.0),
+    ]
+    k = jr.compute_kpi(ms)
+    # WR conclusif : 3 VRAI / 4 = 75 % ; WR significatif : 2 VRAI >= 0,5 % / 4 = 50 %.
+    assert k.taux_eff_pct == pytest.approx(75.0, abs=0.1)
+    assert k.n_vrai_signif_eff == 2
+    assert k.taux_signif_eff_pct == pytest.approx(50.0, abs=0.1)
+    # Invariant : le WR significatif est toujours <= WR conclusif.
+    assert k.taux_signif_eff_pct <= k.taux_eff_pct
+
+
+def test_wr_significatif_short_compte_amplitude_absolue():
+    base = date(2026, 6, 1)
+    ms = [
+        _measure_delta(jr.OUTCOME_VRAI, base, -2.0, conc="SHORT"),  # SHORT gagnant, |delta|>=0,5
+        _measure_delta(jr.OUTCOME_VRAI, base + timedelta(days=1), -0.2, conc="SHORT"),  # plat
+    ]
+    k = jr.compute_kpi(ms)
+    assert k.n_vrai_signif_eff == 1
+    assert k.taux_signif_eff_pct == pytest.approx(50.0, abs=0.1)

@@ -1032,6 +1032,11 @@ OUTCOME_FAUSSE = "FAUSSE"
 OUTCOME_NC = "non-conclusive"
 OUTCOME_INTERROMPU = "suivi-interrompu"
 
+# Seuil de mouvement « significatif » pour le win rate exploitable : un call juste
+# qui a bougé moins de 0,5 % en notre faveur n'est pas une vraie réussite tradable.
+# Partagé par tous les rapports (KPI « WR >= 0,5 % » à côté du win rate brut).
+SEUIL_MVT_SIGNIFICATIF = 0.5
+
 # ---------------------------------------------------------------------------
 # C5 — Intégrité de la mesure (3 garde-fous incorruptibles)
 #
@@ -1284,6 +1289,15 @@ class CellKPI:
     n_vrai_eff: int = 0
     n_fausse_eff: int = 0
     taux_eff_pct: Optional[float] = None       # taux non-chevauchant (décisionnel)
+    # --- Win rate SIGNIFICATIF (mouvement favorable >= 0,5 %) ---------------
+    # Un call juste mais quasi-plat (< 0,5 %) n'est pas une vraie réussite
+    # exploitable (le spread d'un turbo le mange). taux_signif_eff_pct compte
+    # comme gagnant SEULEMENT les VRAI dont |delta| >= SEUIL_MVT_SIGNIFICATIF,
+    # sur le MÊME dénominateur que taux_eff_pct (VRAI + FAUSSE non-chevauchants).
+    # Invariant : taux_signif_eff_pct <= taux_eff_pct. Métrique d'affichage,
+    # n'altère AUCUNE règle de décision (statut / kill criterion inchangés).
+    n_vrai_signif_eff: int = 0                 # VRAI non-chevauchants avec |delta| >= seuil
+    taux_signif_eff_pct: Optional[float] = None  # WR significatif (>= 0,5 % de mouvement)
     # --- Correction #2 : Wilson IC + critère global ---
     wilson_low: Optional[float] = None         # borne basse IC Wilson 95 % (sur n_effective)
     wilson_high: Optional[float] = None        # borne haute IC Wilson 95 %
@@ -1505,6 +1519,15 @@ def compute_kpi(measures_for_cell: List[Measure]) -> CellKPI:
     denom_eff = kpi.n_vrai_eff + kpi.n_fausse_eff  # == n_effective (VRAI+FAUSSE uniquement)
     if denom_eff > 0:
         kpi.taux_eff_pct = round(kpi.n_vrai_eff / denom_eff * 100.0, 2)
+    # WR significatif : VRAI avec mouvement favorable >= 0,5 %, même dénominateur.
+    kpi.n_vrai_signif_eff = sum(
+        1 for m in non_overlap
+        if m.outcome == OUTCOME_VRAI
+        and isinstance(m.delta_pct, (int, float))
+        and abs(m.delta_pct) >= SEUIL_MVT_SIGNIFICATIF
+    )
+    if denom_eff > 0:
+        kpi.taux_signif_eff_pct = round(kpi.n_vrai_signif_eff / denom_eff * 100.0, 2)
 
     # --- WR tradable : VRAI / (VRAI + FAUSSE + NC) non-chevauchant ---------
     # Inclut les jours non-conclusifs (en réel, Thomas serait en position).
@@ -2483,6 +2506,7 @@ def _winrate_rows(
             "horizon": h,
             "horizon_rank": horizon_order.get(h, 99),
             "win_rate": None if k is None else k.taux_eff_pct,
+            "wr_signif": None if k is None else k.taux_signif_eff_pct,
             "wr_tradable": None if k is None else k.tradable_eff_pct,
             "n_tradable": 0 if k is None else k.n_tradable,
             "n_eff": 0 if k is None else k.n_effective,
@@ -2522,11 +2546,12 @@ def _render_winrate_table(rows: List[Dict[str, Any]]) -> List[str]:
         lines.append(f"### {horizon_labels.get(h, h)}")
         lines.append("")
         lines.append(
-            "| Actif | Win rate | WR tradable | Paris (réels) | Non notés | Statut |"
+            "| Actif | Win rate | WR ≥ 0,5 % | WR tradable | Paris (réels) | Non notés | Statut |"
         )
-        lines.append("|---|---|---|---|---|---|")
+        lines.append("|---|---|---|---|---|---|---|")
         for r in h_rows:
             wr = "—" if r["win_rate"] is None else f"{r['win_rate']:.1f}%"
+            wr_sig = "—" if r["wr_signif"] is None else f"{r['wr_signif']:.1f}%"
             wr_trad = "—" if r["wr_tradable"] is None else f"{r['wr_tradable']:.1f}%"
             # Lot C — indicateur « vrais paris » : N=X (régimes=Y) à côté de N.
             # Affiché seulement s'il y a au moins un pari (régimes>0) — sinon "0".
@@ -2534,7 +2559,7 @@ def _render_winrate_table(rows: List[Dict[str, Any]]) -> List[str]:
             n_reg = r.get("n_regimes", 0)
             paris = f"{n_eff} (régimes={n_reg})" if n_reg else f"{n_eff}"
             lines.append(
-                f"| {r['nom']} | {wr} | {wr_trad} | {paris} | "
+                f"| {r['nom']} | {wr} | {wr_sig} | {wr_trad} | {paris} | "
                 f"{r['non_notes']} | {r['statut']} |"
             )
     return lines
@@ -2566,6 +2591,11 @@ def render_performance(
     lines.append(f"- Généré : {horodatage_fr(now)}")
     lines.append(f"- Journaliste version : {JOURNALISTE_VERSION}")
     lines.append(f"- Win rate = taux de bonnes directions sur les paris indépendants (N_eff)")
+    lines.append(
+        "- WR ≥ 0,5 % = win rate ne comptant que les calls justes ayant bougé d'au "
+        "moins 0,5 % en notre faveur (mouvement exploitable ; quasi-plats écartés du "
+        "numérateur, même dénominateur que le win rate — toujours ≤ Win rate)"
+    )
     lines.append(
         "- WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) — inclut les jours "
         "sous seuil où une position aurait quand même été prise (toujours ≤ Win rate)"
@@ -2659,6 +2689,10 @@ def render_weekly_winrate(
     lines.append("")
     lines.append(f"- Généré : {horodatage_fr(now)} (réécrit à chaque run ; figé en fin de semaine)")
     lines.append(f"- Win rate CUMULÉ depuis le début (seul significatif en chauffe)")
+    lines.append(
+        "- WR ≥ 0,5 % = win rate ne comptant que les calls justes ayant bougé d'au "
+        "moins 0,5 % en notre faveur (mouvement exploitable ; toujours ≤ Win rate)"
+    )
     lines.append("")
     lines.append(_winrate_synthese_line(rows))
 
@@ -2671,11 +2705,12 @@ def render_weekly_winrate(
         lines.append(f"### {horizon_labels.get(h, h)}")
         lines.append("")
         lines.append(
-            "| Actif | Win rate | WR tradable | Paris (réels) | Nouveaux paris (semaine) | Non notés | Statut |"
+            "| Actif | Win rate | WR ≥ 0,5 % | WR tradable | Paris (réels) | Nouveaux paris (semaine) | Non notés | Statut |"
         )
-        lines.append("|---|---|---|---|---|---|---|")
+        lines.append("|---|---|---|---|---|---|---|---|")
         for r in h_rows:
             wr = "—" if r["win_rate"] is None else f"{r['win_rate']:.1f}%"
+            wr_sig = "—" if r["wr_signif"] is None else f"{r['wr_signif']:.1f}%"
             wr_trad = "—" if r["wr_tradable"] is None else f"{r['wr_tradable']:.1f}%"
             fk = r.get("fiche_key")  # L023 — clé stable, robuste au renommage
             nb_new = new_bets.get((fk, r["horizon"]), 0) if fk else 0
@@ -2683,7 +2718,7 @@ def render_weekly_winrate(
             n_reg = r.get("n_regimes", 0)
             paris = f"{r['n_eff']} (régimes={n_reg})" if n_reg else f"{r['n_eff']}"
             lines.append(
-                f"| {r['nom']} | {wr} | {wr_trad} | {paris} | {nb_new} | "
+                f"| {r['nom']} | {wr} | {wr_sig} | {wr_trad} | {paris} | {nb_new} | "
                 f"{r['non_notes']} | {r['statut']} |"
             )
     lines.append("")

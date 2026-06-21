@@ -1336,7 +1336,17 @@ def _raison_pick(p: "PickSemaine") -> str:
 def _render_agg_picks(picks: List["PickSemaine"], L: List[str]) -> None:
     nv, nt, amp = _agg_picks(picks)
     wr = _fmt_pct(round(nv / nt * 100.0, 1)) if nt else "—"
-    L.append(f"Win rate : **{wr}** ({nv}/{nt} jugés) · ampleur moyenne : **{_fmt_signed_pct(amp)}**.")
+    # WR significatif : VRAI dont le mouvement FAVORABLE atteint >= 0,5 % (gain
+    # exploitable ; un call juste mais quasi-plat ne compte pas). Même dénominateur.
+    concl = [p for p in picks if p.outcome in ("VRAI", "FAUSSE")]
+    nv_sig = sum(1 for p in concl
+                 if p.vrai and isinstance(p.mouvement_dir, (int, float))
+                 and p.mouvement_dir >= _PERF_MATERIELLE_PCT)
+    wr_sig = _fmt_pct(round(nv_sig / nt * 100.0, 1)) if nt else "—"
+    L.append(
+        f"Win rate : **{wr}** ({nv}/{nt} jugés) · WR ≥ 0,5 % : **{wr_sig}** "
+        f"({nv_sig}/{nt}) · ampleur moyenne : **{_fmt_signed_pct(amp)}**."
+    )
     L.append("")
 
 

@@ -199,6 +199,16 @@ def test_hbd2_wr_du_jour_primaire_en_gras():
     assert "_Détail :_" in wr_section
 
 
+def test_wr_significatif_du_jour_affiche():
+    """Le bilan du jour affiche le WR ≥ 0,5 % à côté du win rate (mouvement exploitable)."""
+    b = _bilan_1_8_3()
+    b.n_vrai_signif = 1                       # le seul VRAI (Argent +1,6 %) est >= 0,5 %
+    b.win_rate_signif_jour = round(1 / 9 * 100.0, 1)
+    md = bj._render_markdown(b, {})
+    wr_section = md.split("### Win rate du jour")[1].split("### ")[0]
+    assert "WR ≥ 0,5 % du jour : 1/9 = 11%" in wr_section
+
+
 def test_i7_bilan_titre_h1():
     b = _bilan_1_8_3()
     md = bj._render_markdown(b, {})

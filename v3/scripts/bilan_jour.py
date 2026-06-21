@@ -983,6 +983,11 @@ class BilanJour:
     n_fausse: int = 0
     n_nc: int = 0
     win_rate_jour: Optional[float] = None
+    # WR significatif du jour = VRAI dont |mouvement| >= 0,5 % (gain exploitable),
+    # même dénominateur que le win rate conclusif (≤ celui-ci). Un call juste mais
+    # quasi-plat ne compte pas comme une vraie réussite tradable.
+    n_vrai_signif: int = 0
+    win_rate_signif_jour: Optional[float] = None
     # WR tradable du jour = VRAI / (VRAI + FAUSSE + non-conclusif). Inclut les
     # calls sous seuil (en réel, Thomas serait quand même en position ce jour-là).
     # Métrique SECONDAIRE — coexiste avec le win rate conclusif (≤ celui-ci).
@@ -1196,6 +1201,8 @@ def build_bilan_jour(
     for m in measures_24h:
         if m.outcome == J.OUTCOME_VRAI:
             bilan.n_vrai += 1
+            if isinstance(m.delta_pct, (int, float)) and abs(m.delta_pct) >= J.SEUIL_MVT_SIGNIFICATIF:
+                bilan.n_vrai_signif += 1
         elif m.outcome == J.OUTCOME_FAUSSE:
             bilan.n_fausse += 1
         elif m.outcome == J.OUTCOME_NC:
@@ -1203,6 +1210,7 @@ def build_bilan_jour(
     denom = bilan.n_vrai + bilan.n_fausse
     if denom > 0:
         bilan.win_rate_jour = round(bilan.n_vrai / denom * 100.0, 1)
+        bilan.win_rate_signif_jour = round(bilan.n_vrai_signif / denom * 100.0, 1)
     # WR tradable : dénominateur élargi aux non-conclusifs (statuts non-notee /
     # suivi-interrompu déjà exclus car non comptés dans n_vrai/n_fausse/n_nc).
     denom_trad = bilan.n_vrai + bilan.n_fausse + bilan.n_nc
@@ -1521,6 +1529,13 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         L.append("**— (aucun call conclusif aujourd'hui)**")
     L.append("")
     L.append("_Détail :_")
+    # WR significatif : ne compte que les calls justes ayant bougé >= 0,5 % en
+    # notre faveur (gain exploitable ; quasi-plats écartés). Même dénominateur.
+    if bilan.win_rate_signif_jour is not None:
+        L.append(
+            f"- WR ≥ 0,5 % du jour : {bilan.n_vrai_signif}/{denom} = "
+            f"{bilan.win_rate_signif_jour:.0f}% (calls justes ayant bougé d'au moins 0,5 %)"
+        )
     # WR tradable (secondaire) : inclut les non-conclusifs au dénominateur.
     denom_trad = bilan.n_vrai + bilan.n_fausse + bilan.n_nc
     if bilan.wr_tradable_jour is not None:

@@ -424,14 +424,50 @@ def test_annexe_technique_repliee_hors_sections_analyse(monkeypatch, tmp_path):
 
 def _pick(actif, call, outcome, ratio_news, *, mono=False, mono_nom=None,
           coin_flip=False, quasi=False, cause_pro=None, cause_contra=None,
-          mv=1.0, evt=None, score=None, bdate=date(2026, 6, 16)):
+          raison_call=None, mv=1.0, evt=None, score=None, bdate=date(2026, 6, 16)):
     return rw.PickSemaine(
         actif=actif, call=call, outcome=outcome, realized_pct=mv, mouvement_dir=mv,
         bulletin_date=bdate, ratio_news=ratio_news, score=score,
         mono_critere=mono, mono_critere_nom=mono_nom, coin_flip=coin_flip,
         quasi_neutre=quasi, cause_pro=cause_pro, cause_contra=cause_contra,
-        evenement_programme=evt,
+        raison_call=raison_call, evenement_programme=evt,
     )
+
+
+def test_drivers_reels_liste_tous_les_moteurs_du_sens():
+    """La vraie raison = TOUS les critères matériels qui poussent dans le sens du
+    call (decision-log contrib_pond), pas une news lambda ; bruit négligeable écarté."""
+    rec = {"criteres": [
+        {"nom": "Taux réels US", "contrib_pond": -4.66},   # SHORT, driver dominant
+        {"nom": "VIX", "contrib_pond": -1.60},              # SHORT, co-moteur matériel
+        {"nom": "Momentum 5j", "contrib_pond": 3.20},       # LONG → à contre-sens, exclu
+        {"nom": "Bruit", "contrib_pond": -0.10},            # < 20 % du top → négligeable
+    ]}
+    assert rw._drivers_reels(rec, "SHORT") == ["Taux réels US", "VIX"]
+    assert rw._raison_reelle(rec, "SHORT") == "Taux réels US + VIX"
+    assert rw._drivers_reels(rec, "LONG") == ["Momentum 5j"]   # seul driver LONG
+    assert rw._raison_reelle({"criteres": []}, "SHORT") is None  # zéro invention
+
+
+def test_raison_pick_prime_le_driver_reel_sur_la_news():
+    """Top 1/Top 3 : le DRIVER réel prime — jamais une news contradictoire/lambda."""
+    p = _pick("Or", "SHORT", "VRAI", 0.10, mv=4.4,
+              raison_call="Taux d'intérêt réels US (10 ans)",
+              cause_pro="WGC: les banques centrales achètent l'or")  # haussière, ignorée
+    assert rw._raison_pick(p) == "Taux d'intérêt réels US (10 ans)"
+
+
+def test_raison_orientation_utilise_les_drivers_decision_log():
+    """Section 2 : la raison d'une bascule = les drivers du score (decision-log)."""
+    s = rw.SegmentTendance(direction="SHORT", jours=[date(2026, 6, 17)])
+    cache = {date(2026, 6, 17): {("Or", "7j"): {"criteres": [
+        {"nom": "Taux réels US", "contrib_pond": -5.2},
+        {"nom": "Ratio or/argent", "contrib_pond": -4.9},
+    ]}}}
+    r = rw._raison_orientation("Or", s, flip=True, conv_cache=cache)
+    assert r == "bascule SHORT : Taux réels US + Ratio or/argent"
+    assert rw._raison_orientation("Or", s, flip=False,
+                                  conv_cache={date(2026, 6, 17): {}}) == "—"
 
 
 def test_top1_picks_un_par_jour_meilleur_score():

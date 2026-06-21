@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -427,7 +428,8 @@ class PickSemaine:
     mono_critere_nom: Optional[str] = None
     coin_flip: bool = False
     quasi_neutre: bool = False
-    cause_pro: Optional[str] = None      # news high COHÉRENTE avec notre call (pourquoi on l'a pris/gagné)
+    raison_call: Optional[str] = None    # VRAIE raison : critère(s) dominant(s) du score (decision-log)
+    cause_pro: Optional[str] = None      # news high COHÉRENTE avec notre call (contexte succès, section 3)
     cause_contra: Optional[str] = None   # news high À CONTRE-SENS de notre call (ce qui nous a battus)
     evenement_programme: Optional[str] = None  # nom de l'événement calendaire majeur (ou None)
     famille: Optional[str] = None        # famille granulaire de la fiche (ex. métaux-précieux)
@@ -600,6 +602,7 @@ def _enrich_picks_semaine(
             mono_critere_nom=rec.get("mono_critere_nom"),
             coin_flip=bool(rec.get("coin_flip", False)),
             quasi_neutre=bool(rec.get("quasi_neutre", False)),
+            raison_call=_raison_reelle(rec, str(call)),
             cause_pro=cause_pro,
             cause_contra=cause_contra,
             evenement_programme=evt,
@@ -1267,12 +1270,62 @@ def _render_picks_par_jour(picks: List["PickSemaine"], L: List[str]) -> None:
     L.append("")
 
 
+# Part minimale d'un critère (vs le driver dominant) pour compter comme une VRAIE
+# raison du call. En dessous = contribution négligeable, ce n'est pas un moteur (la
+# lister induirait de fausses conclusions, autant que d'en cacher une vraie).
+_RAISON_MATERIALITE = 0.20
+
+
+def _driver_display(nom: str) -> str:
+    """Nom de critère prêt à afficher, conforme WIN-RATE-ONLY. Les noms de critères
+    viennent de la config (vocabulaire figé) ; un seul contient un terme monétaire
+    interdit : « haut rendement » (high-yield) → « spéculatif » (terme officiel FR
+    pour le crédit HY, fidèle). Filet de sécurité : strip_monetaire pour tout symbole
+    résiduel (€/$/P&L), sans jamais inventer."""
+    out = re.sub(r"haut rendement", "spéculatif", nom, flags=re.IGNORECASE)
+    try:
+        from briefing import strip_monetaire  # noqa: PLC0415
+        out = strip_monetaire(out)
+    except Exception:  # noqa: BLE001
+        pass
+    return " ".join(out.split())  # normalise les espaces laissés par un strip éventuel
+
+
+def _drivers_reels(rec: dict, call: str) -> List[str]:
+    """TOUS les critères qui ont matériellement poussé le score DANS LE SENS du call
+    (decision-log `criteres` / `contrib_pond`), du plus fort au plus faible. C'est
+    exactement ce qui a déclenché la décision — déterministe, jamais une news lambda.
+    On garde chaque co-moteur pesant ≥ 20 % du driver dominant (on les met TOUS) ;
+    on écarte uniquement le bruit négligeable. [] si aucun critère tracé."""
+    sens = 1.0 if call == "LONG" else -1.0 if call == "SHORT" else 0.0
+    if not sens:
+        return []
+    drivers = [
+        c for c in (rec.get("criteres") or [])
+        if isinstance(c.get("contrib_pond"), (int, float))
+        and c["contrib_pond"] * sens > 0 and c.get("nom")
+    ]
+    if not drivers:
+        return []
+    drivers.sort(key=lambda c: abs(c["contrib_pond"]), reverse=True)
+    seuil = _RAISON_MATERIALITE * abs(drivers[0]["contrib_pond"])
+    return [_driver_display(str(c["nom"])) for c in drivers if abs(c["contrib_pond"]) >= seuil]
+
+
+def _raison_reelle(rec: dict, call: str) -> Optional[str]:
+    """VRAIE raison du call : tous les drivers matériels joints par « + ». None si
+    aucun critère tracé (zéro invention)."""
+    drivers = _drivers_reels(rec, call)
+    return " + ".join(drivers) if drivers else None
+
+
 def _raison_pick(p: "PickSemaine") -> str:
-    """Raison (le moteur) d'un pick, pour le tableau Top 1/Top 3 : la news qui a
-    bougé l'actif si elle est tracée, sinon le type de signal (orienté news /
-    quant-pur / signal faible). Zéro invention."""
-    if p.cause_pro:
-        return p.cause_pro
+    """Raison (le moteur RÉEL) d'un pick pour le tableau Top 1/Top 3 : le critère
+    dominant du score à l'émission (ce qui a VRAIMENT déclenché le call), à défaut le
+    type de signal (orienté news / quant-pur / signal faible). Zéro invention,
+    jamais une news lambda."""
+    if p.raison_call:
+        return p.raison_call
     if p.news_driven:
         return f"orienté news ({_ratio_pct(p)})"
     if p.drapeau_faible:
@@ -1337,9 +1390,9 @@ def _render_section2_tendances(bilan: BilanSemaine, L: List[str]) -> None:
         "> Une ligne par phase de direction 7j constante. À chaque bascule (LONG "
         "vers SHORT ou l'inverse) commence une nouvelle phase. Perf = mouvement "
         "dans le sens de la tendance, du prix d'émission du jour de prise au dernier "
-        "prix de la phase. **Raison** = la news (cohérente avec la direction) qui "
-        "justifie l'orientation ou son changement (« — » si aucune news high tracée). "
-        "✅ gagnant · ❌ perdant · ⚪ négligeable."
+        "prix de la phase. **Raison** = le(s) critère(s) qui ont VRAIMENT déclenché "
+        "l'orientation (drivers dominants du score à l'émission, decision-log), pas "
+        "une news lambda ; « — » si non tracé. ✅ gagnant · ❌ perdant · ⚪ négligeable."
     )
     L.append("")
     tendances = [t for t in bilan.tendances if t.segments]
@@ -1350,6 +1403,7 @@ def _render_section2_tendances(bilan: BilanSemaine, L: List[str]) -> None:
         )
         L.append("")
         return
+    conv_cache: Dict[date, Dict[Tuple[str, str], dict]] = {}
     L.append("| Actif | Tendance | Période | Perf (sens tendance) | Résultat | Raison |")
     L.append("|---|---|---|---|---|---|")
     for t in tendances:
@@ -1360,21 +1414,36 @@ def _render_section2_tendances(bilan: BilanSemaine, L: List[str]) -> None:
             periode = _fmt_jours_segment(s.jours)
             perf = _fmt_signed_pct(s.perf_pct)
             verdict = _verdict_segment(s.perf_pct)
-            raison = _raison_orientation(t.actif, s, flip=(i > 0))
+            raison = _raison_orientation(t.actif, s, flip=(i > 0), conv_cache=conv_cache)
             L.append(f"| {actif_cell} | {tendance_cell} | {periode} | {perf} | {verdict} | {raison} |")
     L.append("")
 
 
-def _raison_orientation(actif: str, s: "SegmentTendance", flip: bool) -> str:
-    """Raison d'une orientation 7j (ou de son changement) : la news high COHÉRENTE
-    avec la direction du segment, captée le 1er jour de la phase (jour de bascule
-    pour un flip). « — » si aucune news high tracée (zéro invention)."""
+def _raison_orientation(
+    actif: str, s: "SegmentTendance", flip: bool,
+    conv_cache: Optional[Dict[date, Dict[Tuple[str, str], dict]]] = None,
+) -> str:
+    """VRAIE raison d'une orientation 7j (ou de son changement) : le(s) critère(s)
+    dominant(s) du score à l'émission, dans le sens du segment (decision-log du 1er
+    jour de la phase = jour de bascule pour un flip). On les liste TOUS. « — » si pas
+    de critères tracés (zéro invention ; jamais une news lambda)."""
     if not s.jours:
         return "—"
-    news = _news_actif_jour(actif, s.jours[0], s.direction)
-    if not news:
+    from bilan_jour import load_conviction_records  # noqa: PLC0415
+    jour = s.jours[0]
+    if conv_cache is None:
+        conv_cache = {}
+    if jour not in conv_cache:
+        try:
+            conv_cache[jour] = load_conviction_records(jour)
+        except Exception:  # noqa: BLE001 — best-effort
+            conv_cache[jour] = {}
+    rec = conv_cache[jour].get((actif, "7j")) or {}
+    drivers = _drivers_reels(rec, s.direction)
+    if not drivers:
         return "—"
-    return (f"bascule {s.direction} : {news}" if flip else news)
+    raison = " + ".join(drivers)
+    return (f"bascule {s.direction} : {raison}" if flip else raison)
 
 
 def render_bilan_semaine(bilan: BilanSemaine) -> str:

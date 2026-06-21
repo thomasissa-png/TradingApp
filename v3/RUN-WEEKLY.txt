@@ -4,3 +4,5 @@ Trigger bilan — surface KPI WR >= 0,5% + raisons réelles (drivers) sur tous l
 run: 2026-06-21T17:37:03Z
 Trigger bilan — section 3 causale (POURQUOI) + ajustements en section 6 apres learnings.
 run: 2026-06-21T17:58:01Z
+Trigger — bilan jour + suivi 12h/18h alignés (vraies raisons/drivers, news coherente) + annexe triee.
+run: 2026-06-21T18:38:54Z

@@ -593,6 +593,43 @@ def cause_news_high_apres(
     return None
 
 
+def _event_dir_pour_actif(ev: dict, actif_label: str) -> Optional[str]:
+    """Direction IA (LONG/SHORT/NEUTRAL) que la news implique POUR `actif_label`,
+    lue dans le champ `impacts` (ex. « GOLD:SHORT:high »). None si l'actif n'y figure
+    pas. Sert à n'afficher qu'une news COHÉRENTE avec une direction donnée."""
+    try:
+        import briefing as B  # noqa: PLC0415
+        for imp in B._parse_impacts_compact(ev.get("impacts", "") or ""):
+            if B._IA_ASSET_TO_LABEL.get(imp["asset"]) == actif_label:
+                return imp["direction"]
+    except Exception:  # noqa: BLE001 — lecture best-effort
+        return None
+    return None
+
+
+def cause_news_high_dir(
+    actif_label: str,
+    date_j: date,
+    sens: str,
+    apres_heure_paris: Optional[int] = None,
+    events_path: Optional[Path] = None,
+) -> Optional[str]:
+    """News high la plus fraîche sur `actif_label` dont l'impact IA va dans le sens
+    `sens` (LONG/SHORT). Garantit la COHÉRENCE direction news ↔ contexte d'affichage :
+    - pro-call (sens = notre call) → « pourquoi on a pris/gagné ce pari » (sections 1 & 3) ;
+    - contre-call (sens = inverse du call) → « ce qui nous a battus » (post-mortem section 4).
+    None si aucune news cohérente (zéro invention : pas de titre à contre-sens affiché)."""
+    sens = (sens or "").upper()
+    if sens not in ("LONG", "SHORT"):
+        return None
+    for ev in _events_high_actif_apres(actif_label, date_j, apres_heure_paris, events_path):
+        if _event_dir_pour_actif(ev, actif_label) == sens:
+            resume = _resume_news(ev)
+            if resume:
+                return resume
+    return None
+
+
 def _fav(delta_pct: Optional[float], call: str) -> Optional[float]:
     """% directionnel signé favorable (réutilise run_suivi.fav_delta)."""
     try:

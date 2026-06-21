@@ -372,8 +372,8 @@ def test_section2_est_un_tableau_avec_verdicts():
     L: list = []
     rw._render_section2_tendances(SimpleNamespace(tendances=[t]), L)
     md = "\n".join(L)
-    # En-tête de tableau (plus de liste à puces).
-    assert "| Actif | Tendance | Période | Perf (sens tendance) | Résultat |" in md
+    # En-tête de tableau (plus de liste à puces) — avec colonne Raison.
+    assert "| Actif | Tendance | Période | Perf (sens tendance) | Résultat | Raison |" in md
     assert "**Or**" in md
     assert "✅" in md and "⚪" in md            # gagne/perd visibles d'un coup d'œil
     assert "(en cours)" in md                   # phase en cours marquée
@@ -423,13 +423,14 @@ def test_annexe_technique_repliee_hors_sections_analyse(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 def _pick(actif, call, outcome, ratio_news, *, mono=False, mono_nom=None,
-          coin_flip=False, quasi=False, cause=None, mv=1.0, evt=None,
-          score=None, bdate=date(2026, 6, 16)):
+          coin_flip=False, quasi=False, cause_pro=None, cause_contra=None,
+          mv=1.0, evt=None, score=None, bdate=date(2026, 6, 16)):
     return rw.PickSemaine(
         actif=actif, call=call, outcome=outcome, realized_pct=mv, mouvement_dir=mv,
         bulletin_date=bdate, ratio_news=ratio_news, score=score,
         mono_critere=mono, mono_critere_nom=mono_nom, coin_flip=coin_flip,
-        quasi_neutre=quasi, cause_news=cause, evenement_programme=evt,
+        quasi_neutre=quasi, cause_pro=cause_pro, cause_contra=cause_contra,
+        evenement_programme=evt,
     )
 
 
@@ -581,7 +582,7 @@ def test_pick_semaine_proprietes():
 def test_section3_bien_fait_plus_de_1pct_avec_news():
     # « Bien fait » = > 1 % dans le bon sens ; on précise la news s'il y en a une.
     forts = rw._points_forts(_bilan_stub([
-        _pick("Pétrole (Brent)", "SHORT", "VRAI", 0.71, mv=3.8, cause="Stocks US en forte hausse"),
+        _pick("Pétrole (Brent)", "SHORT", "VRAI", 0.71, mv=3.8, cause_pro="Stocks US en forte hausse"),
         _pick("Or", "SHORT", "VRAI", 0.18, mv=4.4),               # sans news
         _pick("Argent", "SHORT", "VRAI", 0.0, mv=0.6),            # < 1 % → exclu
     ]))
@@ -594,7 +595,7 @@ def test_section3_bien_fait_plus_de_1pct_avec_news():
 def test_section4_causal_news_ratee_et_signal_faible():
     faibles = rw._points_faibles(_bilan_stub([
         # CAS A : news ratée (news-driven + cause adverse).
-        _pick("S&P 500", "LONG", "FAUSSE", 0.62, cause="Ventes au détail chinoises en baisse"),
+        _pick("S&P 500", "LONG", "FAUSSE", 0.62, cause_contra="Ventes au détail chinoises en baisse"),
         # CAS B : signal faible suivi à tort (quant + drapeau).
         _pick("Blé", "SHORT", "FAUSSE", 0.0, mono=True, mono_nom="Tendance du blé (20 jours)"),
         # CAS C : quant solide raté, cause non identifiée.

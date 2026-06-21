@@ -225,3 +225,54 @@ def test_apprentissage_gros_move_avec_cause():
     lignes = bj.compute_apprentissage_jour([], gm)
     joined = "\n".join(lignes)
     assert "porté par : China stimulus boosts copper" in joined
+
+
+# ===========================================================================
+# cause_news_high_dir — n'affiche qu'une news COHÉRENTE avec une direction
+# ===========================================================================
+
+def _row_dir(date_s, trigger, asset, direction, mat, eid):
+    impacts = f"{asset}:{direction}:{mat}" if asset else ""
+    return (
+        f"| {date_s} |  | {trigger[:15]} | {trigger} | {asset} |  | 1 | src | G | "
+        f"macro |  | {impacts} | {mat} | confirmed | {eid} | {date_s} | structurel |\n"
+    )
+
+
+@pytest.fixture
+def log_or_deux_directions(tmp_path: Path) -> Path:
+    """events-log : deux news high sur l'Or le même jour, l'une LONG, l'autre SHORT."""
+    p = tmp_path / "events-log.md"
+    content = HEADER
+    content += "<!-- batch 2026-06-18T08:00:00Z : 1 events -->\n"
+    content += _row_dir("2026-06-18", "WGC: central banks to buy more gold", "GOLD", "LONG", "high", "g1")
+    content += "<!-- batch 2026-06-18T10:00:00Z : 1 events -->\n"
+    content += _row_dir("2026-06-18", "Fed hawkish surprise sinks gold", "GOLD", "SHORT", "high", "g2")
+    p.write_text(content, encoding="utf-8")
+    return p
+
+
+def test_cause_dir_short_ignore_la_news_haussiere(log_or_deux_directions: Path):
+    """Pour un call SHORT, on ne renvoie QUE la news baissière (cohérente), pas la
+    news haussière (qui contredirait le call) — c'est le bug Or SHORT corrigé."""
+    res = bj.cause_news_high_dir("Or", DJ, "SHORT", None, log_or_deux_directions)
+    assert res is not None
+    assert "Fed hawkish surprise sinks gold" in res
+    assert "central banks" not in res        # la news LONG n'est jamais affichée
+
+
+def test_cause_dir_long_renvoie_la_news_haussiere(log_or_deux_directions: Path):
+    res = bj.cause_news_high_dir("Or", DJ, "LONG", None, log_or_deux_directions)
+    assert res is not None and "central banks to buy more gold" in res
+
+
+def test_cause_dir_aucune_news_coherente_renvoie_none(tmp_path: Path):
+    """Si aucune news ne va dans le sens demandé → None (zéro invention)."""
+    p = tmp_path / "events-log.md"
+    p.write_text(
+        HEADER
+        + "<!-- batch 2026-06-18T08:00:00Z : 1 events -->\n"
+        + _row_dir("2026-06-18", "WGC bullish gold", "GOLD", "LONG", "high", "g1"),
+        encoding="utf-8",
+    )
+    assert bj.cause_news_high_dir("Or", DJ, "SHORT", None, p) is None

@@ -427,7 +427,8 @@ class PickSemaine:
     mono_critere_nom: Optional[str] = None
     coin_flip: bool = False
     quasi_neutre: bool = False
-    cause_news: Optional[str] = None     # résumé de la news high du jour (ou None)
+    cause_pro: Optional[str] = None      # news high COHÉRENTE avec notre call (pourquoi on l'a pris/gagné)
+    cause_contra: Optional[str] = None   # news high À CONTRE-SENS de notre call (ce qui nous a battus)
     evenement_programme: Optional[str] = None  # nom de l'événement calendaire majeur (ou None)
     famille: Optional[str] = None        # famille granulaire de la fiche (ex. métaux-précieux)
 
@@ -516,7 +517,7 @@ def _enrich_picks_semaine(
     cause_news_high_apres. Dégradation propre : champ absent → None/False."""
     from journaliste import iso_week_bounds, OUTCOME_VRAI, OUTCOME_FAUSSE  # noqa: PLC0415
     from bilan_jour import (  # noqa: PLC0415
-        load_selection_map, load_conviction_records, cause_news_high_apres,
+        load_selection_map, load_conviction_records, cause_news_high_dir,
     )
     from datetime import timedelta  # noqa: PLC0415
 
@@ -570,11 +571,18 @@ def _enrich_picks_semaine(
         rp = r.get("realized_pct")
         mv = ((1.0 if call == "LONG" else -1.0) * float(rp)
               if isinstance(rp, (int, float)) and call in ("LONG", "SHORT") else None)
-        cause = None
+        # Deux causes DIRECTIONNELLES (cohérence garantie via le champ `impacts`) :
+        #  - cause_pro    : news allant dans le sens de NOTRE call (pourquoi on l'a pris) ;
+        #  - cause_contra : news à CONTRE-SENS (ce qui nous a battus, pour le post-mortem).
+        # On n'affiche jamais un titre dont la direction contredit le contexte.
+        cause_pro = cause_contra = None
+        opp = "SHORT" if call == "LONG" else "LONG" if call == "SHORT" else None
         try:
-            cause = cause_news_high_apres(actif, bdate, None, events_path)
+            cause_pro = cause_news_high_dir(actif, bdate, str(call), None, events_path)
+            if opp:
+                cause_contra = cause_news_high_dir(actif, bdate, opp, None, events_path)
         except Exception:  # noqa: BLE001 — cause best-effort, jamais bloquante
-            cause = None
+            cause_pro = cause_contra = None
         fiche_key = r.get("fiche_key")
         # Événement programmé majeur entre la prise (bdate) et l'échéance (ech).
         evt = _evenement_programme(fiche_key, bdate, ech)
@@ -592,7 +600,8 @@ def _enrich_picks_semaine(
             mono_critere_nom=rec.get("mono_critere_nom"),
             coin_flip=bool(rec.get("coin_flip", False)),
             quasi_neutre=bool(rec.get("quasi_neutre", False)),
-            cause_news=cause,
+            cause_pro=cause_pro,
+            cause_contra=cause_contra,
             evenement_programme=evt,
         ))
     picks.sort(key=lambda p: (p.bulletin_date, p.actif))
@@ -1262,8 +1271,8 @@ def _raison_pick(p: "PickSemaine") -> str:
     """Raison (le moteur) d'un pick, pour le tableau Top 1/Top 3 : la news qui a
     bougé l'actif si elle est tracée, sinon le type de signal (orienté news /
     quant-pur / signal faible). Zéro invention."""
-    if p.cause_news:
-        return p.cause_news
+    if p.cause_pro:
+        return p.cause_pro
     if p.news_driven:
         return f"orienté news ({_ratio_pct(p)})"
     if p.drapeau_faible:
@@ -1328,8 +1337,9 @@ def _render_section2_tendances(bilan: BilanSemaine, L: List[str]) -> None:
         "> Une ligne par phase de direction 7j constante. À chaque bascule (LONG "
         "vers SHORT ou l'inverse) commence une nouvelle phase. Perf = mouvement "
         "dans le sens de la tendance, du prix d'émission du jour de prise au dernier "
-        "prix de la phase. ✅ gagnant · ❌ perdant · ⚪ négligeable · — prix manquant "
-        "(jamais inventé)."
+        "prix de la phase. **Raison** = la news (cohérente avec la direction) qui "
+        "justifie l'orientation ou son changement (« — » si aucune news high tracée). "
+        "✅ gagnant · ❌ perdant · ⚪ négligeable."
     )
     L.append("")
     tendances = [t for t in bilan.tendances if t.segments]
@@ -1340,8 +1350,8 @@ def _render_section2_tendances(bilan: BilanSemaine, L: List[str]) -> None:
         )
         L.append("")
         return
-    L.append("| Actif | Tendance | Période | Perf (sens tendance) | Résultat |")
-    L.append("|---|---|---|---|---|")
+    L.append("| Actif | Tendance | Période | Perf (sens tendance) | Résultat | Raison |")
+    L.append("|---|---|---|---|---|---|")
     for t in tendances:
         for i, s in enumerate(t.segments):
             # Actif affiché une seule fois par groupe (lecture en colonnes).
@@ -1350,8 +1360,21 @@ def _render_section2_tendances(bilan: BilanSemaine, L: List[str]) -> None:
             periode = _fmt_jours_segment(s.jours)
             perf = _fmt_signed_pct(s.perf_pct)
             verdict = _verdict_segment(s.perf_pct)
-            L.append(f"| {actif_cell} | {tendance_cell} | {periode} | {perf} | {verdict} |")
+            raison = _raison_orientation(t.actif, s, flip=(i > 0))
+            L.append(f"| {actif_cell} | {tendance_cell} | {periode} | {perf} | {verdict} | {raison} |")
     L.append("")
+
+
+def _raison_orientation(actif: str, s: "SegmentTendance", flip: bool) -> str:
+    """Raison d'une orientation 7j (ou de son changement) : la news high COHÉRENTE
+    avec la direction du segment, captée le 1er jour de la phase (jour de bascule
+    pour un flip). « — » si aucune news high tracée (zéro invention)."""
+    if not s.jours:
+        return "—"
+    news = _news_actif_jour(actif, s.jours[0], s.direction)
+    if not news:
+        return "—"
+    return (f"bascule {s.direction} : {news}" if flip else news)
 
 
 def render_bilan_semaine(bilan: BilanSemaine) -> str:
@@ -1665,9 +1688,16 @@ def _ratio_pct(p: "PickSemaine") -> str:
 _SEUIL_BIEN_FAIT_PCT = 1.0
 
 
-def _news_actif_jour(actif: str, jour: date) -> Optional[str]:
-    """News high tracée sur `actif` à la date `jour` (ou None). Best-effort."""
+def _news_actif_jour(actif: str, jour: date, sens: Optional[str] = None) -> Optional[str]:
+    """News high tracée sur `actif` à la date `jour` (ou None). Best-effort.
+
+    Si `sens` (LONG/SHORT) est fourni, ne renvoie qu'une news COHÉRENTE avec ce sens
+    (via le champ `impacts`) — sinon la news la plus fraîche, sans filtre de direction.
+    """
     try:
+        if sens in ("LONG", "SHORT"):
+            from bilan_jour import cause_news_high_dir  # noqa: PLC0415
+            return cause_news_high_dir(actif, jour, sens, None, None)
         from bilan_jour import cause_news_high_apres  # noqa: PLC0415
         return cause_news_high_apres(actif, jour, None, None)
     except Exception:  # noqa: BLE001
@@ -1687,8 +1717,8 @@ def _points_forts(bilan: BilanSemaine) -> List[str]:
         if p.mouvement_dir is None or p.mouvement_dir <= _SEUIL_BIEN_FAIT_PCT:
             continue
         ligne = f"{p.actif} {p.call} (24h) : {_fmt_signed_pct(p.mouvement_dir)} dans le bon sens"
-        if p.cause_news:
-            ligne += f", sur la news : {p.cause_news}"
+        if p.cause_pro:
+            ligne += f", sur la news : {p.cause_pro}"
         pts.append(ligne + ".")
 
     # Tendances (7j) : phase de plus de 1 % dans le sens de la tendance.
@@ -1698,7 +1728,7 @@ def _points_forts(bilan: BilanSemaine) -> List[str]:
                 continue
             ligne = (f"Tendance {t.actif} {s.direction} ({_fmt_jours_segment(s.jours)}) : "
                      f"{_fmt_signed_pct(s.perf_pct)} dans le bon sens")
-            news = _news_actif_jour(t.actif, s.jours[-1]) if s.jours else None
+            news = _news_actif_jour(t.actif, s.jours[-1], s.direction) if s.jours else None
             if news:
                 ligne += f", sur la news : {news}"
             pts.append(ligne + ".")
@@ -1733,10 +1763,10 @@ def _points_faibles(bilan: BilanSemaine) -> List[str]:
     for p in perdants_pick:
         drap = p.drapeau_faible
         tete = f"{p.actif} {p.call} ({_fmt_signed_pct(p.realized_pct)})"
-        if p.news_driven and p.cause_news:  # CAS A : news ratée
+        if p.news_driven and p.cause_contra:  # CAS A : news ratée
             pts.append(
                 f"{tete} raté : call orienté news (part news {_ratio_pct(p)}). "
-                f"{p.cause_news} a dominé le marché à CONTRE-SENS de notre position. Ce "
+                f"{p.cause_contra} a dominé le marché à CONTRE-SENS de notre position. Ce "
                 "catalyseur n'était pas (ou mal) pris dans notre synthèse."
             )
         elif p.news_driven:  # CAS A bis : news-driven mais aucun catalyseur tracé
@@ -1749,10 +1779,10 @@ def _points_faibles(bilan: BilanSemaine) -> List[str]:
                 f"{tete} raté : pari pris sur un signal classé FAIBLE "
                 f"(drapeau {drap}). Ce type de signal ne devrait pas entrer dans la Sélection."
             )
-        elif p.cause_news:  # CAS C : quant solide raté, mais une news adverse existait
+        elif p.cause_contra:  # CAS C : quant solide raté, mais une news adverse existait
             pts.append(
                 f"{tete} raté : signal quant solide (aucun drapeau), mais "
-                f"{p.cause_news} l'a contre-pied. News possiblement sous-pondérée au scoring."
+                f"{p.cause_contra} l'a contre-pied. News possiblement sous-pondérée au scoring."
             )
         else:  # CAS C bis : quant solide raté, cause non identifiée
             pts.append(

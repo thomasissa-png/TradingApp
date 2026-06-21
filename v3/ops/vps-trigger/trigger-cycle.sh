@@ -19,13 +19,13 @@
 #   22h → R4 Bilan du jour (le routage cycle.yml exige ≥22h15 ; le cron à la
 #         minute 15 garantit un tir à 22h15 Paris — JAMAIS un UTC fixe 20h, qui
 #         serait 21h Paris en hiver, NYSE encore ouvert).
-#   DIMANCHE → R5 Bilan semaine (workflow SÉPARÉ weekly-summary.yml, bypass
-#         jour-de-bourse). Déclenché à 18h Paris le dimanche.
+#   SAMEDI 8h → R5 Bilan semaine (workflow SÉPARÉ weekly-summary.yml, bypass
+#         jour-de-bourse). Déclenché à 8h Paris le samedi matin.
 #
 # ⚠️ GARDE WEEK-END (session 4) : marchés actions fermés sam/dim → prix figés.
 # On ne dispatche PAS cycle.yml le week-end (heure de Paris). EXCEPTION : le
-# DIMANCHE à 18h, on dispatche weekly-summary.yml (bilan de perf, pas de prix
-# live — intentionnel). Le samedi reste totalement muet. Les workflows ont leur
+# SAMEDI à 8h, on dispatche weekly-summary.yml (bilan de perf, pas de prix
+# live — intentionnel). Le dimanche reste totalement muet. Les workflows ont leur
 # propre garde en défense en profondeur. TRADINGAPP_FORCE=1 bypass tout (test).
 #
 # ⚠️ Le curl est sur UNE SEULE LIGNE (les continuations `\` se perdent au
@@ -41,7 +41,7 @@
 set -euo pipefail
 
 REPO="thomasissa-png/tradingapp"
-WORKFLOW="cycle.yml"            # workflow par défaut (jours de bourse) ; le dimanche
+WORKFLOW="cycle.yml"            # workflow par défaut (jours de bourse) ; le samedi
 WEEKLY_WORKFLOW="weekly-summary.yml"  # bilan semaine (workflow séparé, §5.2)
 REF="main"
 
@@ -56,7 +56,7 @@ if [ "${1:-}" = "--check" ]; then
   echo "creneau: 15h-stamp-ouverture-us-jours-bourse"
   echo "creneau: 18h-suivi-jours-bourse"
   echo "creneau: 22h15-paris-jours-bourse"
-  echo "creneau: 18h-dimanche"
+  echo "creneau: 08h-samedi-bilan-semaine"
   exit 0
 fi
 LOG="${TRADINGAPP_TRIGGER_LOG:-/var/log/tradingapp-trigger.log}"
@@ -67,7 +67,7 @@ log() { echo "[$(ts)] $*" >> "$LOG"; }
 
 # --- Garde week-end + horaire (heure de Paris, robuste DST, sans CRON_TZ) ----
 # Choisit AUSSI le workflow cible : cycle.yml (jours de bourse) ou
-# weekly-summary.yml (dimanche 18h). Le VPS n'est qu'une horloge ; le routage du
+# weekly-summary.yml (samedi 8h). Le VPS n'est qu'une horloge ; le routage du
 # RUNNER (bulletin/stamp/suivi/bilan) est fait côté cycle.yml par l'heure Paris.
 PARIS_H="force"
 TARGET_WORKFLOW="$WORKFLOW"
@@ -75,16 +75,16 @@ if [ "${TRADINGAPP_FORCE:-}" != "1" ]; then
   PARIS_DOW="$(TZ=Europe/Paris date +%u)"  # 1=lundi … 6=samedi, 7=dimanche
   PARIS_H="$(TZ=Europe/Paris date +%H)"
 
-  if [ "$PARIS_DOW" -eq 7 ]; then
-    # DIMANCHE : seul créneau actif = 18h → bilan semaine (workflow séparé).
+  if [ "$PARIS_DOW" -eq 6 ]; then
+    # SAMEDI : seul créneau actif = 8h matin → bilan semaine (workflow séparé).
     # Marchés fermés mais R5 est un bilan de perf (intentionnel, §5.2).
-    if [ "$PARIS_H" = "18" ]; then
+    if [ "$PARIS_H" = "08" ]; then
       TARGET_WORKFLOW="$WEEKLY_WORKFLOW"
     else
-      exit 0                  # dimanche hors 18h → no-op silencieux
+      exit 0                  # samedi hors 8h → no-op silencieux
     fi
-  elif [ "$PARIS_DOW" -eq 6 ]; then
-    exit 0                    # samedi → totalement muet (marchés fermés)
+  elif [ "$PARIS_DOW" -eq 7 ]; then
+    exit 0                    # dimanche → totalement muet (marchés fermés)
   else
     # JOURS OUVRÉS (lun-ven) : créneaux de cycle.yml. Le routage exact (et la
     # garde fériés) sont autoritaires côté workflow ; ici on filtre juste les

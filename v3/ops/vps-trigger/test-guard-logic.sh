@@ -68,17 +68,17 @@ route_slot() {
 }
 
 # ---------------------------------------------------------------------------
-# Garde du workflow SÉPARÉ weekly-summary.yml (bilan dimanche, bypass bourse).
-#   $1 = event   $2 = force   $3 = dow (1..7, 7=dimanche)   $4 = recent (yes|no)
-# Garde INVERSÉE vs cycle.yml : ne tourne QUE le dimanche (weekday==7 en %u).
+# Garde du workflow SÉPARÉ weekly-summary.yml (bilan samedi, bypass bourse).
+#   $1 = event   $2 = force   $3 = dow (1..7, 6=samedi)   $4 = recent (yes|no)
+# Garde INVERSÉE vs cycle.yml : ne tourne QUE le samedi (weekday==6 en %u).
 # Écrit "true" / "false".
 weekly_decision() {
   local event="$1" force="$2" dow="$3" recent="$4"
-  # 1. Forçage explicite → bypass garde dimanche (CA-W1.c).
+  # 1. Forçage explicite → bypass garde samedi (CA-W1.c).
   if [ "$force" = "true" ] || [ "$event" = "push" ]; then echo "true"; return; fi
-  # 2. Automatique : dimanche STRICT (sinon NO-OP).
-  if [ "$dow" -ne 7 ]; then echo "false"; return; fi
-  # 3. Dimanche : anti-doublon ×3 pour le schedule uniquement.
+  # 2. Automatique : samedi STRICT (sinon NO-OP).
+  if [ "$dow" -ne 6 ]; then echo "false"; return; fi
+  # 3. Samedi : anti-doublon ×3 pour le schedule uniquement.
   if [ "$event" != "schedule" ]; then echo "true"; return; fi
   if [ "$recent" = "yes" ]; then echo "false"; return; fi
   echo "true"
@@ -155,13 +155,13 @@ check_slot "20h00 été (cron) → none"        none       20 0
 check_slot "10h00 (cron) → none"            none       10 0
 check_slot "13h00 (cron) → none"            none       13 0
 
-# --- GARDE WEEKLY (workflow séparé weekly-summary.yml, bilan dimanche) -----
+# --- GARDE WEEKLY (workflow séparé weekly-summary.yml, bilan samedi) --------
 #               label                            attendu  event              force dow recent
-check_weekly "weekly / schedule dimanche"        true   schedule          ""     7   no
-check_weekly "weekly / schedule dim doublon ×3"  false  schedule          ""     7   yes
+check_weekly "weekly / schedule samedi"          true   schedule          ""     6   no
+check_weekly "weekly / schedule sam doublon ×3"  false  schedule          ""     6   yes
 check_weekly "weekly / schedule lundi → NON"     false  schedule          ""     1   no
-check_weekly "weekly / schedule samedi → NON"    false  schedule          ""     6   no
-check_weekly "weekly / dispatch-VPS dimanche"    true   workflow_dispatch false  7   no
+check_weekly "weekly / schedule dimanche → NON"  false  schedule          ""     7   no
+check_weekly "weekly / dispatch-VPS samedi"      true   workflow_dispatch false  6   no
 check_weekly "weekly / dispatch-VPS lundi → NON" false  workflow_dispatch false  1   no
 check_weekly "weekly / force=true lundi (CA-W1c)" true  workflow_dispatch true   1   no
 check_weekly "weekly / push RUN-WEEKLY lundi"    true   push              ""     1   no

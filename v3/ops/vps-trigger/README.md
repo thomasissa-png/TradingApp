@@ -7,18 +7,21 @@
 ## Architecture du déclenchement
 
 ```
-cron VPS (/etc/cron.d/tradingapp, 7h/12h/18h Paris)
+cron VPS (/etc/cron.d/tradingapp, horaire ; le script self-gate sur l'heure Paris)
    └─ /opt/tradingapp/trigger-cycle.sh
-        └─ POST api.github.com .../workflows/cycle.yml/dispatches  {"ref":"main"}
-             └─ GitHub Actions exécute cycle-decision sur main
-                  └─ commit "[skip ci]" des données sur main
+        ├─ jours de bourse (7/8/9/12/15/18/22h Paris)
+        │    └─ POST .../workflows/cycle.yml/dispatches  {"ref":"main"}
+        └─ samedi 8h Paris
+             └─ POST .../workflows/weekly-summary.yml/dispatches  {"ref":"main"}
+                  └─ GitHub Actions exécute le runner sur main
+                       └─ commit "[skip ci]" des données sur main
 ```
 
 Le `schedule` natif de GitHub (`cron: "12,27,42 5,10,16 * * *"` dans `cycle.yml`) est **conservé en filet de secours**.
 
 > ⚠️ `workflow_dispatch` **contourne** le garde-fou anti-doublon du workflow → **un seul tir par créneau** côté cron VPS (pas de redondance ×3).
 
-> ⚠️ **Garde week-end (session 4)** : le script `trigger-cycle.sh` **ne dispatche pas** samedi/dimanche (heure de Paris, `TZ=Europe/Paris date +%u` ≥ 6 → `exit 0`). Marchés actions fermés le week-end → prix figés à la clôture de vendredi. En **défense en profondeur**, `cycle.yml` applique sa propre garde à TOUS les déclencheurs automatiques (`schedule` **ET** `workflow_dispatch` sans `force`) : même si le dispatch VPS partait un week-end, le workflow ferait NO-OP. **Échappatoire** : `workflow_dispatch` avec input `force=true` (ou push `v3/RUN-CYCLE.txt`) bypass la garde côté GitHub ; `TRADINGAPP_FORCE=1` bypass côté script VPS.
+> ⚠️ **Garde week-end (session 4, MAJ S9)** : le script `trigger-cycle.sh` ne dispatche **PAS `cycle.yml`** le week-end (heure de Paris). **EXCEPTION : le samedi à 8h**, il dispatche **`weekly-summary.yml`** (le Bilan de la semaine R5 — bilan de perf, pas de prix live, intentionnel) ; le **dimanche reste totalement muet**. Marchés actions fermés le week-end → prix figés à la clôture de vendredi. En **défense en profondeur**, chaque workflow applique sa propre garde aux déclencheurs automatiques (`schedule` **ET** `workflow_dispatch` sans `force`) : `cycle.yml` NO-OP le week-end, `weekly-summary.yml` NO-OP hors samedi. **Échappatoire** : `workflow_dispatch` `force=true` (ou push `v3/RUN-CYCLE.txt` / `v3/RUN-WEEKLY.txt`) bypass la garde côté GitHub ; `TRADINGAPP_FORCE=1` bypass côté script VPS.
 
 > ⚠️ **Garde fériés de marché (session 4) — AUTORITATIVE CÔTÉ WORKFLOW, PAS SUR LE VPS.** En plus du week-end, un run automatique ne s'exécute que les **jours de bourse ouverts** (ni week-end **ni férié** NYSE/Euronext : Vendredi saint, Memorial Day, Thanksgiving, Pâques Euronext, etc.). Le verdict « jour de bourse ouvert » est rendu par `is_trading_day()` de `v3/scripts/journaliste.py` (calendrier unique `MARKET_HOLIDAYS` réutilisé — **zéro liste de dates dupliquée**), appelé dans la garde du workflow. **Le VPS NE connaît PAS les fériés** (il n'a pas l'env Python du repo) : il **peut** dispatcher un lundi férié, mais le workflow fera alors **NO-OP** (log « férié de marché AAAA-MM-JJ »). C'est volontaire : on n'introduit aucune liste de fériés sur le VPS (sinon double source = risque de divergence). Le VPS ne gère que le fast-path week-end ; la couche férié est centralisée côté workflow, source de vérité unique.
 

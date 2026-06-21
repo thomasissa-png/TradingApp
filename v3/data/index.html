@@ -760,7 +760,7 @@
         <p id="history-empty" hidden></p>
       </section>
       <p class="gen-meta" aria-label="Date de génération de la page">
-        Page générée le <time datetime="2026-06-21T15:16:46Z">21 juin 2026 · 15h16 (UTC)</time>
+        Page générée le <time datetime="2026-06-21T15:31:11Z">21 juin 2026 · 15h31 (UTC)</time>
       </p>
     </div>
   </main>
@@ -15757,7 +15757,7 @@ Catalyseurs J+1 non disponibles — agenda éco non ingéré ce jour (best-effor
 const WEEKLY = [
 {...{"id": "weekly-2026-S25", "label": "Semaine 2026-S25", "filename": "2026-S25.md"}, markdown: `# Bilan semaine · 2026-S25 (2026-06-15 → 2026-06-21)
 
-- Généré : 21 juin 2026, 17h16 (samedi matin, Paris)
+- Généré : 21 juin 2026, 17h31 (samedi matin, Paris)
 - WIN RATE ONLY · aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.
 - WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) · inclut les jours sous seuil où une position aurait quand même été prise (toujours ≤ Win rate).
 
@@ -15881,6 +15881,7 @@ Aucun ajustement proposé cette semaine : toutes les cellules avec assez de pari
 - On a raté 18 mouvement(s) de plus de 1 % hors top 3, dont 13 bon(s) call(s) sous-classé(s) : revoir le classement pour ne pas laisser un bon signal hors sélection.
 - 3 pari(s) perdu(s) un jour d'événement programmé (ex. Décision de taux Fed (FOMC)) : baisser la certitude, voire écarter du top 3, les jours de grosse échéance connue à l'avance.
 - Calls cette semaine : news-driven 100% (2), quant-pur 33% (6). N encore faible dans un segment, ne pas généraliser.
+- Anomalie : la conviction faible (68.8%) dépasse la forte (44.8%). N encore modeste, à surveiller sans conclure avant plus de paris.
 
 <details class="weekly-annex">
 <summary>Annexe technique · détail de mesure (replié)</summary>
@@ -15951,8 +15952,8 @@ Aucun ajustement proposé cette semaine : toutes les cellules avec assez de pari
 
 | Conviction | N paris | Win rate | Interprétation |
 |---|---|---|---|
-| Forte (|score| ≥ seuil, 0 drapeau ◧/⇆/↯/~) | 0 | — (N insuffisant) | attendre N ≥ 3 |
-| Faible (quasi-neutre, mono-critère, coin-flip) | 0 | — (N insuffisant) | attendre N ≥ 3 |
+| Forte (|score| ≥ seuil, 0 drapeau ◧/⇆/↯/~) | 58 | 44.8% | edge non confirmé |
+| Faible (quasi-neutre, mono-critère, coin-flip) | 32 | 68.8% | à confirmer (N_eff > 10) |
 
 ### Cellules porteuses (ce qui marche)
 
@@ -15964,7 +15965,7 @@ Aucune cellule sous le seuil de détection (N_eff ≥ 10 ET Wilson_low < 50%).
 
 ### Observations sans proposition
 
-Rien en zone d'observation cette semaine.
+- S&P 500 24h : seulement 5 paris mesurés, pas assez pour conclure. On attend 10 paris avant d'agir.
 
 ### Sortie de warm-up par horizon
 
@@ -15994,7 +15995,7 @@ Rien en zone d'observation cette semaine.
 const WEEKLIES = [
 {...{"id": "weekly-2026-S25", "label": "Semaine 2026-S25", "sunday": "2026-06-21", "filename": "2026-S25.md"}, markdown: `# Bilan semaine · 2026-S25 (2026-06-15 → 2026-06-21)
 
-- Généré : 21 juin 2026, 17h16 (samedi matin, Paris)
+- Généré : 21 juin 2026, 17h31 (samedi matin, Paris)
 - WIN RATE ONLY · aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.
 - WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) · inclut les jours sous seuil où une position aurait quand même été prise (toujours ≤ Win rate).
 
@@ -16118,6 +16119,7 @@ Aucun ajustement proposé cette semaine : toutes les cellules avec assez de pari
 - On a raté 18 mouvement(s) de plus de 1 % hors top 3, dont 13 bon(s) call(s) sous-classé(s) : revoir le classement pour ne pas laisser un bon signal hors sélection.
 - 3 pari(s) perdu(s) un jour d'événement programmé (ex. Décision de taux Fed (FOMC)) : baisser la certitude, voire écarter du top 3, les jours de grosse échéance connue à l'avance.
 - Calls cette semaine : news-driven 100% (2), quant-pur 33% (6). N encore faible dans un segment, ne pas généraliser.
+- Anomalie : la conviction faible (68.8%) dépasse la forte (44.8%). N encore modeste, à surveiller sans conclure avant plus de paris.
 
 <details class="weekly-annex">
 <summary>Annexe technique · détail de mesure (replié)</summary>
@@ -16188,8 +16190,8 @@ Aucun ajustement proposé cette semaine : toutes les cellules avec assez de pari
 
 | Conviction | N paris | Win rate | Interprétation |
 |---|---|---|---|
-| Forte (|score| ≥ seuil, 0 drapeau ◧/⇆/↯/~) | 0 | — (N insuffisant) | attendre N ≥ 3 |
-| Faible (quasi-neutre, mono-critère, coin-flip) | 0 | — (N insuffisant) | attendre N ≥ 3 |
+| Forte (|score| ≥ seuil, 0 drapeau ◧/⇆/↯/~) | 58 | 44.8% | edge non confirmé |
+| Faible (quasi-neutre, mono-critère, coin-flip) | 32 | 68.8% | à confirmer (N_eff > 10) |
 
 ### Cellules porteuses (ce qui marche)
 
@@ -16201,7 +16203,7 @@ Aucune cellule sous le seuil de détection (N_eff ≥ 10 ET Wilson_low < 50%).
 
 ### Observations sans proposition
 
-Rien en zone d'observation cette semaine.
+- S&P 500 24h : seulement 5 paris mesurés, pas assez pour conclure. On attend 10 paris avant d'agir.
 
 ### Sortie de warm-up par horizon
 

@@ -119,6 +119,7 @@ class BilanSemaine:
     picks: List["PickSemaine"] = field(default_factory=list)  # post-mortem causal (S9)
     edge_familles: List["EdgeFamille"] = field(default_factory=list)  # où concentrer (S9)
     detail_24h: List["Detail24hActif"] = field(default_factory=list)  # grille 24h/actif (S9)
+    mouvements_rates: List["MouvementRate"] = field(default_factory=list)  # wins ratés (S9)
     markdown: str = ""
 
 
@@ -594,6 +595,93 @@ def _enrich_picks_semaine(
 
 
 @dataclass
+class MouvementRate:
+    """Un gros mouvement 24h (> 1 %) DANS LE BON SENS qu'on a RATÉ (pas dans le
+    top 3 du jour) — opportunité manquée à comprendre pour s'améliorer."""
+    actif: str
+    jour: date            # jour d'échéance (où le mouvement s'est joué)
+    call: str             # direction qui aurait gagné (notre call non sélectionné)
+    perf_dir: float       # % de gain dans le sens du call (> 1)
+    raison: str           # pourquoi pas dans le top 3 (déduit du decision-log)
+
+
+def mouvements_rates_semaine(
+    now: datetime,
+    measures_log: Path = MEASURES_LOG,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+) -> List[MouvementRate]:
+    """Actifs ayant fait > 1 % sur 24h DANS LE SENS de notre call, JUGÉS VRAI, mais
+    PAS retenus dans le top 3 du jour : des wins qu'on a ratés. La raison du
+    non-choix est déduite du decision-log (signal classé faible = exclusion
+    légitime ; sinon bon call sous-classé = vraie opportunité ratée). Zéro
+    invention : prix/échéance manquants ignorés."""
+    from journaliste import iso_week_bounds, OUTCOME_VRAI  # noqa: PLC0415
+    from bilan_jour import load_selection_map, load_conviction_records  # noqa: PLC0415
+    from datetime import timedelta  # noqa: PLC0415
+
+    monday, sunday = iso_week_bounds(now)
+    if not measures_log.exists():
+        return []
+    records: Dict[Tuple[str, str], dict] = {}
+    for line in measures_log.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(r, dict) and r.get("horizon") == "24h":
+            records[(str(r.get("actif")), str(r.get("echeance")))] = r
+
+    sel_cache: Dict[date, Dict[Tuple[str, str], bool]] = {}
+    conv_cache: Dict[date, Dict[Tuple[str, str], dict]] = {}
+    out: List[MouvementRate] = []
+    for r in records.values():
+        if r.get("outcome") != OUTCOME_VRAI:
+            continue
+        call = r.get("conclusion")
+        rp = r.get("realized_pct")
+        if call not in ("LONG", "SHORT") or not isinstance(rp, (int, float)):
+            continue
+        perf_dir = (1.0 if call == "LONG" else -1.0) * float(rp)
+        if perf_dir <= _SEUIL_BIEN_FAIT_PCT:  # pas un gros mouvement
+            continue
+        try:
+            ech = date.fromisoformat(str(r.get("echeance")))
+        except (TypeError, ValueError):
+            continue
+        if not (monday <= ech <= sunday):
+            continue
+        try:
+            bdate = date.fromisoformat(str(r.get("bulletin_date")))
+        except (TypeError, ValueError):
+            bdate = ech - timedelta(days=1)
+        actif = str(r.get("actif"))
+        if bdate not in sel_cache:
+            sel_cache[bdate] = load_selection_map(bdate, decision_log_dir)
+        if sel_cache[bdate].get((actif, "24h"), False):
+            continue  # était dans le top 3 → pas raté
+        if bdate not in conv_cache:
+            conv_cache[bdate] = load_conviction_records(bdate, decision_log_dir)
+        rec = conv_cache[bdate].get((actif, "24h")) or {}
+        if rec.get("coin_flip"):
+            raison = "écarté du top 3 car signal coin-flip (exclusion légitime) ; il a gagné quand même"
+        elif rec.get("mono_critere_dominant"):
+            nom = rec.get("mono_critere_nom")
+            raison = (f"écarté car signal mono-critère ({nom})" if nom
+                      else "écarté car signal mono-critère") + " ; il a gagné quand même"
+        elif rec.get("quasi_neutre"):
+            raison = "écarté car signal quasi-neutre ; il a gagné quand même"
+        else:
+            raison = "bon call NON classé dans le top 3 ce jour-là (conviction/score inférieurs) : opportunité ratée"
+        out.append(MouvementRate(actif=actif, jour=ech, call=str(call),
+                                 perf_dir=round(perf_dir, 2), raison=raison))
+    out.sort(key=lambda m: (-m.perf_dir, m.jour, m.actif))
+    return out
+
+
+@dataclass
 class EdgeFamille:
     """Win rate cumulé des top 3 d'une famille d'actifs (où concentrer les paris)."""
     famille: str
@@ -1029,13 +1117,14 @@ def build_bilan_semaine(
     picks = _enrich_picks_semaine(now)
     edge_fam = edge_par_famille(fiches=fiches)
     detail24 = detail_24h_par_actif(now)
+    rates = mouvements_rates_semaine(now)
 
     bilan = BilanSemaine(
         iso=iso, lundi=monday, dimanche=sunday, now=now, cellules=cellules,
         n_forte=conv.n_forte, taux_forte=conv.taux_forte,
         n_faible_conv=conv.n_faible, taux_faible_conv=conv.taux_faible,
         selection=sel, tendances=tend, picks=picks, edge_familles=edge_fam,
-        detail_24h=detail24,
+        detail_24h=detail24, mouvements_rates=rates,
     )
 
     propositions = [p for p in build_propositions(cellules) if proposition_valide(p)]
@@ -1562,60 +1651,55 @@ def _ratio_pct(p: "PickSemaine") -> str:
     return f"{p.ratio_news * 100:.0f}%" if isinstance(p.ratio_news, (int, float)) else "?"
 
 
+# Seuil « bien fait » / « gros mouvement » : variation directionnelle de plus de
+# 1 % (définition fondateur S9). En dessous = bruit, ni succès ni opportunité.
+_SEUIL_BIEN_FAIT_PCT = 1.0
+
+
+def _news_actif_jour(actif: str, jour: date) -> Optional[str]:
+    """News high tracée sur `actif` à la date `jour` (ou None). Best-effort."""
+    try:
+        from bilan_jour import cause_news_high_apres  # noqa: PLC0415
+        return cause_news_high_apres(actif, jour, None, None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _points_forts(bilan: BilanSemaine) -> List[str]:
-    """SECTION 3 — ce qui a marché et POURQUOI (post-mortem causal, spec S9).
+    """SECTION 3 — ce qu'on a bien fait (définition fondateur S9).
 
-    Priorité : cause tracée par pick (3.1) > bascules captées / continuations
-    (3.2) > conviction (3.3) > comptage sélection (3.4, seulement si rien d'autre).
-    """
+    Un succès = mouvement de PLUS DE 1 % capté DANS LE BON SENS (les deux conditions
+    sont primordiales). Vrai pour les top 3 (24h) ET pour les tendances (7j). On
+    précise la news relative s'il y en a une. Zéro invention."""
     pts: List[str] = []
-    gagnants_pick = [p for p in bilan.picks if p.vrai]
 
-    # Règle 3.1 — picks gagnants, cause par pick (news-driven / quant / paradoxe).
-    for p in gagnants_pick:
-        drap = p.drapeau_faible
-        if p.vrai and drap:  # paradoxe : succès sur signal classé faible
-            pts.append(
-                f"{p.actif} {p.call} a gagné MALGRÉ un signal classé faible "
-                f"(drapeau {drap}). Pas de conclusion : on garde le garde-fou, un "
-                "coup réussi ne valide pas un signal faible."
-            )
-        elif p.news_driven and p.cause_news:
-            pts.append(
-                f"{p.actif} {p.call} : bon flair news (part news {_ratio_pct(p)}). "
-                f"{p.cause_news} a poussé dans notre sens."
-            )
-        elif p.news_driven:
-            pts.append(
-                f"{p.actif} {p.call} : call orienté news (part news {_ratio_pct(p)}), "
-                "le marché est allé dans notre sens (catalyseur précis non tracé)."
-            )
-        else:
-            pts.append(
-                f"{p.actif} {p.call} : call quant-pur confirmé (part news {_ratio_pct(p)}), "
-                "le mouvement a suivi nos critères de tendance, sans news déterminante."
-            )
+    # Top 3 (24h) : gain directionnel > 1 % (donc dans le bon sens, et matériel).
+    for p in bilan.picks:
+        if p.mouvement_dir is None or p.mouvement_dir <= _SEUIL_BIEN_FAIT_PCT:
+            continue
+        ligne = f"{p.actif} {p.call} (24h) : {_fmt_signed_pct(p.mouvement_dir)} dans le bon sens"
+        if p.cause_news:
+            ligne += f", sur la news : {p.cause_news}"
+        pts.append(ligne + ".")
 
-    # Règle 3.2 — tendances 7j gagnantes (continuation / bascule captée).
-    gagnants_seg, _ = _segments_signes(bilan)
-    if gagnants_seg:
-        pts.append("Tendances 7j bien suivies : " + " ; ".join(gagnants_seg[:3]) + ".")
+    # Tendances (7j) : phase de plus de 1 % dans le sens de la tendance.
+    for t in bilan.tendances:
+        for s in t.segments:
+            if s.perf_pct is None or s.perf_pct <= _SEUIL_BIEN_FAIT_PCT:
+                continue
+            ligne = (f"Tendance {t.actif} {s.direction} ({_fmt_jours_segment(s.jours)}) : "
+                     f"{_fmt_signed_pct(s.perf_pct)} dans le bon sens")
+            news = _news_actif_jour(t.actif, s.jours[-1]) if s.jours else None
+            if news:
+                ligne += f", sur la news : {news}"
+            pts.append(ligne + ".")
 
-    # Règle 3.3 — conviction forte qui paie.
-    if bilan.n_forte >= 3 and bilan.taux_forte is not None and bilan.taux_forte >= 70.0:
+    if not pts:
         pts.append(
-            f"Le tri par conviction a payé : {_fmt_pct(bilan.taux_forte)} de réussite "
-            f"sur {bilan.n_forte} paris à conviction forte."
+            "Rien de net cette semaine : aucun mouvement de plus de 1 % capté dans le "
+            "bon sens (ni sur les top 3, ni sur les tendances)."
         )
-
-    # Règle 3.4 — filet : comptage sélection, seulement si rien de causal au-dessus.
-    s = bilan.selection
-    if not pts and s is not None and s.n_select >= 3 and s.win_rate is not None and s.win_rate >= 60.0:
-        pts.append(
-            f"La Sélection 24h tient : {_fmt_pct(s.win_rate)} sur {s.n_select} tops jugés "
-            f"({s.n_vrai} gagnants)."
-        )
-    return pts[:4]
+    return pts[:8]
 
 
 def _points_faibles(bilan: BilanSemaine) -> List[str]:
@@ -1674,17 +1758,23 @@ def _points_faibles(bilan: BilanSemaine) -> List[str]:
                 "actif, voire l'écarter du top 3."
             )
 
-    # Règle 4.2 — tendances 7j à contre-sens (retournement subi / faux flip).
+    # Règle 4.2 — ÉCHECS DE TENDANCE 7j (volet b).
     _, perdants_seg = _segments_signes(bilan)
     if perdants_seg:
-        pts.append("Tendances 7j à contre-sens : " + " ; ".join(perdants_seg[:3]) + ".")
+        pts.append("Échecs de tendance 7j : " + " ; ".join(perdants_seg[:3]) + ".")
 
-    # Règle 4.3 — alarme globale sélection (complète, ne duplique pas les actifs cités).
-    s = bilan.selection
-    if s is not None and s.n_select >= 3 and s.win_rate is not None and s.win_rate < 50.0 \
-            and not perdants_pick:
+    # Règle 4.4 — GROS MOUVEMENTS RATÉS (volet c) : actif > 1 % sur 24h dans le bon
+    # sens, jugé VRAI, mais PAS dans le top 3 du jour. À comprendre pour s'améliorer.
+    rates = bilan.mouvements_rates
+    if rates:
+        JJ = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
+        bouts = [
+            f"{m.actif} {m.call} {_fmt_signed_pct(m.perf_dir)} ({JJ[m.jour.weekday()]}) · {m.raison}"
+            for m in rates[:5]
+        ]
         pts.append(
-            f"La Sélection 24h sous la barre : {_fmt_pct(s.win_rate)} sur {s.n_select} tops jugés."
+            "Opportunités ratées (mouvement 24h de plus de 1 % dans le bon sens, hors "
+            "top 3) : " + " ; ".join(bouts) + "."
         )
 
     # Règle 4.5 — cellules faibles confirmées (sans jargon Wilson).
@@ -1695,7 +1785,7 @@ def _points_faibles(bilan: BilanSemaine) -> List[str]:
             f"Cellules faibles sur 2 semaines : {noms}. Pas un coup de malchance passager, "
             "une faiblesse structurelle : une proposition d'ajustement est ci-dessous."
         )
-    return pts[:5]
+    return pts[:9]
 
 
 def _priorite_familles(bilan: BilanSemaine) -> Optional[str]:
@@ -1738,6 +1828,42 @@ def _learnings_semaine(bilan: BilanSemaine) -> List[str]:
     """
     out: List[str] = []
     picks = bilan.picks
+
+    # === SYNTHÈSE (en tête) : ce qu'on doit retenir des sections 1 à 4. ===
+
+    # S-A — où on gagne / où on perd nettement (depuis la grille 24h par actif).
+    det = [d for d in bilan.detail_24h if d.n_concl >= 3]
+    gagnants_act = [d.actif for d in det if d.n_vrai == d.n_concl]   # 100 % sur ≥ 3
+    perdants_act = [d.actif for d in det if d.n_vrai == 0]            # 0 % sur ≥ 3
+    if gagnants_act or perdants_act:
+        bouts = []
+        if gagnants_act:
+            bouts.append("on gagne nettement sur " + ", ".join(gagnants_act))
+        if perdants_act:
+            bouts.append("on perd nettement sur " + ", ".join(perdants_act))
+        out.append(
+            "À retenir : " + " ; ".join(bouts) + " → prioriser les premiers dans le "
+            "top 3, se méfier des seconds."
+        )
+
+    # S-B — opportunités ratées (gros mouvements hors top 3).
+    rates = bilan.mouvements_rates
+    sous_classes = [m for m in rates if "opportunité ratée" in m.raison]
+    if rates:
+        détail = f", dont {len(sous_classes)} bon(s) call(s) sous-classé(s)" if sous_classes else ""
+        out.append(
+            f"On a raté {len(rates)} mouvement(s) de plus de 1 % hors top 3{détail} : "
+            "revoir le classement pour ne pas laisser un bon signal hors sélection."
+        )
+
+    # S-C — paris perdus un jour d'événement programmé (faute évitable).
+    evt_perdus = [p for p in picks if not p.vrai and p.evenement_programme]
+    if evt_perdus:
+        out.append(
+            f"{len(evt_perdus)} pari(s) perdu(s) un jour d'événement programmé "
+            f"(ex. {evt_perdus[0].evenement_programme}) : baisser la certitude, voire "
+            "écarter du top 3, les jours de grosse échéance connue à l'avance."
+        )
 
     # Règle 5.1 — drapeaux de signal faible qui ratent.
     picks_drap = [p for p in picks if p.drapeau_faible]
@@ -1803,7 +1929,7 @@ def _learnings_semaine(bilan: BilanSemaine) -> List[str]:
             "Pas de learning net cette semaine : trop peu de paris par catégorie (warm-up) "
             "pour conclure de façon fiable. On continue de mesurer."
         )
-    return out[:3]
+    return out[:5]
 
 
 # Seuil de matérialité d'un mouvement de tendance (% directionnel) pour qu'il

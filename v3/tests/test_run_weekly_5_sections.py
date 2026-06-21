@@ -379,18 +379,22 @@ def test_section2_est_un_tableau_avec_verdicts():
     assert "(en cours)" in md                   # phase en cours marquée
 
 
-def test_points_forts_incluent_le_pourquoi():
-    # Or SHORT stable gagnant → un point fort avec sa cause (continuation).
+def test_points_forts_tendance_plus_de_1pct():
+    # Tendance Or SHORT +5 % (> 1 % dans le bon sens) → comptée comme « bien fait ».
     seg = rw.SegmentTendance(direction="SHORT", jours=[date(2026, 6, 15)],
                              prix_debut=100.0, prix_fin=95.0)  # +5 % dans le sens SHORT
     t = rw.TendanceActif(actif="Or", ticker="GC=F", segments=[seg])
-    forts = rw._points_forts(SimpleNamespace(
-        tendances=[t], selection=None, cellules=[], picks=[],
-        n_forte=0, taux_forte=None,
-    ))
+    forts = rw._points_forts(_bilan_stub([], tendances=[t]))
     blob = " ".join(forts)
-    assert "Or SHORT" in blob
-    assert "stable" in blob or "tenue" in blob   # le POURQUOI est présent
+    assert "Tendance Or SHORT" in blob
+    assert "dans le bon sens" in blob and "+5,0 %" in blob
+
+
+def test_points_forts_exclut_mouvement_sous_1pct():
+    # Pick gagnant mais < 1 % → PAS « bien fait » (sous le seuil).
+    forts = rw._points_forts(_bilan_stub([_pick("Or", "SHORT", "VRAI", 0.0, mv=0.6)]))
+    assert all("Or" not in f for f in forts)
+    assert any("Rien de net" in f for f in forts)
 
 
 def test_annexe_technique_repliee_hors_sections_analyse(monkeypatch, tmp_path):
@@ -529,11 +533,13 @@ def test_priorite_familles_douce_si_petit_N():
     assert line and "CONFIRMER" in line
 
 
-def _bilan_stub(picks, edge_familles=None):
+def _bilan_stub(picks, edge_familles=None, tendances=None, detail_24h=None,
+                mouvements_rates=None):
     return SimpleNamespace(
-        picks=picks, tendances=[], selection=None, cellules=[],
+        picks=picks, tendances=tendances or [], selection=None, cellules=[],
         n_forte=0, taux_forte=None, n_faible_conv=0, taux_faible_conv=None,
-        edge_familles=edge_familles or [],
+        edge_familles=edge_familles or [], detail_24h=detail_24h or [],
+        mouvements_rates=mouvements_rates or [],
     )
 
 
@@ -548,16 +554,17 @@ def test_pick_semaine_proprietes():
     assert p2.drapeau_faible == "coin-flip"
 
 
-def test_section3_causal_par_pick():
+def test_section3_bien_fait_plus_de_1pct_avec_news():
+    # « Bien fait » = > 1 % dans le bon sens ; on précise la news s'il y en a une.
     forts = rw._points_forts(_bilan_stub([
-        _pick("Pétrole (Brent)", "SHORT", "VRAI", 0.71, cause="Stocks US en forte hausse"),
-        _pick("Or", "SHORT", "VRAI", 0.18),                       # quant-pur
-        _pick("Blé", "LONG", "VRAI", 0.0, mono=True, mono_nom="Tendance 20j"),  # paradoxe
+        _pick("Pétrole (Brent)", "SHORT", "VRAI", 0.71, mv=3.8, cause="Stocks US en forte hausse"),
+        _pick("Or", "SHORT", "VRAI", 0.18, mv=4.4),               # sans news
+        _pick("Argent", "SHORT", "VRAI", 0.0, mv=0.6),            # < 1 % → exclu
     ]))
     blob = " ".join(forts)
-    assert "bon flair news" in blob and "Stocks US en forte hausse" in blob
-    assert "quant-pur confirmé" in blob
-    assert "MALGRÉ un signal classé faible" in blob
+    assert "Pétrole (Brent) SHORT (24h) : +3,8 % dans le bon sens, sur la news : Stocks US" in blob
+    assert "Or SHORT (24h) : +4,4 % dans le bon sens" in blob
+    assert all("Argent" not in f for f in forts)   # mouvement sous 1 % écarté
 
 
 def test_section4_causal_news_ratee_et_signal_faible():

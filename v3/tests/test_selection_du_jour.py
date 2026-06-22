@@ -482,3 +482,81 @@ def test_selection_motif_famille_affiche_dans_bloc(monkeypatch):
     assert "chaque type de marché représenté une seule fois" not in texte
     pedago = "\n".join(sa.build_comment_lire_block(set()))
     assert "chaque type de marché représenté une seule fois" in pedago
+
+
+# ---------------------------------------------------------------------------
+# VETO NEWS↯ (consensus 3 experts, 22/06) — double condition news + tape,
+# garde-fou quant exceptionnel. Cf. _veto_news_contre_call / règle 5.
+# ---------------------------------------------------------------------------
+
+def _actif_veto(score_24h=2.0, direction="LONG", contre=True):
+    """ActifResult 24h forte avec momentum 24h à contre-sens du call (tape)."""
+    a = _actif("S&P 500", "sp500", score_24h=score_24h, direction=direction)
+    a.contre_momentum = {h: (contre if h == "24h" else False) for h in sa.HORIZONS}
+    return a
+
+
+def test_veto_news_plus_tape_exclut_la_cellule(monkeypatch):
+    # News high fraîche SHORT (contre call LONG) + tape à contre-sens → VETO.
+    import bilan_jour as bj
+    monkeypatch.setattr(
+        bj, "cause_news_high_dir",
+        lambda actif, date_j, sens, apres=None, events_path=None:
+            "Chine impose des restrictions" if sens == "SHORT" else None,
+    )
+    a = _actif_veto()
+    sel, ecart = sa.compute_selection_du_jour([a], now=_NOW)
+    assert sel == []
+    assert any(e["motif"].startswith("VETO news") for e in ecart)
+
+
+def test_veto_sans_tape_pas_de_veto(monkeypatch):
+    # Même news adverse MAIS momentum non contraire (tape ne confirme pas) → gardée.
+    import bilan_jour as bj
+    monkeypatch.setattr(
+        bj, "cause_news_high_dir",
+        lambda actif, date_j, sens, apres=None, events_path=None:
+            "Chine impose des restrictions" if sens == "SHORT" else None,
+    )
+    a = _actif_veto(contre=False)
+    sel, _ = sa.compute_selection_du_jour([a], now=_NOW)
+    assert [s["fiche_key"] for s in sel] == ["sp500"]
+
+
+def test_veto_quant_exceptionnel_pas_de_veto(monkeypatch):
+    # News adverse + tape contraire, MAIS quant hors-norme (>= 8.0) → garde-fou Analyst.
+    import bilan_jour as bj
+    monkeypatch.setattr(
+        bj, "cause_news_high_dir",
+        lambda actif, date_j, sens, apres=None, events_path=None:
+            "Chine impose des restrictions" if sens == "SHORT" else None,
+    )
+    a = _actif_veto(score_24h=8.5)
+    sel, _ = sa.compute_selection_du_jour([a], now=_NOW)
+    assert [s["fiche_key"] for s in sel] == ["sp500"]
+
+
+def test_veto_sans_now_ignore(monkeypatch):
+    # now absent → veto inactif (zéro invention), cellule conservée.
+    import bilan_jour as bj
+    monkeypatch.setattr(
+        bj, "cause_news_high_dir",
+        lambda actif, date_j, sens, apres=None, events_path=None: "X",
+    )
+    a = _actif_veto()
+    sel, _ = sa.compute_selection_du_jour([a])
+    assert [s["fiche_key"] for s in sel] == ["sp500"]
+
+
+def test_veto_affiche_dans_bloc(monkeypatch):
+    import bilan_jour as bj
+    monkeypatch.setattr(sa, "_catalyseurs_j0_high", lambda now: [])
+    monkeypatch.setattr(
+        bj, "cause_news_high_dir",
+        lambda actif, date_j, sens, apres=None, events_path=None:
+            "Chine impose des restrictions" if sens == "SHORT" else None,
+    )
+    a = _actif_veto()
+    texte = "\n".join(sa.build_selection_du_jour_block([a], _NOW))
+    assert "VETO news" in texte
+    assert "S&P 500" in texte

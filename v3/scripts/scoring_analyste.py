@@ -2201,6 +2201,62 @@ SELECTION_COVERAGE_MIN: float = 0.70
 # Nombre maximal de paris retenus par la sélection du jour (décision fondateur).
 SELECTION_MAX: int = 3
 
+# VETO NEWS↯ — garde-fou « quant exceptionnel » (consensus 3 experts, 22/06).
+# Si |note| ≥ ce seuil, le quant domine si nettement qu'on NE VETO PAS la cellule
+# (on la garde dans la Sélection) : la news adverse est alors un simple risque
+# signalé, pas un motif d'exclusion. Valeur fixée par l'Analyst (≥ +8.0 = conviction
+# quant hors-norme qui a historiquement battu les news ponctuelles).
+SELECTION_VETO_QUANT_FORT: float = 8.0
+
+
+def _veto_news_contre_call(
+    r: "ActifResult",
+    H: str,
+    now: Optional[datetime],
+    events_path: Optional[Path] = None,
+) -> Optional[str]:
+    """VETO NEWS↯ — décide si une cellule 24h doit être EXCLUE de la Sélection du
+    jour parce qu'une news adverse fraîche la contredit ET que le marché la confirme.
+
+    Consensus des 3 experts (Analyst + News Trader + Spéculateur, 22/06) sur le cas
+    S&P du 22/06 (call LONG +3.50 alors qu'une news Chine high baissière fraîche
+    tombait et que le future cédait ~0.7 %). DOUBLE CONDITION (News Trader +
+    Spéculateur) pour éviter de veto sur une news déjà cotée/absorbée :
+      1. NEWS — une news `high` de l'events-log, INGÉRÉE AUJOURD'HUI, dont la
+         direction IA pour cet actif est OPPOSÉE à notre call (via
+         `bilan_jour.cause_news_high_dir` sur le sens inverse) ;
+      2. TAPE — le momentum prix 24h va lui AUSSI à contre-sens du call
+         (`r.contre_momentum[H]`) : le marché confirme la news, ce n'est pas
+         qu'une rumeur isolée.
+    GARDE-FOU (Analyst) : si le quant est exceptionnellement fort
+    (|note| ≥ SELECTION_VETO_QUANT_FORT), on NE VETO PAS — le quant a la priorité,
+    la news devient un simple risque signalé ailleurs.
+
+    NE NEUTRALISE QUE LA SÉLECTION (Spéculateur : « le veto neutralise, ne renverse
+    jamais ») : la cellule garde sa note/conclusion et reste jouable ailleurs ; on
+    refuse seulement de la mettre en avant comme meilleur pari du jour. Retourne le
+    résumé de la news adverse (motif tracé) ou None si pas de veto. ZÉRO INVENTION :
+    `now` absent ou news/momentum manquants → None (pas de veto)."""
+    if now is None:
+        return None
+    conc = r.conclusions.get(H, "")
+    if conc not in ("LONG", "SHORT"):
+        return None
+    # Garde-fou Analyst : quant hors-norme → on ne veto pas.
+    if abs(r.scores.get(H, 0.0)) >= SELECTION_VETO_QUANT_FORT:
+        return None
+    # Condition 2 (TAPE) : le momentum prix doit aller CONTRE le call.
+    if not r.contre_momentum.get(H, False):
+        return None
+    # Condition 1 (NEWS) : news high fraîche du jour dans le sens INVERSE du call.
+    sens_oppose = "SHORT" if conc == "LONG" else "LONG"
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import bilan_jour as _bj  # import paresseux/tolérant
+        return _bj.cause_news_high_dir(r.nom, now.date(), sens_oppose, None, events_path)
+    except Exception:  # noqa: BLE001 — events-log indispo → pas de veto (zéro invention)
+        return None
+
 # Note discrète (fin de section « À jouer ») signalant que les capteurs courts
 # shadow tournent (Étage 2) — pour que Thomas sache qu'ils sont tracés au
 # decision-log SANS effet sur les notes. Promotion éventuelle : ticket C (~23/06).
@@ -2214,6 +2270,8 @@ _SHADOW_CAPTEURS_NOTE: List[str] = [
 def compute_selection_du_jour(
     results: List["ActifResult"],
     seuil_conviction: Optional[float] = None,
+    now: Optional[datetime] = None,
+    events_path: Optional[Path] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Calcule la « Sélection du jour — max 3 » sur l'horizon 24h.
 
@@ -2230,14 +2288,19 @@ def compute_selection_du_jour(
          famille macro (TIPS et écart 2Y US-DE = même complexe taux/dollar = un
          seul pari) et NON par critère littéral (réf. brief 12/06, défaut 11/06) ;
       4. max SELECTION_MAX lignes, tri |note| décroissant.
+      5. VETO NEWS↯ (consensus 3 experts, 22/06, cf. `_veto_news_contre_call`) :
+         exclut une candidate si une news high fraîche la CONTREDIT et que la TAPE
+         (momentum prix) confirme — sauf quant exceptionnel (|note| ≥ seuil). Appliqué
+         APRÈS (1)-(2) et AVANT la dédup/cap : une candidate vetoée libère sa place.
+         Veto actif uniquement si `now` est fourni (sinon ignoré, zéro invention).
 
     Retourne (selection, ecartees) :
       - selection : liste de dicts {fiche_key, actif, direction, note, driver_cle,
         driver_nom, coverage} — au plus SELECTION_MAX, triée |note| desc.
       - ecartees  : liste de dicts {fiche_key, actif, motif} pour les candidates
-        passant (1) et (2) mais écartées par (3) la dédup famille ou (4) le cap.
-        `motif` = « même pari (<famille>) que <Actif> » (dédup) ou « hors top 3 »
-        (cap), où <famille> est le label trader de la famille macro partagée.
+        passant (1) et (2) mais écartées par (5) le veto news↯, (3) la dédup famille
+        ou (4) le cap. `motif` = « VETO news↯ (<résumé>) », « même pari (<famille>)
+        que <Actif> » (dédup) ou « hors top 3 » (cap).
     NE MODIFIE NI score NI conclusion (lecture seule sur `results`).
     """
     if seuil_conviction is None:
@@ -2270,7 +2333,29 @@ def compute_selection_du_jour(
             # P3 — « Porté par » enrichi (nom complet + valeur + sens + contrib).
             "driver_detail": _driver_detail(r, H),
             "coverage": r.coverage,
+            "_result": r,  # réf. interne (veto news↯), retirée avant retour
         })
+
+    # Étape 2bis : VETO NEWS↯ (consensus 3 experts, 22/06). Une candidate est
+    # EXCLUE de la Sélection si une news high fraîche la contredit ET que le marché
+    # confirme (cf. `_veto_news_contre_call`). La cellule reste jouable ailleurs ;
+    # on refuse seulement de la mettre en avant. La candidate vetoée est tracée dans
+    # `ecartees` (motif « VETO news↯ ... ») ; les suivantes peuvent prendre sa place.
+    ecartees: List[Dict[str, Any]] = []
+    survivantes: List[Dict[str, Any]] = []
+    for c in candidates:
+        motif_veto = _veto_news_contre_call(c["_result"], H, now, events_path)
+        if motif_veto:
+            ecartees.append({
+                "fiche_key": c["fiche_key"],
+                "actif": c["actif"],
+                "motif": f"VETO news↯ ({motif_veto})",
+            })
+        else:
+            survivantes.append(c)
+    candidates = survivantes
+    for c in candidates:
+        c.pop("_result", None)
 
     # Tri |note| décroissant, déterministe (actif départage les ex æquo).
     candidates.sort(key=lambda d: (-abs(d["note"]), d["actif"]))
@@ -2284,7 +2369,6 @@ def compute_selection_du_jour(
     # identifiable, on ne peut pas affirmer « même pari » (zéro invention).
     import shared_drivers as _shared_drivers  # lazy, cf. pattern existant
     selection: List[Dict[str, Any]] = []
-    ecartees: List[Dict[str, Any]] = []
     gagnant_par_famille: Dict[Tuple[str, str], Tuple[str, str]] = {}
     for c in candidates:
         cle = c["driver_cle"]
@@ -2622,7 +2706,7 @@ def build_selection_du_jour_block(
     d'abstention (s'abstenir est une réponse valide).
     """
     prix_reference = prix_reference or {}
-    selection, ecartees = compute_selection_du_jour(results, seuil_conviction)
+    selection, ecartees = compute_selection_du_jour(results, seuil_conviction, now=now)
 
     # [Refonte S9 vague 3 — fusion I11] La « Sélection » et « À jouer » sont
     # désormais réunies sous UNE section « ## 🎯 Décision du jour » : tout ce qu'il
@@ -2635,12 +2719,25 @@ def build_selection_du_jour_block(
     # SEULE fois dans la section « ## Comment lire les scores » (fin de bulletin).
     # Ici, la section ne garde que son titre + tableau.
 
+    # Lignes VETO NEWS↯ (préparées ici, affichées que la sélection soit vide ou non)
+    # : on explique POURQUOI un pari fort n'est pas retenu (news adverse + tape).
+    lignes_veto: List[str] = []
+    for e in (x for x in ecartees if x["motif"].startswith("VETO news")):
+        lignes_veto.append(
+            f"⛔ **{e['actif']} écarté — {e['motif']}** : une news adverse fraîche "
+            f"va dans le sens du marché contre notre call. Cellule jouable ailleurs, "
+            f"pas mise en avant aujourd'hui."
+        )
+    if lignes_veto:
+        lignes_veto.append("")
+
     if not selection:
         out.append(
             "_Aucune sélection aujourd'hui (aucune cellule ne passe les 4 règles), "
             "ne pas forcer._"
         )
         out.append("")
+        out += lignes_veto
         return out
 
     header = "| Actif | Direction | Note | Porté par | Prix de réf. |"
@@ -2659,6 +2756,10 @@ def build_selection_du_jour_block(
             f"| {s['actif']} | {s['direction']} | {note_str} | {porte} | {px_str} |"
         )
     out.append("")
+
+    # Cellules VETO NEWS↯ (news adverse fraîche + tape confirmée) — affichées en
+    # évidence sous le tableau : on explique POURQUOI un pari fort n'est pas retenu.
+    out += lignes_veto
 
     # Candidates écartées par la dédup driver (motif explicite sous le tableau).
     ecartees_dedup = [e for e in ecartees if e["motif"].startswith("même pari")]
@@ -4233,7 +4334,7 @@ def build_decision_log_records(
     _cles_partagees = _shared_drivers.compute_shared_cles(results, HORIZONS)
     # Étage 1b — sélection du jour (24h) : MÊME source que le bloc bulletin (1a),
     # zéro divergence affichage⇄mesure. fiche_keys retenus + motifs d'exclusion.
-    _selection, _ecartees = compute_selection_du_jour(results)
+    _selection, _ecartees = compute_selection_du_jour(results, now=now)
     _selection_keys = {s["fiche_key"] for s in _selection}
     _motif_exclusion = {e["fiche_key"]: e["motif"] for e in _ecartees}
     shadow_capteurs = shadow_capteurs or {}

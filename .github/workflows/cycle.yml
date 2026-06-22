@@ -285,15 +285,6 @@ jobs:
           LOG_LEVEL: INFO
         run: python v3/scripts/run_journaliste.py
 
-      # La page est régénérée à CHAQUE créneau actif (pas seulement 7h) : un
-      # suivi 12h/18h ou un bilan 22h15 produit mais invisible sur la page
-      # « n'existe pas » pour Thomas (préférence fondateur, incidents 09/06 et
-      # 11/06). build_html est léger (lecture des .md, écriture index.html) et
-      # le step Commit ramasse déjà tout v3/data/ quel que soit le slot.
-      - name: Build HTML (page autonome de lecture des bulletins)
-        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot != 'none'
-        run: python v3/scripts/build_html.py
-
       # ----- Slot STAMP (08h05 continus / 09h05 EU / 15h35 US) : prix-only, léger -----
       - name: Stamp ouverture (prix-only — capture la VRAIE ouverture, idempotent)
         if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'stamp'
@@ -325,6 +316,18 @@ jobs:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           LOG_LEVEL: INFO
         run: python v3/scripts/run_bilan.py
+
+      # La page est régénérée à CHAQUE créneau actif (pas seulement 7h) : un
+      # suivi 12h/18h ou un bilan 22h15 produit mais invisible sur la page
+      # « n'existe pas » pour Thomas (préférence fondateur, incidents 09/06 et
+      # 11/06). DOIT tourner APRÈS les runners de slot (stamp/suivi/bilan) : ces
+      # runners écrivent leur .md ICI, donc un Build HTML placé AVANT eux bâtirait
+      # la page sur l'état précédent (bug 22/06 : suivi 18h sur disque mais absent
+      # de la page car build_html tournait avant run_suivi.py). build_html est léger
+      # (lecture des .md, écriture index.html) et le step Commit ramasse v3/data/.
+      - name: Build HTML (page autonome de lecture des bulletins)
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot != 'none'
+        run: python v3/scripts/build_html.py
 
       - name: Commit and push snapshot
         if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot != 'none'

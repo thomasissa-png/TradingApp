@@ -95,9 +95,12 @@ CONCLUSION_INSUFFISANT: str = "INSUFFISANT"
 #       direction antérieure                  → INSUFFISANT (🚫) comme aujourd'hui.
 COVERAGE_FLOOR: float = 0.25
 # Âge max de maintien par horizon (péremption). Au-delà → 🚫 (on ne maintient
-# pas une direction trop vieille sur data partielle). Horizon-aware : un même
-# trou de data peut être maintenable en 7j (fenêtre 48h) mais périmé en 1m (24h).
-CARRY_MAX_AGE_H: Dict[str, int] = {"24h": 24, "7j": 48, "1m": 24}
+# pas une direction trop vieille sur data partielle). Horizon-aware : la fenêtre de
+# maintien doit être PROPORTIONNELLE à l'horizon (audit 1m 22/06, consensus 3 experts).
+# AVANT : 1m=24h était une INCOHÉRENCE (on lâchait une conviction MENSUELLE après 1
+# jour de trou de data, alors que le 7j tolérait 48h). Une position 1 mois survit
+# largement à 2-4 jours de données partielles (sources lentes : COT hebdo, CB, LOCF).
+CARRY_MAX_AGE_H: Dict[str, int] = {"24h": 24, "7j": 48, "1m": 96}
 # Epsilon de contradiction : réutilise le seuil coin_flip (|score| < 0.05 =
 # non-actionnable / neutre). Si |score courant| ≥ EPSILON_CARRY ET signe opposé
 # à la direction maintenue → retournement franc → contradiction → 🚫.
@@ -3721,25 +3724,25 @@ def _seuil_conviction_defaut() -> float:
         return 0.6
 
 
-def build_swing_7j_block(
+def build_swing_block(
     results: List["ActifResult"],
+    horizon: str,
+    titre: str,
+    intro: str,
     prix_reference: Optional[Dict[str, float]] = None,
     fiches: Optional[Dict[str, dict]] = None,
 ) -> List[str]:
-    """Sélection SWING 7 JOURS JOUABLE (max 3) — réponse à l'audit 7j (Spéculateur :
-    « le 7j est un thermomètre, pas un trade »). On passe du panorama à des trades
-    cadrés : convictions 7j FORTES à couverture suffisante, DÉDUPLIQUÉES PAR DRIVER
-    (famille macro — « taux réels US » ne compte qu'une fois, pas 4 paris déguisés),
-    max 3. Pour chaque : objectif = seuil de réussite 7j de l'actif (config),
-    entrée = prix de réf., sortie = retournement de la tendance de fond.
-
-    ZÉRO invention : objectif lu en config (`seuils_reussite_pct`), prix déjà stampé.
-    Rappel honnête (audit retard) : le moteur 7j entre ~1-2 sem. après le début et
-    sort tardivement → fait pour les tendances DURABLES, pas les retournements."""
+    """Sélection de tendance JOUABLE (max 3) pour un horizon (7j ou 1m) — réponse à
+    l'audit (Spéculateur : « c'est un thermomètre, pas un trade »). On passe du
+    panorama à des trades cadrés : convictions FORTES à couverture suffisante,
+    DÉDUPLIQUÉES PAR DRIVER (famille macro — « taux réels US » ne compte qu'une fois,
+    pas N paris déguisés), max 3. Pour chaque : objectif = seuil de réussite de
+    l'actif à CET horizon (config), entrée = prix de réf., sortie = retournement du
+    fond. ZÉRO invention (objectif en config, prix stampé)."""
     prix_reference = prix_reference or {}
     fiches = fiches or {}
     seuil = _seuil_conviction_defaut()
-    H = "7j"
+    H = horizon
     try:
         import shared_drivers as _sd  # noqa: PLC0415
     except Exception:  # noqa: BLE001
@@ -3776,19 +3779,17 @@ def build_swing_7j_block(
         if len(retenus) >= SELECTION_MAX:
             break
 
-    out: List[str] = ["## 📈 Swing 7j (max 3)", ""]
+    out: List[str] = [titre, ""]
     if not retenus:
-        out.append("_Aucune tendance 7j à conviction forte et couverture suffisante "
+        out.append(f"_Aucune tendance {H} à conviction forte et couverture suffisante "
                    "ce cycle (normal : on ne force pas)._")
         out.append("")
         return out
-    out.append("_Tendances de fond à tenir ~7 jours (objectif = seuil de l'actif ; "
-               "sortie si la tendance de fond se retourne ; un seul pari par moteur). "
-               "Le moteur 7j entre/sort avec du retard : pour tendances durables._")
+    out.append(intro)
     out.append("")
     for _abs, r, direction, _fam in retenus:
         key = r.fiche_key
-        seuil_pct = (((fiches.get(key) or {}).get("seuils_reussite_pct") or {}).get("7j"))
+        seuil_pct = (((fiches.get(key) or {}).get("seuils_reussite_pct") or {}).get(H))
         if isinstance(seuil_pct, (int, float)):
             signe = "+" if direction == "LONG" else "−"
             obj = f"objectif {signe}{abs(float(seuil_pct)):.1f} %"
@@ -3801,6 +3802,29 @@ def build_swing_7j_block(
         out.append(f"- **{r.nom}** {direction} · {obj} · {entree} · porté par {porte}")
     out.append("")
     return out
+
+
+def build_swing_7j_block(results, prix_reference=None, fiches=None) -> List[str]:
+    """Swing 7 jours jouable (cf. build_swing_block)."""
+    return build_swing_block(
+        results, "7j", "## 📈 Swing 7j (max 3)",
+        "_Tendances de fond à tenir ~7 jours (objectif = seuil de l'actif ; sortie si "
+        "la tendance de fond se retourne ; un seul pari par moteur). Tendance courte 7j "
+        "(retard ~2-3j)._",
+        prix_reference=prix_reference, fiches=fiches,
+    )
+
+
+def build_positions_1m_block(results, prix_reference=None, fiches=None) -> List[str]:
+    """Positions 1 mois jouables (cf. build_swing_block) — réponse à l'audit 1m."""
+    return build_swing_block(
+        results, "1m", "## 🗓️ Positions 1 mois (max 3)",
+        "_Tendances de fond à tenir ~1 mois (objectif = seuil de l'actif ; sortie si "
+        "la tendance de fond se retourne ; un seul pari par moteur). Portées par la "
+        "tendance 20j + la macro : on capte le gros d'un mouvement de plusieurs "
+        "semaines (entrée ~1-2 sem. après le début, acceptable à cet horizon)._",
+        prix_reference=prix_reference, fiches=fiches,
+    )
 
 
 # Traduction des types de normalisation en libellé humain pour le tableau
@@ -4475,6 +4499,7 @@ def render_bulletin(
         lines[:_meta_end] + [""]
         + head_block + alertes_block + synth_lines + top_swing_block
         + build_swing_7j_block(results, prix_reference=prix_reference, fiches=fiches)
+        + build_positions_1m_block(results, prix_reference=prix_reference, fiches=fiches)
         + lines[_meta_end:]
     )
 

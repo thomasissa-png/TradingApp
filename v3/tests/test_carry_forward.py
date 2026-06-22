@@ -248,9 +248,10 @@ def test_maintien_si_score_neutre_meme_signe_oppose_faible(petrole, tmp_path):
 def test_insuffisant_si_perime(petrole, tmp_path):
     """(d) Maintien périmé (> âge max horizon) → 🚫.
 
-    Direction LONG à 30h. Pour 24h (fenêtre 24h) et 1m (fenêtre 24h) → périmé → 🚫.
+    Direction LONG à 100h. Fenêtres : 24h=24h et 1m=96h → toutes deux dépassées
+    (100h > 96h) → périmé → 🚫. (1m allongée à 96h le 22/06, cf. CARRY_MAX_AGE_H.)
     """
-    ts = NOW - timedelta(hours=30)
+    ts = NOW - timedelta(hours=100)
     _write_snapshot(tmp_path, ts, [
         _rec("petrole", "24h", "LONG", ts),
         _rec("petrole", "1m", "LONG", ts),
@@ -286,12 +287,15 @@ def test_insuffisant_si_aucune_direction_anterieure(petrole, tmp_path):
         assert r.conclusions[h] == sa.CONCLUSION_INSUFFISANT
 
 
-def test_horizon_aware_perime_1m_ok_7j(petrole, tmp_path):
-    """(f) Même cov, même âge : périmé en 1m (24h) mais maintenu en 7j (48h).
+def test_horizon_aware_perime_7j_ok_1m(petrole, tmp_path):
+    """(f) Même cov, même âge : périmé en 7j (48h) mais maintenu en 1m (96h).
 
-    Direction LONG à 30h sur 7j ET 1m. Fenêtres : 7j=48h (OK), 1m=24h (périmé).
+    Recalibrage 22/06 : la fenêtre de maintien est PROPORTIONNELLE à l'horizon
+    (1m=96h > 7j=48h). Direction LONG à 60h sur 7j ET 1m → 7j périmé (60h > 48h),
+    1m encore valide (60h < 96h). C'est l'ordre cohérent (un horizon plus long
+    tolère une donnée plus vieille), à l'inverse de l'ancien 1m=24h.
     """
-    ts = NOW - timedelta(hours=30)
+    ts = NOW - timedelta(hours=60)
     _write_snapshot(tmp_path, ts, [
         _rec("petrole", "7j", "LONG", ts),
         _rec("petrole", "1m", "LONG", ts),
@@ -304,12 +308,12 @@ def test_horizon_aware_perime_1m_ok_7j(petrole, tmp_path):
         "petrole", petrole, valeurs, now=NOW, log_dir=tmp_path,
         current_generated_at=NOW.isoformat(),
     )
-    # 7j : maintenu (30h < 48h).
-    assert r.is_carry["7j"] is True
-    assert r.conclusions["7j"] == "LONG"
-    # 1m : périmé (30h > 24h) → 🚫.
-    assert r.is_carry["1m"] is False
-    assert r.conclusions["1m"] == sa.CONCLUSION_INSUFFISANT
+    # 7j : périmé (60h > 48h) → 🚫.
+    assert r.is_carry["7j"] is False
+    assert r.conclusions["7j"] == sa.CONCLUSION_INSUFFISANT
+    # 1m : maintenu (60h < 96h).
+    assert r.is_carry["1m"] is True
+    assert r.conclusions["1m"] == "LONG"
 
 
 def test_coverage_normale_inchangee(petrole, tmp_path):

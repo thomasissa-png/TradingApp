@@ -2,6 +2,13 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-22 — Audit 1 mois (3 experts) : carry 1m 24h→96h + Positions 1 mois jouables + sonde data
+
+- **Carry 1m 24h → 96h** (consensus 3 experts) : maintenir une conviction MENSUELLE seulement 24h sur trou de data était incohérent (le 7j tolérait 48h > 1m). Fenêtre désormais proportionnelle à l'horizon (1m=96h > 7j=48h). Tests carry_forward mis à jour.
+- **Bloc « 🗓️ Positions 1 mois (max 3) » jouable** (Spéculateur) : le 1m était un panorama ; désormais sélection cadrée (objectif = seuil 1m de l'actif, entrée = prix réf, dédup par driver), miroir du Swing 7j. `build_swing_block` générique (7j + 1m).
+- **Sonde data** (`probe_data_coverage.py` + workflow `probe-data`) : verify-first, la clé Twelve Grow étant active — mesure par actif la fraîcheur journalière, l'intraday 1h, et si futures/indices directs résolvent. À lancer à la main.
+- À FAIRE (proposé, non expédié à l'aveugle) : mémoire structurelle news TTL (~30j 1m / ~10j 7j) — chaînon manquant relevé par le News Trader. Et fixes data #2 selon la sonde.
+
 ## 2026-06-22 — Recalibrage horizon↔fenêtre du 7j : tendance COURTE (7j) + 20j → 1 mois
 
 - **Problème (Thomas, confirmé sur pièces)** : le score 7j s'appuyait sur une tendance-prix **20 jours** (pertinence 7j=1.0 partout) — retard ~10j incohérent avec un horizon 7j.

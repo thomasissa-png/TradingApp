@@ -656,3 +656,34 @@ def test_swing_7j_vide_si_rien_de_fort(monkeypatch):
     a.scores = {"24h": 0.0, "7j": 0.0, "1m": 0.0}
     txt = "\n".join(sa.build_swing_7j_block([a], fiches={}))
     assert "Aucune tendance 7j" in txt
+
+
+def test_positions_1m_objectif_1m_et_dedup(monkeypatch):
+    import shared_drivers as sd
+    monkeypatch.setattr(sd, "famille_macro",
+                        lambda cle, fk="": ("taux_reels_us", "Taux réels US")
+                        if cle == "taux" else (cle, cle))
+    monkeypatch.setattr(sa, "_top_driver",
+                        lambda r, h: (getattr(r, "_d", ""), "Driver X"))
+    monkeypatch.setattr(sa, "_seuil_conviction_defaut", lambda: 0.6)
+    a = _actif("Or", "or", score_24h=0.0, direction="SHORT")
+    a.conclusions = {"24h": "INSUFFISANT", "7j": "SHORT", "1m": "SHORT"}
+    a.scores = {"24h": 0.0, "7j": -6.0, "1m": -7.0}; a.coverage = 0.95; a._d = "taux"
+    b = _actif("Argent", "argent", score_24h=0.0, direction="SHORT")
+    b.conclusions = {"24h": "INSUFFISANT", "7j": "SHORT", "1m": "SHORT"}
+    b.scores = {"24h": 0.0, "7j": -5.0, "1m": -6.0}; b.coverage = 0.95; b._d = "taux"
+    c = _actif("EUR/USD", "eurusd", score_24h=0.0, direction="LONG")
+    c.conclusions = {"24h": "INSUFFISANT", "7j": "LONG", "1m": "LONG"}
+    c.scores = {"24h": 0.0, "7j": 4.0, "1m": 5.0}; c.coverage = 0.95; c._d = "fx"
+    fiches = {"or": {"seuils_reussite_pct": {"1m": 3.0}},
+              "argent": {"seuils_reussite_pct": {"1m": 3.5}},
+              "eurusd": {"seuils_reussite_pct": {"1m": 1.5}}}
+    txt = "\n".join(sa.build_positions_1m_block([a, b, c], prix_reference={"or": 4200}, fiches=fiches))
+    assert "## 🗓️ Positions 1 mois (max 3)" in txt
+    assert txt.count("**Or**") + txt.count("**Argent**") == 1   # dédup driver
+    assert "**EUR/USD**" in txt and "objectif" in txt
+
+
+def test_carry_1m_allonge_a_96h():
+    # Cohérence horizon (audit 1m) : le maintien 1m ne doit plus être < le 7j.
+    assert sa.CARRY_MAX_AGE_H["1m"] >= sa.CARRY_MAX_AGE_H["7j"]

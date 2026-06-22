@@ -156,10 +156,10 @@ def test_impact_low_seul_ne_declenche_pas(monkeypatch):
     assert sj.select_top3(assets, NOW, ["eurusd"]) == []
 
 
-def test_proxy_overnight_map_couvre_les_indices_cash():
-    # Les indices cash fermés à 7h ont un proxy future pour le mouvement overnight.
-    assert sjd.PROXY_OVERNIGHT.get("sp500") == "ES=F"
-    assert sjd.PROXY_OVERNIGHT.get("nasdaq") == "NQ=F"
+def test_pas_de_proxy_futures_inerte():
+    # Vérifié sur pièces : Twelve ne sert aucun future CME + yfinance bloqué CI →
+    # un proxy ES=F/NQ=F serait INERTE. On n'en met donc aucun (honnêteté data).
+    assert sjd.PROXY_OVERNIGHT == {}
 
 
 def test_garde_fou_contradiction_via_session_move(monkeypatch):

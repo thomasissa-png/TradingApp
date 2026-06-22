@@ -1514,6 +1514,34 @@ def _raison_orientation(
     return (f"bascule {s.direction} : {raison}" if flip else raison)
 
 
+# GARDE-FOU HONNÊTETÉ (brief S9) — libellé ALIGNÉ sur le Bilan du jour
+# (bilan_jour._MSG_MESURE_INDISPO). Une semaine sans AUCUNE cellule notée ne doit
+# JAMAIS afficher « Rien à améliorer / RAS » (qui se lit « semaine parfaite ») :
+# elle affiche « mesure indisponible ». Même esprit, libellé adapté à la semaine.
+_MSG_MESURE_INDISPO_SEMAINE = (
+    "Mesure indisponible cette semaine (donnée absente) : à ne pas lire comme RAS."
+)
+
+
+def _mesure_indisponible_semaine(bilan: BilanSemaine) -> bool:
+    """True si la semaine ne repose sur AUCUNE mesure exploitable.
+
+    Garde-fou d'honnêteté symétrique de `bilan_jour._mesure_indisponible` : si
+    aucune cellule 24h n'a été jugée VRAI/FAUSSE cette semaine (detail_24h vide,
+    aucun pick), aucune phase de tendance 7j lisible, et aucune conviction mesurée,
+    alors les sections « bien fait / à améliorer / learnings » ne doivent pas
+    afficher un message rassurant trompeur. Zéro invention : on ne déduit l'absence
+    QUE de l'absence réelle de données agrégées."""
+    a_mesure_24h = bool(bilan.detail_24h) or bool(bilan.picks)
+    a_tendance = any(t.segments for t in bilan.tendances)
+    a_conviction = (bilan.n_forte + bilan.n_faible_conv) > 0
+    a_selection = bilan.selection is not None and bilan.selection.n_select > 0
+    # KPI cumulés : au moins une cellule avec des paris effectivement mesurés
+    # (n_eff > 0) prouve qu'il y a de la donnée à lire (même hors semaine ISO).
+    a_kpi = any((c.n_eff or 0) > 0 for c in bilan.cellules)
+    return not (a_mesure_24h or a_tendance or a_conviction or a_selection or a_kpi)
+
+
 def render_bilan_semaine(bilan: BilanSemaine) -> str:
     L: List[str] = []
     # [I-7 audit visuel 12/06] : H1 pour tous les rapports (harmonisation des
@@ -1545,10 +1573,15 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     # traçable. Le détail win rate (tables) vit sur la page Performance et,
     # in extenso, dans l'annexe technique repliée en pied de bilan.
     # ===================================================================
+    # Garde-fou honnêteté : 0 mesure sur la semaine → message explicite (pas RAS).
+    indispo = _mesure_indisponible_semaine(bilan)
+
     L.append("## 3. Ce qu'on a bien fait cette semaine")
     L.append("")
     points_forts = _points_forts(bilan)
-    if points_forts:
+    if indispo:
+        L.append(_MSG_MESURE_INDISPO_SEMAINE)
+    elif points_forts:
         for p in points_forts:
             L.append(f"- {p}")
     else:
@@ -1567,7 +1600,9 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     L.append("## 4. Ce qu'on doit améliorer")
     L.append("")
     points_faibles = _points_faibles(bilan)
-    if points_faibles:
+    if indispo:
+        L.append(_MSG_MESURE_INDISPO_SEMAINE)
+    elif points_faibles:
         for p in points_faibles:
             L.append(f"- {p}")
     else:
@@ -1588,7 +1623,9 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     )
     L.append("")
     learnings = _learnings_semaine(bilan)
-    if learnings:
+    if indispo:
+        L.append(_MSG_MESURE_INDISPO_SEMAINE)
+    elif learnings:
         for ln in learnings:
             L.append(f"- {ln}")
     else:

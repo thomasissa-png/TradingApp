@@ -2,6 +2,18 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-22 — Mesure partagée étendue aux Suivis 12h/18h + Bilan semaine R5 (cohérence par construction)
+
+- **But** : faire hériter les autres rapports de la mesure du « Bilan du jour » (module `mesure_bilan`) au lieu de mesures divergentes — une seule source de vérité.
+- **Suivis 12h/18h (`run_suivi.py`)** :
+  - **Cours max intraday** : en plus du fav% ponctuel, capture l'excursion MAX favorable ET adverse depuis l'ouverture, en RÉUTILISANT `mesure_bilan._excursions_intraday` (+ `_bars_du_jour`) sur la série 1h (`fetch_twelve_series(ticker,"1h",24)`) — zéro duplication. Nouveaux champs `SuiviLigne.max_favorable_pct/max_adverse_pct`, affichés (« Meilleur point / Pire point ») et persistés dans suivi-tracking (clés ADDITIVES `max_fav_pct`/`max_adv_pct` ; `call`/`fav_pct`/`heure` inchangées).
+  - **Robustesse prix** : relevé via cascade cohérente avec le bilan (dernière barre 1h → spot ; `prix_courant_cascade`). Source absente → `—`, jamais comblé.
+  - **GARDE-FOU HONNÊTETÉ (cause du suivi 18h vide d'aujourd'hui)** : si le Briefing 7h du jour est INTROUVABLE (archivé en cours de journée), le rapport l'AFFICHE (« Briefing 7h du jour introuvable : suivi des positions impossible ») au lieu d'un tableau vide silencieux. Distinct de « briefing trouvé mais 0 position » (`briefing_7h_existe`, même détection que `mesure_bilan.load_cells_et_prix_7h`).
+- **Bilan semaine R5 (`run_weekly.py`)** :
+  - **GARDE-FOU HONNÊTETÉ** : une semaine sans aucune mesure affiche « Mesure indisponible cette semaine (donnée absente) : à ne pas lire comme RAS » dans les sections 3/4/5, jamais un « Rien à améliorer / RAS » trompeur (`_mesure_indisponible_semaine`, libellé aligné sur `bilan_jour._MSG_MESURE_INDISPO`).
+  - **Agrégation** : vérifié de bout en bout que ce que `persist_mesures_jour` écrit dans le measures-log est bien lu par `selection_semaine` (round-trip testé) — format de clés cohérent, aucune incohérence à corriger.
+- **Tests** : +9 suivi (excursions LONG/SHORT, cascade de prix 1h→spot→`—`, briefing introuvable vs 0 position, persistance tracking) + +5 weekly (mesure indispo helper + rendu + round-trip persist→agrégation). Fetchers injectés, zéro réseau. Suite : **1693 passed, 22 failed (baseline préexistante : 18 `pandas` manquant + 4 jours fériés `holidays`), 0 régression**.
+
 ## 2026-06-22 — Refonte mesure du « Bilan du jour » : fenêtre = jour de bourse MÊME (auto-suffisante)
 
 - **Cause racine (vérifiée sur pièces, run 22h15)** : `build_bilan_jour` déléguait la notation à `journaliste.measure(today=compute_echeance(date_j,"24h"))`, soit le PROCHAIN jour ouvré. À 22h15 le soir J, la clôture de J+1 n'existe pas → les 12 calls 7h sortaient tous « non-notee » SANS le moindre fetch (défaut STRUCTUREL de conception, pas un fetch raté). measures-log vide → variations-24h vide → « à améliorer » vide.

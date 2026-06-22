@@ -343,6 +343,86 @@ def test_5_sections_aucun_montant(monkeypatch, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Brief S9 — GARDE-FOU HONNÊTETÉ : 0 mesure → « mesure indisponible », jamais RAS.
+# Aligné sur bilan_jour._MSG_MESURE_INDISPO (même esprit, libellé semaine).
+# ---------------------------------------------------------------------------
+
+def test_mesure_indisponible_helper_vrai_sur_bilan_vide():
+    bilan = rw.BilanSemaine(
+        iso="2026-W25", lundi=date(2026, 6, 15), dimanche=date(2026, 6, 21), now=NOW,
+    )
+    assert rw._mesure_indisponible_semaine(bilan) is True
+
+
+def test_mesure_indisponible_helper_faux_si_picks():
+    bilan = rw.BilanSemaine(
+        iso="2026-W25", lundi=date(2026, 6, 15), dimanche=date(2026, 6, 21), now=NOW,
+        picks=[rw.PickSemaine(actif="Or", call="LONG", outcome="VRAI",
+                              realized_pct=1.0, mouvement_dir=1.0,
+                              bulletin_date=date(2026, 6, 16), ratio_news=None)],
+    )
+    assert rw._mesure_indisponible_semaine(bilan) is False
+
+
+def test_render_affiche_mesure_indisponible_sur_0_mesure(monkeypatch, tmp_path):
+    """Une semaine SANS aucune mesure (0 KPI, 0 pick, 0 tendance) doit afficher
+    « mesure indisponible » dans les sections 3/4/5, JAMAIS « Aucun point faible »
+    ni « Rien à améliorer » (trompeur). Garde-fou honnêteté."""
+    _patch_full(monkeypatch, tmp_path)  # aucun KPI, aucune mesure, aucune tendance
+    bilan = rw.build_bilan_semaine(
+        now=NOW, fiches={}, fetch_price=None, state_dir=tmp_path, persist_state=False
+    )
+    md = bilan.markdown
+    assert rw._mesure_indisponible_semaine(bilan) is True
+    # Le message d'honnêteté apparaît (≥ 1 fois, sections 3/4/5).
+    assert "Mesure indisponible cette semaine" in md
+    assert md.count(rw._MSG_MESURE_INDISPO_SEMAINE) >= 3
+    # Et les fallbacks rassurants trompeurs ne sont PAS affichés.
+    assert "Aucun point faible confirmé cette semaine" not in md
+    assert "Rien de statistiquement notable" not in md
+
+
+def test_render_pas_de_message_indispo_si_mesure_presente(monkeypatch, tmp_path):
+    """Avec au moins une cellule mesurée, le message « indisponible » n'apparaît PAS."""
+    _patch_full(monkeypatch, tmp_path, kpis_list=[
+        jl.CellKPI(fiche_key="or", actif_name="Or", horizon="24h",
+                   n_effective=8, taux_eff_pct=90.0, wilson_low=0.60),
+    ])
+    bilan = rw.build_bilan_semaine(
+        now=NOW, fiches={}, fetch_price=None, state_dir=tmp_path, persist_state=False
+    )
+    assert rw._mesure_indisponible_semaine(bilan) is False
+    assert rw._MSG_MESURE_INDISPO_SEMAINE not in bilan.markdown
+
+
+def test_weekly_agrege_le_measures_log_peuple_par_persist_mesures_jour(tmp_path, monkeypatch):
+    """Part B point 2 : ce que persist_mesures_jour (bilan du jour) ÉCRIT est bien
+    LU par l'agrégation weekly (selection_semaine). Round-trip de bout en bout :
+    on persiste une mesure 24h via le module partagé, puis on l'agrège côté weekly."""
+    import bilan_jour as bj
+    import mesure_bilan as mb
+    import journaliste as J
+
+    # Une cellule 24h LONG VRAI, échéance dans la semaine ISO de NOW (16/06).
+    cell = J.BulletinCell(actif_name="Or", conclusion="LONG", horizon="24h",
+                          score=0.8, bulletin_date=date(2026, 6, 15))
+    m = J.Measure(cell=cell, fiche_key="or", ticker="GC=F", horizon="24h",
+                  echeance=date(2026, 6, 16), prix_emission=100.0, prix_courant=102.0,
+                  seuil_pct=0.5, delta_pct=2.0, outcome=J.OUTCOME_VRAI)
+    log = tmp_path / "measures-log.jsonl"
+    n = mb.persist_mesures_jour([m], date(2026, 6, 15), log)
+    assert n == 1 and log.exists()
+
+    # Or sélectionné le jour de décision → l'agrégation weekly doit le voir.
+    monkeypatch.setattr(bj, "load_selection_map", lambda d, dl=None: {("Or", "24h"): True})
+    res = rw.selection_semaine(NOW, measures_log=log, decision_log_dir=tmp_path)
+    assert res.n_select == 1
+    assert res.n_vrai == 1
+    assert res.win_rate == 100.0
+    assert res.ampleur_moy_gagnantes == 2.0  # signe(LONG) × realized_pct 2.0
+
+
+# ---------------------------------------------------------------------------
 # Refonte S9 vague 5 — section 2 en TABLEAU visuel + POURQUOI + annexe repliée
 # ---------------------------------------------------------------------------
 

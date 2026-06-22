@@ -290,12 +290,10 @@ def measure_cellule_journee(
         m.prix_courant = None
 
     # Note explicite si la clôture est absente (garde-fou honnêteté côté rendu).
-    if cloture is None and m.outcome == J.OUTCOME_NON_NOTE is False:
-        pass  # measure_cell a déjà posé une note « prix courant indisponible »
-    if cloture is None:
-        # measure_cell renvoie outcome courant=non terminal + note ; on précise.
-        if not m.note:
-            m.note = "clôture indisponible (donnée absente)"
+    # measure_cell a déjà posé une note « prix courant indisponible » ; on précise
+    # seulement si aucune note n'a été posée.
+    if cloture is None and not m.note:
+        m.note = "clôture indisponible (donnée absente)"
 
     # --- Excursions intraday (max favorable / adverse) ---
     if reference is not None and call in ("LONG", "SHORT"):

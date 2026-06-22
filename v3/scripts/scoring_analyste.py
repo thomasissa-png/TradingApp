@@ -2801,15 +2801,21 @@ def build_selection_du_jour_block(
     # Ici, la section ne garde que son titre + tableau.
 
     # Lignes VETO NEWS↯ (préparées ici, affichées que la sélection soit vide ou non)
-    # : on explique POURQUOI un pari fort n'est pas retenu (news adverse + tape).
+    # : on explique POURQUOI un pari fort n'est pas retenu (news adverse).
+    # Format COMPACT (retour Thomas 22/06 : « trop de détails en gros ») : une ligne
+    # courte par actif (nom en gras + news tronquée), et l'explication générique
+    # « jouable ailleurs » posée UNE SEULE FOIS sous le groupe, pas répétée par ligne.
     lignes_veto: List[str] = []
     for e in (x for x in ecartees if x["motif"].startswith("VETO news")):
-        lignes_veto.append(
-            f"⛔ **{e['actif']} écarté — {e['motif']}** : une news adverse fraîche "
-            f"va dans le sens du marché contre notre call. Cellule jouable ailleurs, "
-            f"pas mise en avant aujourd'hui."
-        )
+        # Le motif est « VETO news↯ (résumé de la news) » → on isole le résumé.
+        resume = e["motif"]
+        if "(" in resume and resume.endswith(")"):
+            resume = resume[resume.index("(") + 1:-1]
+        if len(resume) > 70:
+            resume = resume[:68].rstrip() + "…"
+        lignes_veto.append(f"⛔ **{e['actif']}** écarté du top 3 — news à contre-sens : « {resume} »")
     if lignes_veto:
+        lignes_veto.append("_(cellules toujours jouables dans « À jouer », simplement pas mises en avant)_")
         lignes_veto.append("")
 
     if not selection:

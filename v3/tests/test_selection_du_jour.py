@@ -568,8 +568,13 @@ def test_veto_affiche_dans_bloc(monkeypatch):
     _patch_news_short(monkeypatch)
     a = _actif_veto()
     texte = "\n".join(sa.build_selection_du_jour_block([a], _NOW))
-    assert "VETO news" in texte
+    # Format compact (retour Thomas 22/06) : ligne courte, news tronquée, pas de
+    # boilerplate par ligne. On vérifie le motif compact + l'actif + la news.
+    assert "écarté du top 3" in texte
     assert "S&P 500" in texte
+    assert "Chine impose des restrictions" in texte
+    # L'explication générique « jouable ailleurs » apparaît UNE seule fois.
+    assert texte.count("jouables dans") == 1
 
 
 

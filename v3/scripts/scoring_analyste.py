@@ -3862,6 +3862,88 @@ def build_comment_lire_block(flags_present: set) -> List[str]:
     return out
 
 
+def _raison_courte(r: "ActifResult", h: str = "24h") -> str:
+    """Raison du pari en CLAIR + chiffre clé (format décidé par Thomas 22/06) :
+    ex. « taux réels US élevés (2.23) ». Réutilise la phrase biblio
+    `raison_cellule_phrase` (sans la partie pédago après « : ») + la valeur du
+    driver dominant extraite de `_driver_detail`. Best-effort, jamais de crash."""
+    phrase = raison_cellule_phrase(r, h) or ""
+    court = phrase.split(":")[0].strip() if phrase else ""
+    val = ""
+    m = re.search(r"val\s+([-\d.]+)", _driver_detail(r, h) or "")
+    if m:
+        val = m.group(1)
+    if court and val:
+        return f"{court} ({val})"
+    if court:
+        return court
+    return _truncate_driver(_top_driver(r, h)[1])
+
+
+def build_decision_sheet(
+    results: List["ActifResult"],
+    now: Optional[datetime],
+    prix_reference: Optional[Dict[str, float]] = None,
+) -> List[str]:
+    """FEUILLE DE DÉCISION — le haut du bulletin, ce que Thomas lit en 10 s
+    (refonte 22/06 : « décision d'abord, diagnostic ensuite »).
+
+    Contenu MINIMAL et actionnable : les 3 paris du jour (sens · prix · raison
+    courte), ce qu'on écarte en une ligne, et LE risque du jour. Tout le reste
+    (À jouer complet, matrice 12×3, surveillance, drivers, santé sources,
+    pédagogie) descend dans « le détail ». ZÉRO impact mesure : aucun de ces
+    blocs n'est parsé (cf. `journaliste.parse_bulletin` / `load_veille` qui ne
+    lisent QUE la matrice « Synthèse des décisions »)."""
+    prix_reference = prix_reference or {}
+    selection, ecartees = compute_selection_du_jour(results, now=now)
+    by_key = {r.fiche_key: r for r in results}
+
+    out: List[str] = ["## 🎯 Aujourd'hui", ""]
+    if selection:
+        out.append("**Les paris du jour (max 3)**")
+        out.append("")
+        for s in selection:
+            r = by_key.get(s["fiche_key"])
+            raison = _raison_courte(r) if r is not None else _truncate_driver(s.get("driver_nom", ""))
+            px = prix_reference.get(s["fiche_key"])
+            px_str = f" @ {px:g}" if isinstance(px, (int, float)) else ""
+            flag = " ⇅" if s.get("conflit_horizons") else ""
+            out.append(f"- **{s['actif']}** {s['direction']}{flag}{px_str} — {raison}")
+        out.append("")
+    else:
+        out.append("_Aucun pari aujourd'hui : rien ne passe les critères. Ne pas forcer._")
+        out.append("")
+
+    # Écartés — une seule ligne, regroupée par motif (news vs même pari).
+    vetos = [e["actif"] for e in ecartees if e["motif"].startswith("VETO news")]
+    dedup = [e["actif"] for e in ecartees if e["motif"].startswith("même pari")]
+    if vetos:
+        out.append(f"**Écartés** (news high à contre-sens) : {', '.join(vetos)}.")
+    if dedup:
+        out.append(f"**Doublons de pari** (même moteur, gardé le plus fort) : {', '.join(dedup)}.")
+    if vetos or dedup:
+        out.append("")
+
+    # Le risque du jour : concentration sur un même driver parmi les paris retenus
+    # (le piège le plus courant — plusieurs « paris » = UN seul pari répété).
+    if len(selection) >= 2:
+        cles: Dict[str, List[str]] = {}
+        for s in selection:
+            cle = s.get("driver_cle") or ""
+            if cle:
+                cles.setdefault(cle, []).append(s["actif"])
+        concentres = max(cles.values(), key=len) if cles else []
+        if len(concentres) >= 2:
+            r0 = by_key.get(next((s["fiche_key"] for s in selection if s["actif"] == concentres[0]), ""))
+            label = _truncate_driver(_top_driver(r0, "24h")[1]) if r0 is not None else "le même moteur"
+            out.append(
+                f"⚠️ **Risque du jour** : {', '.join(concentres)} reposent sur le même "
+                f"moteur ({label}) — un retournement les fausse ensemble."
+            )
+            out.append("")
+    return out
+
+
 def render_bulletin(
     results: List[ActifResult],
     veille_conclusions: Dict[str, Dict[str, str]],
@@ -4269,8 +4351,12 @@ def render_bulletin(
     #      (la vue d'ensemble en contexte, après l'actionnable et ses alertes).
     #   4) « Top swing (7j / 1m) » APRÈS le panorama (il répond au swing 7j/1m,
     #      une question différente du pari du jour — I10).
+    # FEUILLE DE DÉCISION en TÊTE (refonte 22/06) : la décision en 10 s. Le reste
+    # (Sélection détaillée, À jouer, matrice…) suit comme « le détail ».
+    decision_sheet = build_decision_sheet(results, now, prix_reference=prix_reference)
     head_block = (
-        build_selection_du_jour_block(
+        decision_sheet
+        + build_selection_du_jour_block(
             results, now, prix_reference=prix_reference,
             shadow_capteurs=shadow_capteurs, fiches=fiches,
         )

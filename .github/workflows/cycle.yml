@@ -45,6 +45,11 @@ on:
         description: "Forcer le run même le week-end (échappatoire manuelle). Le VPS ne passe JAMAIS force=true → garde week-end appliquée."
         type: boolean
         default: false
+      slot:
+        description: "Forcer un créneau précis (échappatoire manuelle hors horaire). Vide = routage par l'heure de Paris (défaut). Le VPS/cron ne passe JAMAIS slot → routage normal."
+        type: choice
+        default: ""
+        options: ["", "bulletin", "stamp", "suivi12", "suivi18", "bilan"]
   # Répétition manuelle sans bouton (mobile) : pousser v3/RUN-CYCLE.txt déclenche un cycle.
   push:
     paths:
@@ -220,6 +225,13 @@ jobs:
           elif [ "$ph" -eq 15 ];                      then slot="stamp"
           elif [ "$ph" -ge 17 ] && [ "$ph" -le 18 ]; then slot="suivi18"
           elif [ "$ph" -eq 22 ] && [ "$pm" -ge 15 ]; then slot="bilan"
+          fi
+          # Override manuel (workflow_dispatch.slot) : si fourni, il PRIME sur le
+          # routage horaire. Vide (cron/VPS, défaut) → routage normal inchangé.
+          override="${{ github.event.inputs.slot }}"
+          if [ -n "$override" ]; then
+            slot="$override"
+            echo "Slot FORCÉ via workflow_dispatch : ${slot} (heure Paris ${ph}h${pm})."
           fi
           echo "slot=$slot" >> "$GITHUB_OUTPUT"
           echo "Heure Paris ${ph}h${pm} → slot=${slot}."

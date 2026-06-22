@@ -3953,6 +3953,7 @@ def render_bulletin(
     prix_reference: Optional[Dict[str, float]] = None,
     shadow_capteurs: Optional[Dict[str, Dict[str, Optional[float]]]] = None,
     fiches: Optional[Dict[str, dict]] = None,
+    top3_picks: Optional[List[Any]] = None,
 ) -> str:
     # Lot 5 C8a — import paresseux (cohérent avec build_decision_log_records).
     import triggers_classifier as _tc_classifier  # noqa: F401
@@ -4352,17 +4353,27 @@ def render_bulletin(
     #   4) « Top swing (7j / 1m) » APRÈS le panorama (il répond au swing 7j/1m,
     #      une question différente du pari du jour — I10).
     # FEUILLE DE DÉCISION en TÊTE (refonte 22/06) : la décision en 10 s. Le reste
-    # (Sélection détaillée, À jouer, matrice…) suit comme « le détail ».
-    decision_sheet = build_decision_sheet(results, now, prix_reference=prix_reference)
-    head_block = (
-        decision_sheet
-        + build_selection_du_jour_block(
-            results, now, prix_reference=prix_reference,
-            shadow_capteurs=shadow_capteurs, fiches=fiches,
+    # (À jouer de fond, matrice…) suit comme « le détail ».
+    # Si le NOUVEAU moteur « top 3 du jour » (selection_jour, événementiel+momentum)
+    # a fourni des picks, il PILOTE la tête de bulletin. Sinon (tests / indispo),
+    # on retombe sur l'ancienne Sélection de fond (repli sûr — jamais de bulletin vide).
+    if top3_picks is not None:
+        import selection_jour_data as _sjd  # noqa: PLC0415
+        head_block = (
+            _sjd.build_top3_block(top3_picks, prix_reference=prix_reference)
+            + build_a_jouer_block(results, now, prix_reference=prix_reference)
+            + _SHADOW_CAPTEURS_NOTE
         )
-        + build_a_jouer_block(results, now, prix_reference=prix_reference)
-        + _SHADOW_CAPTEURS_NOTE
-    )
+    else:
+        head_block = (
+            build_decision_sheet(results, now, prix_reference=prix_reference)
+            + build_selection_du_jour_block(
+                results, now, prix_reference=prix_reference,
+                shadow_capteurs=shadow_capteurs, fiches=fiches,
+            )
+            + build_a_jouer_block(results, now, prix_reference=prix_reference)
+            + _SHADOW_CAPTEURS_NOTE
+        )
     # I14 — alertes de décision remontées juste sous « Décision du jour », avant
     # le panorama. surveillance_block est toujours présent (placeholder si vide) ;
     # _shared_block ne l'est que si un driver partagé dépasse le seuil (anti-bruit).
@@ -5377,11 +5388,26 @@ def run(
     except Exception as e:  # noqa: BLE001
         logger.warning("capteurs shadow (drapeau contre-sens) indispo : %s", e)
 
+    # Top 3 du jour (nouveau moteur événementiel+momentum, refonte validée 10/10).
+    # BEST-EFFORT : toute panne → [] → la tête de bulletin retombe sur la Sélection
+    # de fond (jamais de bulletin vide). Le fond (7j/1m, matrice) reste inchangé.
+    try:
+        import selection_jour_data as _sjd  # noqa: PLC0415
+        import briefing as _briefing  # noqa: PLC0415
+        top3_picks = _sjd.compute_top3(
+            results, now, prix_reference or {},
+            fiches_dir=fiches_dir, events_path=_briefing.EVENTS_LOG,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("moteur top 3 du jour indispo : %s", e)
+        top3_picks = []
+
     content = render_bulletin(
         results, veille_conclusions, now, fhash, fresh_msg,
         prix_reference=prix_reference,
         shadow_capteurs=shadow_capteurs_for_render,
         fiches=fiches,
+        top3_picks=top3_picks,
     )
     # Un fichier distinct par créneau (3 runs/jour). Le créneau est l'HEURE DE
     # PARIS du run, zéro-paddée (ex. bulletin-2026-06-05-18h.md pour un run 18h04

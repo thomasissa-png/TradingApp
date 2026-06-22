@@ -23,6 +23,14 @@ from typing import Any, Dict, List, Optional, Tuple
 # MONO_CRITERE_RATIO du scoring (0.50).
 DRIVER_PART_MIN: float = 0.50
 
+# Part minimale POUR LE SIGNALEMENT DE FAUX CONSENSUS (bloc ⚭ « Drivers macro
+# partagés »). Plus BASSE que DRIVER_PART_MIN (0.50) : un driver qui pèse 30-49 %
+# d'une cellule n'est pas le « driver dominant » affiché en « Porté par », mais il
+# crée quand même une CORRÉLATION CACHÉE entre actifs (audit fond 22/06, Analyst :
+# le bloc ratait Nasdaq/S&P 7j-1m où les taux réels US pèsent fort sans être >50 %).
+# On élargit donc l'AVERTISSEMENT de risque sans toucher l'attribution « Porté par ».
+DRIVER_PART_MIN_CONSENSUS: float = 0.30
+
 # Nombre minimal de cellules de MÊME direction portées par le même driver pour
 # déclencher un signalement (réf. brief : « ≥ 2 cellules de même direction »).
 DRIVER_MIN_CELLULES: float = 2
@@ -241,6 +249,7 @@ def compute_shared_cles(results: List[Any], horizons: Tuple[str, ...]) -> set:
 def compute_shared_drivers_summary(
     results: List[Any],
     horizons: Tuple[str, ...],
+    part_min: float = DRIVER_PART_MIN_CONSENSUS,
 ) -> List[Dict[str, Any]]:
     """Synthèse run : pour chaque driver partagé qui porte ≥ DRIVER_MIN_CELLULES
     cellules de MÊME direction, agrège les actifs concernés.
@@ -249,6 +258,11 @@ def compute_shared_drivers_summary(
     cellule (LONG si +1, SHORT si -1). On groupe par (cle, direction) : un même
     driver peut être SHORT sur N actifs et LONG sur d'autres (rare, mais on ne
     fusionne pas des directions opposées — sinon le message tromperait).
+
+    `part_min` (défaut DRIVER_PART_MIN_CONSENSUS = 0.30) : seuil de part du driver
+    dans le |score| d'une cellule pour la compter dans le faux consensus. Plus bas
+    que le seuil « Porté par » (0.50) afin de capter les corrélations cachées
+    secondaires (ex. taux réels US sur Nasdaq/S&P 7j-1m) — audit fond 22/06.
 
     Retourne une liste de dicts triée par n_cellules décroissant :
         {cle, label, direction ("LONG"/"SHORT"), actifs (set→list triée),
@@ -268,7 +282,7 @@ def compute_shared_drivers_summary(
                 (getattr(c, "cle_courante", "") or ""): c.nom for c in r.criteres
             }
             for cle, (part, signe) in parts.items():
-                if cle not in cles_partagees or part < DRIVER_PART_MIN or signe == 0:
+                if cle not in cles_partagees or part < part_min or signe == 0:
                     continue
                 direction = "LONG" if signe > 0 else "SHORT"
                 key = (cle, direction)

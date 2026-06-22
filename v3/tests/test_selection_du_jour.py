@@ -560,3 +560,81 @@ def test_veto_affiche_dans_bloc(monkeypatch):
     texte = "\n".join(sa.build_selection_du_jour_block([a], _NOW))
     assert "VETO news" in texte
     assert "S&P 500" in texte
+
+
+# ---------------------------------------------------------------------------
+# Conflit inter-horizons (⇅) — call 24h à contre-sens du fond 7j ET 1m
+# (audit fond 22/06, cas S&P LONG 24h / SHORT 7j-1m).
+# ---------------------------------------------------------------------------
+
+def test_conflit_inter_horizons_flague():
+    a = _actif("S&P 500", "sp500", score_24h=0.9, direction="LONG")
+    a.conclusions = {"24h": "LONG", "7j": "SHORT", "1m": "SHORT"}
+    sel, _ = sa.compute_selection_du_jour([a], now=_NOW)
+    assert sel and sel[0]["conflit_horizons"] is True
+
+
+def test_pas_de_conflit_si_un_seul_horizon_oppose():
+    # 7j oppose mais 1m aligné → PAS un conflit de fond (il faut 7j ET 1m opposés).
+    a = _actif("S&P 500", "sp500", score_24h=0.9, direction="LONG")
+    a.conclusions = {"24h": "LONG", "7j": "SHORT", "1m": "LONG"}
+    sel, _ = sa.compute_selection_du_jour([a], now=_NOW)
+    assert sel and sel[0]["conflit_horizons"] is False
+
+
+def test_conflit_inter_horizons_affiche_dans_bloc(monkeypatch):
+    monkeypatch.setattr(sa, "_catalyseurs_j0_high", lambda now: [])
+    a = _actif("S&P 500", "sp500", score_24h=0.9, direction="LONG")
+    a.conclusions = {"24h": "LONG", "7j": "SHORT", "1m": "SHORT"}
+    texte = "\n".join(sa.build_selection_du_jour_block([a], _NOW))
+    assert "⇅" in texte
+    assert "contre-sens du fond" in texte
+
+
+# ---------------------------------------------------------------------------
+# VETO news↯ — TAPE via gap d'ouverture overnight (et plus seulement RSI 14j).
+# Cas « future en baisse » de l'audit fond 22/06.
+# ---------------------------------------------------------------------------
+
+def test_veto_via_gap_overnight_sans_contre_momentum(monkeypatch):
+    # Pas de contre-momentum RSI, MAIS gap d'ouverture baissier (-0.7%) contre un
+    # call LONG + news adverse fraîche → le TAPE (gap) déclenche le veto.
+    import bilan_jour as bj
+    monkeypatch.setattr(
+        bj, "cause_news_high_dir",
+        lambda actif, date_j, sens, apres=None, events_path=None:
+            "Chine impose des restrictions" if sens == "SHORT" else None,
+    )
+    a = _actif_veto(contre=False)  # contre_momentum 24h = False
+    capteurs = {"sp500": {"shadow_gap_overnight": -0.007}}
+    sel, ecart = sa.compute_selection_du_jour([a], now=_NOW, shadow_capteurs=capteurs)
+    assert sel == []
+    assert any(e["motif"].startswith("VETO news") for e in ecart)
+
+
+def test_gap_overnight_meme_sens_que_call_pas_de_veto(monkeypatch):
+    # Gap haussier (+0.7%) ALIGNÉ avec un call LONG → le tape ne contredit pas → gardé.
+    import bilan_jour as bj
+    monkeypatch.setattr(
+        bj, "cause_news_high_dir",
+        lambda actif, date_j, sens, apres=None, events_path=None:
+            "Chine impose des restrictions" if sens == "SHORT" else None,
+    )
+    a = _actif_veto(contre=False)
+    capteurs = {"sp500": {"shadow_gap_overnight": 0.007}}
+    sel, _ = sa.compute_selection_du_jour([a], now=_NOW, shadow_capteurs=capteurs)
+    assert [s["fiche_key"] for s in sel] == ["sp500"]
+
+
+def test_gap_overnight_sous_le_seuil_pas_de_veto(monkeypatch):
+    # Gap baissier mais minuscule (-0.1% < 0.3%) → bruit, pas une confirmation tape.
+    import bilan_jour as bj
+    monkeypatch.setattr(
+        bj, "cause_news_high_dir",
+        lambda actif, date_j, sens, apres=None, events_path=None:
+            "Chine impose des restrictions" if sens == "SHORT" else None,
+    )
+    a = _actif_veto(contre=False)
+    capteurs = {"sp500": {"shadow_gap_overnight": -0.001}}
+    sel, _ = sa.compute_selection_du_jour([a], now=_NOW, shadow_capteurs=capteurs)
+    assert [s["fiche_key"] for s in sel] == ["sp500"]

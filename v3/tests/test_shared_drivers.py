@@ -190,6 +190,41 @@ def test_driver_label_fallback_sur_nom():
     """Clé non mappée → on retombe sur le nom du critère (pas d'invention)."""
     assert sd.driver_label("dxy_trend_20j") == "Dollar (DXY)"
     assert sd.driver_label("cle_inconnue_xyz", "Mon Critère") == "Mon Critère"
+
+
+# ===========================================================================
+# Faux consensus élargi (audit fond 22/06) : seuil 0.30 pour le bloc ⚭, mais
+# l'attribution « Porté par » (cell_shared_drivers) reste à 0.50.
+# ===========================================================================
+
+def test_faux_consensus_capte_driver_secondaire_30_a_50pct():
+    """tips à 40% (entre 0.30 et 0.50) → signalé dans le bloc ⚭ (corrélation
+    cachée), mais ABSENT de l'attribution « Porté par » de la cellule (0.50)."""
+    # tips -4 vs propre -6 → part = 4/10 = 0.40 : ≥ consensus (0.30), < dominant (0.50).
+    a = _Actif("Nasdaq", [
+        _crit("taux_10y_us_reels_tips", -4.0, "Taux réels US"),
+        _crit("propre_nasdaq", -6.0),
+    ])
+    b = _Actif("S&P 500", [
+        _crit("taux_10y_us_reels_tips", -4.0, "Taux réels US"),
+        _crit("propre_sp", -6.0),
+    ])
+    # Bloc faux consensus : tips capté (0.40 ≥ 0.30).
+    summary = sd.compute_shared_drivers_summary([a, b], HORIZONS)
+    assert len(summary) == 1
+    assert summary[0]["cle"] == "taux_10y_us_reels_tips"
+    assert summary[0]["actifs"] == ["Nasdaq", "S&P 500"]
+    # Attribution « Porté par » de la cellule : tips NON listé (0.40 < 0.50).
+    cles = sd.compute_shared_cles([a, b], HORIZONS)
+    assert sd.compute_cell_shared_drivers(a, "24h", cles) == []
+
+
+def test_faux_consensus_respecte_le_plancher_30pct():
+    """Driver partagé sous 0.30 → toujours exclu du bloc ⚭ (pas de sur-signalement)."""
+    # tips -2 vs propre -8 → part = 2/10 = 0.20 < 0.30.
+    a = _Actif("Or", [_crit("taux_10y_us_reels_tips", -2.0), _crit("p_or", -8.0)])
+    b = _Actif("Nasdaq", [_crit("taux_10y_us_reels_tips", -2.0), _crit("p_nq", -8.0)])
+    assert sd.compute_shared_drivers_summary([a, b], HORIZONS) == []
     assert sd.driver_label("cle_inconnue_xyz") == "cle_inconnue_xyz"
 
 

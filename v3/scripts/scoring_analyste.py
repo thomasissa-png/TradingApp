@@ -2208,12 +2208,48 @@ SELECTION_MAX: int = 3
 # quant hors-norme qui a historiquement battu les news ponctuelles).
 SELECTION_VETO_QUANT_FORT: float = 8.0
 
+# VETO NEWS↯ — seuil de gap d'ouverture overnight (rendement prix d'émission 7h /
+# close J-1) pour considérer que le TAPE va contre le call. 0.003 = 0.3 % (borne
+# basse de la fourchette News Trader « le tape confirme ≥ ~0.3-0.5 % »). En deçà,
+# le gap est du bruit d'ouverture, pas une confirmation de la news.
+SELECTION_VETO_TAPE_GAP_MIN: float = 0.003
+
+
+def _tape_contre_call(
+    r: "ActifResult",
+    H: str,
+    conc: str,
+    gap_overnight: Optional[float],
+) -> bool:
+    """Le TAPE va-t-il à CONTRE-SENS du call ? (condition 2 du veto news↯)
+
+    Deux signaux indépendants, l'un OU l'autre suffit (audit fond 22/06 — le RSI
+    14j seul ratait le cas « future en baisse de 0.7 % » qui a gêné Thomas) :
+      (a) MOMENTUM RSI — `r.contre_momentum[H]` (conclusion vs RSI 14j opposés) ;
+      (b) GAP OVERNIGHT — le gap d'ouverture (`shadow_gap_overnight` = prix
+          d'émission 7h / close J-1) dépasse SELECTION_VETO_TAPE_GAP_MIN DANS LE
+          SENS INVERSE du call (call LONG + gap baissier, ou call SHORT + gap
+          haussier). C'est le « tape » au sens trader : le future bouge déjà
+          contre nous à l'ouverture.
+    ZÉRO INVENTION : gap absent/None → seul (a) compte."""
+    if r.contre_momentum.get(H, False):
+        return True
+    if gap_overnight is None:
+        return False
+    seuil = SELECTION_VETO_TAPE_GAP_MIN
+    if conc == "LONG" and gap_overnight <= -seuil:
+        return True
+    if conc == "SHORT" and gap_overnight >= seuil:
+        return True
+    return False
+
 
 def _veto_news_contre_call(
     r: "ActifResult",
     H: str,
     now: Optional[datetime],
     events_path: Optional[Path] = None,
+    gap_overnight: Optional[float] = None,
 ) -> Optional[str]:
     """VETO NEWS↯ — décide si une cellule 24h doit être EXCLUE de la Sélection du
     jour parce qu'une news adverse fraîche la contredit ET que le marché la confirme.
@@ -2225,9 +2261,9 @@ def _veto_news_contre_call(
       1. NEWS — une news `high` de l'events-log, INGÉRÉE AUJOURD'HUI, dont la
          direction IA pour cet actif est OPPOSÉE à notre call (via
          `bilan_jour.cause_news_high_dir` sur le sens inverse) ;
-      2. TAPE — le momentum prix 24h va lui AUSSI à contre-sens du call
-         (`r.contre_momentum[H]`) : le marché confirme la news, ce n'est pas
-         qu'une rumeur isolée.
+      2. TAPE — le marché va lui AUSSI à contre-sens du call (`_tape_contre_call`
+         : momentum RSI 14j OU gap d'ouverture overnight). Le tape confirme la
+         news, ce n'est pas qu'une rumeur isolée.
     GARDE-FOU (Analyst) : si le quant est exceptionnellement fort
     (|note| ≥ SELECTION_VETO_QUANT_FORT), on NE VETO PAS — le quant a la priorité,
     la news devient un simple risque signalé ailleurs.
@@ -2236,7 +2272,7 @@ def _veto_news_contre_call(
     jamais ») : la cellule garde sa note/conclusion et reste jouable ailleurs ; on
     refuse seulement de la mettre en avant comme meilleur pari du jour. Retourne le
     résumé de la news adverse (motif tracé) ou None si pas de veto. ZÉRO INVENTION :
-    `now` absent ou news/momentum manquants → None (pas de veto)."""
+    `now` absent ou news/tape manquants → None (pas de veto)."""
     if now is None:
         return None
     conc = r.conclusions.get(H, "")
@@ -2245,8 +2281,8 @@ def _veto_news_contre_call(
     # Garde-fou Analyst : quant hors-norme → on ne veto pas.
     if abs(r.scores.get(H, 0.0)) >= SELECTION_VETO_QUANT_FORT:
         return None
-    # Condition 2 (TAPE) : le momentum prix doit aller CONTRE le call.
-    if not r.contre_momentum.get(H, False):
+    # Condition 2 (TAPE) : momentum RSI OU gap overnight à CONTRE-SENS du call.
+    if not _tape_contre_call(r, H, conc, gap_overnight):
         return None
     # Condition 1 (NEWS) : news high fraîche du jour dans le sens INVERSE du call.
     sens_oppose = "SHORT" if conc == "LONG" else "LONG"
@@ -2272,6 +2308,7 @@ def compute_selection_du_jour(
     seuil_conviction: Optional[float] = None,
     now: Optional[datetime] = None,
     events_path: Optional[Path] = None,
+    shadow_capteurs: Optional[Dict[str, Dict[str, Optional[float]]]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Calcule la « Sélection du jour — max 3 » sur l'horizon 24h.
 
@@ -2323,6 +2360,14 @@ def compute_selection_du_jour(
         if r.coverage < SELECTION_COVERAGE_MIN:
             continue
         driver_cle, driver_nom = _top_driver(r, H)
+        # Conflit inter-horizons (audit fond 22/06, Spéculateur/Analyst) : le call
+        # 24h va à l'OPPOSÉ du fond 7j ET 1m (cas S&P LONG 24h / SHORT 7j-1m, porté
+        # par une vol basse contre un fond baissier). Un pic court terme contre la
+        # tendance de fond = pari de timing, pas de direction → on le SIGNALE.
+        conc_7j = r.conclusions.get("7j", "")
+        conc_1m = r.conclusions.get("1m", "")
+        oppose = {"LONG": "SHORT", "SHORT": "LONG"}.get(conc)
+        conflit_horizons = bool(oppose and conc_7j == oppose and conc_1m == oppose)
         candidates.append({
             "fiche_key": r.fiche_key,
             "actif": r.nom,
@@ -2333,6 +2378,7 @@ def compute_selection_du_jour(
             # P3 — « Porté par » enrichi (nom complet + valeur + sens + contrib).
             "driver_detail": _driver_detail(r, H),
             "coverage": r.coverage,
+            "conflit_horizons": conflit_horizons,
             "_result": r,  # réf. interne (veto news↯), retirée avant retour
         })
 
@@ -2343,8 +2389,12 @@ def compute_selection_du_jour(
     # `ecartees` (motif « VETO news↯ ... ») ; les suivantes peuvent prendre sa place.
     ecartees: List[Dict[str, Any]] = []
     survivantes: List[Dict[str, Any]] = []
+    _capteurs = shadow_capteurs or {}
     for c in candidates:
-        motif_veto = _veto_news_contre_call(c["_result"], H, now, events_path)
+        _gap = (_capteurs.get(c["fiche_key"]) or {}).get("shadow_gap_overnight")
+        motif_veto = _veto_news_contre_call(
+            c["_result"], H, now, events_path, gap_overnight=_gap
+        )
         if motif_veto:
             ecartees.append({
                 "fiche_key": c["fiche_key"],
@@ -2706,7 +2756,9 @@ def build_selection_du_jour_block(
     d'abstention (s'abstenir est une réponse valide).
     """
     prix_reference = prix_reference or {}
-    selection, ecartees = compute_selection_du_jour(results, seuil_conviction, now=now)
+    selection, ecartees = compute_selection_du_jour(
+        results, seuil_conviction, now=now, shadow_capteurs=shadow_capteurs
+    )
 
     # [Refonte S9 vague 3 — fusion I11] La « Sélection » et « À jouer » sont
     # désormais réunies sous UNE section « ## 🎯 Décision du jour » : tout ce qu'il
@@ -2744,6 +2796,7 @@ def build_selection_du_jour_block(
     sep = "|---|---|---|---|---|"
     out.append(header)
     out.append(sep)
+    lignes_conflit: List[str] = []
     for s in selection:
         note_str = f"{s['note']:+.2f}"
         # P3 — « Porté par » enrichi (nom complet + valeur + sens + contribution).
@@ -2752,10 +2805,26 @@ def build_selection_du_jour_block(
         )
         px = prix_reference.get(s["fiche_key"])
         px_str = f"{px:g}" if isinstance(px, (int, float)) else "—"
+        # Marqueur ⇅ : call 24h à contre-sens du fond 7j ET 1m (pari de timing).
+        dir_cell = s["direction"]
+        if s.get("conflit_horizons"):
+            dir_cell = f"{s['direction']} ⇅"
+            fond = {"LONG": "SHORT", "SHORT": "LONG"}[s["direction"]]
+            lignes_conflit.append(
+                f"⇅ **{s['actif']} : call 24h {s['direction']} à contre-sens du fond "
+                f"({fond} sur 7j et 1m)** — pari de timing court terme, pas de "
+                f"direction de fond. À tenir court, sortie rapide si le pic ne se "
+                f"confirme pas."
+            )
         out.append(
-            f"| {s['actif']} | {s['direction']} | {note_str} | {porte} | {px_str} |"
+            f"| {s['actif']} | {dir_cell} | {note_str} | {porte} | {px_str} |"
         )
     out.append("")
+
+    # Avertissement inter-horizons (⇅) sous le tableau — explicite, pas juste un flag.
+    out += lignes_conflit
+    if lignes_conflit:
+        out.append("")
 
     # Cellules VETO NEWS↯ (news adverse fraîche + tape confirmée) — affichées en
     # évidence sous le tableau : on explique POURQUOI un pari fort n'est pas retenu.
@@ -4334,7 +4403,9 @@ def build_decision_log_records(
     _cles_partagees = _shared_drivers.compute_shared_cles(results, HORIZONS)
     # Étage 1b — sélection du jour (24h) : MÊME source que le bloc bulletin (1a),
     # zéro divergence affichage⇄mesure. fiche_keys retenus + motifs d'exclusion.
-    _selection, _ecartees = compute_selection_du_jour(results, now=now)
+    _selection, _ecartees = compute_selection_du_jour(
+        results, now=now, shadow_capteurs=shadow_capteurs
+    )
     _selection_keys = {s["fiche_key"] for s in _selection}
     _motif_exclusion = {e["fiche_key"]: e["motif"] for e in _ecartees}
     shadow_capteurs = shadow_capteurs or {}

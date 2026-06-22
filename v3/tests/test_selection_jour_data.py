@@ -120,3 +120,39 @@ def test_build_top3_block_rendu():
 def test_build_top3_block_vide():
     txt = "\n".join(sjd.build_top3_block([]))
     assert "Aucun pari qualifié" in txt
+
+
+def test_per_impact_confidence_filtre_le_tag_faible(monkeypatch):
+    # Cas réel : « Warsh hawkish » → EURUSD:LONG:low (tag douteux) ET EURUSD:SHORT:medium.
+    # Le LONG:low ne doit PAS déclencher ; le SHORT:medium gagne → EUR/USD SHORT.
+    monkeypatch.setattr(sjd, "_CODE_TO_LABEL", {"EURUSD": "EUR/USD"})
+    results = [_R("EUR/USD", "eurusd", {"24h": "LONG"})]
+    events = [
+        {"ingest_ts": NOW - timedelta(hours=1), "materiality": "high",
+         "reliability": "confirmed", "nature": "ponctuel", "trigger": "Warsh hawkish A",
+         "impacts": "EURUSD:LONG:low"},
+        {"ingest_ts": NOW - timedelta(hours=1), "materiality": "high",
+         "reliability": "confirmed", "nature": "ponctuel", "trigger": "Warsh hawkish B",
+         "impacts": "EURUSD:SHORT:medium"},
+    ]
+    assets = sjd.assemble_assets(
+        results, events, NOW,
+        prix_reference={"eurusd": 1.14},
+        fiche_meta={"eurusd": {"famille": "fx"}},
+        get_closes=lambda k: [1.14, 1.14, 1.14],
+        get_price_at=lambda k, dt: 1.14,
+    )
+    top = sj.select_top3(assets, NOW, ["eurusd"])
+    assert top and top[0].actif == "EUR/USD" and top[0].direction == "SHORT"
+
+
+def test_impact_low_seul_ne_declenche_pas(monkeypatch):
+    monkeypatch.setattr(sjd, "_CODE_TO_LABEL", {"EURUSD": "EUR/USD"})
+    results = [_R("EUR/USD", "eurusd", {"24h": "LONG"})]
+    events = [{"ingest_ts": NOW - timedelta(hours=1), "materiality": "high",
+               "reliability": "confirmed", "nature": "ponctuel", "trigger": "x",
+               "impacts": "EURUSD:LONG:low"}]
+    assets = sjd.assemble_assets(
+        results, events, NOW, prix_reference={"eurusd": 1.14},
+        fiche_meta={}, get_closes=lambda k: [], get_price_at=lambda k, dt: None)
+    assert sj.select_top3(assets, NOW, ["eurusd"]) == []

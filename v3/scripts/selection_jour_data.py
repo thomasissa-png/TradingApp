@@ -60,7 +60,7 @@ def assemble_assets(
     news_par_key: Dict[str, List[sj.NewsItem]] = {}
     for ev in events:
         ts = ev.get("ingest_ts")
-        materiality = (ev.get("materiality", "") or "")
+        materiality_ev = (ev.get("materiality", "") or "")
         for imp in _impacts(ev):
             label = _CODE_TO_LABEL.get(imp.get("asset", ""))
             key = label_to_key.get(label or "", "")
@@ -69,6 +69,13 @@ def assemble_assets(
             direction = imp.get("direction", "")
             if direction not in ("LONG", "SHORT"):
                 continue
+            # Force du signal SPÉCIFIQUE à CET actif (3ᵉ champ de l'impact, ex.
+            # « EURUSD:SHORT:medium »). C'est le bon niveau : une news high globale
+            # peut n'avoir qu'un impact « low » sur un actif donné (ex. EURUSD:LONG:low
+            # → ne doit PAS déclencher). On retombe sur la matérialité de l'event si
+            # le champ par-impact est absent/inconnu.
+            imp_conf = (imp.get("conf", "") or "").lower()
+            materiality = imp_conf if imp_conf in ("high", "medium", "low") else materiality_ev
             spot = prix_reference.get(key)
             p_news = get_price_at(key, ts) if isinstance(ts, datetime) else None
             raw = (spot / p_news - 1.0) if (spot and p_news) else None
@@ -110,15 +117,31 @@ def assemble_assets(
 
 
 def _impacts(ev: Dict[str, Any]) -> List[Dict[str, str]]:
-    """Liste d'impacts {asset, direction} d'un event (tolérant au format)."""
+    """Liste d'impacts {asset, direction, conf} d'un event.
+
+    Parse le format compact « ASSET:DIR:CONF;... » en CONSERVANT le 3ᵉ champ comme
+    chaîne (high/medium/low) — contrairement à `briefing._parse_impacts_compact`
+    qui le force en `int` et perd la matérialité par-impact (le cœur du bug de sens
+    EUR/USD). Tolère une liste déjà décodée."""
     raw = ev.get("impacts")
     if isinstance(raw, list):
-        return raw
-    try:  # format compact « SP500:SHORT:high|... »
-        from briefing import _parse_impacts_compact  # type: ignore
-        return _parse_impacts_compact(raw or "")
-    except Exception:  # noqa: BLE001
-        return []
+        return [
+            {"asset": str(d.get("asset", "")).upper(),
+             "direction": str(d.get("direction", "")).upper(),
+             "conf": str(d.get("conf", d.get("confidence", "")) or "")}
+            for d in raw if isinstance(d, dict)
+        ]
+    out: List[Dict[str, str]] = []
+    for chunk in (raw or "").split(";"):
+        parts = [p.strip() for p in chunk.split(":")]
+        if len(parts) < 2 or not parts[0] or not parts[1]:
+            continue
+        out.append({
+            "asset": parts[0].upper(),
+            "direction": parts[1].upper(),
+            "conf": parts[2].lower() if len(parts) >= 3 else "",
+        })
+    return out
 
 
 def _resume(ev: Dict[str, Any]) -> str:

@@ -184,6 +184,19 @@ RÈGLES :
 4. direction = sens du PRIX de l'actif : hausse=LONG, baisse=SHORT.
    Pas de "neutre" : si tu ne sais pas trancher, n'inclus pas l'actif. Raisonne
    sur l'effet réel, ignore le ton du titre.
+   CHAÎNES DE CAUSE MÉCANIQUES (applique-les, c'est de la logique, pas une opinion) :
+   - Fed/banque centrale HAWKISH / hausse de taux / inflation persistante / ton
+     restrictif → dollar FORT → EURUSD SHORT ; actions (SP500, NASDAQ, CAC40) SHORT ;
+     GOLD SHORT (or non rémunéré pénalisé par les taux réels). DOVISH / baisse de
+     taux → l'INVERSE (EURUSD LONG, actions LONG, GOLD LONG).
+   - Risque/géopolitique qui MONTE (guerre, sanctions, escalade) → GOLD LONG,
+     VIX LONG, actions SHORT ; pétrole/matières dont l'offre est menacée → LONG.
+   - Choc d'OFFRE sur une matière (coupe OPEP, gel/sécheresse café-cacao-blé,
+     rupture mine cuivre/argent) → la matière concernée LONG (moins d'offre = prix↑).
+   - Cohérence : sur une même news, le dollar et les actions US réagissent en général
+     dans le MÊME sens face à la politique monétaire (hawkish = USD↑ et actions↓ ;
+     donc EURUSD SHORT VA AVEC SP500/NASDAQ SHORT). Ne tague pas EURUSD LONG en même
+     temps que des actions US SHORT pour une cause monétaire.
 5. confidence = "high" si la direction est très probable et bien étayée ;
    "medium" si plausible mais avec incertitude ; "low" si signal faible/contestable.
 6. reliability : fait officiel="confirmed" ; presse/source citée="reported" ;

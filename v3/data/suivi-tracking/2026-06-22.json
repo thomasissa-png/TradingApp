@@ -1,0 +1,19 @@
+{
+  "12h": {
+    "Café (Arabica)": {
+      "call": "LONG",
+      "fav_pct": -0.54,
+      "heure": "12h15"
+    },
+    "EUR/USD": {
+      "call": "SHORT",
+      "fav_pct": -0.04,
+      "heure": "12h15"
+    },
+    "Pétrole (Brent)": {
+      "call": "SHORT",
+      "fav_pct": -0.39,
+      "heure": "12h15"
+    }
+  }
+}

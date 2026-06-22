@@ -3711,6 +3711,98 @@ def build_top_multi_horizons_block(
 SHARED_DRIVERS_SYMBOL_LOCAL = "⚭"
 
 
+def _seuil_conviction_defaut() -> float:
+    """Seuil de conviction 'forte' (même source que la Sélection / bilan_jour)."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import bilan_jour as _bj  # noqa: PLC0415
+        return _bj._load_score_fort_seuil()
+    except Exception:  # noqa: BLE001 — défaut documenté si bilan_jour KO
+        return 0.6
+
+
+def build_swing_7j_block(
+    results: List["ActifResult"],
+    prix_reference: Optional[Dict[str, float]] = None,
+    fiches: Optional[Dict[str, dict]] = None,
+) -> List[str]:
+    """Sélection SWING 7 JOURS JOUABLE (max 3) — réponse à l'audit 7j (Spéculateur :
+    « le 7j est un thermomètre, pas un trade »). On passe du panorama à des trades
+    cadrés : convictions 7j FORTES à couverture suffisante, DÉDUPLIQUÉES PAR DRIVER
+    (famille macro — « taux réels US » ne compte qu'une fois, pas 4 paris déguisés),
+    max 3. Pour chaque : objectif = seuil de réussite 7j de l'actif (config),
+    entrée = prix de réf., sortie = retournement de la tendance de fond.
+
+    ZÉRO invention : objectif lu en config (`seuils_reussite_pct`), prix déjà stampé.
+    Rappel honnête (audit retard) : le moteur 7j entre ~1-2 sem. après le début et
+    sort tardivement → fait pour les tendances DURABLES, pas les retournements."""
+    prix_reference = prix_reference or {}
+    fiches = fiches or {}
+    seuil = _seuil_conviction_defaut()
+    H = "7j"
+    try:
+        import shared_drivers as _sd  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        _sd = None  # type: ignore
+
+    cands: List[Tuple[float, "ActifResult", str, str]] = []
+    for r in results:
+        conc = r.conclusions.get(H, "")
+        if conc not in ("LONG", "SHORT"):
+            continue
+        if _conviction_cell(r, H, seuil) != "forte":
+            continue
+        if r.coverage < SELECTION_COVERAGE_MIN:
+            continue
+        cle, nom = _top_driver(r, H)
+        famille = ""
+        if _sd is not None and cle:
+            try:
+                famille = _sd.famille_macro(cle, r.fiche_key)[0]
+            except Exception:  # noqa: BLE001
+                famille = ""
+        famille = famille or cle or r.fiche_key
+        cands.append((abs(r.scores.get(H, 0.0)), r, conc, famille))
+
+    cands.sort(key=lambda x: -x[0])
+    # Dédup par famille de driver (un seul pari par moteur macro), max 3.
+    vues: set = set()
+    retenus: List[Tuple[float, "ActifResult", str, str]] = []
+    for c in cands:
+        if c[3] in vues:
+            continue
+        vues.add(c[3])
+        retenus.append(c)
+        if len(retenus) >= SELECTION_MAX:
+            break
+
+    out: List[str] = ["## 📈 Swing 7j (max 3)", ""]
+    if not retenus:
+        out.append("_Aucune tendance 7j à conviction forte et couverture suffisante "
+                   "ce cycle (normal : on ne force pas)._")
+        out.append("")
+        return out
+    out.append("_Tendances de fond à tenir ~7 jours (objectif = seuil de l'actif ; "
+               "sortie si la tendance de fond se retourne ; un seul pari par moteur). "
+               "Le moteur 7j entre/sort avec du retard : pour tendances durables._")
+    out.append("")
+    for _abs, r, direction, _fam in retenus:
+        key = r.fiche_key
+        seuil_pct = (((fiches.get(key) or {}).get("seuils_reussite_pct") or {}).get("7j"))
+        if isinstance(seuil_pct, (int, float)):
+            signe = "+" if direction == "LONG" else "−"
+            obj = f"objectif {signe}{abs(float(seuil_pct)):.1f} %"
+        else:
+            obj = "objectif n/a"
+        px = prix_reference.get(key)
+        entree = f"entrée @ {px:g}" if isinstance(px, (int, float)) else "entrée au prix d'émission"
+        cle, nom = _top_driver(r, H)
+        porte = _truncate_driver(nom) if nom else "—"
+        out.append(f"- **{r.nom}** {direction} · {obj} · {entree} · porté par {porte}")
+    out.append("")
+    return out
+
+
 # Traduction des types de normalisation en libellé humain pour le tableau
 # « Détail par actif » (reco-wording-detail-bulletin.md §2). N'affecte QUE
 # l'affichage — la valeur brute `type_norm` reste dans le decision-log.
@@ -4382,6 +4474,7 @@ def render_bulletin(
     lines = (
         lines[:_meta_end] + [""]
         + head_block + alertes_block + synth_lines + top_swing_block
+        + build_swing_7j_block(results, prix_reference=prix_reference, fiches=fiches)
         + lines[_meta_end:]
     )
 

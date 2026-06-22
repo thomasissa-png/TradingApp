@@ -606,3 +606,53 @@ def test_conflit_inter_horizons_affiche_dans_bloc(monkeypatch):
     assert "⇅" in texte
     assert "contre-sens du fond" in texte
 
+
+
+# ---------------------------------------------------------------------------
+# Swing 7j JOUABLE (audit 7j) : sélection tendance + objectif + dédup driver.
+# ---------------------------------------------------------------------------
+
+def test_swing_7j_selectionne_objectif_et_dedup(monkeypatch):
+    import shared_drivers as sd
+    # Deux actifs FORTS 7j sur le MÊME driver (taux réels) → 1 seul retenu ; +1 autre.
+    monkeypatch.setattr(sd, "famille_macro",
+                        lambda cle, fk="": ("taux_reels_us", "Taux réels US")
+                        if cle == "taux" else (cle, cle))
+    a = _actif("Or", "or", score_24h=0.0, direction="SHORT")
+    a.conclusions = {"24h": "INSUFFISANT", "7j": "SHORT", "1m": "SHORT"}
+    a.scores = {"24h": 0.0, "7j": -6.0, "1m": -3.0}
+    a.coverage = 0.95
+    a._top_driver_cle = "taux"
+    b = _actif("Argent", "argent", score_24h=0.0, direction="SHORT")
+    b.conclusions = {"24h": "INSUFFISANT", "7j": "SHORT", "1m": "SHORT"}
+    b.scores = {"24h": 0.0, "7j": -5.0, "1m": -2.0}
+    b.coverage = 0.95
+    b._top_driver_cle = "taux"
+    c = _actif("EUR/USD", "eurusd", score_24h=0.0, direction="LONG")
+    c.conclusions = {"24h": "INSUFFISANT", "7j": "LONG", "1m": "LONG"}
+    c.scores = {"24h": 0.0, "7j": 4.0, "1m": 2.0}
+    c.coverage = 0.95
+    c._top_driver_cle = "diff_taux"
+    monkeypatch.setattr(sa, "_top_driver",
+                        lambda r, h: (getattr(r, "_top_driver_cle", ""), "Driver X"))
+    monkeypatch.setattr(sa, "_seuil_conviction_defaut", lambda: 0.6)
+    fiches = {
+        "or": {"seuils_reussite_pct": {"7j": 1.3}},
+        "argent": {"seuils_reussite_pct": {"7j": 1.5}},
+        "eurusd": {"seuils_reussite_pct": {"7j": 0.7}},
+    }
+    txt = "\n".join(sa.build_swing_7j_block([a, b, c], prix_reference={"or": 4200}, fiches=fiches))
+    assert "## 📈 Swing 7j (max 3)" in txt
+    # Or et Argent même driver → un seul des deux ; EUR/USD distinct présent.
+    assert txt.count("**Or**") + txt.count("**Argent**") == 1
+    assert "**EUR/USD**" in txt
+    assert "objectif" in txt and "%" in txt
+
+
+def test_swing_7j_vide_si_rien_de_fort(monkeypatch):
+    monkeypatch.setattr(sa, "_seuil_conviction_defaut", lambda: 0.6)
+    a = _actif("Or", "or", score_24h=0.0, direction="SHORT")
+    a.conclusions = {"24h": "INSUFFISANT", "7j": "INSUFFISANT", "1m": "INSUFFISANT"}
+    a.scores = {"24h": 0.0, "7j": 0.0, "1m": 0.0}
+    txt = "\n".join(sa.build_swing_7j_block([a], fiches={}))
+    assert "Aucune tendance 7j" in txt

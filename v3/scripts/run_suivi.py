@@ -97,6 +97,12 @@ class SuiviLigne:
     fav_now: Optional[float] = None  # % directionnel signé favorable, créneau courant
     fav_prec: Optional[float] = None  # % directionnel signé favorable, créneau précédent (None au 12h)
     raison_call: Optional[str] = None  # VRAIE raison du call (drivers du score 7h) — aligné jour/semaine
+    # Cohérence avec le Bilan du jour (brief S9) — excursions intraday MAX depuis
+    # l'ouverture, calculées par mesure_bilan._excursions_intraday sur la série 1h
+    # (MÊME primitive que le bilan, zéro duplication). « meilleur point » (favorable
+    # max ≥ 0) et « pire point » (adverse max ≤ 0). None si non calculable (zéro invention).
+    max_favorable_pct: Optional[float] = None
+    max_adverse_pct: Optional[float] = None
 
 
 @dataclass
@@ -116,6 +122,13 @@ class SuiviRapport:
     # FORTE matérialité (high) ingérés depuis le rapport précédent (lecture seule,
     # zéro DeepSeek). Lignes markdown prêtes ; [] → « Aucune news majeure ».
     news_majeures: List[str] = field(default_factory=list)
+    # GARDE-FOU HONNÊTETÉ (brief S9) — distingue deux cas que l'ancien code
+    # confondait en un tableau vide silencieux :
+    #  - briefing_introuvable=True : AUCUN Briefing 7h actif pour date_j (archivé /
+    #    jamais émis) → le suivi des positions est IMPOSSIBLE (on l'affiche).
+    #  - briefing_introuvable=False ET lignes=[] : briefing trouvé mais 0 position
+    #    LONG/SHORT actionnable (message DIFFÉRENT).
+    briefing_introuvable: bool = False
     markdown: str = ""
 
 
@@ -302,6 +315,65 @@ def compute_vendre(
     return PAS_VENDRE
 
 
+def prix_courant_cascade(
+    ticker: str,
+    series_1h: Optional[List[Any]],
+    date_j: date,
+    fetch_price: Optional[Callable[[str], Optional[float]]],
+) -> Optional[float]:
+    """Relevé de prix du créneau via une cascade COHÉRENTE avec le bilan.
+
+    Ordre (zéro invention — source absente → None, jamais comblé) :
+      1. dernière barre 1h du jour J (close le plus frais de la séance) ;
+      2. spot via fetch_price(ticker).
+    C'est l'ordre miroir de `mesure_bilan._resolve_cloture` (1h → spot) restreint
+    aux sources disponibles à chaud pendant la séance (pas de bougie 1day du jour
+    encore, pas de relevé de suivi puisqu'on EST le suivi). Best-effort.
+    """
+    if not ticker:
+        return None
+    import mesure_bilan as MB  # noqa: PLC0415
+    bars = MB._bars_du_jour(series_1h, date_j)
+    if bars:
+        px = bars[-1][1]
+        if isinstance(px, (int, float)) and px > 0:
+            return float(px)
+    if fetch_price is not None:
+        try:
+            spot = fetch_price(ticker)
+        except Exception as e:  # noqa: BLE001 — best-effort, dégrade proprement
+            logger.warning("suivi %s : spot fetch KO : %s", ticker, e)
+            spot = None
+        if isinstance(spot, (int, float)) and spot > 0:
+            return float(spot)
+    return None
+
+
+def excursions_suivi(
+    ticker: str,
+    series_1h: Optional[List[Any]],
+    date_j: date,
+    ouverture: Optional[float],
+    call: str,
+) -> tuple:
+    """Excursions MAX favorable / adverse depuis l'ouverture, sur la série 1h du jour.
+
+    RÉUTILISE `mesure_bilan._excursions_intraday` (+ `_bars_du_jour`) — la MÊME
+    primitive que le Bilan du jour, AUCUNE duplication de la logique d'excursion.
+    Retourne (max_favorable_pct ≥ 0, max_adverse_pct ≤ 0), ou (None, None) si la
+    référence (ouverture) ou la série manque, ou si le call n'est pas LONG/SHORT.
+    """
+    if not isinstance(ouverture, (int, float)) or ouverture <= 0:
+        return (None, None)
+    if call not in ("LONG", "SHORT"):
+        return (None, None)
+    import mesure_bilan as MB  # noqa: PLC0415
+    bars = MB._bars_du_jour(series_1h, date_j)
+    if not bars:
+        return (None, None)
+    return MB._excursions_intraday(bars, ouverture, call)
+
+
 def us_trend_flag(delta_pct: Optional[float], call: str) -> str:
     """Flag US spécifique au 18h (open US 15h30 a confirmé ou retourné le call).
 
@@ -349,6 +421,41 @@ def load_briefing_cells(date_j: date, bulletins_dir: Path) -> List[Any]:
                 continue
             cells.append(cell)
     return cells
+
+
+def briefing_7h_existe(date_j: date, bulletins_dir: Path) -> bool:
+    """True si un Briefing 7h du jour `date_j` est trouvable (≥ 1 cellule 24h).
+
+    GARDE-FOU HONNÊTETÉ (brief S9) : distinguer « aucun Briefing 7h actif »
+    (archivé en cours de journée / jamais émis → suivi impossible) de « briefing
+    trouvé mais aucune position LONG/SHORT » (`load_briefing_cells` exclut déjà les
+    INSUFFISANT, donc sa liste vide ne suffit pas à trancher). On réutilise EXACTEMENT
+    la même détection que `mesure_bilan.load_cells_et_prix_7h` / `load_briefing_cells`
+    (`is_seven_am_bulletin` + date du bulletin) — une seule source de vérité.
+
+    Best-effort : toute erreur de parsing dégrade vers False (on ne fabrique pas
+    un briefing inexistant ; zéro invention).
+    """
+    import journaliste as J  # noqa: PLC0415
+
+    for p in J.list_bulletins(bulletins_dir):
+        bid = J.bulletin_id_from_path(p)
+        if bid is None:
+            continue
+        try:
+            if J.date.fromisoformat(bid[:10]) != date_j:
+                continue
+        except (ValueError, AttributeError):
+            continue
+        if not J.is_seven_am_bulletin(bid):
+            continue
+        try:
+            cells = J.parse_bulletin(p)
+        except Exception:  # noqa: BLE001 — best-effort, dégrade proprement
+            continue
+        if any(getattr(c, "horizon", None) == "24h" for c in cells):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -772,11 +879,20 @@ def save_suivi_tracking(
     for li in lignes:
         if not li.selection or li.fav_now is None:
             continue
-        bloc[li.actif] = {
+        rec = {
             "call": li.call,
             "fav_pct": li.fav_now,
             "heure": now.strftime("%Hh%M"),
         }
+        # Champs ADDITIFS (brief S9) — excursions max depuis l'ouverture, pour que
+        # le Bilan du soir lise « meilleur/pire point » du créneau s'il le souhaite.
+        # On n'écrit que ce qui est calculable (zéro invention) ; les clés
+        # existantes (call/fav_pct/heure) sont INCHANGÉES (compat bilan_jour).
+        if li.max_favorable_pct is not None:
+            rec["max_fav_pct"] = li.max_favorable_pct
+        if li.max_adverse_pct is not None:
+            rec["max_adv_pct"] = li.max_adverse_pct
+        bloc[li.actif] = rec
     if not bloc:
         return None
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -840,6 +956,7 @@ def build_suivi(
     prix_ouverture_dir: Optional[Path] = None,
     fiches: Optional[Dict[str, dict]] = None,
     fetch_price: Optional[Any] = None,
+    fetch_series: Optional[Any] = None,
     config: Optional[dict] = None,
     collect_light: Optional[Callable[[], list]] = None,
 ) -> SuiviRapport:
@@ -873,12 +990,20 @@ def build_suivi(
     if fetch_price is None:
         import criteres_calculator  # noqa: PLC0415
         fetch_price = criteres_calculator.fetch_twelve_price
+    if fetch_series is None:
+        import criteres_calculator  # noqa: PLC0415
+        fetch_series = criteres_calculator.fetch_twelve_series
 
     if prix_ouverture_dir is None:
         prix_ouverture_dir = MO.PRIX_OUVERTURE_DIR
     band = MO.neutral_band_pct(config)
     ouvertures = MO.load_prix_ouverture(date_j, prix_ouverture_dir)
     cells = load_briefing_cells(date_j, bulletins_dir)
+    # GARDE-FOU HONNÊTETÉ (brief S9) : un Briefing 7h archivé en cours de journée
+    # rendait `cells` vide → tableau VIDE silencieux (cause du suivi 18h vide
+    # d'aujourd'hui). On détecte explicitement l'absence de Briefing 7h pour
+    # distinguer ce cas de « briefing trouvé mais 0 position » (message différent).
+    briefing_introuvable = not briefing_7h_existe(date_j, bulletins_dir)
 
     # Sélection du jour (top ≤3) : champ shadow `selection_du_jour` du
     # decision-log du jour. Réutilise le mapping mesuré du Bilan (zéro invention :
@@ -894,7 +1019,23 @@ def build_suivi(
     prev = load_delta_snapshot(date_j, REPORT_12H, suivi_dir) if report_type == REPORT_18H else {}
 
     rapport = SuiviRapport(date_j=date_j, now=now, report_type=report_type)
+    rapport.briefing_introuvable = briefing_introuvable
     deltas_now: Dict[str, Optional[float]] = {}
+    # Cache des séries 1h par ticker (1 fetch/ticker pour TOUT le suivi). Sert au
+    # relevé de prix (cascade 1h → spot) ET aux excursions intraday max (réutilise
+    # mesure_bilan). Best-effort : un fetch KO → None (le spot reste le fallback).
+    cache_1h: Dict[str, Optional[List[Any]]] = {}
+
+    def _series_1h(tkr: str) -> Optional[List[Any]]:
+        if not tkr or fetch_series is None:
+            return None
+        if tkr not in cache_1h:
+            try:
+                cache_1h[tkr] = fetch_series(tkr, interval="1h", outputsize=24)
+            except Exception as e:  # noqa: BLE001 — best-effort, dégrade proprement
+                logger.warning("suivi %s : fetch_series 1h KO : %s", tkr, e)
+                cache_1h[tkr] = None
+        return cache_1h[tkr]
 
     for cell in cells:
         actif = cell.actif_name
@@ -926,13 +1067,14 @@ def build_suivi(
             continue
 
         ouverture = ouvertures.get(ticker)
-        prix_courant = None
-        if ticker:
-            try:
-                prix_courant = fetch_price(ticker)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("suivi %s : fetch prix KO : %s", ticker, e)
-                prix_courant = None
+        # Relevé de prix via cascade COHÉRENTE avec le bilan (dernière barre 1h →
+        # spot). La série 1h sert AUSSI aux excursions max ci-dessous (1 fetch).
+        series_1h = _series_1h(ticker)
+        prix_courant = prix_courant_cascade(ticker, series_1h, date_j, fetch_price)
+        # Excursions MAX favorable / adverse depuis l'ouverture (mesure_bilan).
+        max_fav, max_adv = excursions_suivi(
+            ticker, series_1h, date_j, ouverture, call
+        )
         delta = None
         if isinstance(ouverture, (int, float)) and isinstance(prix_courant, (int, float)) and ouverture:
             delta = (prix_courant - ouverture) / ouverture * 100.0
@@ -975,6 +1117,8 @@ def build_suivi(
             vendre=vendre, selection=is_select,
             fav_now=(round(fav_now_v, 2) if fav_now_v is not None else None),
             fav_prec=(round(fav_prec_v, 2) if fav_prec_v is not None else None),
+            max_favorable_pct=(round(max_fav, 2) if max_fav is not None else None),
+            max_adverse_pct=(round(max_adv, 2) if max_adv is not None else None),
         ))
 
     rapport.news = news_a_impact(
@@ -1080,10 +1224,12 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
         "| <span class=\"c-full\">Prix d'entrée</span><span class=\"c-short\">Entrée</span> "
         "| <span class=\"c-full\">% vs ouv. 12h</span><span class=\"c-short\">% 12h</span> "
         "| <span class=\"c-full\">% vs ouv. 18h</span><span class=\"c-short\">% 18h</span> "
+        "| <span class=\"c-full\">Meilleur point</span><span class=\"c-short\">Best</span> "
+        "| <span class=\"c-full\">Pire point</span><span class=\"c-short\">Pire</span> "
         "| Tendance "
         f"| Vendre à {hour_label} ? |"
     )
-    L.append("|---|---|---|---|---|---|---|")
+    L.append("|---|---|---|---|---|---|---|---|---|")
     for li in selection:
         if is_12h:
             # Au 12h : colonne 12h = favorable courant, colonne 18h = vide.
@@ -1093,17 +1239,21 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
             # Au 18h : colonne 12h = favorable précédent (snapshot 12h), 18h = courant.
             col_12 = _fmt_fav(li.fav_prec)
             col_18 = _fmt_fav(li.fav_now)
+        # Meilleur / pire point depuis l'ouverture (excursions max, mesure_bilan).
+        col_best = _fmt_pct(li.max_favorable_pct)
+        col_pire = _fmt_pct(li.max_adverse_pct)
         # Prix d'entrée = prix d'ouverture (la référence du %).
         L.append(
             f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | {col_12} | {col_18} | "
-            f"{li.tendance} | **{li.vendre}** |"
+            f"{col_best} | {col_pire} | {li.tendance} | **{li.vendre}** |"
         )
     L.append("")
     L.append(
         f"_Décision datée à {hour_label} (au prix de ce rapport) : « Vendre à {hour_label} » = "
         "sortir maintenant, « Pas vendre » = conserver. % favorable : `+` = va dans le sens du "
-        "call (gagne), `-` = contre nous. On vend pour verrouiller un avantage qui reflue ou "
-        "couper un pari qui empire ; sinon on conserve._"
+        "call (gagne), `-` = contre nous. **Meilleur / pire point** = excursion MAX favorable / "
+        "adverse depuis l'ouverture du jour (mesurée comme le Bilan du soir). On vend pour "
+        "verrouiller un avantage qui reflue ou couper un pari qui empire ; sinon on conserve._"
     )
     L.append("")
     # Pourquoi on tient ces positions : la VRAIE raison du call (drivers du score à
@@ -1118,6 +1268,16 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
     return L
 
 
+# GARDE-FOU HONNÊTETÉ (brief S9) — message affiché quand le Briefing 7h du jour
+# est INTROUVABLE (archivé en cours de journée / jamais émis). Distinct du cas
+# « briefing trouvé mais 0 position » : ici le suivi des positions est IMPOSSIBLE,
+# on ne montre PAS un tableau vide silencieux (cause du suivi 18h vide d'aujourd'hui).
+_MSG_BRIEFING_INTROUVABLE = (
+    "Briefing 7h du jour introuvable : suivi des positions impossible "
+    "(aucun bulletin 7h actif pour ce jour). À ne pas lire comme « aucune position »."
+)
+
+
 def _render_markdown(r: SuiviRapport) -> str:
     """Markdown court du suivi (CA-S1/S5). WIN RATE ONLY — pas de matrice LONG/SHORT."""
     heure = r.now.strftime("%Hh%M")
@@ -1127,6 +1287,13 @@ def _render_markdown(r: SuiviRapport) -> str:
     # Briefing — le suivi était en H2).
     L.append(f"# Suivi {h} · {r.date_j.isoformat()} {heure}")
     L.append("")
+
+    # GARDE-FOU HONNÊTETÉ : Briefing 7h introuvable → on l'affiche EXPLICITEMENT en
+    # tête et on s'arrête là (rien à suivre, pas de tableau vide silencieux).
+    if r.briefing_introuvable:
+        L.append(f"⚠️ **{_MSG_BRIEFING_INTROUVABLE}**")
+        L.append("")
+        return "\n".join(L)
 
     # PARTIE B — 1 ligne de contexte réactualisée (factuelle, décor), en tête.
     if r.contexte_frais:
@@ -1320,7 +1487,10 @@ __all__ = [
     "compute_vendre",
     "fav_delta",
     "us_trend_flag",
+    "prix_courant_cascade",
+    "excursions_suivi",
     "load_briefing_cells",
+    "briefing_7h_existe",
     "save_delta_snapshot",
     "load_delta_snapshot",
     "news_a_impact",

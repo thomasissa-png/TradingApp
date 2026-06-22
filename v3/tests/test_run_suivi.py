@@ -431,6 +431,154 @@ def test_selection_table_pas_de_mention_monetaire(env):
 
 
 # ---------------------------------------------------------------------------
+# Brief S9 — cohérence avec le Bilan : excursions max favorable/adverse depuis
+# l'ouverture (réutilise mesure_bilan), cascade de prix, garde-fou briefing 7h.
+# ---------------------------------------------------------------------------
+
+def _series_1h_jour(prices, h0=9):
+    """Série 1h du 2026-06-08 : une barre/prix, heures Paris croissantes depuis h0."""
+    return [
+        (datetime(2026, 6, 8, h0 + i, 0, tzinfo=PARIS), float(p))
+        for i, p in enumerate(prices)
+    ]
+
+
+def _build_series(env, report_type, now, series_by_ticker, fiches=None, spot=None):
+    """build_suivi avec une série 1h injectée par ticker (fetch_series) + spot optionnel."""
+    def _fetch_series(tkr, *, interval="1h", outputsize=24):
+        return series_by_ticker.get(tkr)
+    return rs.build_suivi(
+        report_type, now=now, date_j=date(2026, 6, 8),
+        bulletins_dir=env["bdir"], decision_log_dir=env["dlog"], suivi_dir=env["sdir"],
+        prix_ouverture_dir=env["odir"], fiches=fiches or env["fiches"],
+        fetch_price=(lambda t: (spot or {}).get(t)),
+        fetch_series=_fetch_series,
+    )
+
+
+def test_excursions_max_long_depuis_ouverture(env):
+    # CAC 40 est SHORT dans le bulletin fixture ; on teste un LONG via un fiche/cellule
+    # dédiée : S&P 500 LONG, ouverture 5300. Série monte à 5400 (fav +1.89%) puis
+    # redescend à 5250 (adverse -0.94%). Excursions calculées par mesure_bilan.
+    now = datetime(2026, 6, 8, 18, 3, tzinfo=PARIS)
+    series = {"^GSPC": _series_1h_jour([5300, 5400, 5250, 5320], h0=16)}
+    r = _build_series(env, "18h", now, series)
+    sp = _ligne(r, "S&P 500")
+    assert sp.max_favorable_pct == pytest.approx(1.89, abs=0.02)
+    assert sp.max_adverse_pct == pytest.approx(-0.94, abs=0.02)
+
+
+def test_excursions_max_short_depuis_ouverture(env):
+    # Or SHORT, ouverture 3400. Série baisse à 3340 (favorable +1.76%) puis remonte
+    # à 3430 (adverse -0.88%). Favorable = sens du call (baisse pour un SHORT).
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    series = {"GC=F": _series_1h_jour([3400, 3340, 3430, 3380])}
+    r = _build_series(env, "12h", now, series)
+    orr = _ligne(r, "Or")
+    assert orr.max_favorable_pct == pytest.approx(1.76, abs=0.02)
+    assert orr.max_adverse_pct == pytest.approx(-0.88, abs=0.02)
+    # Affiché dans le tableau (sélection vide ici → on vérifie via la ligne).
+    # Persistance : champs additifs écrits dans suivi-tracking si sélectionné (testé
+    # ailleurs) ; ici on s'assure juste que le rendu n'a pas cassé.
+    assert r.markdown
+
+
+def test_cascade_prix_derniere_barre_1h_prioritaire_sur_spot(env):
+    # La dernière barre 1h du jour PRIME sur le spot (cascade cohérente bilan).
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    series = {"GC=F": _series_1h_jour([3400, 3410, 3366])}  # dernière barre = 3366
+    r = _build_series(env, "12h", now, series, spot={"GC=F": 9999.0})
+    orr = _ligne(r, "Or")
+    assert orr.prix_courant == pytest.approx(3366.0)  # 1h, pas le spot 9999
+
+
+def test_cascade_prix_fallback_spot_si_pas_de_barre(env):
+    # Aucune barre 1h exploitable → on retombe sur le spot (zéro invention sinon).
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build_series(env, "12h", now, {"GC=F": None}, spot={"GC=F": 3372.0})
+    orr = _ligne(r, "Or")
+    assert orr.prix_courant == pytest.approx(3372.0)
+
+
+def test_cascade_prix_aucune_source_donne_tiret(env):
+    # Ni barre 1h, ni spot → prix courant None (jamais comblé).
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build_series(env, "12h", now, {"GC=F": None}, spot={"GC=F": None})
+    orr = _ligne(r, "Or")
+    assert orr.prix_courant is None
+    assert orr.delta_pct is None
+
+
+# --- GARDE-FOU HONNÊTETÉ : Briefing 7h introuvable vs aucune position ---------
+
+def test_briefing_introuvable_affiche_message(env, tmp_path):
+    # Dossier bulletins VIDE (briefing 7h archivé / jamais émis) → message explicite,
+    # PAS un tableau vide silencieux (cause du suivi 18h vide d'aujourd'hui).
+    bdir_vide = tmp_path / "bull-vide"
+    bdir_vide.mkdir()
+    r = rs.build_suivi(
+        "18h", now=datetime(2026, 6, 8, 18, 3, tzinfo=PARIS), date_j=date(2026, 6, 8),
+        bulletins_dir=bdir_vide, decision_log_dir=env["dlog"], suivi_dir=env["sdir"],
+        prix_ouverture_dir=env["odir"], fiches=env["fiches"], fetch_price=lambda t: None,
+    )
+    assert r.briefing_introuvable is True
+    assert "Briefing 7h du jour introuvable" in r.markdown
+    assert "suivi des positions impossible" in r.markdown
+    # On ne montre PAS le tableau de suivi détaillé dans ce cas.
+    assert "Suivi détaillé" not in r.markdown
+
+
+def test_briefing_trouve_mais_aucune_position_distinct(env, tmp_path):
+    # Briefing 7h présent mais TOUTES les cellules 24h INSUFFISANT → 0 position
+    # actionnable, MAIS le briefing existe → message DIFFÉRENT (pas « introuvable »).
+    bdir = tmp_path / "bull-insuf"
+    bdir.mkdir()
+    (bdir / "bulletin-2026-06-08-07h.md").write_text(
+        "# Bulletin 2026-06-08 07h\n\n"
+        "| Actif | 24h | 7j | 1m |\n|---|---|---|---|\n"
+        "| Or | 🚫 données insuff. (32%) | 🚫 données insuff. (32%) | "
+        "🚫 données insuff. (32%) |\n",
+        encoding="utf-8",
+    )
+    r = rs.build_suivi(
+        "12h", now=datetime(2026, 6, 8, 12, 3, tzinfo=PARIS), date_j=date(2026, 6, 8),
+        bulletins_dir=bdir, decision_log_dir=env["dlog"], suivi_dir=env["sdir"],
+        prix_ouverture_dir=env["odir"], fiches=env["fiches"], fetch_price=lambda t: None,
+    )
+    assert r.briefing_introuvable is False         # le briefing EXISTE
+    assert "Briefing 7h du jour introuvable" not in r.markdown
+    assert len(r.lignes) == 0                       # mais 0 position actionnable
+    assert "aucune position actionnable du Briefing 7h" in r.markdown
+
+
+def test_briefing_7h_existe_helper(env, tmp_path):
+    # True quand un bulletin 7h du jour existe ; False sinon.
+    assert rs.briefing_7h_existe(date(2026, 6, 8), env["bdir"]) is True
+    vide = tmp_path / "vide"
+    vide.mkdir()
+    assert rs.briefing_7h_existe(date(2026, 6, 8), vide) is False
+
+
+def test_excursions_persistees_dans_tracking(env, tmp_path):
+    # Une sélection avec excursions calculables → champs additifs max_fav/max_adv
+    # persistés dans suivi-tracking (clés existantes call/fav_pct/heure inchangées).
+    _decision_log_selection(env, {"Or"})
+    tracking_dir = tmp_path / "suivi-tracking"
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    series = {"GC=F": _series_1h_jour([3400, 3340, 3380])}
+    r = _build_series(env, "12h", now, series)
+    orr = _ligne(r, "Or")
+    assert orr.selection is True
+    # On persiste explicitement avec un base_dir de test (le default arg est figé).
+    rs.save_suivi_tracking(date(2026, 6, 8), "12h", r.lignes, now, base_dir=tracking_dir)
+    data = rs.load_suivi_tracking(date(2026, 6, 8), base_dir=tracking_dir)
+    rec = data["12h"]["Or"]
+    assert rec["call"] == "SHORT" and "fav_pct" in rec and "heure" in rec  # inchangés
+    assert rec["max_fav_pct"] == pytest.approx(1.76, abs=0.02)
+    assert rec["max_adv_pct"] == pytest.approx(0.0, abs=0.02)  # jamais au-dessus de l'ouverture
+
+
+# ---------------------------------------------------------------------------
 # run_bilan : runner CLI OK (smoke)
 # ---------------------------------------------------------------------------
 

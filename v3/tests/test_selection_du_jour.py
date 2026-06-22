@@ -78,6 +78,17 @@ def _actif(
 _NOW = datetime(2026, 6, 12, 7, 0, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def _isole_news_flux(monkeypatch):
+    """Isole les tests de sélection de l'events-log LIVE : par défaut AUCUNE news
+    adverse (le veto news↯ lit la vraie events-log via bilan_jour.cause_news_high_dir,
+    sinon les tests dépendraient des données du jour). Les tests du veto
+    re-monkeypatchent cette fonction APRÈS le fixture (l'override prime)."""
+    import bilan_jour as bj
+    monkeypatch.setattr(bj, "cause_news_high_dir", lambda *a, **k: None, raising=False)
+    monkeypatch.setattr(sa, "_fresh_high_feed_dirs", lambda now: {}, raising=False)
+
+
 # ---------------------------------------------------------------------------
 # Règles de sélection
 # ---------------------------------------------------------------------------
@@ -485,52 +496,48 @@ def test_selection_motif_famille_affiche_dans_bloc(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# VETO NEWS↯ (consensus 3 experts, 22/06) — double condition news + tape,
-# garde-fou quant exceptionnel. Cf. _veto_news_contre_call / règle 5.
+# VETO NEWS↯ (décision fondateur 22/06) — NEWS SEULE : une news high adverse
+# fraîche suffit à écarter une cellule de la VITRINE (top 3). Pas de condition
+# tape. Garde-fou quant exceptionnel conservé. Cf. _veto_news_contre_call.
 # ---------------------------------------------------------------------------
 
-def _actif_veto(score_24h=2.0, direction="LONG", contre=True):
-    """ActifResult 24h forte avec momentum 24h à contre-sens du call (tape)."""
-    a = _actif("S&P 500", "sp500", score_24h=score_24h, direction=direction)
-    a.contre_momentum = {h: (contre if h == "24h" else False) for h in sa.HORIZONS}
-    return a
+def _actif_veto(score_24h=2.0, direction="LONG"):
+    """ActifResult 24h forte (candidate à la Sélection)."""
+    return _actif("S&P 500", "sp500", score_24h=score_24h, direction=direction)
 
 
-def test_veto_news_plus_tape_exclut_la_cellule(monkeypatch):
-    # News high fraîche SHORT (contre call LONG) + tape à contre-sens → VETO.
+def _patch_news_short(monkeypatch):
+    """News high SHORT sur S&P (contre un call LONG) dans le flux du jour."""
+    monkeypatch.setattr(sa, "_fresh_high_feed_dirs",
+                        lambda now: {"S&P 500": {"SHORT"}})
     import bilan_jour as bj
     monkeypatch.setattr(
         bj, "cause_news_high_dir",
         lambda actif, date_j, sens, apres=None, events_path=None:
             "Chine impose des restrictions" if sens == "SHORT" else None,
     )
+
+
+def test_veto_news_seule_exclut_la_cellule(monkeypatch):
+    # Une news high SHORT contre un call LONG SUFFIT (pas besoin de tape).
+    _patch_news_short(monkeypatch)
     a = _actif_veto()
     sel, ecart = sa.compute_selection_du_jour([a], now=_NOW)
     assert sel == []
     assert any(e["motif"].startswith("VETO news") for e in ecart)
 
 
-def test_veto_sans_tape_pas_de_veto(monkeypatch):
-    # Même news adverse MAIS momentum non contraire (tape ne confirme pas) → gardée.
-    import bilan_jour as bj
-    monkeypatch.setattr(
-        bj, "cause_news_high_dir",
-        lambda actif, date_j, sens, apres=None, events_path=None:
-            "Chine impose des restrictions" if sens == "SHORT" else None,
-    )
-    a = _actif_veto(contre=False)
+def test_veto_news_alignee_pas_de_veto(monkeypatch):
+    # News high SHORT mais call SHORT (alignée) → pas de contradiction → gardée.
+    _patch_news_short(monkeypatch)
+    a = _actif_veto(score_24h=-2.0, direction="SHORT")
     sel, _ = sa.compute_selection_du_jour([a], now=_NOW)
     assert [s["fiche_key"] for s in sel] == ["sp500"]
 
 
 def test_veto_quant_exceptionnel_pas_de_veto(monkeypatch):
-    # News adverse + tape contraire, MAIS quant hors-norme (>= 8.0) → garde-fou Analyst.
-    import bilan_jour as bj
-    monkeypatch.setattr(
-        bj, "cause_news_high_dir",
-        lambda actif, date_j, sens, apres=None, events_path=None:
-            "Chine impose des restrictions" if sens == "SHORT" else None,
-    )
+    # News adverse MAIS quant hors-norme (>= 8.0) → garde-fou Analyst conservé.
+    _patch_news_short(monkeypatch)
     a = _actif_veto(score_24h=8.5)
     sel, _ = sa.compute_selection_du_jour([a], now=_NOW)
     assert [s["fiche_key"] for s in sel] == ["sp500"]
@@ -538,28 +545,32 @@ def test_veto_quant_exceptionnel_pas_de_veto(monkeypatch):
 
 def test_veto_sans_now_ignore(monkeypatch):
     # now absent → veto inactif (zéro invention), cellule conservée.
-    import bilan_jour as bj
-    monkeypatch.setattr(
-        bj, "cause_news_high_dir",
-        lambda actif, date_j, sens, apres=None, events_path=None: "X",
-    )
+    _patch_news_short(monkeypatch)
     a = _actif_veto()
     sel, _ = sa.compute_selection_du_jour([a])
     assert [s["fiche_key"] for s in sel] == ["sp500"]
 
 
-def test_veto_affiche_dans_bloc(monkeypatch):
+def test_veto_sans_news_pas_de_veto(monkeypatch):
+    # Aucune news adverse → cellule conservée.
     import bilan_jour as bj
-    monkeypatch.setattr(sa, "_catalyseurs_j0_high", lambda now: [])
     monkeypatch.setattr(
         bj, "cause_news_high_dir",
-        lambda actif, date_j, sens, apres=None, events_path=None:
-            "Chine impose des restrictions" if sens == "SHORT" else None,
+        lambda actif, date_j, sens, apres=None, events_path=None: None,
     )
+    a = _actif_veto()
+    sel, _ = sa.compute_selection_du_jour([a], now=_NOW)
+    assert [s["fiche_key"] for s in sel] == ["sp500"]
+
+
+def test_veto_affiche_dans_bloc(monkeypatch):
+    monkeypatch.setattr(sa, "_catalyseurs_j0_high", lambda now: [])
+    _patch_news_short(monkeypatch)
     a = _actif_veto()
     texte = "\n".join(sa.build_selection_du_jour_block([a], _NOW))
     assert "VETO news" in texte
     assert "S&P 500" in texte
+
 
 
 # ---------------------------------------------------------------------------
@@ -590,51 +601,3 @@ def test_conflit_inter_horizons_affiche_dans_bloc(monkeypatch):
     assert "⇅" in texte
     assert "contre-sens du fond" in texte
 
-
-# ---------------------------------------------------------------------------
-# VETO news↯ — TAPE via gap d'ouverture overnight (et plus seulement RSI 14j).
-# Cas « future en baisse » de l'audit fond 22/06.
-# ---------------------------------------------------------------------------
-
-def test_veto_via_gap_overnight_sans_contre_momentum(monkeypatch):
-    # Pas de contre-momentum RSI, MAIS gap d'ouverture baissier (-0.7%) contre un
-    # call LONG + news adverse fraîche → le TAPE (gap) déclenche le veto.
-    import bilan_jour as bj
-    monkeypatch.setattr(
-        bj, "cause_news_high_dir",
-        lambda actif, date_j, sens, apres=None, events_path=None:
-            "Chine impose des restrictions" if sens == "SHORT" else None,
-    )
-    a = _actif_veto(contre=False)  # contre_momentum 24h = False
-    capteurs = {"sp500": {"shadow_gap_overnight": -0.007}}
-    sel, ecart = sa.compute_selection_du_jour([a], now=_NOW, shadow_capteurs=capteurs)
-    assert sel == []
-    assert any(e["motif"].startswith("VETO news") for e in ecart)
-
-
-def test_gap_overnight_meme_sens_que_call_pas_de_veto(monkeypatch):
-    # Gap haussier (+0.7%) ALIGNÉ avec un call LONG → le tape ne contredit pas → gardé.
-    import bilan_jour as bj
-    monkeypatch.setattr(
-        bj, "cause_news_high_dir",
-        lambda actif, date_j, sens, apres=None, events_path=None:
-            "Chine impose des restrictions" if sens == "SHORT" else None,
-    )
-    a = _actif_veto(contre=False)
-    capteurs = {"sp500": {"shadow_gap_overnight": 0.007}}
-    sel, _ = sa.compute_selection_du_jour([a], now=_NOW, shadow_capteurs=capteurs)
-    assert [s["fiche_key"] for s in sel] == ["sp500"]
-
-
-def test_gap_overnight_sous_le_seuil_pas_de_veto(monkeypatch):
-    # Gap baissier mais minuscule (-0.1% < 0.3%) → bruit, pas une confirmation tape.
-    import bilan_jour as bj
-    monkeypatch.setattr(
-        bj, "cause_news_high_dir",
-        lambda actif, date_j, sens, apres=None, events_path=None:
-            "Chine impose des restrictions" if sens == "SHORT" else None,
-    )
-    a = _actif_veto(contre=False)
-    capteurs = {"sp500": {"shadow_gap_overnight": -0.001}}
-    sel, _ = sa.compute_selection_du_jour([a], now=_NOW, shadow_capteurs=capteurs)
-    assert [s["fiche_key"] for s in sel] == ["sp500"]

@@ -93,7 +93,7 @@ def test_drapeau_present_dans_le_bloc_complet():
     shadow = {"or": {"shadow_gap_overnight": 0.012}}
 
     _orig = sa.compute_selection_du_jour
-    sa.compute_selection_du_jour = lambda results, seuil=None, now=None, events_path=None, shadow_capteurs=None: (
+    sa.compute_selection_du_jour = lambda results, seuil=None, now=None, events_path=None: (
         [{"fiche_key": "or", "actif": "Or", "direction": "SHORT", "note": -0.9,
           "driver_cle": "", "driver_nom": "", "coverage": 0.9}], [])
     try:

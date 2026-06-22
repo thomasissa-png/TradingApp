@@ -1468,6 +1468,72 @@ SURVEILLANCE_FLAGS = {
 }
 
 
+# Cache (par run) de la carte « news high fraîche du flux → directions par actif ».
+# Clé = (chemin events-log, mtime, taille, date ISO). Évite de re-parser l'events-log
+# (6000+ lignes) à CHAQUE cellule (12 actifs × 3 horizons = 36 appels/rendu) : on
+# parse UNE fois, on relit le dict ensuite. Se ré-invalide si le fichier change.
+_FEED_DIRS_CACHE: Dict[Any, Dict[str, set]] = {}
+
+
+def _fresh_high_feed_dirs(now: datetime) -> Dict[str, set]:
+    """Carte {label_actif: set(directions IA)} des news HIGH du flux events-log
+    INGÉRÉES le jour `now` (Europe/Paris). UN seul parse, mémoïsé par mtime.
+
+    Source = events-log (champ `impacts`, ex. « SP500:SHORT:high »), même base que
+    `bilan_jour.cause_news_high_dir`, mais agrégée en un passage pour la perf.
+    Best-effort : toute anomalie → dict vide (zéro invention, pas de drapeau)."""
+    try:
+        import briefing as B  # noqa: PLC0415
+        path = B.EVENTS_LOG
+        try:
+            st = path.stat()
+            key = (str(path), st.st_mtime, st.st_size, now.date().isoformat())
+        except OSError:
+            key = (str(path), None, None, now.date().isoformat())
+        if key in _FEED_DIRS_CACHE:
+            return _FEED_DIRS_CACHE[key]
+        out: Dict[str, set] = {}
+        jour = now.date()
+        for ev in B.parse_events_with_ingest_ts(path):
+            if (ev.get("materiality", "") or "").lower() != "high":
+                continue
+            ts = ev.get("ingest_ts")
+            if not isinstance(ts, datetime) or ts.date() != jour:
+                continue
+            for imp in B._parse_impacts_compact(ev.get("impacts", "") or ""):
+                label = B._IA_ASSET_TO_LABEL.get(imp["asset"])
+                if label and imp["direction"] in ("LONG", "SHORT"):
+                    out.setdefault(label, set()).add(imp["direction"])
+        _FEED_DIRS_CACHE[key] = out
+        return out
+    except Exception:  # noqa: BLE001 — events-log/briefing indispo → pas de drapeau
+        return {}
+
+
+def _feed_news_contredit_call(
+    r: "ActifResult", h: str, now: Optional[datetime]
+) -> bool:
+    """True si une news HIGH du FLUX events-log (ingérée aujourd'hui) va à
+    contre-sens de la conclusion de la cellule (actif, h).
+
+    Complète le drapeau ↯ qui, jusqu'ici, ne voyait QUE les critères de SCORING
+    (divergence quant↔news). Angle mort relevé par le News Trader (audit fond
+    22/06) : une news high du flux peut contredire le call sans être un critère de
+    score (ex. Cuivre SHORT vs alliance G7 minerais critiques haussière high, ou
+    Or/Fed) → elle n'apparaissait nulle part. On la capte ici en lecture seule.
+
+    FLAG-ONLY : ne touche NI le score NI `r.divergence_quant_news` (mesure intacte).
+    Best-effort : `now` absent, events-log indispo, ou pas de news contradictoire
+    → False (zéro invention)."""
+    if now is None:
+        return False
+    conc = r.conclusions.get(h, "")
+    if conc not in ("LONG", "SHORT"):
+        return False
+    sens_oppose = "SHORT" if conc == "LONG" else "LONG"
+    return sens_oppose in _fresh_high_feed_dirs(now).get(r.nom, set())
+
+
 def _compute_cell_risk_flags(
     r: "ActifResult",
     h: str,
@@ -1497,8 +1563,9 @@ def _compute_cell_risk_flags(
     elif confidence == "faible":
         flags.append(SURVEILLANCE_FLAGS["conf_low"])
 
-    # ↯ divergence quant↔news
-    if r.divergence_quant_news.get(h, False):
+    # ↯ news à contre-sens du call : divergence quant↔news (scoring) OU news high
+    #   du flux events-log qui contredit le call (angle mort News Trader 22/06).
+    if r.divergence_quant_news.get(h, False) or _feed_news_contredit_call(r, h, now):
         flags.append(SURVEILLANCE_FLAGS["divergence_qn"])
     # ⇄ contre-momentum
     if r.contre_momentum.get(h, False):
@@ -1681,7 +1748,7 @@ _LEGENDE_DEFS: List[Tuple[str, str]] = [
     ("≈", "faible conviction (|note|<0.30), quasi-neutre (direction conservée)"),
     ("⚠", "divergence primaire / pondéré"),
     ("⚠️", "confiance faible (coverage bas ou données périmées), direction conservée"),
-    ("↯", "divergence quant ↔ news (signes opposés)"),
+    ("↯", "news à contre-sens du call (divergence quant↔news, ou news high du flux)"),
     ("⇄", "contre-momentum (conclusion vs RSI 14j opposés)"),
     ("⇆", "incohérence inter-horizons (zig-zag)"),
     ("⌛", "déjà coté (event hors fenêtre already-priced)"),
@@ -2208,71 +2275,31 @@ SELECTION_MAX: int = 3
 # quant hors-norme qui a historiquement battu les news ponctuelles).
 SELECTION_VETO_QUANT_FORT: float = 8.0
 
-# VETO NEWS↯ — seuil de gap d'ouverture overnight (rendement prix d'émission 7h /
-# close J-1) pour considérer que le TAPE va contre le call. 0.003 = 0.3 % (borne
-# basse de la fourchette News Trader « le tape confirme ≥ ~0.3-0.5 % »). En deçà,
-# le gap est du bruit d'ouverture, pas une confirmation de la news.
-SELECTION_VETO_TAPE_GAP_MIN: float = 0.003
-
-
-def _tape_contre_call(
-    r: "ActifResult",
-    H: str,
-    conc: str,
-    gap_overnight: Optional[float],
-) -> bool:
-    """Le TAPE va-t-il à CONTRE-SENS du call ? (condition 2 du veto news↯)
-
-    Deux signaux indépendants, l'un OU l'autre suffit (audit fond 22/06 — le RSI
-    14j seul ratait le cas « future en baisse de 0.7 % » qui a gêné Thomas) :
-      (a) MOMENTUM RSI — `r.contre_momentum[H]` (conclusion vs RSI 14j opposés) ;
-      (b) GAP OVERNIGHT — le gap d'ouverture (`shadow_gap_overnight` = prix
-          d'émission 7h / close J-1) dépasse SELECTION_VETO_TAPE_GAP_MIN DANS LE
-          SENS INVERSE du call (call LONG + gap baissier, ou call SHORT + gap
-          haussier). C'est le « tape » au sens trader : le future bouge déjà
-          contre nous à l'ouverture.
-    ZÉRO INVENTION : gap absent/None → seul (a) compte."""
-    if r.contre_momentum.get(H, False):
-        return True
-    if gap_overnight is None:
-        return False
-    seuil = SELECTION_VETO_TAPE_GAP_MIN
-    if conc == "LONG" and gap_overnight <= -seuil:
-        return True
-    if conc == "SHORT" and gap_overnight >= seuil:
-        return True
-    return False
-
-
 def _veto_news_contre_call(
     r: "ActifResult",
     H: str,
     now: Optional[datetime],
     events_path: Optional[Path] = None,
-    gap_overnight: Optional[float] = None,
 ) -> Optional[str]:
     """VETO NEWS↯ — décide si une cellule 24h doit être EXCLUE de la Sélection du
-    jour parce qu'une news adverse fraîche la contredit ET que le marché la confirme.
+    jour (le TOP 3, la vitrine) parce qu'une news adverse fraîche la contredit.
 
-    Consensus des 3 experts (Analyst + News Trader + Spéculateur, 22/06) sur le cas
-    S&P du 22/06 (call LONG +3.50 alors qu'une news Chine high baissière fraîche
-    tombait et que le future cédait ~0.7 %). DOUBLE CONDITION (News Trader +
-    Spéculateur) pour éviter de veto sur une news déjà cotée/absorbée :
-      1. NEWS — une news `high` de l'events-log, INGÉRÉE AUJOURD'HUI, dont la
-         direction IA pour cet actif est OPPOSÉE à notre call (via
-         `bilan_jour.cause_news_high_dir` sur le sens inverse) ;
-      2. TAPE — le marché va lui AUSSI à contre-sens du call (`_tape_contre_call`
-         : momentum RSI 14j OU gap d'ouverture overnight). Le tape confirme la
-         news, ce n'est pas qu'une rumeur isolée.
-    GARDE-FOU (Analyst) : si le quant est exceptionnellement fort
-    (|note| ≥ SELECTION_VETO_QUANT_FORT), on NE VETO PAS — le quant a la priorité,
-    la news devient un simple risque signalé ailleurs.
+    DÉCISION FONDATEUR (Thomas, 22/06) qui PRIME sur la prudence des 3 experts :
+    « Si on a une news à impact SHORT, pourquoi prendrait-on le moindre risque à le
+    jouer LONG ? » → pour la VITRINE (top 3), une news high qui contredit le call
+    SUFFIT à écarter la cellule. On NE conditionne PLUS au tape (le double-critère
+    news+tape des experts était trop permissif : il laissait passer S&P LONG le
+    22/06 sous une news Chine baissière). Critère UNIQUE :
+      NEWS — une news `high` de l'events-log, INGÉRÉE AUJOURD'HUI (donc affichée
+      dans le bulletin du jour), dont la direction IA pour cet actif est OPPOSÉE
+      au call (via `bilan_jour.cause_news_high_dir` sur le sens inverse).
+    GARDE-FOU (Analyst, conservé) : si le quant est exceptionnellement fort
+    (|note| ≥ SELECTION_VETO_QUANT_FORT), on NE VETO PAS — conviction hors-norme.
 
-    NE NEUTRALISE QUE LA SÉLECTION (Spéculateur : « le veto neutralise, ne renverse
-    jamais ») : la cellule garde sa note/conclusion et reste jouable ailleurs ; on
-    refuse seulement de la mettre en avant comme meilleur pari du jour. Retourne le
-    résumé de la news adverse (motif tracé) ou None si pas de veto. ZÉRO INVENTION :
-    `now` absent ou news/tape manquants → None (pas de veto)."""
+    NE NEUTRALISE QUE LA VITRINE : la cellule garde sa note/conclusion et reste
+    jouable dans la table « À jouer » complète ; on refuse seulement de la mettre
+    en AVANT comme meilleur pari du jour. Retourne le résumé de la news adverse
+    (motif tracé) ou None. ZÉRO INVENTION : `now` absent / pas de news → None."""
     if now is None:
         return None
     conc = r.conclusions.get(H, "")
@@ -2281,17 +2308,20 @@ def _veto_news_contre_call(
     # Garde-fou Analyst : quant hors-norme → on ne veto pas.
     if abs(r.scores.get(H, 0.0)) >= SELECTION_VETO_QUANT_FORT:
         return None
-    # Condition 2 (TAPE) : momentum RSI OU gap overnight à CONTRE-SENS du call.
-    if not _tape_contre_call(r, H, conc, gap_overnight):
+    # Critère UNIQUE : une news high fraîche du jour contredit le call. MÊME source
+    # que le drapeau ↯ (`_feed_news_contredit_call` / `_fresh_high_feed_dirs`) →
+    # veto et drapeau ne peuvent JAMAIS diverger, et un seul point d'isolation en test.
+    if not _feed_news_contredit_call(r, H, now):
         return None
-    # Condition 1 (NEWS) : news high fraîche du jour dans le sens INVERSE du call.
+    # Texte du motif : résumé de la news adverse (best-effort) ; fallback générique.
     sens_oppose = "SHORT" if conc == "LONG" else "LONG"
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import bilan_jour as _bj  # import paresseux/tolérant
-        return _bj.cause_news_high_dir(r.nom, now.date(), sens_oppose, None, events_path)
-    except Exception:  # noqa: BLE001 — events-log indispo → pas de veto (zéro invention)
-        return None
+        resume = _bj.cause_news_high_dir(r.nom, now.date(), sens_oppose, None, events_path)
+    except Exception:  # noqa: BLE001 — events-log indispo
+        resume = None
+    return resume or f"news high {sens_oppose} sur {r.nom}"
 
 # Note discrète (fin de section « À jouer ») signalant que les capteurs courts
 # shadow tournent (Étage 2) — pour que Thomas sache qu'ils sont tracés au
@@ -2308,7 +2338,6 @@ def compute_selection_du_jour(
     seuil_conviction: Optional[float] = None,
     now: Optional[datetime] = None,
     events_path: Optional[Path] = None,
-    shadow_capteurs: Optional[Dict[str, Dict[str, Optional[float]]]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Calcule la « Sélection du jour — max 3 » sur l'horizon 24h.
 
@@ -2389,12 +2418,8 @@ def compute_selection_du_jour(
     # `ecartees` (motif « VETO news↯ ... ») ; les suivantes peuvent prendre sa place.
     ecartees: List[Dict[str, Any]] = []
     survivantes: List[Dict[str, Any]] = []
-    _capteurs = shadow_capteurs or {}
     for c in candidates:
-        _gap = (_capteurs.get(c["fiche_key"]) or {}).get("shadow_gap_overnight")
-        motif_veto = _veto_news_contre_call(
-            c["_result"], H, now, events_path, gap_overnight=_gap
-        )
+        motif_veto = _veto_news_contre_call(c["_result"], H, now, events_path)
         if motif_veto:
             ecartees.append({
                 "fiche_key": c["fiche_key"],
@@ -2757,7 +2782,7 @@ def build_selection_du_jour_block(
     """
     prix_reference = prix_reference or {}
     selection, ecartees = compute_selection_du_jour(
-        results, seuil_conviction, now=now, shadow_capteurs=shadow_capteurs
+        results, seuil_conviction, now=now
     )
 
     # [Refonte S9 vague 3 — fusion I11] La « Sélection » et « À jouer » sont
@@ -2984,8 +3009,8 @@ def _synthese_cell_risk_flags(
     # ◧ mono-critère dominant (fragilité d'une direction actée)
     if detect_mono_critere_dominant(r, h)[0]:
         flags.append("◧")
-    # ↯ divergence quant↔news
-    if r.divergence_quant_news.get(h, False):
+    # ↯ news à contre-sens : divergence quant↔news (scoring) OU news high du flux.
+    if r.divergence_quant_news.get(h, False) or _feed_news_contredit_call(r, h, now):
         flags.append("↯")
     # ⇄ contre-momentum
     if r.contre_momentum.get(h, False):
@@ -4036,7 +4061,13 @@ def render_bulletin(
             mono_flag = " ◧" if mono_dom_cell else ""
             if mono_flag:
                 flags_present.add("◧")
-            div_qn_flag = " ↯" if r.divergence_quant_news.get(h, False) else ""
+            # ↯ : divergence quant↔news (scoring) OU news high du flux à contre-sens
+            #     du call (audit fond 22/06). MÊME prédicat que _synthese_cell_risk_flags
+            #     (la raison hérite de la grille → JAMAIS de divergence grille↔raison).
+            div_qn_flag = (
+                " ↯" if (r.divergence_quant_news.get(h, False)
+                         or _feed_news_contredit_call(r, h, now)) else ""
+            )
             if div_qn_flag:
                 flags_present.add("↯")
             cmom_flag = " ⇄" if r.contre_momentum.get(h, False) else ""
@@ -4403,9 +4434,7 @@ def build_decision_log_records(
     _cles_partagees = _shared_drivers.compute_shared_cles(results, HORIZONS)
     # Étage 1b — sélection du jour (24h) : MÊME source que le bloc bulletin (1a),
     # zéro divergence affichage⇄mesure. fiche_keys retenus + motifs d'exclusion.
-    _selection, _ecartees = compute_selection_du_jour(
-        results, now=now, shadow_capteurs=shadow_capteurs
-    )
+    _selection, _ecartees = compute_selection_du_jour(results, now=now)
     _selection_keys = {s["fiche_key"] for s in _selection}
     _motif_exclusion = {e["fiche_key"]: e["motif"] for e in _ecartees}
     shadow_capteurs = shadow_capteurs or {}

@@ -150,21 +150,23 @@ def _ligne_close(bilan, actif):
     return next(m for m in bilan.measures_24h if m.cell.actif_name == actif)
 
 
-def test_cac_utilise_close_officiel_17h30(env):
-    # fetch_series renvoie une bougie 1day datée du jour J : close officiel 17h30.
+def test_cac_utilise_close_1day_du_jour(env):
+    # Refonte « jour de bourse même » (2026-06) : la cascade de clôture prend
+    # d'abord la bougie 1day du jour J (close officiel) — pas le spot 22h.
     now = datetime(2026, 6, 8, 22, 15, tzinfo=PARIS)
-    close_17h30 = 8080.0   # +1.0% vs ouverture 8000
-    spot_22h = 9999.0      # prix spot 22h (NE DOIT PAS être utilisé pour le CAC)
+    close_1day = 8080.0    # +1.0% vs ouverture 8000
+    spot_22h = 9999.0      # spot 22h : NE DOIT PAS être utilisé si 1day dispo
 
     def fetch_price(t):
         return spot_22h
 
-    def fetch_series(t):
-        # série journalière oldest→newest, dernière bougie datée du jour J.
-        return [
-            (datetime(2026, 6, 5, 17, 30, tzinfo=PARIS), 7950.0),
-            (datetime(2026, 6, 8, 17, 30, tzinfo=PARIS), close_17h30),
-        ]
+    def fetch_series(t, *, interval="1day", outputsize=60):
+        if interval == "1day":
+            return [
+                (datetime(2026, 6, 5, 17, 30, tzinfo=PARIS), 7950.0),
+                (datetime(2026, 6, 8, 17, 30, tzinfo=PARIS), close_1day),
+            ]
+        return None  # pas de 1h dans ce test
 
     bilan = bj.build_bilan_jour(
         now=now, date_j=DATE_J,
@@ -173,26 +175,23 @@ def test_cac_utilise_close_officiel_17h30(env):
         prix_ouverture_dir=env["odir"], prix_emission_dir=env["edir"],
     )
     m = _ligne_close(bilan, "CAC 40")
-    # Le close utilisé = close officiel 17h30 (pas le spot 22h).
-    assert m.prix_courant == pytest.approx(close_17h30)
+    # Le close utilisé = bougie 1day du jour J (pas le spot 22h).
+    assert m.prix_courant == pytest.approx(close_1day)
+    assert m.prix_cloture_source == "1day"
     # delta = (8080 - 8000) / 8000 * 100 = +1.0%
     assert m.delta_pct == pytest.approx(1.0, abs=0.01)
-    # Aucun marqueur approx (close officiel obtenu).
-    assert "^FCHI" not in bilan.close_approx_tickers
-    assert bj.CLOSE_APPROX_MARKER not in bilan.markdown
 
 
-def test_cac_fallback_close_approx_si_indisponible(env):
-    # Q5 : close officiel 17h30 indisponible (série sans bougie datée J) →
-    # fallback sur le spot 22h, marqué [close approx].
+def test_cac_fallback_spot_si_1day_et_1h_indispo(env):
+    # Cascade : ni 1day ni 1h pour le jour J → fallback spot (source "spot").
     now = datetime(2026, 6, 8, 22, 15, tzinfo=PARIS)
     spot_22h = 8050.0  # +0.625% vs ouverture 8000
 
     def fetch_price(t):
         return spot_22h
 
-    def fetch_series(t):
-        # Pas de bougie datée du jour J → close officiel non récupérable.
+    def fetch_series(t, *, interval="1day", outputsize=60):
+        # Aucune barre datée du jour J (que des barres d'un autre jour).
         return [(datetime(2026, 6, 5, 17, 30, tzinfo=PARIS), 7950.0)]
 
     bilan = bj.build_bilan_jour(
@@ -202,12 +201,9 @@ def test_cac_fallback_close_approx_si_indisponible(env):
         prix_ouverture_dir=env["odir"], prix_emission_dir=env["edir"],
     )
     m = _ligne_close(bilan, "CAC 40")
-    # Fallback : on utilise le spot (zéro invention d'un close fabriqué).
+    # Fallback spot (zéro invention d'un close fabriqué).
     assert m.prix_courant == pytest.approx(spot_22h)
-    # Le ticker est marqué approx + marqueur visible + note Q5 dans le rendu.
-    assert "^FCHI" in bilan.close_approx_tickers
-    assert bj.CLOSE_APPROX_MARKER in bilan.markdown
-    assert "Q5" in bilan.markdown
+    assert m.prix_cloture_source == "spot"
 
 
 def test_bilan_aucune_mention_monetaire(env):
@@ -216,7 +212,8 @@ def test_bilan_aucune_mention_monetaire(env):
         now=now, date_j=DATE_J,
         bulletins_dir=env["bdir"], decision_log_dir=env["dlog"],
         fiches=FICHES, fetch_price=lambda t: 8080.0,
-        fetch_series=lambda t: [(datetime(2026, 6, 8, 17, 30, tzinfo=PARIS), 8080.0)],
+        fetch_series=lambda t, *, interval="1day", outputsize=60: [
+            (datetime(2026, 6, 8, 17, 30, tzinfo=PARIS), 8080.0)],
         prix_ouverture_dir=env["odir"], prix_emission_dir=env["edir"],
     )
     md = bilan.markdown.lower()

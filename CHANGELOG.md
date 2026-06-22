@@ -2,6 +2,17 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-22 — Refonte mesure du « Bilan du jour » : fenêtre = jour de bourse MÊME (auto-suffisante)
+
+- **Cause racine (vérifiée sur pièces, run 22h15)** : `build_bilan_jour` déléguait la notation à `journaliste.measure(today=compute_echeance(date_j,"24h"))`, soit le PROCHAIN jour ouvré. À 22h15 le soir J, la clôture de J+1 n'existe pas → les 12 calls 7h sortaient tous « non-notee » SANS le moindre fetch (défaut STRUCTUREL de conception, pas un fetch raté). measures-log vide → variations-24h vide → « à améliorer » vide.
+- **Refonte** : nouveau module `scripts/mesure_bilan.py` — mesure AUTO-SUFFISANTE de la journée J (ouverture → clôture ~22h) pour chaque call 7h. Référence = ouverture du jour (réutilise `_resolve_prix_reference`), clôture via CASCADE (bougie 1day → dernière barre 1h → spot → fav% suivi reconstruit → sinon non-notee « donnée absente »). Verdict VRAI/FAUSSE/NC réutilise `measure_cell` (seuils inchangés). Capture le **cours MAX du jour** : excursion favorable/adverse max sur la série 1h intraday (extrema des close ; Twelve ne sert pas de high/low intra-barre).
+- **`Measure` étendu (champs OPTIONNELS, non-breaking)** : `max_favorable_pct`, `max_adverse_pct`, `prix_cloture_source`, `prix_cloture_heure`. Consommateurs en aval (compute_perf_top3, gros_moves, win_rate_*, matrice synthèse) inchangés.
+- **Affichage** : nouvelle colonne « Cours max jour » (table top 3) + colonnes « Max favorable / Max adverse » (table « Résultat des calls 7h »).
+- **Persistance** : les mesures du jour alimentent le measures-log (merge non destructif, idempotent) puis régénèrent variations-24h.md → le gros move du jour (ex. cacao +8 %) y apparaît et devient le plus gros raté/opportunité.
+- **Garde-fou d'honnêteté** : si 0/N cellules notées, le rapport affiche « Mesure indisponible aujourd'hui (donnée absente) : à ne pas lire comme RAS » au lieu de « Aucun pari raté » / « Rien de net » (qui se lisaient « journée parfaite »).
+- **Fix indices (cohérence d'échelle)** : market_data mappe `^GSPC`→SPY (~750) et `^IXIC`→QQQ (~740). Plutôt que changer le mapping global (risque sur les ouvertures déjà stampées en proxy, non vérifiable en live ici), garde-fou de cohérence d'échelle dans `mesure_bilan` : si référence et clôture diffèrent d'un ordre de grandeur (ratio hors [1/3 ; 3]) → mesure REFUSÉE « échelle incohérente » plutôt qu'un delta absurde (ex. (5500−748)/748).
+- **Tests** : `tests/test_mesure_bilan.py` (16 tests, fetchers injectés, zéro réseau) — excursions LONG/SHORT, cascade clôture complète, cohérence d'échelle, garde-fou honnêteté, variations-24h peuplé. 2 tests CA-B2 obsolètes (`close_approx`/EU 17h30) réécrits sur la nouvelle conception. Suite : **1679 passed, 22 failed (baseline préexistante : 18 `pandas` manquant + 4 jours fériés), 0 régression**.
+
 ## 2026-06-22 — Audit 1 mois (3 experts) : carry 1m 24h→96h + Positions 1 mois jouables + sonde data
 
 - **Carry 1m 24h → 96h** (consensus 3 experts) : maintenir une conviction MENSUELLE seulement 24h sur trou de data était incohérent (le 7j tolérait 48h > 1m). Fenêtre désormais proportionnelle à l'horizon (1m=96h > 7j=48h). Tests carry_forward mis à jour.

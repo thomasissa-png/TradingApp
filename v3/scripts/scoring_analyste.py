@@ -1477,11 +1477,16 @@ _FEED_DIRS_CACHE: Dict[Any, Dict[str, set]] = {}
 
 def _fresh_high_feed_dirs(now: datetime) -> Dict[str, set]:
     """Carte {label_actif: set(directions IA)} des news HIGH du flux events-log
-    INGÉRÉES le jour `now` (Europe/Paris). UN seul parse, mémoïsé par mtime.
+    affichées dans le bulletin du jour. UN seul parse, mémoïsé par mtime.
 
-    Source = events-log (champ `impacts`, ex. « SP500:SHORT:high »), même base que
-    `bilan_jour.cause_news_high_dir`, mais agrégée en un passage pour la perf.
-    Best-effort : toute anomalie → dict vide (zéro invention, pas de drapeau)."""
+    FENÊTRE = EXACTEMENT celle du feed « Top actualités à impact » du bulletin :
+    `briefing.filter_recent_impactful` (events à ≤ FRESHNESS_HOURS = 48h de la
+    DATE D'ÉVÉNEMENT). C'est la clé du « ce qu'on VOIT agit » (décision fondateur
+    22/06) : une news high baissière S&P affichée dans le bulletin DOIT écarter un
+    call S&P LONG du top 3, même si elle a été ingérée la veille (l'ancienne version
+    ne regardait que les news ingérées le jour même → ratait pile ce cas).
+    Source directionnelle = champ `impacts` (ex. « SP500:SHORT:high »).
+    Best-effort : toute anomalie → dict vide (zéro invention, pas de veto/drapeau)."""
     try:
         import briefing as B  # noqa: PLC0415
         path = B.EVENTS_LOG
@@ -1493,12 +1498,11 @@ def _fresh_high_feed_dirs(now: datetime) -> Dict[str, set]:
         if key in _FEED_DIRS_CACHE:
             return _FEED_DIRS_CACHE[key]
         out: Dict[str, set] = {}
-        jour = now.date()
-        for ev in B.parse_events_with_ingest_ts(path):
+        recents = B.filter_recent_impactful(
+            B.parse_events(path), now.date(), window_hours=B.FRESHNESS_HOURS
+        )
+        for ev in recents:
             if (ev.get("materiality", "") or "").lower() != "high":
-                continue
-            ts = ev.get("ingest_ts")
-            if not isinstance(ts, datetime) or ts.date() != jour:
                 continue
             for imp in B._parse_impacts_compact(ev.get("impacts", "") or ""):
                 label = B._IA_ASSET_TO_LABEL.get(imp["asset"])

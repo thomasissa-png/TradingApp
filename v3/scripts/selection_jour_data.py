@@ -38,20 +38,23 @@ def assemble_assets(
     events: List[Dict[str, Any]],
     now: datetime,
     *,
-    prix_reference: Dict[str, float],
     fiche_meta: Dict[str, Dict[str, str]],
     get_closes: Callable[[str], List[float]],
-    get_price_at: Callable[[str, datetime], Optional[float]],
+    get_session_move: Callable[[str], Optional[float]],
+    get_post_news_move: Callable[[str, datetime], Optional[float]],
 ) -> List[sj.AssetDay]:
     """Construit la liste des `AssetDay` (un par actif de `results`).
 
     - `fiche_meta` : {fiche_key: {"label", "ticker", "famille"}}.
     - `get_closes(fiche_key)` : clôtures journalières oldest→newest (porte momentum).
-    - `get_price_at(fiche_key, dt)` : prix au timestamp `dt` (pour le move post-news).
-      Retourne None si indisponible → consommé non calculé (anti-faux-négatif : on
-      ne déclare jamais « déjà coté » sans preuve de prix).
-    Aucune exception ne remonte : un actif sans données reste présent (sans news/
-    momentum). NE SÉLECTIONNE RIEN.
+    - `get_session_move(fiche_key)` : mouvement overnight SIGNÉ (prix courant vs
+      clôture veille). Pour les indices cash fermés à 7h, la couche LIVE lit ce
+      mouvement sur le FUTURE qui cote la nuit (proxy) → garde-fous « contradiction »
+      et « déjà coté » actifs même marché fermé. None si indisponible.
+    - `get_post_news_move(fiche_key, dt)` : mouvement BRUT (non signé) entre `dt` et
+      maintenant (proxy-aware côté LIVE). None → consommé non calculé (anti-faux-
+      négatif : on ne déclare jamais « déjà coté » sans preuve de prix).
+    Aucune exception ne remonte. NE SÉLECTIONNE RIEN.
     """
     # label → fiche_key (pour rattacher les impacts news à l'actif).
     label_to_key = {getattr(r, "nom", ""): getattr(r, "fiche_key", "") for r in results}
@@ -76,9 +79,7 @@ def assemble_assets(
             # le champ par-impact est absent/inconnu.
             imp_conf = (imp.get("conf", "") or "").lower()
             materiality = imp_conf if imp_conf in ("high", "medium", "low") else materiality_ev
-            spot = prix_reference.get(key)
-            p_news = get_price_at(key, ts) if isinstance(ts, datetime) else None
-            raw = (spot / p_news - 1.0) if (spot and p_news) else None
+            raw = get_post_news_move(key, ts) if isinstance(ts, datetime) else None
             news_par_key.setdefault(key, []).append(
                 sj.NewsItem(
                     direction=direction,
@@ -96,9 +97,7 @@ def assemble_assets(
         key = getattr(r, "fiche_key", "")
         meta = fiche_meta.get(key, {})
         closes = list(get_closes(key) or [])
-        prev_close = closes[-1] if closes else None
-        spot = prix_reference.get(key)
-        session_move = (spot / prev_close - 1.0) if (spot and prev_close) else None
+        session_move = get_session_move(key)
         fond_dir = ""
         conc = getattr(r, "conclusions", {}) or {}
         if conc.get("24h") in ("LONG", "SHORT"):
@@ -176,6 +175,19 @@ def load_fiche_meta(fiches_dir: Path) -> Dict[str, Dict[str, str]]:
     return out
 
 
+# Proxy « overnight » : les indices CASH sont fermés à 7h Paris → on lit leur
+# mouvement de nuit sur le FUTURE correspondant (qui cote ~23h/24). Uniquement pour
+# les garde-fous prix (contradiction / déjà-coté) ; le momentum et le prix affiché
+# restent sur le cash. Données futures US excellentes (ES/NQ) ; CAC/VIX best-effort
+# (souvent absentes → on retombe sur le comportement prudent, pas de régression).
+PROXY_OVERNIGHT: Dict[str, str] = {
+    "sp500": "ES=F",      # future E-mini S&P 500
+    "nasdaq": "NQ=F",     # future E-mini Nasdaq 100
+    "cac40": "FCE=F",     # future CAC 40 (best-effort)
+    "vix": "^VIX",        # pas de future fiable → ticker cash (souvent vide la nuit)
+}
+
+
 # ── Câblage LIVE (réseau via market_data) — BEST-EFFORT, jamais de crash ─────
 def compute_top3(
     results: List[Any],
@@ -186,39 +198,68 @@ def compute_top3(
     events_path: Path,
 ) -> List[sj.Pick]:
     """Assemble les données réelles (events-log + prix market_data) et renvoie le
-    top 3 du jour. Tout échec (réseau, parsing) → [] (le bulletin garde sa
-    Sélection de repli côté appelant). Les prix sont mémoïsés par actif (1 fetch
-    journalier + 1 horaire max par actif)."""
+    top 3 du jour. Tout échec (réseau, parsing) → [] (repli sur l'ancienne Sélection
+    côté appelant). Prix mémoïsés par actif.
+
+    Le momentum lit les clôtures du ticker CASH. Le mouvement OVERNIGHT (garde-fous
+    contradiction / déjà-coté) lit le ticker PROXY (future) quand l'actif cash est
+    fermé la nuit — sinon le ticker propre (actifs continus)."""
     try:
         import briefing as B  # noqa: PLC0415
         import criteres_calculator as cc  # noqa: PLC0415
 
         events = B.parse_events_with_ingest_ts(events_path)
         meta = load_fiche_meta(fiches_dir)
-        daily: Dict[str, List[float]] = {}
-        hourly: Dict[str, List] = {}
+        daily_cash: Dict[str, List[float]] = {}
+        hourly_ov: Dict[str, List] = {}
+        prevclose_ov: Dict[str, Optional[float]] = {}
+
+        def _overnight_ticker(key: str) -> str:
+            return PROXY_OVERNIGHT.get(key) or meta.get(key, {}).get("ticker", "")
 
         def get_closes(key: str) -> List[float]:
-            if key in daily:
-                return daily[key]
-            t = meta.get(key, {}).get("ticker", "")
-            serie = cc.fetch_twelve_series(t, interval="1day", outputsize=15) if t else None
-            daily[key] = [c for _, c in (serie or [])]
-            return daily[key]
+            # Momentum : clôtures journalières du CASH (le cash a un historique propre).
+            if key not in daily_cash:
+                t = meta.get(key, {}).get("ticker", "")
+                serie = cc.fetch_twelve_series(t, interval="1day", outputsize=15) if t else None
+                daily_cash[key] = [c for _, c in (serie or [])]
+            return daily_cash[key]
 
-        def get_price_at(key: str, dt: datetime) -> Optional[float]:
-            t = meta.get(key, {}).get("ticker", "")
-            if not t:
+        def _hourly_ov(key: str) -> List:
+            if key not in hourly_ov:
+                t = _overnight_ticker(key)
+                hourly_ov[key] = (cc.fetch_twelve_series(t, interval="1h", outputsize=48) or []) if t else []
+            return hourly_ov[key]
+
+        def _prevclose_ov(key: str) -> Optional[float]:
+            if key not in prevclose_ov:
+                t = _overnight_ticker(key)
+                serie = cc.fetch_twelve_series(t, interval="1day", outputsize=5) if t else None
+                vals = [c for _, c in (serie or [])]
+                prevclose_ov[key] = vals[-1] if vals else None
+            return prevclose_ov[key]
+
+        def get_session_move(key: str) -> Optional[float]:
+            bars = _hourly_ov(key)
+            prev = _prevclose_ov(key)
+            if not bars or not prev:
                 return None
-            if key not in hourly:
-                hourly[key] = cc.fetch_twelve_series(t, interval="1h", outputsize=48) or []
-            prior = [c for (bdt, c) in hourly[key] if bdt <= dt]
-            return prior[-1] if prior else None
+            current = bars[-1][1]
+            return (current / prev - 1.0) if prev else None
+
+        def get_post_news_move(key: str, dt: datetime) -> Optional[float]:
+            bars = _hourly_ov(key)
+            if not bars:
+                return None
+            prior = [c for (bdt, c) in bars if bdt <= dt]
+            if not prior:
+                return None
+            return bars[-1][1] / prior[-1] - 1.0 if prior[-1] else None
 
         assets = assemble_assets(
-            results, events, now,
-            prix_reference=prix_reference or {}, fiche_meta=meta,
-            get_closes=get_closes, get_price_at=get_price_at,
+            results, events, now, fiche_meta=meta,
+            get_closes=get_closes, get_session_move=get_session_move,
+            get_post_news_move=get_post_news_move,
         )
         ordre = [getattr(r, "fiche_key", "") for r in results]
         return sj.select_top3(assets, now, ordre)

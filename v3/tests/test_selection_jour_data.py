@@ -44,15 +44,14 @@ def test_assemble_rattache_news_et_calcule_session_move(monkeypatch):
     ]
     events = [_ev("SP500", "SHORT"), _ev("GOLD", "SHORT")]
     closes = {"sp500": [100, 101, 102], "or": [50, 50.5, 51]}
-    prix = {"sp500": 102.0, "or": 51.5}  # spot
-    # prix à l'heure de la news (1h avant) : pour le post_news_move
-    price_at = {"sp500": 101.0, "or": 51.0}
+    session = {"sp500": 0.0, "or": -0.001}            # mouvement overnight signé
+    post = {"sp500": 0.0099, "or": 0.002}             # move BRUT depuis la news (+)
     assets = sjd.assemble_assets(
         results, events, NOW,
-        prix_reference=prix,
         fiche_meta={"sp500": {"famille": "indices"}, "or": {"famille": "métaux-précieux"}},
         get_closes=lambda k: closes.get(k, []),
-        get_price_at=lambda k, dt: price_at.get(k),
+        get_session_move=lambda k: session.get(k),
+        get_post_news_move=lambda k, dt: post.get(k),
     )
     by = {a.fiche_key: a for a in assets}
     # S&P : news SHORT rattachée, fond LONG, groupe indices.
@@ -60,9 +59,8 @@ def test_assemble_rattache_news_et_calcule_session_move(monkeypatch):
     assert len(sp.news) == 1 and sp.news[0].direction == "SHORT"
     assert sp.fond_dir == "LONG"
     assert sp.groupe == "indices"
-    # session_move = spot/prev_close - 1 = 102/102 - 1 = 0
     assert abs(sp.session_move) < 1e-9
-    # post_news_move SHORT : spot 102 vs news 101 → raw +0.99 % → favorable SHORT = -0.99 %
+    # post brut +0.99 % sur une news SHORT → favorable (signé) = -0.99 %
     assert sp.news[0].post_news_move < 0
 
 
@@ -70,10 +68,10 @@ def test_assemble_sans_prix_ne_crash_pas():
     results = [_R("Blé", "ble", {"24h": "LONG"})]
     assets = sjd.assemble_assets(
         results, [], NOW,
-        prix_reference={},
         fiche_meta={},
         get_closes=lambda k: [],
-        get_price_at=lambda k, dt: None,
+        get_session_move=lambda k: None,
+        get_post_news_move=lambda k, dt: None,
     )
     a = assets[0]
     assert a.session_move is None and a.closes == [] and a.news == []
@@ -87,10 +85,10 @@ def test_assemble_bout_en_bout_selectionne(monkeypatch):
     events = [_ev("SP500", "SHORT", materiality="high", reliability="confirmed")]
     assets = sjd.assemble_assets(
         results, events, NOW,
-        prix_reference={"sp500": 100.0},
         fiche_meta={"sp500": {"famille": "indices"}},
         get_closes=lambda k: [100, 100, 100],
-        get_price_at=lambda k, dt: 100.0,  # pas de move post-news
+        get_session_move=lambda k: 0.0,         # prix non contredisant
+        get_post_news_move=lambda k, dt: 0.0,   # move pas encore fait
     )
     top = sj.select_top3(assets, NOW, ["sp500"])
     assert [p.actif for p in top] == ["S&P 500"]
@@ -137,10 +135,10 @@ def test_per_impact_confidence_filtre_le_tag_faible(monkeypatch):
     ]
     assets = sjd.assemble_assets(
         results, events, NOW,
-        prix_reference={"eurusd": 1.14},
         fiche_meta={"eurusd": {"famille": "fx"}},
         get_closes=lambda k: [1.14, 1.14, 1.14],
-        get_price_at=lambda k, dt: 1.14,
+        get_session_move=lambda k: 0.0,
+        get_post_news_move=lambda k, dt: 0.0,
     )
     top = sj.select_top3(assets, NOW, ["eurusd"])
     assert top and top[0].actif == "EUR/USD" and top[0].direction == "SHORT"
@@ -153,6 +151,26 @@ def test_impact_low_seul_ne_declenche_pas(monkeypatch):
                "reliability": "confirmed", "nature": "ponctuel", "trigger": "x",
                "impacts": "EURUSD:LONG:low"}]
     assets = sjd.assemble_assets(
-        results, events, NOW, prix_reference={"eurusd": 1.14},
-        fiche_meta={}, get_closes=lambda k: [], get_price_at=lambda k, dt: None)
+        results, events, NOW, fiche_meta={}, get_closes=lambda k: [],
+        get_session_move=lambda k: None, get_post_news_move=lambda k, dt: None)
     assert sj.select_top3(assets, NOW, ["eurusd"]) == []
+
+
+def test_proxy_overnight_map_couvre_les_indices_cash():
+    # Les indices cash fermés à 7h ont un proxy future pour le mouvement overnight.
+    assert sjd.PROXY_OVERNIGHT.get("sp500") == "ES=F"
+    assert sjd.PROXY_OVERNIGHT.get("nasdaq") == "NQ=F"
+
+
+def test_garde_fou_contradiction_via_session_move(monkeypatch):
+    # News SHORT P1 sur S&P, MAIS le future overnight monte +0,5 % (contredit le SHORT
+    # de façon soutenue > 0,4 %) → la cellule est vétée. C'est le garde-fou rebranché.
+    monkeypatch.setattr(sjd, "_CODE_TO_LABEL", {"SP500": "S&P 500"})
+    results = [_R("S&P 500", "sp500", {"24h": "LONG"})]
+    events = [_ev("SP500", "SHORT", materiality="high", reliability="confirmed")]
+    assets = sjd.assemble_assets(
+        results, events, NOW, fiche_meta={"sp500": {"famille": "indices"}},
+        get_closes=lambda k: [100, 100, 100],
+        get_session_move=lambda k: 0.005,        # future +0,5 % → contredit le SHORT
+        get_post_news_move=lambda k, dt: 0.0)
+    assert sj.select_top3(assets, NOW, ["sp500"]) == []

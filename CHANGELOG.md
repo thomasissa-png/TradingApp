@@ -2,6 +2,12 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-22 — Recalibrage horizon↔fenêtre du 7j : tendance COURTE (7j) + 20j → 1 mois
+
+- **Problème (Thomas, confirmé sur pièces)** : le score 7j s'appuyait sur une tendance-prix **20 jours** (pertinence 7j=1.0 partout) — retard ~10j incohérent avec un horizon 7j.
+- **Correctif (11 fiches ; vix exclu)** : ajout `momentum_prix_7j_<actif>` (mêmes tickers, lag 7 lu dans le cle par le dispatcher générique). Pertinences : 7j neuf = {24h:0.3, 7j:1.0, 1m:0.2} (domine le 7j, retard ~2-3j) ; 20j démotée = {24h:0.4, 7j:0.3, 1m:1.0} (sert le 1 mois). Poids inchangés.
+- **Robustesse** : lag 7 < lag 20 en besoin de données → si le 20j calcule, le 7j aussi. Vérifié : 11/11 actifs calculent (série synthétique), 20j non-régressé. Tests `test_momentum_7j.py`. Vérif finale = run CI 7h.
+
 ## 2026-06-18 — Refonte briefing 7h + raison par cellule (audit 3 experts 10/10) + instrumentation persistance (shadow)
 
 **Session « briefing efficace + tendance valide tant que non démentie ». Tout mergé sur `main`, 1437 tests verts.**

@@ -140,9 +140,24 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : rendement 20j au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
     poids: 6                     # 7→6 : prove-first concertation 10/06, promotion 6→supérieur seulement sur preuve (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06 (A3).
-    pertinence: { "24h": 0.6, "7j": 1.0, "1m": 0.8 }
+    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }   # 22/06 recalibrage : 20j sert le 1 mois (retard ~10j), minoritaire sur 7j
     effet_long: "Or en tendance haussière (z>+1)"
     effet_short: "Or en tendance baissière (z<-1)"
+
+  - id: 12
+    nom: "Tendance de l'or (7 jours)"
+    source: "Twelve Data (XAU/USD)"
+    cle_courante: "momentum_prix_7j_or"
+    normalisation: "zscore"
+    zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # +1 : rendement 20j au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
+    poids: 6                     # 7→6 : prove-first concertation 10/06, promotion 6→supérieur seulement sur preuve (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06 (A3).
+    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 0.2 }   # 22/06 recalibrage : tendance COURTE, domine le 7j (retard ~2-3j)
+    effet_long: "Or en tendance haussière (z>+1)"
+    effet_short: "Or en tendance baissière (z<-1)"
+
 
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
   - id: 9

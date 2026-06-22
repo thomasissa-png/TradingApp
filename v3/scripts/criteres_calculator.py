@@ -1785,6 +1785,20 @@ TWELVE_SYMBOLS = {
     "momentum_prix_20j_sp500":   "SPY",    # proxy ETF S&P 500 (cf. flux_etf_spy_ivv_5j)
     "momentum_prix_20j_nasdaq":  "QQQ",    # proxy ETF Nasdaq-100 (cf. flux_etf_qqq_5j)
     "momentum_prix_20j_cac40":   "^FCHI",  # CAC 40 (cf. rsi_14j_fchi / alpha_cac_vs_sp_5j)
+    # Tendance COURTE 7j (recalibrage horizon↔fenêtre 22/06) — MÊMES tickers que la
+    # 20j, lag 7 lu dans le cle par le dispatcher. Domine la tendance-prix sur le 7j
+    # (retard ~2-3j, cohérent avec un horizon 7j) ; la 20j bascule vers le 1 mois.
+    "momentum_prix_7j_cacao":   "CC=F",
+    "momentum_prix_7j_cafe":    "KC=F",
+    "momentum_prix_7j_ble":     "ZW=F",
+    "momentum_prix_7j_cuivre":  "HG=F",
+    "momentum_prix_7j_petrole": "BZ=F",
+    "momentum_prix_7j_or":      "GC=F",
+    "momentum_prix_7j_argent":  "SI=F",
+    "momentum_prix_7j_eurusd":  "EUR=X",
+    "momentum_prix_7j_sp500":   "SPY",
+    "momentum_prix_7j_nasdaq":  "QQQ",
+    "momentum_prix_7j_cac40":   "^FCHI",
     # --- Term structure brent (front + M2 indispo plan Grow → n/a explicite) ---
     "brent_term_structure_m1m2": ("BZ=F", "BZ=F"),
     # --- Flux ETF (proxy : variation de prix 5j) ---
@@ -2235,11 +2249,16 @@ def _handle_twelve_zscore_dispatch(cle: str, crit: dict, ts: str) -> Optional[di
         if res is None:
             return None
         return _emit_zscore(res[0], res[1], ts)
-    if cle.startswith("momentum_prix_20j_"):
-        # A1 (audit momentum-family 10/06) : VRAIE variation 20j (rendement glissant
-        # close[t]/close[t-20]-1) puis z-score de la série de rendements — PAS le
+    _m_mom = re.match(r"momentum_prix_(\d+)j_", cle)
+    if _m_mom:
+        # A1 (audit momentum-family 10/06) : VRAIE variation Nj (rendement glissant
+        # close[t]/close[t-N]-1) puis z-score de la série de rendements — PAS le
         # z-score du niveau de close (laggard, bug cacao). spec analyst §1-2.
-        res = _twelve_variation_zscore(spec, MOMENTUM_PRIX_LAG, crit)
+        # La FENÊTRE N (en jours) est lue dans le cle : `momentum_prix_20j_` → 20,
+        # `momentum_prix_7j_` → 7 (recalibrage horizon↔fenêtre 22/06 : le 7j trade
+        # une tendance courte ~7j, retard ~2-3j ; la 20j sert le 1 mois). Un lag plus
+        # court demande MOINS de closes → si le 20j calcule, le 7j calcule aussi.
+        res = _twelve_variation_zscore(spec, int(_m_mom.group(1)), crit)
         if res is None:
             return None
         return _emit_zscore(res[0], res[1], ts)

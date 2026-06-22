@@ -180,23 +180,23 @@ def load_fiche_meta(fiches_dir: Path) -> Dict[str, Dict[str, str]]:
 
 # AUDIT OVERNIGHT des 12 actifs (lecture du mouvement de nuit pour les garde-fous
 # « contradiction de séance » et « déjà coté », à 7h Paris). RÉALITÉ DU STACK DE
-# DONNÉES (vérifiée sur pièces 16/06 avec la clé réelle) :
-#   - Twelve Data ne sert AUCUN future CME (GC=F/ES=F/NQ=F… = 404), à aucun tier ;
-#   - yfinance est bloqué sur les runners CI.
-# → Il n'existe DONC AUCUNE source de mouvement overnight pour les INDICES (S&P,
-#   Nasdaq, CAC) à 7h : ni future (absent Twelve), ni cash (marché fermé), ni ETF
-#   (pré-marché pas ouvert à 1h ET). Un proxy « ES=F/NQ=F » serait INERTE (j'ai
-#   commis cette erreur — corrigée). On NE met donc PAS de proxy futures ici.
+# DONNÉES — MESURÉE SUR PIÈCES le 22/06 avec la clé Grow ACTIVE (workflow probe-data,
+# run 27969365918), pas supposée :
+#   - Journalier FRAIS (âge 0j) servi pour les 12 fiches ;
+#   - Intraday 1h servi pour les 12 fiches, MAIS l'horizon diffère :
+#       ✅ Or (GC=F), Argent (SI=F), Cuivre (HG=F), Pétrole (BZ=F), Café (KC=F),
+#          Cacao (CC=F), Blé (ZW=F), EUR/USD (EUR=X) → barres 1h qui courent LA NUIT
+#          (dernière barre 01:00–02:00 le lendemain) → garde-fous overnight ARMÉS.
+#       ❌ S&P (^GSPC), Nasdaq (^IXIC), CAC (^FCHI), VIX (^VIX) → indices cash,
+#          intraday s'arrête à la clôture (12:30 / 17:00) → PAS de prix de nuit à 7h.
+#   - Aucune source overnight pour les indices, confirmée sur pièces : ES=F VIDE,
+#     NQ=F VIDE, DX-Y.NYB VIDE (Twelve ne mappe aucun future CME ni le DXY → fallback
+#     yfinance bloqué). SPY/QQQ frais mais s'arrêtent aussi à la clôture cash. Un proxy
+#     « ES=F/NQ=F » serait INERTE (erreur déjà commise — corrigée). → PAS de proxy.
 #
-# Couverture overnight RÉELLE (garde-fous armés) :
-#   ✅ Or, Argent (XAU/XAG natifs Twelve), Pétrole (XBR), EUR/USD (FX) → cotent 24h.
-#      Cuivre/Blé : dépend de la source servie (continu si Twelve natif). → ticker propre.
-#   ❌ S&P, Nasdaq, CAC, VIX, Café, Cacao → PAS de prix de nuit à 7h dans ce stack.
-#      Garde-fou prix indisponible la nuit : la news est quand même PRISE (anti-
-#      faux-négatif), seul « le prix contredit » manque jusqu'à l'ouverture du marché.
-#
-# Aucun override n'est donc justifié aujourd'hui : tous utilisent leur ticker propre.
-# (Un éventuel proxy ne sera ajouté qu'APRÈS vérification qu'il renvoie des données.)
+# Garde-fou prix indisponible la nuit (indices) : la news est quand même PRISE (anti-
+# faux-négatif), seul « le prix contredit » manque jusqu'à l'ouverture du marché.
+# Tous utilisent leur ticker propre ; aucun override n'est justifié (vérifié sur pièces).
 PROXY_OVERNIGHT: Dict[str, str] = {}
 
 

@@ -1202,32 +1202,79 @@ def build_bilan_jour(
         except Exception as e:  # noqa: BLE001 — pas de réseau/clé : fallback spot marqué
             logger.warning("CA-B2 : fetchers Twelve indisponibles (%s) — close EU approx", e)
 
-    eu_tickers = _eu_tickers_from_fiches(fiches)
     approx_tickers: set = set()
-    wrapped_fetch = _wrap_fetch_eu_close(
-        fetch_price, fetch_series, eu_tickers, date_j, approx_tickers,
+
+    # === Refonte « jour de bourse même » (2026-06) ============================
+    # L'ANCIENNE mesure déléguait à J.measure(today=compute_echeance(date_j,"24h")),
+    # soit le PROCHAIN jour ouvré. À 22h15 le soir J, la clôture de J+1 n'existe
+    # pas → toutes les cellules sortaient « non-notee » sans même un fetch (défaut
+    # STRUCTUREL). La nouvelle mesure est AUTO-SUFFISANTE : elle mesure la journée
+    # J (ouverture → clôture ~22h), capture max favorable/adverse intraday, et
+    # cascade de fallback pour la clôture. Cf. mesure_bilan.measure_journee_bourse.
+    import mesure_bilan as MB  # noqa: PLC0415
+
+    cells_7h, prix_emis = MB.load_cells_et_prix_7h(
+        date_j, bulletins_dir, prix_emission_dir,
     )
 
-    # Mesure : on appelle le Journaliste avec today = date_j de sorte que les
-    # cellules 24h du jour soient échues (échéance 24h = prochain jour ouvré >
-    # date_j ; pour clôturer le 24h LE SOIR MÊME on force l'échéance à aujourd'hui
-    # via today = échéance). On utilise donc today = compute_echeance(date_j, "24h").
-    today_for_24h = J.compute_echeance(date_j, "24h")
-    measures, _ = J.measure(
-        today=today_for_24h,
-        bulletins_dir=bulletins_dir,
-        prix_emission_dir=prix_emission_dir,
-        fiches=fiches,
-        fetch_price=wrapped_fetch,
+    # Tracking (relevés 12h/18h) chargé une fois — sert au fallback clôture
+    # (fav% reconstruit) ET aux blocs « suivi 24h » plus bas.
+    try:
+        from run_suivi import load_suivi_tracking as _load_tracking  # noqa: PLC0415
+        tracking_for_fallback = _load_tracking(date_j)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("bilan : load_suivi_tracking (fallback clôture) KO (%s)", e)
+        tracking_for_fallback = {}
+
+    # Map ticker → dernier fav% relevé (18h prioritaire, sinon 12h) pour le
+    # fallback clôture #4 (reconstruction prix depuis fav% + référence).
+    suivi_fav_map: Dict[str, float] = {}
+    for slot in ("12h", "18h"):  # 18h écrase 12h (dernier relevé)
+        for actif_name, rec in (tracking_for_fallback.get(slot) or {}).items():
+            if not isinstance(rec, dict):
+                continue
+            fav = rec.get("fav_pct")
+            if not isinstance(fav, (int, float)):
+                continue
+            pair = J.fiche_for_actif_name(fiches, actif_name)
+            if pair is None:
+                continue
+            tkr = pair[1].get("ticker_principal")
+            if tkr:
+                suivi_fav_map[tkr] = float(fav)
+
+    measures_24h = MB.measure_journee_bourse(
+        cells_7h, fiches,
+        date_j=date_j,
+        prix_emis=prix_emis,
         prix_ouverture_dir=prix_ouverture_dir,
-        only_seven_am=True,
+        fetch_series=fetch_series,
+        fetch_price=fetch_price,
+        suivi_fav_map=suivi_fav_map,
     )
-    # Ne garder que les cellules 24h émises le jour J (bulletin 7h du jour).
-    measures_24h = [
-        m for m in measures
-        if m.horizon == "24h" and m.cell.bulletin_date == date_j
-    ]
     bilan.measures_24h = measures_24h
+
+    # Persistance des mesures du jour → measures-log (merge non destructif) puis
+    # régénération de variations-24h.md. Best-effort : un échec n'interrompt pas
+    # le bilan. Avant cette refonte, le measures-log restait vide quand le bilan
+    # tournait (toutes les cellules non-notées) → variations-24h vide → faux
+    # « journée parfaite ». Désormais le cacao +8 % apparaît dans variations-24h.
+    # Paths lus dynamiquement sur le module (testables via monkeypatch).
+    _mlog = sys.modules[__name__].MEASURES_LOG_FILE
+    _vfile = sys.modules[__name__].VARIATIONS_24H_FILE
+    try:
+        n_persist = MB.persist_mesures_jour(measures_24h, date_j, _mlog)
+        logger.info("bilan : %d mesures du jour persistées dans measures-log", n_persist)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("bilan : persist_mesures_jour KO (%s)", e)
+    try:
+        variations = variations_24h_significatives(measures_log_path=_mlog)
+        _vfile.parent.mkdir(parents=True, exist_ok=True)
+        _vfile.write_text(
+            render_variations_24h(variations, now=now) + "\n", encoding="utf-8",
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("bilan : write_variations_24h KO (%s)", e)
 
     for m in measures_24h:
         if m.outcome == J.OUTCOME_VRAI:
@@ -1266,12 +1313,8 @@ def build_bilan_jour(
 
     # Refonte bilan soir S9 — 3 blocs « suivi 24h » (demande fondateur).
     # Relevés intraday persistés par run_suivi (call + fav% + heure à 12h/18h).
-    try:
-        from run_suivi import load_suivi_tracking  # noqa: PLC0415
-        tracking = load_suivi_tracking(date_j)
-    except Exception as e:  # noqa: BLE001 — relevés indispo → trous explicites
-        logger.warning("bilan soir : load_suivi_tracking KO (%s) — trous", e)
-        tracking = {}
+    # Réutilise le tracking déjà chargé plus haut (fallback clôture).
+    tracking = tracking_for_fallback
     # Reco réelle du suivi 18h (compute_vendre sur fav 12h→18h, source unique).
     vendre_map = _vendre_reco_18h(tracking)
     conv_records = load_conviction_records(date_j, decision_log_dir)
@@ -1474,15 +1517,20 @@ def _render_intraday_table(bilan: "BilanJour") -> List[str]:
         "sens du call, `-` contre nous. « — » = point non relevé (zéro invention)._"
     )
     L.append("")
+    # Cours max INTRADAY du jour (excursion favorable max sur la série 1h),
+    # par actif, pour le top 3. Distinct du « pic » des relevés 12h/18h.
+    maxfav_by = {m.cell.actif_name: getattr(m, "max_favorable_pct", None)
+                 for m in bilan.measures_24h}
     L.append(
         "| Actif "
         "| <span class=\"c-full\">Call 7h</span><span class=\"c-short\">Call</span> "
         "| <span class=\"c-full\">% fav. 12h</span><span class=\"c-short\">12h</span> "
         "| <span class=\"c-full\">% fav. 18h</span><span class=\"c-short\">18h</span> "
         "| <span class=\"c-full\">% fav. clôture</span><span class=\"c-short\">Clôt.</span> "
+        "| <span class=\"c-full\">Cours max jour</span><span class=\"c-short\">Max</span> "
         "| Pic |"
     )
-    L.append("|---|---|---|---|---|---|")
+    L.append("|---|---|---|---|---|---|---|")
     for p in bilan.perf_top3:
         pic = (
             f"**{_fmt_pct(p.pic_valeur)} à {p.pic_heure}**"
@@ -1490,7 +1538,8 @@ def _render_intraday_table(bilan: "BilanJour") -> List[str]:
         )
         L.append(
             f"| {p.actif} | {p.call} | {_fmt_fav_cell(p.fav_12h)} | "
-            f"{_fmt_fav_cell(p.fav_18h)} | {_fmt_fav_cell(p.fav_cloture)} | {pic} |"
+            f"{_fmt_fav_cell(p.fav_18h)} | {_fmt_fav_cell(p.fav_cloture)} | "
+            f"{_fmt_fav_cell(maxfav_by.get(p.actif))} | {pic} |"
         )
     L.append("")
     return L
@@ -1667,6 +1716,23 @@ def _learnings_jour(bilan: "BilanJour") -> List[str]:
     return out[:5]
 
 
+def _mesure_indisponible(bilan: BilanJour) -> bool:
+    """True si 0/N cellules 24h sont notées (toutes non-notee / non terminales).
+
+    Garde-fou d'honnêteté : quand AUCUNE cellule n'a pu être jugée VRAI/FAUSSE/NC
+    (donnée absente), le rapport ne doit pas afficher « Aucun pari raté » ni « Rien
+    de net » (ça se lit « journée parfaite »). Il affiche « mesure indisponible ».
+    """
+    from journaliste import OUTCOME_VRAI, OUTCOME_FAUSSE, OUTCOME_NC  # noqa: PLC0415
+    notes = (OUTCOME_VRAI, OUTCOME_FAUSSE, OUTCOME_NC)
+    return not any(m.outcome in notes for m in bilan.measures_24h)
+
+
+_MSG_MESURE_INDISPO = (
+    "Mesure indisponible aujourd'hui (donnée absente) : à ne pas lire comme RAS."
+)
+
+
 def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     """Markdown R4 (spec §3.4). WIN RATE ONLY — aucun montant."""
     from journaliste import (  # noqa: PLC0415
@@ -1702,8 +1768,11 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     L.append("## 2. Ce qu'on a bien fait aujourd'hui")              # 2. Bien fait + POURQUOI
     L.append("")
     forts = _points_forts_jour(bilan)
+    indispo = _mesure_indisponible(bilan)
     if forts:
         L.extend(f"- {x}" for x in forts)
+    elif indispo:
+        L.append(_MSG_MESURE_INDISPO)
     else:
         L.append("Rien de net aujourd'hui : aucun pari à plus de 1 % dans le bon sens.")
     L.append("")
@@ -1713,6 +1782,8 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     faibles = _points_faibles_jour(bilan)
     if faibles:
         L.extend(f"- {x}" for x in faibles)
+    elif indispo:
+        L.append(_MSG_MESURE_INDISPO)
     else:
         L.append("Aucun pari raté ni opportunité ratée nette aujourd'hui.")
     L.append("")
@@ -1738,8 +1809,11 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     # Résultat brut des 12 calls 7h (table complète).
     L.append("### Résultat des calls 7h")
     L.append("")
-    L.append("| Actif | Call 7h | Ouverture | Clôture | Delta% | Résultat | Amplitude flag |")
-    L.append("|---|---|---|---|---|---|---|")
+    L.append(
+        "| Actif | Call 7h | Ouverture | Clôture | Delta% | Max favorable | "
+        "Max adverse | Résultat | Amplitude flag |"
+    )
+    L.append("|---|---|---|---|---|---|---|---|---|")
     res_label = {
         OUTCOME_VRAI: "✅ VRAI",
         OUTCOME_FAUSSE: "❌ FAUSSE",
@@ -1761,13 +1835,19 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         cloture_cell = _fmt_price(m.prix_courant)
         if getattr(m, "ticker", None) in bilan.close_approx_tickers:
             cloture_cell = f"{cloture_cell} {CLOSE_APPROX_MARKER}"
+        # Cours max du jour : excursion FAVORABLE max (dans le sens du call) et
+        # ADVERSE max (contre le call), calculées sur la série 1h intraday. « — »
+        # si donnée absente (zéro invention).
+        max_fav = getattr(m, "max_favorable_pct", None)
+        max_adv = getattr(m, "max_adverse_pct", None)
         L.append(
             f"| {m.cell.actif_name} | {m.cell.conclusion} | "
             f"{_fmt_price(m.prix_emission)} | {cloture_cell} | "
-            f"{_fmt_pct(delta)} | {res_label.get(m.outcome, m.outcome)} | {flag} |"
+            f"{_fmt_pct(delta)} | {_fmt_pct(max_fav)} | {_fmt_pct(max_adv)} | "
+            f"{res_label.get(m.outcome, m.outcome)} | {flag} |"
         )
     if not bilan.measures_24h:
-        L.append("| _aucune cellule 24h mesurable du Briefing 7h_ | | | | | | |")
+        L.append("| _aucune cellule 24h mesurable du Briefing 7h_ | | | | | | | | |")
     L.append("")
     if bilan.close_approx_tickers:
         L.append(

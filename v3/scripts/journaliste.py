@@ -1156,6 +1156,21 @@ class Measure:
     # Les mesures passees (measures-log) sans ce champ = implicitement v1
     # (jamais reecrites — append-only). Cf. system_version.py.
     system_version: Optional[str] = None
+    # --- Refonte mesure du bilan « jour de bourse même » (2026-06) ----------
+    # Mesure AUTO-SUFFISANTE de la journée J (ouverture → clôture ~22h15) calculée
+    # par mesure_bilan.measure_journee_bourse. Ces champs sont OPTIONNELS (defaults
+    # None) → non-breaking pour tous les consommateurs de Measure et pour les
+    # mesures historiques du measures-log (jamais réécrites).
+    #   max_favorable_pct : meilleure excursion DANS LE SENS du call sur la séance
+    #                       (≥ 0 ; sur la série 1h intraday, extrema des close).
+    #   max_adverse_pct   : pire excursion CONTRE le call sur la séance (≤ 0).
+    #   prix_cloture_source : provenance du cours de clôture utilisé
+    #                       ("1day" / "1h" / "spot" / "suivi" / None si absent).
+    #   prix_cloture_heure : heure (Paris) de la barre de clôture retenue, si connue.
+    max_favorable_pct: Optional[float] = None
+    max_adverse_pct: Optional[float] = None
+    prix_cloture_source: Optional[str] = None
+    prix_cloture_heure: Optional[str] = None
 
 
 def measure_cell(

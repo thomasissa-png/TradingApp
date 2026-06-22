@@ -12,11 +12,14 @@ Découpage volontaire : aucune logique de SÉLECTION ici (elle est dans
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 import selection_jour as sj
+
+logger = logging.getLogger(__name__)
 
 # Mapping code-actif IA (events-log `impacts`) → libellé actif. Réutilise la table
 # de référence de briefing (source unique), import paresseux/tolérant.
@@ -175,16 +178,27 @@ def load_fiche_meta(fiches_dir: Path) -> Dict[str, Dict[str, str]]:
     return out
 
 
-# Proxy « overnight » : les indices CASH sont fermés à 7h Paris → on lit leur
-# mouvement de nuit sur le FUTURE correspondant (qui cote ~23h/24). Uniquement pour
-# les garde-fous prix (contradiction / déjà-coté) ; le momentum et le prix affiché
-# restent sur le cash. Données futures US excellentes (ES/NQ) ; CAC/VIX best-effort
-# (souvent absentes → on retombe sur le comportement prudent, pas de régression).
+# AUDIT OVERNIGHT des 12 actifs (lecture du mouvement de nuit pour les garde-fous
+# « contradiction de séance » et « déjà coté », à 7h Paris). Trois cas :
+#
+#  (A) CONTINUS — cotent ~24h/24 sur leur PROPRE ticker → garde-fous ACTIFS sans
+#      proxy. Or GC=F, Argent SI=F, Cuivre HG=F, Pétrole BZ=F (COMEX/ICE ~23h/24),
+#      EUR/USD EUR=X (FX 24h), Blé ZW=F (Globex grains, session de nuit). → rien à faire.
+#  (B) CASH fermés la nuit, MAIS un FUTURE liquide cote → on lit le proxy future.
+#      S&P ^GSPC→ES=F, Nasdaq ^IXIC→NQ=F (données excellentes). CAC ^FCHI→FCE=F
+#      (best-effort : symbole souvent absent côté data → fallback prudent).
+#  (C) NI cash ouvert NI future 24h liquide → AUCUN prix de nuit possible : Café KC=F
+#      et Cacao CC=F (ICE softs fermés à 7h Paris), VIX ^VIX (indice, heures US).
+#      Pour eux le garde-fou prix ne PEUT PAS s'armer la nuit. Conséquence assumée :
+#      la news est quand même PRISE (anti-faux-négatif — on ne rate pas le move) ;
+#      seul le contrôle « le prix contredit » est indisponible jusqu'à l'ouverture.
+#      C'est une réalité de marché, pas un trou de code (aucun proxy ne peut combler).
+#
+# Seuls les cas (B) ont besoin d'un override ici ; (A) et (C) utilisent le ticker propre.
 PROXY_OVERNIGHT: Dict[str, str] = {
-    "sp500": "ES=F",      # future E-mini S&P 500
-    "nasdaq": "NQ=F",     # future E-mini Nasdaq 100
-    "cac40": "FCE=F",     # future CAC 40 (best-effort)
-    "vix": "^VIX",        # pas de future fiable → ticker cash (souvent vide la nuit)
+    "sp500": "ES=F",      # future E-mini S&P 500 — overnight excellent
+    "nasdaq": "NQ=F",     # future E-mini Nasdaq 100 — overnight excellent
+    "cac40": "FCE=F",     # future CAC 40 — best-effort (sinon fallback prudent)
 }
 
 
@@ -261,6 +275,12 @@ def compute_top3(
             get_closes=get_closes, get_session_move=get_session_move,
             get_post_news_move=get_post_news_move,
         )
+        # Diagnostic de couverture overnight (observable au lieu de supposé) : quels
+        # actifs ont un prix de nuit (garde-fous armés) vs lesquels en sont privés.
+        couverts = sorted(a.fiche_key for a in assets if a.session_move is not None)
+        prives = sorted(a.fiche_key for a in assets if a.session_move is None)
+        logger.info("top3 couverture overnight : armés=%s | sans prix de nuit=%s",
+                    couverts or "—", prives or "—")
         ordre = [getattr(r, "fiche_key", "") for r in results]
         return sj.select_top3(assets, now, ordre)
     except Exception:  # noqa: BLE001 — best-effort : jamais bloquer le bulletin

@@ -2,7 +2,7 @@
 
 **0 / 36 cellules fiables** (15 paris requis/cellule). Tout est en chauffe — ces chiffres ne sont pas encore significatifs.
 
-- Généré : 22 juin 2026, 09h29
+- Généré : 22 juin 2026, 09h47
 - Journaliste version : v3.1.0
 - Win rate = taux de bonnes directions sur les paris indépendants (N_eff)
 - WR ≥ 0,5 % = win rate ne comptant que les calls justes ayant bougé d'au moins 0,5 % en notre faveur (mouvement exploitable ; quasi-plats écartés du numérateur, même dénominateur que le win rate — toujours ≤ Win rate)

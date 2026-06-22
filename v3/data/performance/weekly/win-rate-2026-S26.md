@@ -1,6 +1,6 @@
 # Win rate — semaine 2026-S26 (2026-06-22 → 2026-06-28)
 
-- Généré : 22 juin 2026, 09h29 (réécrit à chaque run ; figé en fin de semaine)
+- Généré : 22 juin 2026, 09h47 (réécrit à chaque run ; figé en fin de semaine)
 - Win rate CUMULÉ depuis le début (seul significatif en chauffe)
 - WR ≥ 0,5 % = win rate ne comptant que les calls justes ayant bougé d'au moins 0,5 % en notre faveur (mouvement exploitable ; toujours ≤ Win rate)
 

@@ -2313,36 +2313,29 @@ def build_a_jouer_block(
     # bulletin). Ici, la section ne garde que son titre + tableaux.
     header = "| Actif | Direction | Note | Conviction | Drapeaux | Porté par | Prix de réf. |"
     sep = "|---|---|---|---|---|---|---|"
-    # [H-B1 audit visuel 12/06] : guider l'œil dans « Jouables » — séparer les
-    # convictions FORTES (le pari net) des autres lignes jouables (prudence). Au
-    # sein des fortes, celles SANS drapeau (les plus propres) d'abord, puis celles
-    # AVEC drapeau(s). Le tri |note| desc EST préservé à l'intérieur de chaque
-    # sous-groupe (buf est déjà trié). Zéro changement de scoring/sélection.
+    # [Refonte 23/06 — Option C, fondateur + 3 experts] UN SEUL principe d'ordre
+    # dans « Jouables » : les convictions FORTES forment UN SEUL groupe trié par
+    # |note| décroissante (le drapeau ↯/◧/⇄… reste AFFICHÉ dans la colonne
+    # « Drapeaux » comme avertissement, mais NE réordonne PLUS — une forte ↯ à
+    # |note| plus grande passe AU-DESSUS d'une forte propre plus faible). Le
+    # découpage « sans drapeau / avec drapeau » est supprimé (il contredisait le
+    # tri par note). `buf` est déjà trié |note| desc → ordre préservé. Le groupe
+    # « autres jouables » (conviction non-forte) reste en dessous (axe différent :
+    # force de conviction, pas drapeau). Zéro changement de scoring/sélection.
     def _is_forte(d: Dict[str, str]) -> bool:
         return d.get("conv", "") == "forte"
 
-    def _has_flag(d: Dict[str, str]) -> bool:
-        return d.get("flags_str", "—") not in ("", "—")
-
-    forte_clean = [d for d in jouables_cells if _is_forte(d) and not _has_flag(d)]
-    forte_flagged = [d for d in jouables_cells if _is_forte(d) and _has_flag(d)]
+    forte = [d for d in jouables_cells if _is_forte(d)]
     autres_jouables = [d for d in jouables_cells if not _is_forte(d)]
 
     out.append("**Jouables**")
     out.append("")
-    if forte_clean:
-        out.append("_Conviction forte : sans drapeau_")
+    if forte:
+        out.append("_Conviction forte_")
         out.append("")
         out.append(header)
         out.append(sep)
-        out.extend(_render_table(forte_clean, jouables_shared))
-        out.append("")
-    if forte_flagged:
-        out.append("_Conviction forte : avec drapeau(s) (prudence)_")
-        out.append("")
-        out.append(header)
-        out.append(sep)
-        out.extend(_render_table(forte_flagged, jouables_shared))
+        out.extend(_render_table(forte, jouables_shared))
         out.append("")
     # Les autres lignes jouables (conviction non-forte mais ni ⚪ ni ≈ ni 🚫).
     if autres_jouables:
@@ -2353,7 +2346,7 @@ def build_a_jouer_block(
         out.extend(_render_table(autres_jouables, jouables_shared))
         out.append("")
     # Si rien dans aucun sous-groupe (cas dégénéré) : tableau vide explicite.
-    if not (forte_clean or forte_flagged or autres_jouables):
+    if not (forte or autres_jouables):
         out.append(header)
         out.append(sep)
         out.extend(_render_table([], jouables_shared))
@@ -2397,19 +2390,45 @@ def build_a_jouer_block(
 _TETE_CONVICTION_EXCLUE = "fragile (couverture insuffisante)"
 
 
+def _cell_news_a_contresens(r: "ActifResult", h: str, now: datetime) -> bool:
+    """↯ actif sur la cellule (h) : news à contre-sens du call.
+
+    SOURCE DE VÉRITÉ UNIQUE du ↯ — la même expression que celle qui pose le
+    drapeau ↯ dans `_compute_cell_risk_flags` / `_synthese_cell_risk_flags`
+    (divergence quant↔news du scoring OU news high du flux qui contredit le
+    call). On NE réinvente PAS la détection : on réutilise le prédicat canonique.
+    Best-effort : toute exception → False (jamais de crash de sélection/rendu).
+    """
+    try:
+        return bool(
+            r.divergence_quant_news.get(h, False)
+            or _feed_news_contredit_call(r, h, now)
+        )
+    except Exception:  # noqa: BLE001 — best-effort (jamais de crash)
+        return False
+
+
 def select_paris_du_jour(
     results: List["ActifResult"],
     now: datetime,
     seuil_conviction: Optional[float] = None,
     limit: int = 3,
+    ecartes_contresens: Optional[List[Dict[str, str]]] = None,
 ) -> List[Dict[str, str]]:
     """Sélectionne les paris du jour DEPUIS les convictions 24h jouables.
 
     Source UNIQUE = la même que `build_a_jouer_block` (jouables_cells, NON
-    `_cell_a_eviter`). On EXCLUT en plus les convictions « fragile (couverture
-    insuffisante) ». Tri |note| décroissant, top `limit`. Retourne une liste de
-    dicts {actif, fiche_key, direction, note, note_str, raison} dans l'ordre.
-    Aucune invention : si < `limit` jouables, la liste est plus courte.
+    `_cell_a_eviter`). On EXCLUT en plus (1) les convictions « fragile (couverture
+    insuffisante) » et (2) les cellules dont le drapeau ↯ « news à contre-sens »
+    est actif (divergence quant↔news pour cet horizon — `_cell_news_a_contresens`,
+    même source de vérité que la colonne Drapeaux). Tri |note| décroissant, top
+    `limit`. Retourne une liste de dicts {actif, fiche_key, direction, note,
+    note_str, raison} dans l'ordre. Aucune invention : si < `limit` cellules
+    éligibles, la liste est plus courte (s'abstenir est valide).
+
+    `ecartes_contresens` : si une liste est fournie, elle est remplie (transparence)
+    avec les cellules qui SERAIENT entrées dans le top `limit` par |note| mais qui
+    ont été écartées pour cause de ↯ (news à contre-sens), dans l'ordre |note| desc.
     """
     if seuil_conviction is None:
         try:
@@ -2420,7 +2439,7 @@ def select_paris_du_jour(
             seuil_conviction = 0.6
 
     H = "24h"
-    candidats: List[Tuple[float, str, Dict[str, str]]] = []
+    candidats: List[Tuple[float, str, bool, Dict[str, str]]] = []
     for r in results:
         conc = r.conclusions.get(H, "")
         if conc not in ("LONG", "SHORT"):
@@ -2430,7 +2449,8 @@ def select_paris_du_jour(
         if _conviction_cell(r, H, seuil_conviction) == _TETE_CONVICTION_EXCLUE:
             continue  # couverture insuffisante → pas de pari du jour
         score = r.scores.get(H, 0.0)
-        candidats.append((abs(score), r.nom, {
+        contresens = _cell_news_a_contresens(r, H, now)  # ↯ news à contre-sens
+        candidats.append((abs(score), r.nom, contresens, {
             "actif": r.nom,
             "fiche_key": r.fiche_key,
             "direction": conc,
@@ -2443,7 +2463,18 @@ def select_paris_du_jour(
         }))
     # Tri |note| décroissant, déterministe (actif départage les ex æquo).
     candidats.sort(key=lambda t: (-t[0], t[1]))
-    return [d for _abs, _nom, d in candidats[:limit]]
+
+    # Transparence : repérer les ↯ qui auraient été dans le top `limit` par |note|
+    # SI on ne filtrait pas les news à contre-sens (rang basé sur le tri brut, AVANT
+    # exclusion). Calculé sur la liste triée complète (jouables, hors fragile).
+    if ecartes_contresens is not None:
+        for rang, (_abs, _nom, contresens, d) in enumerate(candidats):
+            if contresens and rang < limit:
+                ecartes_contresens.append(d)
+
+    # Sélection finale : on saute les ↯ et on prend les non-↯ suivantes (top `limit`).
+    retenus = [d for _abs, _nom, contresens, d in candidats if not contresens]
+    return retenus[:limit]
 
 
 def build_paris_du_jour_block(
@@ -2459,14 +2490,45 @@ def build_paris_du_jour_block(
     (actif, sens, prix de réf., raison courte = driver dominant).
     """
     prix_reference = prix_reference or {}
-    picks = select_paris_du_jour(results, now, seuil_conviction=seuil_conviction)
+    ecartes: List[Dict[str, str]] = []
+    picks = select_paris_du_jour(
+        results, now, seuil_conviction=seuil_conviction,
+        ecartes_contresens=ecartes,
+    )
+
+    def _ligne_ecartes() -> List[str]:
+        """Transparence : convictions qui SERAIENT dans le top 3 par |note| mais
+        écartées pour news à contre-sens (↯). Zéro invention : seulement si le cas
+        se produit (`ecartes` non vide)."""
+        if not ecartes:
+            return []
+        sens_humain = {"LONG": "LONG", "SHORT": "SHORT"}
+        if len(ecartes) == 1:
+            e = ecartes[0]
+            return [
+                f"_{e['actif']} ({sens_humain.get(e['direction'], e['direction'])}, "
+                f"conviction parmi les plus fortes) écarté des paris : news à "
+                f"contre-sens (↯)._",
+                "",
+            ]
+        noms = ", ".join(
+            f"{e['actif']} ({sens_humain.get(e['direction'], e['direction'])})"
+            for e in ecartes
+        )
+        return [
+            f"_Écartés des paris pour news à contre-sens (↯), malgré une conviction "
+            f"parmi les plus fortes : {noms}._",
+            "",
+        ]
+
     out: List[str] = ["## 🎯 Aujourd'hui", ""]
     if not picks:
         out.append(
-            "_Aucune conviction 24h jouable aujourd'hui (couverture insuffisante "
-            "ou quasi-neutre) — on ne force pas._"
+            "_Aucun pari du jour aujourd'hui (couverture insuffisante, "
+            "quasi-neutre ou news à contre-sens) — on ne force pas._"
         )
         out.append("")
+        out.extend(_ligne_ecartes())
         return out
     out.append(
         "**Les paris du jour (max 3)** — les plus fortes convictions 24h jouables"
@@ -2481,6 +2543,7 @@ def build_paris_du_jour_block(
             f"(conviction {p['note_str']}){raison}"
         )
     out.append("")
+    out.extend(_ligne_ecartes())
     return out
 
 
@@ -4222,13 +4285,16 @@ def build_comment_lire_block(flags_present: set) -> List[str]:
 
     out.append("### À jouer aujourd'hui (24h)")
     out.append(
-        "_Les 12 cellules à 24h (horizon de trade), triées par force de note. "
-        "« Conviction » = force du score ET absence de contestation (forte = note "
-        "≥ seuil sans drapeau ; sinon le libellé dit POURQUOI : molle, contestée, "
+        "_Les 12 cellules à 24h (horizon de trade). Dans « Jouables », les "
+        "convictions fortes sont triées par force de note (|note| décroissante), "
+        "puis viennent les autres lignes jouables. Les drapeaux de prudence "
+        "(◧ ⚠️ ↯ ⇄ …) sont AFFICHÉS dans la colonne « Drapeaux » comme "
+        "avertissements inline : ils ne réordonnent pas le tableau et n'excluent "
+        "rien (prudence, pas exclusion). « Conviction » = force du score "
+        "(forte = note ≥ seuil ; sinon le libellé dit POURQUOI : molle, contestée, "
         "fragile ou zigzag). « À éviter » = quasi coin-flip (⚪), quasi-neutre (≈) "
-        "ou données insuffisantes (🚫). Les drapeaux de prudence (◧ ⚠️ ↯ …) restent "
-        "dans « Jouables » : prudence, pas exclusion. Prix de réf. = prix "
-        "d'émission stampé (« — » si pas encore disponible)._"
+        "ou données insuffisantes (🚫). Prix de réf. = prix d'émission stampé "
+        "(« — » si pas encore disponible)._"
     )
     out.append(
         "_« Porté par » = le critère qui pèse le plus dans la note, avec sa valeur, "

@@ -131,11 +131,13 @@ def test_pb1_pas_de_repetition_direction_si_pondere_identique():
 
 
 # ---------------------------------------------------------------------------
-# H-B1 — Jouables scindé en sous-groupes
+# H-B1 — Jouables : groupe « Conviction forte » (refonte 23/06 Option C)
 # ---------------------------------------------------------------------------
 
-def test_hb1_jouables_scinde_forte_sans_drapeau():
-    # Une cellule forte propre (sans drapeau) → sous-groupe dédié.
+def test_hb1_jouables_groupe_forte_unique():
+    # Refonte 23/06 (Option C) : plus de découpage « sans drapeau / avec
+    # drapeau ». Les fortes forment UN SEUL groupe trié par |note| décroissante ;
+    # le drapeau reste un avertissement inline dans la colonne « Drapeaux ».
     crits = [
         _crit("Driver", "drv_or", -0.42),
         _crit("Sec", "sec_or", -0.30),
@@ -146,7 +148,10 @@ def test_hb1_jouables_scinde_forte_sans_drapeau():
     # On isole son contenu entre son sous-titre ### et le prochain titre ## (les
     # alertes « Cellules à surveiller » remontées juste après).
     a_jouer = md.split("### À jouer aujourd'hui (24h)")[1].split("\n## ")[0]
-    assert "_Conviction forte : sans drapeau_" in a_jouer
+    assert "_Conviction forte_" in a_jouer
+    # L'ancien découpage propre/contesté est supprimé.
+    assert "sans drapeau" not in a_jouer
+    assert "avec drapeau" not in a_jouer
 
 
 # ---------------------------------------------------------------------------

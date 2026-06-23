@@ -2,6 +2,50 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-23 — Un seul principe d'ordre « À jouer (24h) » + garde-fou ↯ paris (Option C)
+
+Incohérence relevée par le fondateur (validée + 3 experts, Option C) : le tableau
+« À jouer aujourd'hui (24h) » découpait les convictions FORTES en deux sous-groupes
+(« sans drapeau » PUIS « avec drapeau(s) »), faisant remonter une note plus FAIBLE
+mais propre (Argent SHORT -6,09) AU-DESSUS d'une note plus FORTE mais contestée
+(Or SHORT -16,69 ↯). En parallèle, les paris du jour étaient choisis par |note|
+brute → ils prenaient Or/EUR (↯) alors que le tableau affichait Argent/Pétrole en
+tête. Deux ordres contradictoires. RENDU + SÉLECTION uniquement (zéro touche au
+scoring, aux conclusions, à la matrice Synthèse).
+
+### A — Tableau : tri par |note|, fin du découpage propre/contesté (`scoring_analyste.py`)
+- `build_a_jouer_block` (l.2194) : suppression de `forte_clean`/`forte_flagged`.
+  Les convictions fortes forment UN SEUL groupe « _Conviction forte_ » trié par
+  |note| décroissante (`buf` déjà trié). Le drapeau ↯/◧/⇄… reste AFFICHÉ dans la
+  colonne « Drapeaux » comme avertissement inline mais ne réordonne plus.
+  - Avant : Argent (-6,09 propre) et Pétrole (-1,86 propre) AU-DESSUS de Or
+    (-16,69 ↯) et EUR/USD (-15,97 ↯). Après : Or, EUR/USD (les plus fortes notes,
+    ↯ affiché) puis Cacao, Argent… par |note|. Groupe « autres jouables » inchangé.
+- Texte « Comment lire » (l.4223) : ajusté (tri par note, drapeaux = avertissements
+  inline, plus de mention « sans drapeau / avec drapeau »).
+
+### B — Paris du jour : exclusion des ↯ news à contre-sens (`scoring_analyste.py`)
+- Nouveau `_cell_news_a_contresens` (l.2403) : source de vérité UNIQUE du ↯ réutilisée
+  (`r.divergence_quant_news` OU `_feed_news_contredit_call`, même expression que
+  `_compute_cell_risk_flags`/`_synthese_cell_risk_flags`). Aucune réinvention.
+- `select_paris_du_jour` : garde le tri |note| desc et les exclusions existantes,
+  AJOUTE l'exclusion des cellules ↯ (on saute, on prend la suivante non-↯). < 3
+  éligibles → liste plus courte (s'abstenir est valide). Param `ecartes_contresens`
+  (transparence) → liste des fortes top-note écartées pour ↯.
+  - Avant : paris = Or (-16,69 ↯), EUR/USD (-15,97 ↯), Cacao. Après : Or/EUR exclus,
+    paris = top non-↯ (Cacao, Argent, CAC 40) + mention « Or, EUR/USD écartés (↯) ».
+- `build_paris_du_jour_block` : ligne de transparence sous les paris quand le cas
+  se produit ; message « aucun pari » élargi (couverture, neutre OU news à contre-sens).
+
+### Tests
+- Nouveau `tests/test_a_jouer_ordre_et_paris_contresens.py` (7 tests) : ordre tableau
+  forte ↯ > forte propre, exclusion ↯ des paris, < 3 non-↯, non-↯ retenue, repro 23/06.
+- `test_audit_visuel_2026_06_12.py` : `test_hb1_jouables_scinde_forte_sans_drapeau`
+  → `test_hb1_jouables_groupe_forte_unique` (un seul groupe, plus de découpage).
+- `test_paris_du_jour_convictions.py` : assertion message « aucun pari » mise à jour.
+- Suite ciblée : 235 passed. Suite complète : 1718 passed, 26 baseline (25 ModuleNotFound
+  pandas/yfinance/holidays + 1 config news_cap divergente, tous pré-existants).
+
 ## 2026-06-23 — Rendu unifié du driver + news high fraîche qui domine le 24h
 
 Incohérence relevée par le fondateur (Pétrole 24h) : « Porté par » citait

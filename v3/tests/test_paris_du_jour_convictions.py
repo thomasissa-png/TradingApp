@@ -136,7 +136,7 @@ def test_a_moins_de_trois_jouables_pas_de_remplissage():
     assert len(picks) == 1
     # Aucun jouable → message explicite, pas de pari fabriqué.
     block = "\n".join(sa.build_paris_du_jour_block([_make("N", 0.01)], NOW))
-    assert "Aucune conviction 24h jouable" in block
+    assert "Aucun pari du jour" in block
 
 
 # ===========================================================================

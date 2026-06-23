@@ -1965,14 +1965,33 @@ def regime_extreme_global(results: List["ActifResult"]) -> bool:
 
 
 def _top_driver(r: "ActifResult", h: str) -> Tuple[str, str]:
-    """Critère à plus forte |contribution| pour (actif, horizon).
+    """Driver dominant pour (actif, horizon) — UNIQUE source d'affichage du driver.
 
     Retourne `(cle_courante, nom)` — `cle_courante` pour identifier le driver
     (regroupement par clé, jamais par nom — L023) et `nom` pour l'affichage.
-    Source UNIQUE : `contributions[h]` (mêmes données que `_top_explication` et
-    le tableau « Détail par actif »). Exclut gates et critères n/a. Départage
-    déterministe des ex æquo par nom. Retourne `("", "")` si aucun contributeur.
+
+    CONVERGENCE (décision 23/06) : « Porté par » (table « À jouer »), la
+    Sélection, le ⚭ shared-drivers ET la synthèse (`_raison_parts`) doivent citer
+    le MÊME driver. On les fait converger PAR CONSTRUCTION :
+      - cellule DIRECTIONNELLE FRANCHE (LONG/SHORT, |note| ≥ NEUTRAL_BAND) →
+        driver dominant DANS LE SENS du call (`_driver_dominant_net`, la même
+        source que la synthèse). On ne cite JAMAIS un contre-driver à plus forte
+        |contribution| brute qui pousse à contre-sens (ex. Cushing +1.74 sur un
+        Pétrole 24h SHORT — trompeur).
+      - cellule quasi-neutre / INSUFFISANT / sans contributeur dans le sens →
+        fallback historique : plus forte |contribution| BRUTE (comportement
+        legacy inchangé, zéro régression sur les cellules non directionnelles).
+    Exclut gates et critères n/a. Départage déterministe des ex æquo par nom.
+    Retourne `("", "")` si aucun contributeur.
     """
+    direction = r.conclusions.get(h, "")
+    score = r.scores.get(h, 0.0)
+    if direction in ("LONG", "SHORT") and abs(score) >= NEUTRAL_BAND:
+        cle, nom, _ctr = _driver_dominant_net(r, h, direction)
+        if cle or nom:
+            return cle, nom
+        # Aucun contributeur dans le sens du call (rare) → fallback brut ci-dessous.
+
     best: Tuple[float, str] = (0.0, "")  # (|c|, nom) pour le tri ex æquo stable
     best_cle = ""
     best_nom = ""
@@ -3566,6 +3585,32 @@ def _raison_parts(
     else:
         chiffre = f"({ctr:+.1f})"
 
+    # CONVERGENCE/TRANSPARENCE (23/06) : si le driver dominant net EST le porteur
+    # du net news (« Synthèse news (net, IA) »), on remplace le libellé opaque (ou
+    # la phrase biblio FIGÉE qui ne dit pas QUELLE news) par le sens net + le TITRE
+    # RÉEL de la news dominante — exactement comme « Porté par » (`_driver_detail`).
+    # La synthèse et « Porté par » citent alors le MÊME texte. `now` absent → on
+    # retombe sur la logique biblio legacy (dégradation sûre, zéro invention).
+    if nom == SYNTHESE_NET_LABEL:
+        enrichi = _enrich_net_news_label(nom, r, now)
+        if enrichi != nom:
+            corps = enrichi
+            co_cle, co_ctr = _codriver_news_codominant(r, h, direction, cle, ctr)
+            if co_cle:
+                co_phrases = _raison_phrases_for_cle(co_cle)
+                co_label = ""
+                if co_phrases is not None and _resolve_cle_canonique(co_cle) not in _RAISON_DRIVERS_DOUTEUX:
+                    co_label = co_phrases.get("phrase_long" if co_ctr > 0 else "phrase_short", "")
+                if not co_label:
+                    for c in r.criteres:
+                        if (getattr(c, "cle_courante", "") or "") == co_cle:
+                            co_label = _nom_critere(c)
+                            break
+                if co_label:
+                    corps = f"{corps} + {co_label} (news)"
+            suffixe = f"{_raison_force_suffix(r, h)}{_raison_flags_suffix(r, h, now)}"
+            return corps, chiffre, suffixe
+
     phrases = _raison_phrases_for_cle(cle)
     if phrases is None:
         corps = nom if nom else "—"
@@ -3647,7 +3692,7 @@ def raison_cellule_courte(r: "ActifResult", h: str) -> str:
     return nom or ""
 
 
-def raison_cellule_phrase(r: "ActifResult", h: str) -> str:
+def raison_cellule_phrase(r: "ActifResult", h: str, now: Optional[datetime] = None) -> str:
     """[Point #3 — v2] Raison EXPLICATIVE (la logique, pas un nom à 2 mots) pour
     la cellule de « Synthèse des décisions ». Réutilise la phrase de la biblio
     experte `raisons-drivers.yml` (auditée 10/10) selon le SIGNE de la contribution
@@ -3665,6 +3710,12 @@ def raison_cellule_phrase(r: "ActifResult", h: str) -> str:
     cle, nom, ctr = _driver_dominant_net(r, h, direction)
     if not cle and not nom:
         return ""
+    # Transparence (23/06) : porteur du net news → sens + titre réel (cohérent
+    # avec « Porté par » et `_raison_parts`). `now` absent → logique biblio legacy.
+    if nom == SYNTHESE_NET_LABEL:
+        enrichi = _enrich_net_news_label(nom, r, now)
+        if enrichi != nom:
+            return enrichi
     phrases = _raison_phrases_for_cle(cle)
     if phrases is None:
         return nom or ""
@@ -4598,7 +4649,7 @@ def render_bulletin(
             # `.cell-reason` (s'enroule proprement, sans couper les mots, même sur
             # mobile). Vide si quasi-neutre/insuffisant (zéro invention). Source
             # UNIQUE = même driver dominant que le détail.
-            raison_phrase = raison_cellule_phrase(r, h)
+            raison_phrase = raison_cellule_phrase(r, h, now)
             if raison_phrase:
                 cell_txt = f'{cell_txt}<br><span class="cell-reason">· {raison_phrase}</span>'
             cells.append(cell_txt)

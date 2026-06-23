@@ -21,5 +21,28 @@
       "max_adv_pct": -1.91,
       "max_fav_pct": 0.56
     }
+  },
+  "18h": {
+    "Cacao": {
+      "call": "LONG",
+      "fav_pct": -0.52,
+      "heure": "18h06",
+      "max_adv_pct": -2.72,
+      "max_fav_pct": 0.3
+    },
+    "EUR/USD": {
+      "call": "SHORT",
+      "fav_pct": 0.35,
+      "heure": "18h06",
+      "max_adv_pct": -0.04,
+      "max_fav_pct": 0.35
+    },
+    "Or": {
+      "call": "SHORT",
+      "fav_pct": -0.1,
+      "heure": "18h06",
+      "max_adv_pct": -1.73,
+      "max_fav_pct": 0.56
+    }
   }
 }

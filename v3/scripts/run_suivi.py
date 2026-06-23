@@ -628,7 +628,9 @@ def news_majeures_lignes(
 # source_track signifiant « ce créneau news porte la direction NETTE IA »
 # (synthèse DeepSeek du corpus). Doit rester aligné avec
 # scoring_analyste.SYNTHESE_NET_TRACKS / SYNTHESE_NET_LABEL.
-_SYNTHESE_NET_TRACKS = frozenset({"ia_synthese", "ia_synthese_faible"})
+_SYNTHESE_NET_TRACKS = frozenset(
+    {"ia_synthese", "ia_synthese_faible", "ia_synthese_news_high"}
+)
 _SYNTHESE_NET_LABEL = "Synthèse news (net, IA)"
 
 

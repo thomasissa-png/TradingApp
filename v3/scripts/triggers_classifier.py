@@ -155,6 +155,19 @@ _MAT_WEIGHT = {"high": 3, "medium": 2, "low": 1, "": 1}
 STALE_DAYS = 30
 # Gate override = 72h : la news ne peut renverser le quant que si fraîche.
 GATE_OVERRIDE_MAX_HOURS = 72
+
+# [Volet 2 — news high fraîche qui doit dominer le 24h, décision 23/06]
+# Quand la SYNTHÈSE NETTE DeepSeek du porteur (carrier) retombe en niveau-2
+# (faible/neutral → val=0, le net est dilué par d'anciennes news), on NE laisse
+# PAS le critère news à 0 si une news IA `materiality=high` FRAÎCHE et
+# UNIDIRECTIONNELLE existe dans la fenêtre. Diagnostic Pétrole 24h (23/06) :
+# net DeepSeek « faible » (dilué par d'anciennes news Brent LONG type Hormuz)
+# → tension_geopol_moyen_orient = 0 malgré poids 7 + pertinence 24h 1.0 → la
+# tendance 20j résiduelle portait seule le SHORT. Une grosse news high fraîche
+# (« USA lèvent sanctions Iran → BRENT SHORT high ») doit pouvoir matérialiser
+# le signe net du carrier. CONSERVATEUR : exige une SEULE direction high (zéro
+# high à contre-sens) sinon on reste à 0 (pas d'invention de direction).
+NEWS_HIGH_OVERRIDE_MAX_HOURS = GATE_OVERRIDE_MAX_HOURS  # 72h (même sémantique fraîcheur)
 # Fuzz threshold : Levenshtein normalisée ≤ 0.15 → match (≥85 score rapidfuzz)
 FUZZ_MIN_SCORE = 85
 # Fenêtre dédup floue : 48h autour de l'actif
@@ -1632,6 +1645,67 @@ def _resolve_triplet_impl(
                 best_nat_ev = ev
         nat_faible = (best_nat_ev.get("nature", "ponctuel")
                       if best_nat_ev is not None else "ponctuel")
+        # [Volet 2 — 23/06] FILET news high fraîche AVANT d'abandonner à val=0.
+        # Le net DeepSeek est dilué/faible, mais une news IA high FRAÎCHE et
+        # UNIDIRECTIONNELLE (≤ NEWS_HIGH_OVERRIDE_MAX_HOURS, zéro high à
+        # contre-sens) doit pouvoir porter le signe net du carrier (cas Pétrole
+        # 24h). Si conflit high (les 2 sens) ou rien de high frais → on retombe
+        # sur le niveau-2 historique (val=0). Zéro invention de direction.
+        fresh_long: Optional[Tuple[datetime, dict]] = None
+        fresh_short: Optional[Tuple[datetime, dict]] = None
+        for ev in _candidates_for(events, actif_key, cle):
+            dt = ev.get("_dt")
+            if not isinstance(dt, datetime):
+                continue
+            if dt < cutoff_synth or dt > now:
+                continue
+            if (ev.get("materiality") or "").strip().lower() != "high":
+                continue
+            if not is_fresh_for_override(ev, now):
+                continue
+            ev_dir = _ia_direction_for(ev, actif_key, cle=cle)
+            if ev_dir == "LONG":
+                if fresh_long is None or dt > fresh_long[0]:
+                    fresh_long = (dt, ev)
+            elif ev_dir == "SHORT":
+                if fresh_short is None or dt > fresh_short[0]:
+                    fresh_short = (dt, ev)
+        chosen: Optional[Tuple[datetime, dict, str]] = None
+        if fresh_long and not fresh_short:
+            chosen = (fresh_long[0], fresh_long[1], "LONG")
+        elif fresh_short and not fresh_long:
+            chosen = (fresh_short[0], fresh_short[1], "SHORT")
+        if chosen is not None:
+            _dt, ev_ref, ch_dir = chosen
+            val_override = 1 if ch_dir == "LONG" else -1
+            cdt = ev_ref.get("_canonical_dt") or ev_ref.get("_dt") or _dt
+            fdays = (now - cdt).total_seconds() / 86400.0 if isinstance(cdt, datetime) else 0.0
+            logger.info(
+                "synthese[%s/%s] faible MAIS news high fraiche unidirectionnelle "
+                "(%s, age=%.1fh) -> %d (override niveau-2)",
+                actif_key, cle, ch_dir,
+                (now - cdt).total_seconds() / 3600.0 if isinstance(cdt, datetime) else -1.0,
+                val_override,
+            )
+            ovr_meta: Dict[str, Any] = {
+                "materiality": "high",
+                "reliability": (ev_ref.get("reliability") or "").strip().lower(),
+                "source_track": "ia_synthese_news_high",
+                "synthese_rationale": rationale,
+                "nature": ev_ref.get("nature", "ponctuel"),
+                "event_id": ev_ref.get("event_id", ""),
+                "event_date": cdt.isoformat() if isinstance(cdt, datetime) else "",
+                "event_date_source": ev_ref.get("event_date_source", ""),
+                "freshness_days": f"{fdays:.2f}",
+            }
+            if ev_ref.get("is_denial"):
+                ovr_meta["is_denial"] = True
+                ovr_meta["denial_keyword"] = ev_ref.get("denial_keyword", "")
+            if ev_ref.get("nature_shadow_downgrade"):
+                ovr_meta["nature_shadow_downgrade"] = True
+                ovr_meta["nature_proposee"] = ev_ref.get("nature_proposee", "")
+                ovr_meta["rumor_reason"] = ev_ref.get("rumor_reason", "")
+            return val_override, ovr_meta
         return 0, {
             "materiality": "",
             "reliability": "",

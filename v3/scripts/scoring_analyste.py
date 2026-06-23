@@ -4129,7 +4129,9 @@ SYNTHESE_NET_LABEL = "Synthèse news (net, IA)"
 # directionnelle DeepSeek du corpus). Toute autre valeur (keyword, calendrier,
 # ia_conflict, none, "", absent) = le créneau est en mode thématique → on
 # affiche son nom de fiche tel quel (cf. triggers_classifier).
-SYNTHESE_NET_TRACKS = frozenset({"ia_synthese", "ia_synthese_faible"})
+SYNTHESE_NET_TRACKS = frozenset(
+    {"ia_synthese", "ia_synthese_faible", "ia_synthese_news_high"}
+)
 
 
 def _nom_affiche(nom: str, source_track: str) -> str:

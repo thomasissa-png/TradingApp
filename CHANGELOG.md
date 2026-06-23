@@ -2,6 +2,55 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-23 — Rendu unifié du driver + news high fraîche qui domine le 24h
+
+Incohérence relevée par le fondateur (Pétrole 24h) : « Porté par » citait
+« Stocks Cushing → contribue +1.74 » (qui pousse à la HAUSSE) sur un SHORT,
+tandis que la synthèse citait la tendance 20j (−1.63). Deux drivers différents,
+l'un à CONTRE-SENS du call. Fond du problème : la grosse news fraîche pesait 0.
+
+### Volet 1 — Rendu unifié (`v3/scripts/scoring_analyste.py`)
+- `_top_driver` (l.1967, source UNIQUE de « Porté par », Sélection, ⚭, feuille de
+  décision) route désormais vers `_driver_dominant_net` (driver dominant DANS LE
+  SENS du call — même source que la synthèse) sur cellule directionnelle franche
+  (LONG/SHORT, |note| ≥ NEUTRAL_BAND). Fallback |contribution| brute UNIQUEMENT
+  hors direction franche (quasi-neutre/INSUFFISANT) → zéro régression. « Porté
+  par » et synthèse convergent PAR CONSTRUCTION.
+  - Avant Pétrole 24h SHORT : « Porté par » = Cushing +1.74 (contre-sens) ;
+    synthèse = tendance 20j −1.63. Après : les deux citent le MÊME driver net
+    SHORT (la tendance 20j résiduelle tant que la news ne domine pas — cf. V2).
+- `_raison_parts` (l.3584) et `raison_cellule_phrase` (l.3700) appliquent
+  `_enrich_net_news_label` quand le driver dominant EST le porteur net news →
+  TITRE RÉEL de la news au lieu de la phrase biblio figée (cohérent avec « Porté
+  par »). `now` threadé jusqu'à la cellule de Synthèse (l.4652). Cas du docstring
+  `_raison_cellule` (quasi-neutre, INSUFFISANT, meteo_cacao douteux, gates exclus,
+  chiffre pondéré 📰, co-driver news) PRÉSERVÉS.
+
+### Volet 2 — Une news high fraîche pèse vraiment dans le 24h (`v3/scripts/triggers_classifier.py`)
+- Diagnostic SUR PIÈCES (`data/decision-log/2026-06-23-0841.jsonl`, Pétrole 24h
+  SHORT score −1.86) : le porteur net news `tension_geopol_moyen_orient`
+  (poids 7, pertinence 24h boostée à 1.0) contribuait **0** car son
+  `valeur_normalisee` = **0.0** — source_track `ia_synthese_faible`. Cause : la
+  synthèse nette DeepSeek du corpus est ressortie « faible/neutral » (net dilué
+  par d'anciennes news Brent LONG type Hormuz) → niveau-2 → `val=0`. Donc ni le
+  cap ni le poids ni la pertinence n'étaient en cause (déjà au max) : le SIGNE
+  net du carrier était nul. Le SHORT était porté par la seule tendance 20j
+  résiduelle (−1.63). Le LLM (synthèse) étant probabiliste, on ne le touche PAS ;
+  on agit sur le levier déterministe (le fallback niveau-2).
+- FIX MINIMAL : avant d'abandonner à `val=0` au niveau-2 du carrier, filet
+  « news IA `materiality=high` FRAÎCHE (≤ 72h, `is_fresh_for_override`) et
+  UNIDIRECTIONNELLE (zéro high à contre-sens) » → matérialise le signe net (±1),
+  source_track `ia_synthese_news_high`. CONSERVATEUR : conflit high ou rien de
+  high frais → reste à 0 (zéro invention de direction). 7j/1m intacts (le filet
+  ne touche que le signe ±1 du carrier, pas les pertinences par horizon).
+  - Avant : news high fraîche SHORT BRENT → carrier 0 → news ne pèse pas dans le
+    24h. Après : carrier −1 → ×poids 7 ×pertinence 24h 1.0 (magnitude 7.0) >
+    tendance 20j résiduelle 24h (6×0.4×|−0.679| ≈ 1.63) → la news DOMINE le 24h.
+- Nouveau track propagé à `SYNTHESE_NET_TRACKS` (scoring_analyste + run_suivi) →
+  affiché comme porteur net news (libellé enrichi titre réel, cohérent V1).
+- Test : `v3/tests/test_news_high_domine_24h.py` (5 cas : domination chiffrée,
+  conflit→0, medium→0, ancien→0, non-régression synthèse high).
+
 ## 2026-06-23 — Transparence du porteur NET news : titre réel au lieu de « Synthèse news (net, IA) »
 
 Problème fondateur : quand une ligne est portée par le NET news, le rendu

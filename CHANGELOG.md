@@ -2,6 +2,39 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-23 — Transparence du porteur NET news : titre réel au lieu de « Synthèse news (net, IA) »
+
+Problème fondateur : quand une ligne est portée par le NET news, le rendu
+affichait le libellé OPAQUE « Synthèse news (net, IA) » — sans QUELLE news ni
+POURQUOI (ce matin « Cacao LONG — Synthèse news (net, IA) » ; « ça veut dire
+quoi ? aucun learning possible »). La vraie raison (corpus net haussier El Niño)
+n'apparaissait nulle part.
+
+### Enrichissement PUR RENDU (`v3/scripts/scoring_analyste.py`)
+- NOUVEAU `_dominant_news_for_actif(now)` : carte {actif: (sens_net, titre_réel)}
+  de la news DOMINANTE par actif. RÉUTILISE la source de vérité UNIQUE du feed
+  « Top actualités à impact » (`briefing.filter_recent_impactful` +
+  `_primary_actif_from_event` + `_sort_by_materiality_then_date` +
+  `_direction_arrow_for`) — aucun parseur events-log dupliqué. Mémoïsé par
+  mtime/taille/date (comme `_fresh_high_feed_dirs`). Titre = champ `trigger`,
+  tronqué proprement ~70 car.
+- NOUVEAU `_enrich_net_news_label(label, r, now)` : si `label` == le libellé
+  opaque « Synthèse news (net, IA) » → remplacé par « news net {haussière|
+  baissière} : {titre réel} ». Fallback sans titre exploitable → « news net
+  haussière/baissière ». Sens indéterminé / news indispo → libellé d'origine
+  (dégradation sûre, best-effort, jamais de crash).
+- Branché sur les 2 points de rendu visés : `select_paris_du_jour` (raison des
+  paris du jour) et `_driver_detail` (colonne « Porté par » de « À jouer
+  aujourd'hui (24h) »), avec `now` threadé. Top swing utilise aussi `_driver_detail`.
+- Avant : « Cacao LONG — Synthèse news (net, IA) ». Après : « Cacao LONG — news
+  net haussière : El Niño menace les récoltes du cacao ».
+- NON touché : scoring, conclusions, matrice « Synthèse des décisions »,
+  `cle_courante`/signe/poids/`_nom_affiche` des AUTRES critères. Seul le porteur
+  net news est enrichi ; tout critère quant garde son libellé legacy.
+- Tests : `v3/tests/test_porte_par_news_reelle.py` (10 cas — net haussier avec
+  titre, fallback sans titre, sens baissier, news neutre ignorée, critère
+  quant inchangé, troncature, verrou pur-rendu). Suite ciblée verte.
+
 ## 2026-06-23 — Un seul cerveau : la tête « 🎯 Aujourd'hui » dérive des convictions 24h (fin du moteur séparé) + boost news 24h
 
 Décision fondateur + 3 experts. CAUSE RACINE : deux moteurs parallèles. La tête

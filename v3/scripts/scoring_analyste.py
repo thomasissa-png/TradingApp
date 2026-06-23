@@ -1477,6 +1477,14 @@ SURVEILLANCE_FLAGS = {
 # parse UNE fois, on relit le dict ensuite. Se ré-invalide si le fichier change.
 _FEED_DIRS_CACHE: Dict[Any, Dict[str, set]] = {}
 
+# Cache (par run) de la carte « news DOMINANTE par actif → (sens net, titre réel) ».
+# MÊME source que le feed « Top actualités à impact » du bulletin
+# (briefing.filter_recent_impactful), MÊME tri (materiality × fraîcheur). UNE seule
+# source de vérité news — pas de second parseur events-log. Sert à enrichir le
+# libellé opaque « Synthèse news (net, IA) » par le titre réel (transparence,
+# décision fondateur 23/06). Clé identique à _FEED_DIRS_CACHE (mtime/taille/date).
+_DOMINANT_NEWS_CACHE: Dict[Any, Dict[str, Tuple[str, str]]] = {}
+
 
 def _fresh_high_feed_dirs(now: datetime) -> Dict[str, set]:
     """Carte {label_actif: set(directions IA)} des news HIGH du flux events-log
@@ -1515,6 +1523,92 @@ def _fresh_high_feed_dirs(now: datetime) -> Dict[str, set]:
         return out
     except Exception:  # noqa: BLE001 — events-log/briefing indispo → pas de drapeau
         return {}
+
+
+# Longueur max d'un titre de news dans un libellé « Porté par » enrichi
+# (troncature propre avec « … » — assez court pour tenir dans une cellule).
+DOMINANT_NEWS_TITLE_MAX_LEN = 70
+
+
+def _dominant_news_for_actif(now: Optional[datetime]) -> Dict[str, Tuple[str, str]]:
+    """Carte {label_actif: (sens_net, titre_réel)} de la news DOMINANTE par actif.
+
+    Sens_net ∈ {"haussière", "baissière"} (issu de la direction IA déjà qualifiée
+    par DeepSeek, _direction_arrow_for) ; titre_réel = champ `trigger` de l'event,
+    tronqué proprement (~70 car). La news dominante d'un actif = la plus forte
+    (materiality × fraîcheur) parmi celles à impact high/medium, dans le MÊME
+    ordre que le feed « Top actualités à impact » du bulletin.
+
+    UNE source de vérité : réutilise briefing.filter_recent_impactful +
+    _primary_actif_from_event + _sort_by_materiality_then_date + _direction_arrow_for
+    (aucun parseur events-log dupliqué). Mémoïsé par mtime/taille/date (comme
+    _fresh_high_feed_dirs). Best-effort : toute anomalie → dict vide (zéro
+    invention, dégradation sûre vers le fallback de libellé)."""
+    if now is None:
+        return {}
+    try:
+        import briefing as B  # noqa: PLC0415
+        path = B.EVENTS_LOG
+        try:
+            st = path.stat()
+            key = (str(path), st.st_mtime, st.st_size, now.date().isoformat())
+        except OSError:
+            key = (str(path), None, None, now.date().isoformat())
+        if key in _DOMINANT_NEWS_CACHE:
+            return _DOMINANT_NEWS_CACHE[key]
+        out: Dict[str, Tuple[str, str]] = {}
+        recents = B.filter_recent_impactful(
+            B.parse_events(path), now.date(), window_hours=B.FRESHNESS_HOURS
+        )
+        forts = [
+            ev for ev in recents
+            if (ev.get("materiality", "") or "").lower() in ("high", "medium")
+        ]
+        # Tri materiality desc puis date desc : la 1re news vue pour un actif est
+        # sa plus forte/fraîche → on la garde (setdefault, on n'écrase pas).
+        for ev in B._sort_by_materiality_then_date(forts):
+            label = B._primary_actif_from_event(ev)
+            if not label or label in out:
+                continue
+            arrow = B._direction_arrow_for(ev, label)
+            sens = {"↑": "haussière", "↓": "baissière"}.get(arrow, "")
+            if not sens:  # direction neutre/indéterminée → pas de sens net exploitable
+                continue
+            titre = (ev.get("trigger", "") or "").strip()
+            if len(titre) > DOMINANT_NEWS_TITLE_MAX_LEN:
+                coupe = titre[: DOMINANT_NEWS_TITLE_MAX_LEN - 1].rstrip()
+                espace = coupe.rfind(" ")
+                if espace >= DOMINANT_NEWS_TITLE_MAX_LEN // 2:
+                    coupe = coupe[:espace].rstrip()
+                titre = coupe + "…"
+            out[label] = (sens, titre)
+        _DOMINANT_NEWS_CACHE[key] = out
+        return out
+    except Exception:  # noqa: BLE001 — events-log/briefing indispo → pas d'enrichissement
+        return {}
+
+
+def _enrich_net_news_label(
+    label: str, r: "ActifResult", now: Optional[datetime]
+) -> str:
+    """Remplace le libellé opaque « Synthèse news (net, IA) » par le SENS net + le
+    TITRE réel de la news dominante de l'actif (transparence, décision 23/06).
+
+    PUR AFFICHAGE — n'enrichit QUE le cas du porteur net news (label ==
+    SYNTHESE_NET_LABEL). Tout autre libellé (critère quant, news en mode thème,
+    etc.) est rendu INCHANGÉ. Zéro invention :
+      - titre réel disponible → « news net {sens} : {titre} » ;
+      - sens connu mais aucun titre exploitable → « news net {sens} » ;
+      - sens indéterminé / news indispo → libellé d'origine (dégradation sûre).
+    """
+    if label != SYNTHESE_NET_LABEL:
+        return label
+    sens, titre = _dominant_news_for_actif(now).get(r.nom, ("", ""))
+    if not sens:
+        return label  # rien d'exploitable → on garde l'existant (jamais de crash)
+    if titre:
+        return f"news net {sens} : {titre}"
+    return f"news net {sens}"
 
 
 def _feed_news_contredit_call(
@@ -2146,7 +2240,8 @@ def build_a_jouer_block(
             "driver_cle": driver_cle,
             "driver_nom": driver_nom,
             # P3 — « Porté par » enrichi : nom complet + valeur + sens + contrib.
-            "driver_detail": _driver_detail(r, H),
+            # (23/06) `now` → si porteur net news, libellé = sens + titre réel.
+            "driver_detail": _driver_detail(r, H, now),
         }))
 
     # Tri |note| décroissant, déterministe (l'actif départage les ex æquo).
@@ -2322,7 +2417,10 @@ def select_paris_du_jour(
             "direction": conc,
             "note": f"{score:.2f}",
             "note_str": f"{score:+.2f}",
-            "raison": _critere_dominant(r, H) or "",
+            # (23/06) Transparence : si le driver dominant est le porteur du NET
+            # news, raison = sens net + titre réel (au lieu de « Synthèse news
+            # (net, IA) »). Tout autre driver INCHANGÉ (zéro invention).
+            "raison": _enrich_net_news_label(_critere_dominant(r, H) or "", r, now),
         }))
     # Tri |note| décroissant, déterministe (actif départage les ex æquo).
     candidats.sort(key=lambda t: (-t[0], t[1]))
@@ -2521,7 +2619,8 @@ def compute_selection_du_jour(
             "driver_cle": driver_cle,
             "driver_nom": driver_nom,
             # P3 — « Porté par » enrichi (nom complet + valeur + sens + contrib).
-            "driver_detail": _driver_detail(r, H),
+            # (23/06) `now` → si porteur net news, libellé = sens + titre réel.
+            "driver_detail": _driver_detail(r, H, now),
             "coverage": r.coverage,
             "conflit_horizons": conflit_horizons,
             "_result": r,  # réf. interne (veto news↯), retirée avant retour
@@ -3032,10 +3131,18 @@ def _truncate_driver(nom: str) -> str:
     return coupe + "…"
 
 
-def _driver_detail(r: "ActifResult", h: str) -> str:
+def _driver_detail(
+    r: "ActifResult", h: str, now: Optional[datetime] = None
+) -> str:
     """« Porté par » ENRICHI (P3) — détail scannable du driver dominant.
 
     Format cible (concis) : `nom COMPLET (val X, sens Y) → contribue ±Z.ZZ`.
+    EXCEPTION transparence (23/06) : si le driver est le porteur du NET news (nom
+    affiché = « Synthèse news (net, IA) »), `now` fourni → on remplace ce libellé
+    opaque par le SENS net + le TITRE réel de la news dominante de l'actif
+    (« news net haussière : El Niño menace les récoltes du cacao »), et on omet le
+    bloc `(val …, sens …)` (sans objet pour une news). `now` absent → libellé
+    legacy inchangé (dégradation sûre).
     - nom COMPLET : libellé trader NON tronqué (lisibilité — P3).
     - val X : valeur brute du critère (même source que la colonne « Valeur
       actuelle » du détail), « — » si absente.
@@ -3062,12 +3169,19 @@ def _driver_detail(r: "ActifResult", h: str) -> str:
             cible = c
             break
     if cible is None:
-        # Fallback : on n'a que le nom (zéro invention au-delà du nom).
-        return _nom or "—"
+        # Fallback : on n'a que le nom (zéro invention au-delà du nom). On tente
+        # tout de même l'enrichissement net-news (transparence) si demandé.
+        return _enrich_net_news_label(_nom or "—", r, now)
     nom = _nom_critere(cible)
+    contrib = cible.contributions.get(h, 0.0)
+    # Transparence (23/06) : le porteur du NET news → sens + titre réel, sans le
+    # bloc (val …, sens …) qui n'a pas de sens pour une news. Tout autre critère
+    # garde le format legacy (val / sens / contribution) — INCHANGÉ.
+    nom_enrichi = _enrich_net_news_label(nom, r, now)
+    if nom_enrichi != nom:
+        return f"{nom_enrichi} → contribue {contrib:+.2f}"
     val = _fmt_raw(cible.valeur_brute)
     sens = "normal" if cible.signe == 1 else "inversé"
-    contrib = cible.contributions.get(h, 0.0)
     parts = []
     if val != "—":
         parts.append(f"val {val}")
@@ -3771,7 +3885,8 @@ def build_top_multi_horizons_block(
         conc = r.conclusions.get(h, "")
         score = r.scores.get(h, 0.0)
         # P3 — driver enrichi (nom complet + valeur + sens + contribution).
-        raison = _driver_detail(r, h)
+        # (23/06) `now_for_flags` → porteur net news = sens + titre réel.
+        raison = _driver_detail(r, h, now_for_flags)
         if raison == "—":
             raison = ""
         flags = _compute_cell_risk_flags(r, h, now_for_flags)

@@ -179,7 +179,26 @@ jobs:
             echo "Jour ouvré + déclenchement ${GITHUB_EVENT_NAME} (VPS, 1 tir/créneau) → run."
             exit 0
           fi
-          last=$(git log -1 --format=%ct --grep="decision snapshot\|decision suivi\|decision bilan\|stamp ouverture" 2>/dev/null || echo 0)
+          # Créneaux STAMP (ouverture prix-only : 08h continus, 09h EU, 15h US) :
+          # EXEMPTÉS de l'anti-doublon. Le stamp est idempotent + entry-lock (un
+          # ticker déjà stampé n'est jamais refetché/écrasé) et DOIT tourner sur
+          # les 3 ticks (:12/:27/:42) du créneau : le cash US ouvre à 15h30 →
+          # seul le tick de :42 (15h42 Paris) tombe APRÈS l'ouverture+délai (15h35).
+          # Si l'anti-doublon suspendait ce tick (à cause du stamp :12 d'AVANT
+          # l'ouverture US), la référence d'ouverture US ne serait JAMAIS captée
+          # (bug 23/06 : suivi 18h avec prix US présent mais ouverture « — »).
+          # L'anti-doublon ne protège que les runs LOURDS (suivi/bilan = appels IA),
+          # jamais les stamps prix-only.
+          ph_guard=$(TZ='Europe/Paris' date +%H); ph_guard=$((10#$ph_guard))
+          if [ "$ph_guard" -eq 8 ] || [ "$ph_guard" -eq 9 ] || [ "$ph_guard" -eq 15 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Créneau stamp (${ph_guard}h Paris) : idempotent → run sur chaque tick (anti-doublon non applicable)."
+            exit 0
+          fi
+          # Anti-doublon : ne compte QUE les runs lourds (snapshot/suivi/bilan).
+          # « stamp ouverture » retiré du grep — un stamp prix-only ne doit jamais
+          # suspendre un suivi/bilan ultérieur, ni se suspendre lui-même.
+          last=$(git log -1 --format=%ct --grep="decision snapshot\|decision suivi\|decision bilan" 2>/dev/null || echo 0)
           now=$(date +%s)
           if [ "${last:-0}" -gt 0 ] && [ $((now - last)) -lt 7200 ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"

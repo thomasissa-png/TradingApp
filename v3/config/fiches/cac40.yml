@@ -94,7 +94,10 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 3
-    pertinence: { "24h": 0.5, "7j": 0.8, "1m": 0.5 }
+    # [BOOST NEWS 24h — refonte 23/06] pertinence 24h 0.5 → 1.0 (porteur synthèse
+    # news net IA CAC 40) : une grosse news politique fraîche doit pouvoir dominer
+    # la conviction 24h. 7j/1m INCHANGÉS.
+    pertinence: { "24h": 1.0, "7j": 0.8, "1m": 0.5 }
     effet_long: "Accord budget/stabilité"
     effet_short: "Motion/dissolution/dégradation rating/shutdown"
 

@@ -118,7 +118,10 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 3
-    pertinence: { "24h": 0.2, "7j": 0.5, "1m": 1.0 }
+    # [BOOST NEWS 24h — refonte 23/06] pertinence 24h 0.2 → 1.0 (porteur synthèse
+    # news net IA argent) : une grosse news fraîche (PV/strike) doit pouvoir
+    # dominer la conviction 24h. 7j/1m INCHANGÉS (la tendance structurelle reste).
+    pertinence: { "24h": 1.0, "7j": 0.5, "1m": 1.0 }
     effet_long: "Demande PV haussière OU strike Mexique/Pérou"
     effet_short: "Demande PV baisse OU stocks normalisés"
 

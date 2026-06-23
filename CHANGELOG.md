@@ -2,6 +2,66 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-23 — Un seul cerveau : la tête « 🎯 Aujourd'hui » dérive des convictions 24h (fin du moteur séparé) + boost news 24h
+
+Décision fondateur + 3 experts. CAUSE RACINE : deux moteurs parallèles. La tête
+« 🎯 Aujourd'hui » venait de `selection_jour.compute_top3` (catalyseur news +
+momentum), un classement SÉPARÉ qui pouvait CONTREDIRE le fond — ce matin
+« Or LONG » en tête alors que la conviction 24h de fond était « Or SHORT -14,49
+forte », et « Nasdaq SHORT » hors des plus fortes convictions.
+
+### A. Tête dérivée des convictions 24h jouables (`v3/scripts/scoring_analyste.py`)
+- NOUVEAU `select_paris_du_jour()` + `build_paris_du_jour_block()` : les 3 paris
+  du jour = les 3 PLUS FORTES CONVICTIONS 24h JOUABLES. Source UNIQUE = les mêmes
+  cellules que le bloc « À jouer aujourd'hui (24h) » (NON `_cell_a_eviter` :
+  exclut 🚫 / ⚪ / ≈), AVEC exclusion supplémentaire des « fragile (couverture
+  insuffisante) ». Tri par |note| décroissant, top 3. Sens du pari = sens de la
+  conviction. Si < 3 jouables : moins de 3 (zéro invention, zéro remplissage).
+- `render_bulletin` (tête) : `_sjd.build_top3_block(compute_top3(...))` REMPLACÉ
+  par `build_paris_du_jour_block(results, ...)`. `compute_top3` DÉBRANCHÉ de la
+  tête. Le module `selection_jour`/`selection_jour_data` reste en place (tests +
+  decision-log) mais ne PILOTE plus la tête. Conséquence : le pari du jour ne
+  peut JAMAIS contredire sa conviction (cohérence par construction).
+- NON touché : matrice « Synthèse des décisions », blocs Swing 7j / Positions 1m,
+  mesure (mesure_bilan), build_html, le 7j/1m.
+
+### B. Boost traçable du poids du critère NEWS en 24h (10 fiches porteuses du net IA)
+Pour qu'une grosse news fraîche remonte naturellement la conviction 24h (et entre
+dans le top 3 PAR la conviction, jamais contre elle). Pertinence 24h du critère
+porteur de la « Synthèse news (net, IA) » portée à 1.0 ; 7j/1m INCHANGÉS.
+Règle fondateur « zéro modification silencieuse » → avant/après ci-dessous :
+
+| Fiche | Critère porteur (cle_courante) | 24h avant | 24h après |
+|---|---|---|---|
+| or | tension_geopolitique | 0.5 | 1.0 |
+| nasdaq | sentiment_ia_megacaps | 0.8 | 1.0 |
+| cac40 | tension_politique_fr | 0.5 | 1.0 |
+| vix | tension_geopolitique_active | 0.9 | 1.0 |
+| petrole | tension_geopol_moyen_orient | 0.6 | 1.0 |
+| cuivre | mining_strikes_chili_perou | 0.7 | 1.0 |
+| argent | demande_pv_mining_strikes | 0.2 | 1.0 |
+| cafe | maladies_cabosses_rouille | 0.3 | 1.0 |
+| cacao | maladies_cabosses | 0.2 | 1.0 |
+| ble | geopolitique_mer_noire | 0.7 | 1.0 |
+
+Justification de la valeur 1.0 : c'est l'horizon où une news fraîche compte le
+plus ; le COEF_NATURE amortit déjà ponctuel/verbal par horizon, et la tendance
+(7j/1m) reste pleinement pertinente (inchangée). eurusd/sp500 n'ont pas de
+porteur net IA (absents de CRITERION_SCOPE) → non modifiés.
+
+### C. Vérification cas réel 23/06 (simulation `render_bulletin`)
+Profil fond : Or SHORT -14,49 forte, EUR/USD SHORT -15,87 forte, CAC 40 SHORT,
+Nasdaq +0,20 (quasi-neutre). Tête produite : EUR/USD SHORT, Or SHORT, CAC 40
+SHORT. AUCUN « Or LONG », Nasdaq exclu (quasi-neutre), aucun pari ne contredit
+sa conviction. Cuivre « couverture insuffisante » serait exclu même à |note| fort.
+
+### Tests
+NOUVEAU `v3/tests/test_paris_du_jour_convictions.py` (A : ordre + sens + exclusions
+quasi-neutre/insuffisant/couverture insuffisante ; B : cas 23/06 sans Or LONG ;
+C : sanity boost news 24h). 172 tests verts sur le périmètre scoring/sélection/
+render/html. Baseline pré-existante inchangée (pandas/holidays absents → mêmes
+~11 échecs ModuleNotFoundError sur test_criteres/test_bilan_jour_cam7_cab2).
+
 ## 2026-06-22 — Mesure partagée étendue aux Suivis 12h/18h + Bilan semaine R5 (cohérence par construction)
 
 - **But** : faire hériter les autres rapports de la mesure du « Bilan du jour » (module `mesure_bilan`) au lieu de mesures divergentes — une seule source de vérité.

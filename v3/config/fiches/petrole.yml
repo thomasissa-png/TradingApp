@@ -34,7 +34,10 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 7
-    pertinence: { "24h": 0.6, "7j": 0.6, "1m": 0.2 }
+    # [BOOST NEWS 24h — refonte 23/06] pertinence 24h 0.6 → 1.0 (porteur synthèse
+    # news net IA pétrole, tie-break poids max) : une grosse news Moyen-Orient
+    # fraîche doit pouvoir dominer la conviction 24h. 7j/1m INCHANGÉS.
+    pertinence: { "24h": 1.0, "7j": 0.6, "1m": 0.2 }
     effet_long: "Escalade 7j (frappes, blocus, sanctions)"
     effet_short: "Détente (accord, cessez-le-feu)"
 

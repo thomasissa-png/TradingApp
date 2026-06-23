@@ -673,7 +673,17 @@ def bulletin_id_from_path(path: Path) -> Optional[str]:
 #             comme 7h par défaut (avant la refonte 3×/jour, il n'y avait qu'un
 #             bulletin/jour assimilable au briefing).
 # Les créneaux 10h/12h/16h/18h (suivis) ne sont PAS comptés.
-SEVEN_AM_CRENEAUX: frozenset = frozenset({"07h", "05h"})
+# FENÊTRE BRIEFING MATINAL (élargie 23/06) : le briefing du jour peut porter une
+# heure différente de 07h selon le contexte, et reste LE briefing mesurable :
+#   - 05h : UTC historique (= 7h CEST).
+#   - 06h : cron 7h en HIVER (05h UTC = 06h CET) → sinon les briefings d'hiver
+#           n'étaient PAS mesurés (bug latent).
+#   - 07h : été (cas nominal).
+#   - 08h : relance manuelle tôt le matin (slot=bulletin re-déclenché ~8h) — c'est
+#           encore le briefing du jour, il DOIT être mesuré (décision fondateur 23/06).
+# Seul `run_bulletin.py` écrit des `bulletin-*.md` (les stamps/suivis n'en écrivent
+# pas) → aucun risque de compter un non-briefing. Les créneaux ≥ 10h restent exclus.
+SEVEN_AM_CRENEAUX: frozenset = frozenset({"05h", "06h", "07h", "08h"})
 
 
 def creneau_from_bulletin_id(bulletin_id: str) -> Optional[str]:

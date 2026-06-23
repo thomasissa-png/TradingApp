@@ -275,7 +275,10 @@ def test_fallback_emission_si_ouverture_absente_non_continu(tmp_path, caplog):
 def test_filtre_7h_reconnaissance_creneaux():
     assert jr.is_seven_am_bulletin("2026-06-08-07h") is True
     assert jr.is_seven_am_bulletin("2026-06-08-05h") is True   # UTC historique
+    assert jr.is_seven_am_bulletin("2026-06-08-06h") is True   # cron 7h en HIVER
+    assert jr.is_seven_am_bulletin("2026-06-08-08h") is True   # relance matinale tôt
     assert jr.is_seven_am_bulletin("2026-06-08") is True       # ancien nommage
+    assert jr.is_seven_am_bulletin("2026-06-08-09h") is False  # après la fenêtre briefing
     assert jr.is_seven_am_bulletin("2026-06-08-12h") is False
     assert jr.is_seven_am_bulletin("2026-06-08-18h") is False
     assert jr.is_seven_am_bulletin("2026-06-08-16h") is False

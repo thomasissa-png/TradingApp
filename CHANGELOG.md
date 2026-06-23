@@ -2,6 +2,48 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-23 — UNE seule sélection du jour, partout (tête == decision-log == suivi)
+
+Bug de cohérence majeur (fondateur) : le suivi 12h traquait des positions
+DIFFÉRENTES des paris affichés dans la tête « 🎯 Aujourd'hui ». Cause racine :
+DEUX fonctions de sélection coexistaient. La tête (`select_paris_du_jour`,
+Option C : top 3 convictions 24h jouables, |note| desc, ↯ news-à-contre-sens
+exclus) affichait une sélection ; mais le champ `selection_du_jour` du
+decision-log était écrit par l'ANCIENNE `compute_selection_du_jour` (dédup
+famille macro + veto « tape ») — donc run_suivi / bilan_jour / run_weekly
+traquaient une AUTRE sélection. Divergence tête ↔ suivi.
+
+### Correctif — point d'écriture unique dérivé de la tête (`scoring_analyste.py`)
+- Nouveau `selection_du_jour_map(results, now)` : dérive `(selection_keys,
+  motif_exclusion)` de `select_paris_du_jour` (la tête). Source de vérité UNIQUE.
+- `select_paris_du_jour` : paramètre `hors_top` (liste remplie) qui trace le
+  motif sur le MÊME classement que la tête : « écarté : news à contre-sens (↯) »
+  ou « hors top 3 ».
+- `build_decision_log_records` (point d'écriture `selection_du_jour`) : ne passe
+  PLUS par `compute_selection_du_jour` → appelle `selection_du_jour_map`. Le
+  champ est posé sur EXACTEMENT les cellules affichées. AVANT : dédup famille
+  macro + veto « tape » (sélection différente). APRÈS : top 3 |note| hors ↯.
+- `render_bulletin` : UNE SEULE tête. Suppression de la branche `else`
+  (`build_decision_sheet` + `build_selection_du_jour_block`, basées sur
+  `compute_selection_du_jour`) ; `build_paris_du_jour_block` est toujours rendu.
+  Plus jamais deux blocs « 🎯 Aujourd'hui » contradictoires.
+- `compute_selection_du_jour` / `build_decision_sheet` / `build_selection_du_jour_block`
+  RETIRÉES de la chaîne decision-log ET de render_bulletin (conservées définies
+  pour les tests legacy uniquement, ne pilotent plus rien). Veto « tape »
+  (double-critère news+momentum) ABANDONNÉ (décision fondateur : une news fraîche
+  à contre-sens exclut, point — déjà fait par l'exclusion ↯).
+- `bilan_jour._raison_exclusion` : commentaire aligné sur la nouvelle source
+  (lecture inchangée — `load_selection_map` non touchée).
+- NON FAIT (volontaire) : aucune dédup famille macro ajoutée à
+  `select_paris_du_jour` (préserve la tête approuvée par le fondateur ; question
+  dédup gérée séparément). Zéro touche scoring / conclusions / matrice Synthèse.
+
+Tests : `test_selection_du_jour.py` — 2 tests decision-log mis à jour vers le
+nouveau contrat (Option C, plus de dédup), +2 tests d'identité (map == tête ;
+profil 23/06 ↯ Or/EUR exclus → decision-log == tête == load_selection_map).
+Suite ciblée : 336 passed, 4 failed (baseline `holidays`/`pandas` absents,
+identiques sur HEAD non modifié — zéro régression introduite).
+
 ## 2026-06-23 — Un seul principe d'ordre « À jouer (24h) » + garde-fou ↯ paris (Option C)
 
 Incohérence relevée par le fondateur (validée + 3 experts, Option C) : le tableau

@@ -2,6 +2,52 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-23 — Suivi 12h/18h : 4 fixes de rendu (cohérence sorties, news, signe, légende)
+
+Audit du rendu du suivi (`run_suivi.py`) sur le rapport réel `2026-06-23-12h.md`,
+4 corrections validées fondateur. Aucune touche au scoring / matrice / conclusions
+/ `load_selection_map` : RENDU uniquement (+ 2 helpers purs). WIN RATE ONLY.
+
+### FIX 1 — sorties cohérentes et limitées aux 3 paris
+- Le bloc « Suggestions de sortie » ne porte QUE sur les paris du jour
+  (`selection=True`) — plus aucune suggestion sur un actif non détenu (Blé/Pétrole
+  ne sont plus listés). AVANT : suggestions sur tous les actifs 24h.
+- Source de vérité UNIQUE des verdicts : `vendre_from_suggestion(suggestion)` →
+  la colonne « Vendre ? » de la table Sélection == le bloc Suggestions (mêmes
+  seuils 0.80/1.00, mêmes verdicts, jamais l'un « vendre » et l'autre « tenir »).
+  AVANT : `compute_vendre` (heuristique reflux) divergeait du seuil.
+- Le panorama « Positions du matin » perd sa colonne « Vendre / Pas vendre » (on
+  ne détient pas ces 12 actifs — c'est un panorama de marché).
+
+### FIX 2 — section news centrée paris + grosses actus conservées
+- « News des paris du jour » : VRAI titre de la news dominante par pari
+  (`news_reelle_paris`, source events-log, même que `news_majeures`), plus jamais
+  « Synthèse news (net, IA) ». Pas de titre exploitable → « — » (zéro invention).
+- « Grosses actualités depuis Xh » : GARDÉ — high matérialité depuis le créneau
+  précédent, MÊME hors top 3 (ex. Pétrole/Ormuz, demande fondateur).
+- SUPPRIMÉS du rendu : « Contexte news (Synthèse net IA) » (actifs non-paris) et
+  « Actus du jour » (titres RSS bruts de faible matérialité). La récolte RSS reste
+  active pour la dédup/snapshot mais n'est plus affichée.
+
+### FIX 3 — convention de signe unique (% favorable signé par le call)
+- Le panorama « Positions du matin » affiche désormais le `% favorable` signé par
+  le call (`+`=gagne / `-`=perd), comme la table Sélection. AVANT : delta brut →
+  signes opposés pour le même actif (EUR/USD +0,23 vs -0,23 ; Or -0,06 vs +0,06).
+
+### FIX 4 — légende courte
+- 1 phrase : « Vendre = sortir maintenant ; % favorable +=gagne/−=perd ;
+  Meilleur/Pire = excursion max depuis l'ouverture. » AVANT : pavé 4 lignes.
+
+### Portée + tests
+- S'applique automatiquement au 12h ET au 18h (même `build_suivi`). Le 18h
+  conserve la dynamique US (`Δ précédent`, tendance `↗/↘ US`, Catalyseurs J+1) :
+  vérifié par rendu manuel + tests.
+- `run_suivi.py` : +`vendre_from_suggestion`, +`news_reelle_paris`, +champ
+  `SuiviRapport.news_paris`. Tests : 98 PASS (test_run_suivi, test_suivi_news_fraiches,
+  test_build_html_reports, test_cycle_build_html_ordering, test_cacao_choc_offre_16_06,
+  test_porte_par_news_reelle). Régressions baseline hors-périmètre : `pandas`/
+  `holidays` absents du conteneur (test_backtest, etc.) — inchangées par ce lot.
+
 ## 2026-06-23 — UNE seule sélection du jour, partout (tête == decision-log == suivi)
 
 Bug de cohérence majeur (fondateur) : le suivi 12h traquait des positions

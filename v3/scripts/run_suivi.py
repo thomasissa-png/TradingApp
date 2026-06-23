@@ -122,6 +122,10 @@ class SuiviRapport:
     # FORTE matérialité (high) ingérés depuis le rapport précédent (lecture seule,
     # zéro DeepSeek). Lignes markdown prêtes ; [] → « Aucune news majeure ».
     news_majeures: List[str] = field(default_factory=list)
+    # FIX 2a (fondateur 23/06) — titre RÉEL de la news dominante PAR PARI (clé =
+    # actif sélectionné). Source : events-log (news_reelle_paris). Remplace le
+    # libellé opaque « Synthèse news (net, IA) ». Actif absent → « — » au rendu.
+    news_paris: Dict[str, str] = field(default_factory=dict)
     # GARDE-FOU HONNÊTETÉ (brief S9) — distingue deux cas que l'ancien code
     # confondait en un tableau vide silencieux :
     #  - briefing_introuvable=True : AUCUN Briefing 7h actif pour date_j (archivé /
@@ -248,6 +252,18 @@ def compute_suggestion(
     ):
         return "Sortie à envisager"
     return "Surveiller"
+
+
+def vendre_from_suggestion(suggestion: str) -> str:
+    """Reco binaire « Vendre » / « Pas vendre » DÉRIVÉE de la suggestion de sortie.
+
+    Source de vérité UNIQUE (FIX 1, fondateur 23/06) : la colonne « Vendre ? » de
+    la table « Sélection du jour » et le bloc « Suggestions de sortie » partagent
+    EXACTEMENT le même verdict, pour ne jamais se contredire (l'un « vendre »,
+    l'autre « tenir »). « Vendre » ssi le seuil de sortie est franchi CONTRE le
+    call (suggestion == « Sortie à envisager »). Sinon « Pas vendre ».
+    """
+    return "Vendre" if suggestion == "Sortie à envisager" else "Pas vendre"
 
 
 def fav_delta(delta_pct: Optional[float], call: str) -> Optional[float]:
@@ -623,6 +639,56 @@ def news_majeures_lignes(
         prefixe = f"**{actif}** : " if actif and actif != "Autres" else ""
         lignes.append(f"- {prefixe}{trigger}")
     return lignes
+
+
+def news_reelle_paris(
+    report_type: str,
+    now: datetime,
+    actifs: List[str],
+    events_path: Optional[Path] = None,
+) -> Dict[str, str]:
+    """Titre RÉEL de la news/driver dominant pour chaque actif PARI (FIX 2a, 23/06).
+
+    Remplace le libellé opaque « Synthèse news (net, IA) » par le VRAI titre de la
+    news la plus matérielle de la journée pour chaque pari. UNE source de vérité :
+    l'events-log déjà classé (même que `news_majeures_lignes`), réutilise
+    `briefing.parse_events_with_ingest_ts` + `_primary_actif_from_event` +
+    `strip_monetaire`. Tri materiality desc puis fraîcheur (réutilise le tri de
+    briefing). ZÉRO DeepSeek, ZÉRO invention : un actif sans event exploitable est
+    ABSENT du dict (le rendu affichera « — »).
+
+    Best-effort total : toute erreur de lecture/parsing → {} (le suivi ne casse
+    jamais). Retourne {actif: titre_court} pour les actifs de `actifs` seulement.
+    """
+    cibles = {a for a in actifs}
+    if not cibles:
+        return {}
+    try:
+        import briefing as B  # noqa: PLC0415
+        path = events_path or B.EVENTS_LOG
+        events = B.parse_events_with_ingest_ts(path)
+        # Fenêtre du jour, à impact (même filtre que le briefing 7h).
+        recents = B.filter_recent_impactful(events, now.date())
+        ordonnes = B._sort_by_materiality_then_date(recents)
+    except Exception as e:  # noqa: BLE001 — bloc léger best-effort, jamais de crash
+        logger.warning("news_reelle_paris KO: %s — section vide", e)
+        return {}
+
+    out: Dict[str, str] = {}
+    for ev in ordonnes:
+        try:
+            actif = B._primary_actif_from_event(ev)
+        except Exception:  # noqa: BLE001
+            actif = None
+        if not actif or actif not in cibles or actif in out:
+            continue
+        trigger = B.strip_monetaire((ev.get("trigger", "") or "").strip())
+        if not trigger:
+            continue
+        if len(trigger) > 160:
+            trigger = trigger[:157].rstrip() + "..."
+        out[actif] = trigger
+    return out
 
 
 # source_track signifiant « ce créneau news porte la direction NETTE IA »
@@ -1103,9 +1169,11 @@ def build_suivi(
         if report_type == REPORT_18H and group == "us" and delta is not None:
             tendance = us_trend_flag(delta, call)
         suggestion = compute_suggestion(delta, call, seuil, statut)
-        # Reco binaire « Vendre / Pas vendre » + % directionnels favorables signés
-        # pour le tableau de progression « Sélection du jour ».
-        vendre = compute_vendre(delta, delta_prec, call, band)
+        # Reco binaire « Vendre / Pas vendre » DÉRIVÉE de la suggestion (FIX 1,
+        # 23/06) : source de vérité UNIQUE → la colonne « Vendre ? » de la table
+        # Sélection et le bloc « Suggestions de sortie » ne se contredisent JAMAIS
+        # (mêmes seuils, mêmes verdicts). + % directionnels favorables signés.
+        vendre = vendre_from_suggestion(suggestion)
         fav_now_v = fav_delta(delta, call)
         fav_prec_v = fav_delta(delta_prec, call) if isinstance(delta_prec, (int, float)) else None
 
@@ -1123,9 +1191,13 @@ def build_suivi(
             max_adverse_pct=(round(max_adv, 2) if max_adv is not None else None),
         ))
 
-    rapport.news = news_a_impact(
-        date_j, [li.actif for li in rapport.lignes], decision_log_dir
-    )
+    # FIX 2a/2c (fondateur 23/06) — la section news est CENTRÉE sur les paris :
+    # titre RÉEL de la news dominante par pari (events-log), PAS « Synthèse news
+    # (net, IA) » ni des actifs non-paris. `rapport.news` (Contexte 7h opaque) est
+    # SUPPRIMÉ du rendu ; on ne garde qu'une liste vide pour la dédup des frais.
+    selection_actifs = [li.actif for li in rapport.lignes if li.selection]
+    rapport.news_paris = news_reelle_paris(report_type, now, selection_actifs)
+    rapport.news = []
 
     # VRAIE raison du call (drivers du score 7h) pour les positions de la Sélection —
     # même source unique que le bilan jour/semaine (journaliste.drivers_du_call). On
@@ -1250,12 +1322,10 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
             f"{col_best} | {col_pire} | {li.tendance} | **{li.vendre}** |"
         )
     L.append("")
+    # FIX 4 (fondateur 23/06) — légende courte : 1 phrase, détail replié.
     L.append(
-        f"_Décision datée à {hour_label} (au prix de ce rapport) : « Vendre à {hour_label} » = "
-        "sortir maintenant, « Pas vendre » = conserver. % favorable : `+` = va dans le sens du "
-        "call (gagne), `-` = contre nous. **Meilleur / pire point** = excursion MAX favorable / "
-        "adverse depuis l'ouverture du jour (mesurée comme le Bilan du soir). On vend pour "
-        "verrouiller un avantage qui reflue ou couper un pari qui empire ; sinon on conserve._"
+        "_Vendre = sortir maintenant ; % favorable `+`=gagne / `-`=perd ; "
+        "Meilleur/Pire = excursion max depuis l'ouverture._"
     )
     L.append("")
     # Pourquoi on tient ces positions : la VRAIE raison du call (drivers du score à
@@ -1297,10 +1367,9 @@ def _render_markdown(r: SuiviRapport) -> str:
         L.append("")
         return "\n".join(L)
 
-    # PARTIE B — 1 ligne de contexte réactualisée (factuelle, décor), en tête.
-    if r.contexte_frais:
-        L.append(f"_{r.contexte_frais}_")
-        L.append("")
+    # FIX 2c (fondateur 23/06) — le bloc « Actus du jour » (titres RSS bruts de
+    # faible matérialité) étant SUPPRIMÉ, on ne rend plus la ligne de contexte
+    # « Du neuf depuis Xh… ci-dessous » qui y renvoyait (plus de bloc en dessous).
 
     # Refonte suivi S9 (Thomas) — vue rapide en TÊTE : progression de la
     # Sélection du jour (top ≤3) + reco Vendre/Pas vendre. Le suivi détaillé de
@@ -1327,81 +1396,74 @@ def _render_markdown(r: SuiviRapport) -> str:
     # les RETIRE (tableau 7 colonnes). Au 18h, elles sont remplies → tableau 9
     # colonnes. Le libellé de la colonne delta est UNIFORME : « Δ précédent »
     # (au lieu de « Δ vs 7h » / « Δ vs 12h » — incohérence inter-rapports).
+    # FIX 1 + FIX 3 (fondateur 23/06) : ce tableau est un PANORAMA de marché (on ne
+    # détient PAS ces actifs) → la colonne « Vendre / Pas vendre » est RETIRÉE (aucune
+    # reco de vente hors paris). La colonne % est le % FAVORABLE signé par le call
+    # (`+` = va dans notre sens, `−` = contre) — MÊME convention que la table Sélection,
+    # plus jamais de signes opposés pour le même actif.
     if h == REPORT_12H:
         L.append(
-            f"| Actif | Call 7h | Ouverture | Prix {h} | Delta% | Statut | Vendre / Pas vendre |"
+            f"| Actif | Call 7h | Ouverture | Prix {h} | % favorable | Statut |"
         )
-        L.append("|---|---|---|---|---|---|---|")
+        L.append("|---|---|---|---|---|---|")
         if not r.lignes:
-            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | |")
+            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | |")
         for li in r.lignes:
             L.append(
                 f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | "
-                f"{_fmt_price(li.prix_courant)} | {_fmt_pct(li.delta_pct)} | "
-                f"{li.statut} | {li.vendre} |"
+                f"{_fmt_price(li.prix_courant)} | {_fmt_fav(li.fav_now)} | "
+                f"{li.statut} |"
             )
     else:
         L.append(
-            f"| Actif | Call 7h | Ouverture | Prix {h} | Delta% | Δ précédent | "
-            f"Tendance | Statut | Vendre / Pas vendre |"
+            f"| Actif | Call 7h | Ouverture | Prix {h} | % favorable | Δ précédent | "
+            f"Tendance | Statut |"
         )
-        L.append("|---|---|---|---|---|---|---|---|---|")
+        L.append("|---|---|---|---|---|---|---|---|")
         if not r.lignes:
-            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | | | |")
+            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | | |")
         for li in r.lignes:
             L.append(
                 f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | "
-                f"{_fmt_price(li.prix_courant)} | {_fmt_pct(li.delta_pct)} | "
-                f"{_fmt_points(li.delta_vs_prec)} | {li.tendance} | {li.statut} | "
-                f"{li.vendre} |"
+                f"{_fmt_price(li.prix_courant)} | {_fmt_fav(li.fav_now)} | "
+                f"{_fmt_points(li.delta_vs_prec)} | {li.tendance} | {li.statut} |"
             )
     L.append("")
 
-    # Contexte news du Briefing 7h (NON réactualisé — fix libellé 16/06, Thomas).
-    # Le suivi NE ré-ingère PAS les news : ces lignes proviennent du decision-log
-    # 7h du jour (cf. news_a_impact). L'ancien titre « News à impact depuis 7h/12h »
-    # impliquait à tort une réactualisation continue → libellé honnête.
-    L.append("### Contexte news (bulletin 7h, non réactualisé)")
-    if r.news:
-        L.extend(r.news[:MAX_NEWS])
-        # [C-S1 audit visuel 12/06] : les news du suivi proviennent du même
-        # decision-log 7h → au 18h, elles sont identiques à celles du matin. On
-        # le signale pour éviter au lecteur de les relire comme du neuf.
-        if h == REPORT_18H:
-            L.append("")
-            L.append("_(mêmes news que les suivis précédents ; source : Briefing 7h.)_")
+    # FIX 2a/2c (fondateur 23/06) — section news CENTRÉE sur les paris : la VRAIE
+    # news/driver dominant(e) de chaque pari (titre réel issu de l'events-log),
+    # PAS le libellé opaque « Synthèse news (net, IA) » ni des actifs non-paris.
+    # Le bloc « Contexte news (Synthèse net IA) » et « Actus du jour » (titres bruts
+    # de faible matérialité) sont SUPPRIMÉS. Zéro invention : pas de titre → « — ».
+    L.append("### News des paris du jour")
+    paris = [li for li in r.lignes if li.selection]
+    if paris:
+        for li in paris:
+            titre = r.news_paris.get(li.actif)
+            L.append(f"- **{li.actif}** ({li.call}) : {titre if titre else '—'}")
     else:
-        L.append("Aucune news impactante dans le Briefing 7h.")
+        L.append("Pas de sélection aujourd'hui.")
     L.append("")
 
-    # Section « News majeures depuis {heure_préc} » : events à FORTE matérialité
-    # (high) ingérés depuis le rapport précédent (lecture seule events-log, zéro
-    # DeepSeek). DISTINCTE des « Actus du jour » (titres RSS bruts) et du Contexte
-    # 7h : ici uniquement le high déjà classé. Placée juste avant Actus du jour.
+    # FIX 2b (fondateur 23/06) — GARDÉ : les grosses actus à FORTE matérialité
+    # (high) depuis le rapport précédent, MÊME hors des 3 paris (ex. Pétrole /
+    # Ormuz). Lecture seule de l'events-log déjà classé, zéro DeepSeek.
     heure_prec_label = _heure_precedente_label(h)
-    L.append(f"### 🚨 News majeures depuis {heure_prec_label}")
+    L.append(f"### 🚨 Grosses actualités depuis {heure_prec_label}")
     if r.news_majeures:
         L.extend(r.news_majeures[:MAX_NEWS_MAJEURES])
     else:
-        L.append(f"Aucune news majeure depuis {heure_prec_label}.")
+        L.append(f"Aucune actualité majeure depuis {heure_prec_label}.")
     L.append("")
 
-    # PARTIE B — bloc « Actus du jour » : titres FRAIS récoltés depuis le créneau
-    # précédent (RSS léger, zéro DeepSeek). CLAIREMENT distinct du Contexte 7h
-    # ci-dessus (matin figé) — libellé honnête sur la fenêtre de fraîcheur.
-    heure_prec = SEUIL_HEURE_PRECEDENTE.get(h, 7)
-    L.append(f"### Actus du jour (depuis {heure_prec}h)")
-    if r.news_fraiches_indispo:
-        L.append("Actus du jour indisponibles (flux injoignable).")
-    elif r.news_fraiches:
-        L.extend(r.news_fraiches[:MAX_NEWS_FRAICHES])
-    else:
-        L.append(f"Pas de news fraîche notable depuis {heure_prec}h.")
-    L.append("")
-
-    # Suggestions de sortie (drapeaux — Thomas décide).
+    # Suggestions de sortie (drapeaux — Thomas décide). FIX 1 (fondateur 23/06) :
+    # PORTE UNIQUEMENT sur les 3 paris du jour (selection=True), JAMAIS sur un
+    # actif non détenu. Même verdict que la colonne « Vendre ? » (source unique).
     L.append("### Suggestions de sortie")
-    sorties = [li for li in r.lignes if li.suggestion == "Sortie à envisager"]
+    sorties = [
+        li for li in r.lignes
+        if li.selection and li.suggestion == "Sortie à envisager"
+    ]
     if sorties:
         for li in sorties:
             L.append(
@@ -1487,6 +1549,8 @@ __all__ = [
     "compute_tendance",
     "compute_suggestion",
     "compute_vendre",
+    "vendre_from_suggestion",
+    "news_reelle_paris",
     "fav_delta",
     "us_trend_flag",
     "prix_courant_cascade",

@@ -192,9 +192,14 @@ def test_suggestion_sortie_au_seuil():
 
 def test_suggestion_sortie_dans_rapport(env):
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
-    # Or SHORT seuil 0.5%, monte +1.12% contre le call → Sortie à envisager
+    # FIX 1 (23/06) : le bloc « Suggestions de sortie » ne porte QUE sur les paris
+    # (selection=True). On marque Or sélectionné. Or SHORT seuil 0.5%, monte +1.12%
+    # contre le call → Sortie à envisager rendue ET colonne « Vendre » cohérente.
+    _decision_log_selection(env, {"Or"})
     r = _build(env, "12h", now, {"GC=F": 3438.0, "^FCHI": 8120.0, "^GSPC": None})
-    assert _ligne(r, "Or").suggestion == "Sortie à envisager"
+    or_li = _ligne(r, "Or")
+    assert or_li.suggestion == "Sortie à envisager"
+    assert or_li.vendre == "Vendre"  # source unique : cohérent avec la suggestion
     assert "Sortie à envisager" in r.markdown
 
 
@@ -396,17 +401,23 @@ def test_selection_table_12h_seule_colonne_12h(env):
 
 
 def test_selection_table_18h_deux_colonnes_et_vendre(env):
+    # FIX 1 (23/06) : « Vendre » est désormais DÉRIVÉ de la suggestion de sortie
+    # (seuil franchi CONTRE le call), source unique cohérente avec « Suggestions de
+    # sortie ». Or SHORT seuil 0.5%, monte à 3438 (+1.12% contre le call) → perd
+    # au-delà du seuil → Sortie à envisager → « Vendre ». Les deux colonnes 12h/18h
+    # restent renseignées (favorable précédent + courant).
     _decision_log_selection(env, {"Or"})
-    # 12h : Or SHORT, baisse -1.0% → favorable +1.0.
+    # 12h : Or SHORT, baisse -1.0% → favorable +1.0 (persisté pour la colonne 12h).
     _build(env, "12h", datetime(2026, 6, 8, 12, 3, tzinfo=PARIS),
            {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
-    # 18h : Or remonte vers 3380 → delta -0.59% → favorable +0.59 < +1.0 (reflue) → Vendre.
+    # 18h : Or monte à 3438 → delta +1.12% → contre le SHORT, au-delà du seuil 0.5%.
     r18 = _build(env, "18h", datetime(2026, 6, 8, 18, 3, tzinfo=PARIS),
-                 {"GC=F": 3380.0, "^FCHI": 8120.0, "^GSPC": 5300.0})
+                 {"GC=F": 3438.0, "^FCHI": 8120.0, "^GSPC": 5300.0})
     or_li = _ligne(r18, "Or")
     assert or_li.fav_prec == pytest.approx(1.0, abs=0.05)
-    assert or_li.fav_now == pytest.approx(0.59, abs=0.05)
-    assert or_li.vendre == "Vendre"
+    assert or_li.fav_now == pytest.approx(-1.12, abs=0.05)
+    assert or_li.suggestion == "Sortie à envisager"
+    assert or_li.vendre == "Vendre"  # cohérent avec la suggestion (source unique)
     assert "**Vendre**" in r18.markdown
 
 
@@ -609,3 +620,164 @@ def test_run_bilan_runner_smoke(monkeypatch):
     assert rc == 0
     assert called["build"][1] == date(2026, 6, 8)
     assert called.get("write") is True
+
+
+# ---------------------------------------------------------------------------
+# FIX 1..4 (fondateur 23/06) — cohérence sorties/paris, news refondue, signe, légende
+# ---------------------------------------------------------------------------
+
+def _events_log(tmp_path, lignes):
+    """Écrit un events-log.md minimal (1 batch du jour + lignes d'events).
+
+    `lignes` = liste de dicts partiels (trigger/impacts/cat/materiality/date).
+    Colonnes : date|l1|l2|trigger|cours|latence|r|source|zone|cat|pat|impacts|materiality|reliability
+    """
+    p = tmp_path / "events-log.md"
+    out = ["<!-- batch 2026-06-08T07:30:00Z : 3 events -->"]
+    for ev in lignes:
+        row = [
+            ev.get("date", "2026-06-08"), "", "", ev.get("trigger", ""),
+            ev.get("cours", ""), "", "", ev.get("source", "rss"),
+            "", ev.get("cat", "commodity"), "", ev.get("impacts", ""),
+            ev.get("materiality", "high"), "",
+        ]
+        out.append("| " + " | ".join(row) + " |")
+    p.write_text("\n".join(out) + "\n", encoding="utf-8")
+    return p
+
+
+def test_news_reelle_paris_titre_reel_pas_synthese(env, tmp_path):
+    # FIX 2a : pour un pari, on affiche le VRAI titre de news (events-log), JAMAIS
+    # « Synthèse news (net, IA) ». Or (mappé via impacts GOLD) a une news dédiée.
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    ev_path = _events_log(tmp_path, [
+        {"trigger": "Gold tumbles as US-Iran truce holds", "impacts": "GOLD:SHORT:80",
+         "cat": "geopolitical", "materiality": "high"},
+    ])
+    out = rs.news_reelle_paris("12h", now, ["Or"], events_path=ev_path)
+    assert out.get("Or") == "Gold tumbles as US-Iran truce holds"
+    assert "Synthèse news" not in out.get("Or", "")
+
+
+def test_news_reelle_paris_pas_de_news_absent(env, tmp_path):
+    # FIX 2a (zéro invention) : un pari sans event exploitable est ABSENT du dict
+    # (le rendu affichera « — »).
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    ev_path = _events_log(tmp_path, [
+        {"trigger": "Copper dips", "impacts": "COPPER:SHORT:60",
+         "cat": "commodity", "materiality": "medium"},
+    ])
+    out = rs.news_reelle_paris("12h", now, ["Or"], events_path=ev_path)
+    assert "Or" not in out
+
+
+def test_vendre_from_suggestion_source_unique():
+    # FIX 1 : « Vendre » ssi « Sortie à envisager », sinon « Pas vendre ». Verdict
+    # UNIQUE partagé par la colonne « Vendre ? » et le bloc « Suggestions de sortie ».
+    assert rs.vendre_from_suggestion("Sortie à envisager") == "Vendre"
+    assert rs.vendre_from_suggestion("Surveiller") == "Pas vendre"
+    assert rs.vendre_from_suggestion("Hold") == "Pas vendre"
+    assert rs.vendre_from_suggestion("—") == "Pas vendre"
+
+
+def test_fix1_aucune_suggestion_sur_actif_non_pari(env):
+    # FIX 1 : Or perd au-delà du seuil MAIS n'est PAS sélectionné → aucune
+    # suggestion de sortie rendue (on ne détient pas cet actif).
+    _decision_log_selection(env, {"CAC 40"})  # seul CAC 40 est un pari
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    # Or SHORT monte +1.12% (perd au-delà du seuil 0.5%) mais non-pari.
+    r = _build(env, "12h", now, {"GC=F": 3438.0, "^FCHI": 8120.0, "^GSPC": None})
+    assert _ligne(r, "Or").suggestion == "Sortie à envisager"  # calculé...
+    # ...mais NON rendu (Or non-pari) → bloc sans Or.
+    bloc = r.markdown.split("### Suggestions de sortie")[1]
+    assert "Or" not in bloc
+
+
+def test_fix1_coherence_colonne_vendre_et_suggestions(env):
+    # FIX 1 : un pari dont le % favorable dépasse le seuil → « sortie à envisager »
+    # DANS LES DEUX endroits (colonne « Vendre ? » == Vendre ET bloc Suggestions).
+    _decision_log_selection(env, {"Or"})
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build(env, "12h", now, {"GC=F": 3438.0, "^FCHI": 8120.0, "^GSPC": None})
+    or_li = _ligne(r, "Or")
+    assert or_li.suggestion == "Sortie à envisager"
+    assert or_li.vendre == "Vendre"
+    md = r.markdown
+    # Colonne Vendre = **Vendre** dans la table Sélection ET dans le bloc Suggestions.
+    assert "**Vendre**" in md
+    bloc = md.split("### Suggestions de sortie")[1]
+    assert "**Or**" in bloc and "Sortie à envisager" in bloc
+
+
+def test_fix1_pari_qui_tient_jamais_de_contradiction(env):
+    # FIX 1 : un pari favorable (gagne) → « Pas vendre » ET absent du bloc
+    # Suggestions (jamais l'un qui dit vendre et l'autre tenir).
+    _decision_log_selection(env, {"Or"})
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    # Or SHORT baisse à 3366 (favorable +1.0%) → gagne → Hold/Pas vendre.
+    r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
+    or_li = _ligne(r, "Or")
+    assert or_li.vendre == "Pas vendre"
+    assert or_li.suggestion == "Hold"
+    bloc = r.markdown.split("### Suggestions de sortie")[1]
+    assert "Aucune alerte de sortie." in bloc
+
+
+def test_fix3_convention_signe_short_gagnant_positif_partout(env):
+    # FIX 3 : SHORT gagnant → % FAVORABLE POSITIF dans la table Sélection ET dans
+    # le panorama « Positions du matin » (plus jamais +x et −x sur le même actif).
+    _decision_log_selection(env, {"Or"})
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    # Or SHORT, prix baisse 3400 → 3366 : delta brut -1.0%, favorable +1.0%.
+    r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
+    or_li = _ligne(r, "Or")
+    assert or_li.fav_now == pytest.approx(1.0, abs=0.05)  # favorable POSITIF
+    md = r.markdown
+    # Le panorama « Positions du matin » affiche aussi le % FAVORABLE (signe + pour Or).
+    panorama = md.split("### Positions du matin vs ouverture")[1]
+    assert "| Or | SHORT |" in panorama
+    ligne_or = next(l for l in panorama.splitlines() if l.startswith("| Or |"))
+    assert "+1.00%" in ligne_or  # favorable positif, JAMAIS -1.00%
+    # La colonne « Vendre / Pas vendre » a disparu du panorama (FIX 1).
+    assert "Vendre / Pas vendre" not in panorama
+
+
+def test_fix1_panorama_sans_colonne_vendre(env):
+    # FIX 1 : le tableau panorama « Positions du matin » n'a plus de colonne de
+    # reco de vente (on ne détient pas ces actifs).
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
+    panorama = r.markdown.split("### Positions du matin vs ouverture")[1]
+    assert "% favorable" in panorama
+    assert "Vendre / Pas vendre" not in panorama
+
+
+def test_fix4_legende_courte(env):
+    # FIX 4 : légende courte (1 phrase), plus de pavé « Décision datée à 12h… ».
+    _decision_log_selection(env, {"Or"})
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
+    md = r.markdown
+    assert "Vendre = sortir maintenant" in md
+    assert "Décision datée à" not in md  # ancien pavé supprimé
+
+
+def test_fix2b_grosse_actu_high_hors_paris_presente(env, tmp_path, monkeypatch):
+    # FIX 2b : une grosse actu HIGH hors-paris (Pétrole/Ormuz) reste affichée dans
+    # « Grosses actualités depuis 7h », même si Pétrole n'est pas un pari.
+    import briefing as B
+    ev_path = _events_log(tmp_path, [
+        {"trigger": "Iran ferme le detroit d'Ormuz, tensions au plus haut",
+         "impacts": "BRENT:LONG:90", "cat": "geopolitical", "materiality": "high"},
+        {"trigger": "Bruit de faible matérialité sur le café",
+         "impacts": "COFFEE:LONG:30", "cat": "commodity", "materiality": "low"},
+    ])
+    monkeypatch.setattr(B, "EVENTS_LOG", ev_path)
+    _decision_log_selection(env, {"Or"})  # Pétrole n'est PAS un pari
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
+    md = r.markdown
+    bloc = md.split("### 🚨 Grosses actualités depuis 7h")[1]
+    assert "Ormuz" in bloc  # grosse actu high hors-pari présente
+    # L'actu LOW non-pari n'apparaît PAS (filtre high materiality).
+    assert "faible matérialité" not in md

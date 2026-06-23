@@ -230,23 +230,29 @@ def _build(env, report_type, now, collect_light):
     )
 
 
-def test_build_suivi_bloc_actus_du_jour(env):
+def test_build_suivi_section_news_refondue(env):
+    # FIX 2c (23/06) : les blocs « Actus du jour » (titres RSS bruts) et « Contexte
+    # news (bulletin 7h) » sont SUPPRIMÉS du rendu. La section news ne garde que
+    # « News des paris du jour » + « Grosses actualités depuis Xh ». La récolte RSS
+    # continue d'alimenter les CHAMPS (snapshot dedup) mais n'est plus affichée.
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
     items = [FakeItem("Brent rallies on OPEC cut talk", _utc(2026, 6, 8, 9, 0))]
     r = _build(env, "12h", now, collect_light=lambda: items)
     md = r.markdown
-    # Bloc « Actus du jour » présent et DISTINCT du « Contexte news (bulletin 7h) ».
-    assert "### Actus du jour (depuis 7h)" in md
-    assert "### Contexte news (bulletin 7h, non réactualisé)" in md
-    assert "Brent rallies on OPEC cut talk" in md
-    # Ligne de contexte réactualisée en tête.
-    assert "Du neuf depuis 7h" in md
+    assert "### Actus du jour" not in md
+    assert "### Contexte news (bulletin 7h, non réactualisé)" not in md
+    assert "### News des paris du jour" in md
+    assert "### 🚨 Grosses actualités depuis 7h" in md
+    # Le champ news_fraiches reste alimenté (snapshot dedup) mais non rendu.
+    assert "Brent rallies on OPEC cut talk" not in md
     # Aucune mention monétaire (WIN RATE ONLY).
     for tok in ("€", "$", "gain", "perte"):
         assert tok not in md.lower()
 
 
 def test_build_suivi_actus_indispo_si_fetch_ko(env):
+    # FIX 2c : le fetch RSS KO ne casse pas le suivi et n'affiche plus de message
+    # « Actus du jour indisponibles » (bloc supprimé). Le champ indispo reste posé.
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
 
     def boom():
@@ -254,32 +260,38 @@ def test_build_suivi_actus_indispo_si_fetch_ko(env):
 
     r = _build(env, "12h", now, collect_light=boom)
     assert r.news_fraiches_indispo is True
-    assert "Actus du jour indisponibles (flux injoignable)." in r.markdown
+    assert "Actus du jour indisponibles (flux injoignable)." not in r.markdown
+    assert "### News des paris du jour" in r.markdown
 
 
 def test_build_suivi_actus_vide(env):
+    # FIX 2c : plus de bloc « Actus du jour » → plus de message « Pas de news
+    # fraîche notable ». La section news refondue reste présente.
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
     r = _build(env, "12h", now, collect_light=lambda: [])
-    assert "Pas de news fraîche notable depuis 7h." in r.markdown
+    assert "Pas de news fraîche notable depuis 7h." not in r.markdown
+    assert "### News des paris du jour" in r.markdown
 
 
 def test_18h_dedup_contre_frais_du_12h(env):
-    # 12h affiche un titre frais → persisté ; 18h ne doit PAS le réafficher.
+    # FIX 2c : le bloc « Actus du jour » n'est plus rendu. On vérifie que la récolte
+    # 18h continue de dédupliquer contre les titres frais persistés au 12h (champ
+    # news_fraiches), même si non affiché — la persistance reste fonctionnelle.
     titre_12h = FakeItem("Gold jumps on geopolitical risk", _utc(2026, 6, 8, 9, 0))
     _build(env, "12h", datetime(2026, 6, 8, 12, 3, tzinfo=PARIS),
            collect_light=lambda: [titre_12h])
-    # 18h : même titre encore présent + un nouveau (post 12h).
     items_18h = [
         FakeItem("Gold jumps on geopolitical risk", _utc(2026, 6, 8, 9, 0)),     # déjà vu
         FakeItem("US stocks open higher after CPI", _utc(2026, 6, 8, 14, 0)),     # nouveau
     ]
     r18 = _build(env, "18h", datetime(2026, 6, 8, 18, 3, tzinfo=PARIS),
                  collect_light=lambda: items_18h)
-    md = r18.markdown
-    assert "US stocks open higher after CPI" in md
-    # Le titre du 12h n'est pas réaffiché dans le bloc Actus du 18h.
-    actus_section = md.split("### Actus du jour (depuis 12h)")[1].split("###")[0]
-    assert "Gold jumps on geopolitical risk" not in actus_section
+    titres_frais = [t for t in r18.news_fraiches]
+    # Le nouveau titre est retenu, l'ancien (déjà vu au 12h) est dédupliqué.
+    assert any("US stocks open higher after CPI" in l for l in titres_frais)
+    assert not any("Gold jumps on geopolitical risk" in l for l in titres_frais)
+    # Plus aucun bloc « Actus du jour » dans le rendu.
+    assert "### Actus du jour" not in r18.markdown
 
 
 def test_build_suivi_cablage_par_defaut(env, monkeypatch):
@@ -287,6 +299,7 @@ def test_build_suivi_cablage_par_defaut(env, monkeypatch):
     # news_collector.collect_rss_light. On stub `news_collector` dans sys.modules
     # (le vrai module dépend de feedparser, absent du conteneur de test — L024) pour
     # prouver le câblage par défaut SANS toucher au réseau réel ni à feedparser.
+    # FIX 2c : le titre frais n'est plus rendu → on prouve le câblage via le CHAMP.
     import types as _types
     stub = _types.ModuleType("news_collector")
     stub.collect_rss_light = lambda *a, **k: [
@@ -299,7 +312,7 @@ def test_build_suivi_cablage_par_defaut(env, monkeypatch):
         prix_ouverture_dir=env["odir"], fiches=env["fiches"],
         fetch_price=lambda t: 3410.0,
     )
-    assert "Mocked fresh headline" in r.markdown
+    assert any("Mocked fresh headline" in l for l in r.news_fraiches)
 
 
 def test_build_suivi_degrade_si_news_collector_absent(env, monkeypatch):

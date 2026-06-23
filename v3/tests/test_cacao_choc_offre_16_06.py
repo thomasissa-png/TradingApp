@@ -139,12 +139,18 @@ def test_cacao_16_06_net_short_plus_de_non_sens():
 
 
 def test_suivi_libelle_news_honnete():
-    """run_suivi n'affiche plus « News à impact depuis 7h » (impliquait une
-    réactualisation) mais un libellé honnête « non réactualisé »."""
+    """FIX 2c (fondateur 23/06) : la section news du suivi est refondue. Le bloc
+    opaque « Contexte news (bulletin 7h, non réactualisé) » et « Actus du jour »
+    sont SUPPRIMÉS du rendu ; on ne garde que « News des paris du jour » (titres
+    réels) + « Grosses actualités depuis Xh » (high hors-paris)."""
     src = (ROOT / "scripts" / "run_suivi.py").read_text("utf-8")
-    # Le titre rendu (string littérale du L.append) ne contient plus l'ancien libellé.
+    # L'ancien libellé « News à impact depuis » n'est jamais rendu.
     assert 'L.append(f"### News à impact depuis' not in src
-    assert "non réactualisé" in src
+    # Le bloc opaque « Contexte news (bulletin 7h, non réactualisé) » n'est plus rendu.
+    assert 'L.append("### Contexte news (bulletin 7h, non réactualisé)")' not in src
+    # Les nouveaux titres de section honnêtes sont rendus.
+    assert 'L.append("### News des paris du jour")' in src
+    assert "Grosses actualités depuis" in src
 
 
 # ---------------------------------------------------------------------------

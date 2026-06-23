@@ -85,7 +85,7 @@ class SuiviLigne:
     ouverture: Optional[float]
     prix_courant: Optional[float]
     delta_pct: Optional[float]     # (courant - ouverture) / ouverture * 100
-    statut: str                    # "✅ gagne" / "⚠️ perd" / "— neutre" / "🕐 pas encore ouvert"
+    statut: str                    # "✅ gagne" / "⚠️ perd" / "— neutre" / "🕐 cash fermé (ouvre 15h30)"
     tendance: str                  # "—" / "↑ s'accélère" / "↓ s'essouffle" / "⇄ se retourne" / "↗ confirmé US" / "↘ infirmé US"
     delta_vs_prec: Optional[float] # points de % vs le suivi précédent (18h), None au 12h
     suggestion: str                # "Hold" / "Surveiller" / "Sortie à envisager" / "—"
@@ -1127,7 +1127,7 @@ def build_suivi(
         if us_pas_ouvert:
             rapport.lignes.append(SuiviLigne(
                 actif=actif, call=call, ouverture=None, prix_courant=None,
-                delta_pct=None, statut="🕐 pas encore ouvert", tendance="—",
+                delta_pct=None, statut="🕐 cash fermé (ouvre 15h30)", tendance="—",
                 delta_vs_prec=None, suggestion="—", seuil_pct=seuil,
                 us_pas_ouvert=True, vendre="Pas vendre", selection=is_select,
                 fav_now=None, fav_prec=None,
@@ -1381,9 +1381,10 @@ def _render_markdown(r: SuiviRapport) -> str:
     if h == REPORT_12H:
         L.append("### Note sur les marchés US")
         L.append(
-            "⚠️ Marchés US (S&P 500, Nasdaq, VIX) pas encore ouverts "
-            "(ouverture 15h30 Paris). Ce suivi couvre EU + continus uniquement. "
-            "Premier statut US au suivi 18h."
+            "⚠️ Cash US (S&P 500, Nasdaq, VIX) ouvre à 15h30 Paris. Les futures "
+            "cotent déjà, mais notre fournisseur de données ne les sert pas → pas "
+            "de prix US avant l'ouverture cash (ce n'est pas le marché qui dort, "
+            "c'est la donnée qui manque). Premier statut US au suivi 18h."
         )
         L.append("")
         L.append("### Positions du matin vs ouverture")

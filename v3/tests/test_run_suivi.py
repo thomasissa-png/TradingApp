@@ -212,9 +212,10 @@ def test_us_pas_encore_ouvert_a_12h(env):
     r = _build(env, "12h", now, {"GC=F": 3400.0, "^FCHI": 8120.0, "^GSPC": 5301.0})
     sp = _ligne(r, "S&P 500")
     assert sp.us_pas_ouvert is True
-    assert sp.statut == "🕐 pas encore ouvert"
+    assert sp.statut == "🕐 cash fermé (ouvre 15h30)"
     assert sp.delta_pct is None  # pas de delta trompeur
-    assert "pas encore ouverts" in r.markdown
+    # Note honnête : cash fermé jusqu'à 15h30, futures non servis par notre source.
+    assert "Cash US" in r.markdown and "futures" in r.markdown
 
 
 def test_us_ouvert_a_18h(env):

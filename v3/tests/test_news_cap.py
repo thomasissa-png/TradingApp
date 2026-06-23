@@ -185,12 +185,13 @@ def test_cap_no_op_when_news_smaller_than_alpha_quant():
 # ---------------------------------------------------------------------------
 
 def test_pertinence_recalibree_petrole_geopol():
-    """petrole.yml : tension_geopol_moyen_orient 24h=0.6, 7j=0.6, 1m=0.2."""
+    """petrole.yml : tension_geopol_moyen_orient 24h=1.0 (boost news 24h refonte
+    23/06, porteur net IA ; était 0.6), 7j=0.6, 1m=0.2 préservés."""
     fiches = sa.load_fiches(ROOT / "config" / "fiches")
     crits = {c["cle_courante"]: c for c in fiches["petrole"]["criteres"]
              if c.get("cle_courante")}
     p = crits["tension_geopol_moyen_orient"]["pertinence"]
-    assert p["24h"] == 0.6
+    assert p["24h"] == 1.0
     assert p["7j"] == 0.6
     assert p["1m"] == 0.2
 
@@ -207,23 +208,25 @@ def test_pertinence_recalibree_petrole_opec_preserve_7j_1m():
 
 
 def test_pertinence_recalibree_or_geopol():
-    """or.yml : tension_geopolitique 24h=0.5, 7j=0.4, 1m=0.3 (1m inchangé)."""
+    """or.yml : tension_geopolitique 24h=1.0 (boost news 24h refonte 23/06, porteur
+    net IA ; était 0.5), 7j=0.4, 1m=0.3 préservés."""
     fiches = sa.load_fiches(ROOT / "config" / "fiches")
     crits = {c["cle_courante"]: c for c in fiches["or"]["criteres"]
              if c.get("cle_courante")}
     p = crits["tension_geopolitique"]["pertinence"]
-    assert p["24h"] == 0.5
+    assert p["24h"] == 1.0
     assert p["7j"] == 0.4
     assert p["1m"] == 0.3
 
 
 def test_pertinence_recalibree_vix_geopol_1m():
-    """vix.yml : tension_geopolitique_active 1m=0.1 ; 24h=0.9, 7j=0.6 préservés."""
+    """vix.yml : tension_geopolitique_active 24h=1.0 (boost news 24h refonte 23/06,
+    porteur net IA ; était 0.9), 7j=0.6, 1m=0.1 préservés."""
     fiches = sa.load_fiches(ROOT / "config" / "fiches")
     crits = {c["cle_courante"]: c for c in fiches["vix"]["criteres"]
              if c.get("cle_courante")}
     p = crits["tension_geopolitique_active"]["pertinence"]
-    assert p["24h"] == 0.9
+    assert p["24h"] == 1.0
     assert p["7j"] == 0.6
     assert p["1m"] == 0.1
 

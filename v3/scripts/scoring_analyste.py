@@ -2414,6 +2414,7 @@ def select_paris_du_jour(
     seuil_conviction: Optional[float] = None,
     limit: int = 3,
     ecartes_contresens: Optional[List[Dict[str, str]]] = None,
+    hors_top: Optional[List[Dict[str, str]]] = None,
 ) -> List[Dict[str, str]]:
     """Sélectionne les paris du jour DEPUIS les convictions 24h jouables.
 
@@ -2429,6 +2430,13 @@ def select_paris_du_jour(
     `ecartes_contresens` : si une liste est fournie, elle est remplie (transparence)
     avec les cellules qui SERAIENT entrées dans le top `limit` par |note| mais qui
     ont été écartées pour cause de ↯ (news à contre-sens), dans l'ordre |note| desc.
+
+    `hors_top` : si une liste est fournie, elle est remplie (decision-log) avec
+    TOUTES les cellules jouables NON retenues, chacune avec son `motif` :
+      - « écarté : news à contre-sens (↯) » pour un ↯ ;
+      - « hors top 3 » pour une conviction jouable surnuméraire (au-delà de `limit`).
+    Permet au decision-log de tracer le motif d'exclusion sur EXACTEMENT le même
+    classement que la tête « 🎯 Aujourd'hui » (UNE seule sélection, partout).
     """
     if seuil_conviction is None:
         try:
@@ -2474,7 +2482,53 @@ def select_paris_du_jour(
 
     # Sélection finale : on saute les ↯ et on prend les non-↯ suivantes (top `limit`).
     retenus = [d for _abs, _nom, contresens, d in candidats if not contresens]
-    return retenus[:limit]
+    selection = retenus[:limit]
+
+    # Decision-log : motif d'exclusion sur le MÊME classement que la tête. Une
+    # cellule jouable non retenue est soit un ↯ (news à contre-sens), soit hors
+    # top `limit`. Source de vérité UNIQUE = ce classement (cf. brief 23/06).
+    if hors_top is not None:
+        selection_keys = {d["fiche_key"] for d in selection}
+        for _abs, _nom, contresens, d in candidats:
+            if d["fiche_key"] in selection_keys:
+                continue
+            motif = (
+                "écarté : news à contre-sens (↯)" if contresens else "hors top 3"
+            )
+            hors_top.append({**d, "motif": motif})
+
+    return selection
+
+
+def selection_du_jour_map(
+    results: List["ActifResult"],
+    now: datetime,
+    seuil_conviction: Optional[float] = None,
+) -> Tuple[set, Dict[str, str]]:
+    """Sélection du jour pour le DECISION-LOG, dérivée de `select_paris_du_jour`.
+
+    UNE SEULE sélection du jour, partout (brief 23/06) : le decision-log écrit
+    `selection_du_jour: true` sur EXACTEMENT les cellules retenues par la tête
+    « 🎯 Aujourd'hui » (`select_paris_du_jour`, Option C). Plus aucune divergence
+    entre ce qui est AFFICHÉ et ce qui est TRAQUÉ (run_suivi / bilan_jour /
+    run_weekly lisent ce champ via `bilan_jour.load_selection_map`).
+
+    Retourne (selection_keys, motif_exclusion) :
+      - selection_keys : set des fiche_key des paris retenus (== tête) ;
+      - motif_exclusion : {fiche_key: motif} pour les cellules jouables écartées
+        (« écarté : news à contre-sens (↯) » ou « hors top 3 »).
+    Best-effort : toute exception → ensemble vide (jamais de crash du bulletin).
+    """
+    try:
+        hors_top: List[Dict[str, str]] = []
+        picks = select_paris_du_jour(
+            results, now, seuil_conviction=seuil_conviction, hors_top=hors_top,
+        )
+        keys = {p["fiche_key"] for p in picks}
+        motifs = {e["fiche_key"]: e["motif"] for e in hors_top}
+        return keys, motifs
+    except Exception:  # noqa: BLE001 — best-effort (jamais de crash mesure)
+        return set(), {}
 
 
 def build_paris_du_jour_block(
@@ -4822,22 +4876,19 @@ def render_bulletin(
     # Le module selection_jour/_data reste en place (tests + decision-log) mais ne
     # PILOTE plus la tête. La présence de `top3_picks` ne change plus le rendu de
     # la tête ; on garde la branche pour ne pas modifier le repli de fond ci-dessous.
-    if top3_picks is not None:
-        head_block = (
-            build_paris_du_jour_block(results, now, prix_reference=prix_reference)
-            + build_a_jouer_block(results, now, prix_reference=prix_reference)
-            + _SHADOW_CAPTEURS_NOTE
-        )
-    else:
-        head_block = (
-            build_decision_sheet(results, now, prix_reference=prix_reference)
-            + build_selection_du_jour_block(
-                results, now, prix_reference=prix_reference,
-                shadow_capteurs=shadow_capteurs, fiches=fiches,
-            )
-            + build_a_jouer_block(results, now, prix_reference=prix_reference)
-            + _SHADOW_CAPTEURS_NOTE
-        )
+    # [REFONTE 23/06 — UNE SEULE TÊTE] La tête « 🎯 Aujourd'hui » est TOUJOURS
+    # `build_paris_du_jour_block` (Option C), quelle que soit la valeur de
+    # `top3_picks` (gardé en paramètre pour rétro-compat d'appel, mais ne pilote
+    # plus le rendu). Plus aucune branche `build_decision_sheet` /
+    # `build_selection_du_jour_block` (têtes basées sur l'ancienne
+    # `compute_selection_du_jour`) : un seul bloc « 🎯 Aujourd'hui » rendu, jamais
+    # deux contradictoires. La tête affichée == la sélection écrite au decision-log
+    # (via `selection_du_jour_map`) == ce que le suivi/bilan traquent.
+    head_block = (
+        build_paris_du_jour_block(results, now, prix_reference=prix_reference)
+        + build_a_jouer_block(results, now, prix_reference=prix_reference)
+        + _SHADOW_CAPTEURS_NOTE
+    )
     # I14 — alertes de décision remontées juste sous « Décision du jour », avant
     # le panorama. surveillance_block est toujours présent (placeholder si vide) ;
     # _shared_block ne l'est que si un driver partagé dépasse le seuil (anti-bruit).
@@ -5005,11 +5056,13 @@ def build_decision_log_records(
     # par cellule la liste des drivers partagés qui la portent (part ≥ seuil).
     import shared_drivers as _shared_drivers  # noqa: F401 (lazy, cf. pattern existant)
     _cles_partagees = _shared_drivers.compute_shared_cles(results, HORIZONS)
-    # Étage 1b — sélection du jour (24h) : MÊME source que le bloc bulletin (1a),
-    # zéro divergence affichage⇄mesure. fiche_keys retenus + motifs d'exclusion.
-    _selection, _ecartees = compute_selection_du_jour(results, now=now)
-    _selection_keys = {s["fiche_key"] for s in _selection}
-    _motif_exclusion = {e["fiche_key"]: e["motif"] for e in _ecartees}
+    # Étage 1b — sélection du jour (24h) : MÊME source que la tête « 🎯 Aujourd'hui »
+    # (`select_paris_du_jour`, Option C), zéro divergence affichage⇄mesure. UNE
+    # SEULE sélection du jour, partout (brief 23/06) : le champ `selection_du_jour`
+    # est posé sur EXACTEMENT les cellules affichées, donc run_suivi / bilan_jour /
+    # run_weekly traquent les paris AFFICHÉS. L'ancienne `compute_selection_du_jour`
+    # (dédup famille macro + veto « tape ») est RETIRÉE de cette chaîne d'écriture.
+    _selection_keys, _motif_exclusion = selection_du_jour_map(results, now=now)
     shadow_capteurs = shadow_capteurs or {}
     records: List[Dict[str, Any]] = []
     bulletin_date = now.strftime("%Y-%m-%d")

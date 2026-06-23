@@ -835,11 +835,13 @@ def reason_non_selection(
 
     Priorité (zéro invention) :
     1. `selection_motif_exclusion` présent → raison EXACTE tracée par le sélecteur
-       (« hors top 3 » / « même pari (X) que Y ») : on la rend telle quelle.
+       (« écarté : news à contre-sens (↯) » / « hors top 3 ») : on la rend telle
+       quelle. Source unique = `select_paris_du_jour` (Option C) via
+       `selection_du_jour_map` (refonte 23/06 : UNE seule sélection, partout).
     2. Sinon, on déduit du même record : conviction non « forte » (drapeau actif
        ou |score| sous le seuil) → critère conviction ; couverture < plancher →
-       critère couverture. Ce sont EXACTEMENT les étapes 1-2 de
-       `compute_selection_du_jour` (source unique), donc pas une invention.
+       critère couverture (heuristique best-effort cohérente avec les filtres
+       jouables de `select_paris_du_jour`), donc pas une invention.
     3. Record absent / aucun critère déterminable → « raison non tracée ».
     """
     if not isinstance(record, dict):

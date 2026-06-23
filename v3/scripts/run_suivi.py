@@ -50,20 +50,11 @@ SUIVI_DIR = ROOT / "data" / "suivi"
 # mesure (n'alimente NI measures-log NI performance). v3/data/ jamais commité ici.
 SUIVI_TRACKING_DIR = ROOT / "data" / "suivi-tracking"
 EVENTS_LOG_DIR = ROOT / "data" / "events-log"
-# Futures US (ES=F / NQ=F) écrits par `fetch_us_futures.py` (tourne sur le VPS,
-# IP non bloquée par Yahoo). Lus le MATIN quand le cash US est fermé pour afficher
-# un statut « via future » au lieu de « cash fermé (ouvre 15h30) ». Best-effort :
-# fichier absent/périmé → repli sur le comportement « cash fermé » inchangé.
-FUTURES_US_DIR = ROOT / "data" / "futures-us"
-
-# Mapping cash US → future CME correspondant (ticker_principal de la fiche).
-# ^GSPC (S&P 500) → ES=F ; ^IXIC (Nasdaq) → NQ=F. ^VIX : pas de future en Phase 1.
-US_CASH_TO_FUTURE = {
-    "^GSPC": "ES=F",
-    "^IXIC": "NQ=F",
-}
-# Fraîcheur max d'un snapshot future pour être affichable (minutes).
-FUTURE_FRESH_MAX_MIN = 30
+# Note US (cash-hours only) : Twelve Data GROW ne sert AUCUNE donnée US fiable
+# hors séance cash (sonde 23/06 : futures ES/NQ vides ou figés, CFD US500/USTEC
+# vides, SPY/QQQ prepost vides). Les indices US (S&P/Nasdaq/VIX) ne sont donc
+# suivis qu'à partir de leur ouverture cash (15h30 Paris) ; avant, statut honnête
+# « cash fermé (ouvre 15h30) ». Pas de piste futures (abandon VPS/yfinance).
 
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
@@ -290,82 +281,6 @@ def fav_delta(delta_pct: Optional[float], call: str) -> Optional[float]:
     if delta_pct is None or sign is None:
         return None
     return delta_pct * sign
-
-
-def load_us_future_status(
-    cash_ticker: str,
-    date_j: date,
-    now: datetime,
-    base_dir: Path = FUTURES_US_DIR,
-    fresh_max_min: int = FUTURE_FRESH_MAX_MIN,
-) -> Optional[Dict[str, Any]]:
-    """Statut US « via future » quand le cash est fermé (matin). None si indispo.
-
-    Lit `futures-us/{date}.json` écrit par `fetch_us_futures.py` (VPS). Pour le
-    cash US `cash_ticker` (^GSPC / ^IXIC), mappe vers son future (ES=F / NQ=F) et
-    calcule un % de MOUVEMENT *future vs future* :
-        mvt = (prix_courant_future − prix_ref_future) / prix_ref_future * 100
-    où `prix_ref_future` = 1er snapshot du jour du future (proxy d'ouverture).
-
-    ⚠️ COHÉRENCE D'ÉCHELLE : le % est calculé EXCLUSIVEMENT entre prix de futures
-    (ES≈5500 vs ES≈5500). On ne mélange JAMAIS un future (≈5500) avec un proxy
-    cash type SPY (≈748). Le résultat est un % de mouvement comparable au cash.
-
-    Retourne None (repli « cash fermé ») si : pas de future mappé, fichier absent,
-    illisible, snapshot trop vieux (> `fresh_max_min`), ou référence manquante.
-    Best-effort total : toute exception → None (zéro invention, zéro crash).
-    """
-    fut = US_CASH_TO_FUTURE.get(cash_ticker)
-    if not fut:
-        return None
-    path = base_dir / f"{date_j.isoformat()}.json"
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as e:  # noqa: BLE001 — fichier KO → repli propre
-        logger.warning("suivi future %s : fichier illisible (%s)", fut, e)
-        return None
-    if not isinstance(data, dict):
-        return None
-
-    last = data.get(fut)
-    if not isinstance(last, dict):
-        return None
-    price = last.get("price")
-    ts_iso = last.get("ts")
-    if not isinstance(price, (int, float)) or price <= 0 or not ts_iso:
-        return None
-
-    # Fraîcheur : le dernier snapshot doit dater de ≤ fresh_max_min.
-    try:
-        ts = datetime.fromisoformat(ts_iso)
-        ts = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
-        age_min = (now.astimezone(timezone.utc) - ts).total_seconds() / 60.0
-    except Exception:  # noqa: BLE001 — ts illisible → repli propre
-        return None
-    if age_min < 0 or age_min > fresh_max_min:
-        return None
-
-    # Référence = 1er snapshot du jour CONTENANT ce future (proxy d'ouverture).
-    ref_price = None
-    snaps = data.get("snapshots")
-    if isinstance(snaps, list):
-        for snap in snaps:
-            if isinstance(snap, dict) and isinstance(snap.get(fut), (int, float)):
-                ref_price = float(snap[fut])
-                break
-    if not isinstance(ref_price, (int, float)) or ref_price <= 0:
-        return None
-
-    mvt_pct = round((float(price) - ref_price) / ref_price * 100.0, 2)
-    return {
-        "future": fut,
-        "price": float(price),
-        "ref_price": ref_price,
-        "mvt_pct": mvt_pct,  # % de mouvement future vs future (échelle cohérente)
-        "ts": ts_iso,
-    }
 
 
 def compute_vendre(
@@ -1117,7 +1032,6 @@ def build_suivi(
     fetch_series: Optional[Any] = None,
     config: Optional[dict] = None,
     collect_light: Optional[Callable[[], list]] = None,
-    futures_us_dir: Path = FUTURES_US_DIR,
 ) -> SuiviRapport:
     """Construit le rapport de suivi 12h/18h (R2/R3).
 
@@ -1211,31 +1125,15 @@ def build_suivi(
             seuil = None
 
         # Marché US pas encore ouvert (typiquement à 12h) → ligne explicite.
+        # Twelve GROW ne sert aucune donnée US fiable hors séance cash (futures
+        # CME vides/figés, CFD vides, prepost vide — sonde 23/06). On affiche donc
+        # honnêtement « cash fermé (ouvre 15h30) » : le suivi US réel commence à
+        # l'ouverture cash (15h30 Paris), capté par le stamp d'ouverture.
         us_pas_ouvert = (
             group == "us" and not MO.is_open_for_stamp("us", now, config)
         )
         is_select = bool(selection_map.get((actif, "24h"), False))
         if us_pas_ouvert:
-            # Cash US fermé (matin). Si on a un PRIX FRAIS de future (ES=F / NQ=F,
-            # écrit par fetch_us_futures.py sur le VPS), on affiche le statut « via
-            # future » au lieu de « cash fermé ». Le % est un MOUVEMENT future vs
-            # future (1er snapshot du jour = référence) : échelle cohérente, jamais
-            # mélangé avec un proxy cash. VIX reste « cash fermé » (pas de future).
-            fut_status = load_us_future_status(ticker, date_j, now, base_dir=futures_us_dir)
-            if fut_status is not None:
-                fut_tkr = fut_status["future"]
-                mvt = fut_status["mvt_pct"]
-                fav = fav_delta(mvt, call)  # signé PAR LE CALL (+ = sens du call)
-                rapport.lignes.append(SuiviLigne(
-                    actif=actif, call=call, ouverture=None,
-                    prix_courant=fut_status["price"], delta_pct=mvt,
-                    statut=f"🔵 via future {fut_tkr}", tendance="—",
-                    delta_vs_prec=None, suggestion="—", seuil_pct=seuil,
-                    us_pas_ouvert=True, vendre="Pas vendre", selection=is_select,
-                    fav_now=(round(fav, 2) if fav is not None else None),
-                    fav_prec=None,
-                ))
-                continue
             rapport.lignes.append(SuiviLigne(
                 actif=actif, call=call, ouverture=None, prix_courant=None,
                 delta_pct=None, statut="🕐 cash fermé (ouvre 15h30)", tendance="—",
@@ -1492,10 +1390,10 @@ def _render_markdown(r: SuiviRapport) -> str:
     if h == REPORT_12H:
         L.append("### Note sur les marchés US")
         L.append(
-            "⚠️ Cash US (S&P 500, Nasdaq, VIX) ouvre à 15h30 Paris. Les futures "
-            "cotent déjà, mais notre fournisseur de données ne les sert pas → pas "
-            "de prix US avant l'ouverture cash (ce n'est pas le marché qui dort, "
-            "c'est la donnée qui manque). Premier statut US au suivi 18h."
+            "⚠️ Cash US (S&P 500, Nasdaq, VIX) ouvre à 15h30 Paris. Notre "
+            "fournisseur de données ne sert ni les futures CME, ni les CFD, ni le "
+            "pré-marché US : avant 15h30, aucun prix US fiable n'existe pour nous "
+            "(donnée absente, pas marché endormi). Premier statut US au suivi 18h."
         )
         L.append("")
         L.append("### Positions du matin vs ouverture")

@@ -2259,6 +2259,115 @@ def build_a_jouer_block(
 
 
 # ---------------------------------------------------------------------------
+# « 🎯 Aujourd'hui » — LES PARIS DU JOUR DÉRIVÉS DES CONVICTIONS 24h (refonte
+# 23/06, décision fondateur + 3 experts). UN SEUL cerveau, UN SEUL classement :
+# la tête de bulletin n'a plus de moteur séparé (selection_jour.compute_top3,
+# catalyseur news + momentum) qui pouvait CONTREDIRE le fond (ex. « Or LONG »
+# en tête alors que la conviction 24h était « Or SHORT forte »).
+#
+# RÈGLE : les 3 paris du jour = les 3 PLUS FORTES CONVICTIONS 24h JOUABLES.
+#   - Mêmes cellules que le bloc « À jouer aujourd'hui (24h) » → jouables_cells
+#     (NON `_cell_a_eviter` : exclut 🚫 / ⚪ / ≈).
+#   - EXCLUSION supplémentaire des « fragile (couverture insuffisante) » : une
+#     conviction dégradée par couverture insuffisante ne peut pas porter un pari
+#     du jour (garde-fou « confiant ET aveugle », Thomas 16/06).
+#   - Tri par |note| décroissant (force de conviction), top 3. Sens du pari =
+#     sens de la conviction (LONG/SHORT). Si < 3 jouables : on en affiche moins
+#     (zéro invention, jamais de remplissage).
+# Conséquence : le pari ne peut JAMAIS contredire sa conviction (cohérence par
+# construction) et est TOUJOURS parmi les plus fortes.
+# ---------------------------------------------------------------------------
+
+# Convictions exclues de la tête « Aujourd'hui » : dégradées par couverture
+# insuffisante (le sens reste noté mais la conviction n'est pas portable).
+_TETE_CONVICTION_EXCLUE = "fragile (couverture insuffisante)"
+
+
+def select_paris_du_jour(
+    results: List["ActifResult"],
+    now: datetime,
+    seuil_conviction: Optional[float] = None,
+    limit: int = 3,
+) -> List[Dict[str, str]]:
+    """Sélectionne les paris du jour DEPUIS les convictions 24h jouables.
+
+    Source UNIQUE = la même que `build_a_jouer_block` (jouables_cells, NON
+    `_cell_a_eviter`). On EXCLUT en plus les convictions « fragile (couverture
+    insuffisante) ». Tri |note| décroissant, top `limit`. Retourne une liste de
+    dicts {actif, fiche_key, direction, note, note_str, raison} dans l'ordre.
+    Aucune invention : si < `limit` jouables, la liste est plus courte.
+    """
+    if seuil_conviction is None:
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import bilan_jour as _bj  # import paresseux
+            seuil_conviction = _bj._load_score_fort_seuil()
+        except Exception:  # noqa: BLE001 — défaut documenté si bilan_jour KO
+            seuil_conviction = 0.6
+
+    H = "24h"
+    candidats: List[Tuple[float, str, Dict[str, str]]] = []
+    for r in results:
+        conc = r.conclusions.get(H, "")
+        if conc not in ("LONG", "SHORT"):
+            continue
+        if _cell_a_eviter(r, H):  # 🚫 / ⚪ / ≈ → non jouable
+            continue
+        if _conviction_cell(r, H, seuil_conviction) == _TETE_CONVICTION_EXCLUE:
+            continue  # couverture insuffisante → pas de pari du jour
+        score = r.scores.get(H, 0.0)
+        candidats.append((abs(score), r.nom, {
+            "actif": r.nom,
+            "fiche_key": r.fiche_key,
+            "direction": conc,
+            "note": f"{score:.2f}",
+            "note_str": f"{score:+.2f}",
+            "raison": _critere_dominant(r, H) or "",
+        }))
+    # Tri |note| décroissant, déterministe (actif départage les ex æquo).
+    candidats.sort(key=lambda t: (-t[0], t[1]))
+    return [d for _abs, _nom, d in candidats[:limit]]
+
+
+def build_paris_du_jour_block(
+    results: List["ActifResult"],
+    now: datetime,
+    prix_reference: Optional[Dict[str, float]] = None,
+    seuil_conviction: Optional[float] = None,
+) -> List[str]:
+    """Bloc markdown « 🎯 Aujourd'hui » alimenté par les CONVICTIONS 24h jouables.
+
+    Remplace l'ancien `selection_jour_data.build_top3_block(compute_top3(...))`
+    (moteur séparé débranché — refonte 23/06). Format aligné sur l'ancien bloc
+    (actif, sens, prix de réf., raison courte = driver dominant).
+    """
+    prix_reference = prix_reference or {}
+    picks = select_paris_du_jour(results, now, seuil_conviction=seuil_conviction)
+    out: List[str] = ["## 🎯 Aujourd'hui", ""]
+    if not picks:
+        out.append(
+            "_Aucune conviction 24h jouable aujourd'hui (couverture insuffisante "
+            "ou quasi-neutre) — on ne force pas._"
+        )
+        out.append("")
+        return out
+    out.append(
+        "**Les paris du jour (max 3)** — les plus fortes convictions 24h jouables"
+    )
+    out.append("")
+    for p in picks:
+        px = prix_reference.get(p["fiche_key"])
+        px_str = f" @ {px:g}" if isinstance(px, (int, float)) else ""
+        raison = f" — {p['raison']}" if p.get("raison") else ""
+        out.append(
+            f"- **{p['actif']}** {p['direction']}{px_str} "
+            f"(conviction {p['note_str']}){raison}"
+        )
+    out.append("")
+    return out
+
+
+# ---------------------------------------------------------------------------
 # « 🎯 Sélection du jour — max 3 » (décision fondateur 12/06 : « 2-3 bons paris
 # par jour, pas 12 »). ZÉRO CUTOVER : aucun score, aucune conclusion, aucune
 # mesure de signal ne change. Bloc d'AFFICHAGE + champ de MESURE (decision-log)
@@ -4470,13 +4579,18 @@ def render_bulletin(
     #      une question différente du pari du jour — I10).
     # FEUILLE DE DÉCISION en TÊTE (refonte 22/06) : la décision en 10 s. Le reste
     # (À jouer de fond, matrice…) suit comme « le détail ».
-    # Si le NOUVEAU moteur « top 3 du jour » (selection_jour, événementiel+momentum)
-    # a fourni des picks, il PILOTE la tête de bulletin. Sinon (tests / indispo),
-    # on retombe sur l'ancienne Sélection de fond (repli sûr — jamais de bulletin vide).
+    # [REFONTE 23/06 — UN SEUL CERVEAU] La tête « 🎯 Aujourd'hui » est DÉSORMAIS
+    # DÉRIVÉE des convictions 24h jouables (build_paris_du_jour_block), PAS d'un
+    # moteur séparé. L'ancien moteur événementiel+momentum (selection_jour.
+    # compute_top3) est DÉBRANCHÉ de la tête : `top3_picks` n'alimente plus
+    # `_sjd.build_top3_block`. Cohérence par construction — le pari du jour = une
+    # des 3 plus fortes convictions 24h jouables, donc ne peut JAMAIS la contredire.
+    # Le module selection_jour/_data reste en place (tests + decision-log) mais ne
+    # PILOTE plus la tête. La présence de `top3_picks` ne change plus le rendu de
+    # la tête ; on garde la branche pour ne pas modifier le repli de fond ci-dessous.
     if top3_picks is not None:
-        import selection_jour_data as _sjd  # noqa: PLC0415
         head_block = (
-            _sjd.build_top3_block(top3_picks, prix_reference=prix_reference)
+            build_paris_du_jour_block(results, now, prix_reference=prix_reference)
             + build_a_jouer_block(results, now, prix_reference=prix_reference)
             + _SHADOW_CAPTEURS_NOTE
         )

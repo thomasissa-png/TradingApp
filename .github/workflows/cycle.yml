@@ -272,6 +272,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r v3/requirements.txt
 
+      # ----- Indices US continus (OANDA CFD ~24h) : prix US DÈS 8h, sans VPS -----
+      # Tourne AVANT les runners aux créneaux du matin/journée (bulletin/stamp/
+      # suivi). Append une cotation indice US dans futures-us/{date}.json ; la 1ère
+      # du jour (bulletin 7h) = référence « entrée turbo ». run_suivi la lit pour
+      # afficher « 🔵 via future » dès 12h. Best-effort (exit 0) : token absent /
+      # marché OANDA fermé (week-end) → n'écrit rien, ne casse jamais le cycle.
+      - name: Indices US (OANDA) — cotation continue avant l'ouverture cash
+        if: steps.guard.outputs.run == 'true' && (steps.route.outputs.slot == 'bulletin' || steps.route.outputs.slot == 'stamp' || steps.route.outputs.slot == 'suivi12' || steps.route.outputs.slot == 'suivi18')
+        env:
+          OANDA_API_TOKEN: ${{ secrets.OANDA_API_TOKEN }}
+          OANDA_ENV: ${{ secrets.OANDA_ENV }}
+          LOG_LEVEL: INFO
+        run: python v3/scripts/fetch_us_index.py
+
       # ----- Slot BULLETIN (07h) : R1 Briefing COMPLET = ingest → bulletin → mesure -----
       - name: 1. Ingest news (RSS + early-signal + GNews/NewsAPI + extraction DeepSeek)
         if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'bulletin'

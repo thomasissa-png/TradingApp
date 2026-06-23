@@ -62,10 +62,33 @@ def assemble_assets(
     # label → fiche_key (pour rattacher les impacts news à l'actif).
     label_to_key = {getattr(r, "nom", ""): getattr(r, "fiche_key", "") for r in results}
 
+    # R1 — Fraîcheur sur la PREMIÈRE apparition. Une news récurrente (même identité
+    # = colonne `event_id`/hash) est RE-LOGGÉE à chaque cycle où elle réapparaît :
+    # `parse_events_with_ingest_ts` lui attache alors le timestamp du dernier batch,
+    # ce qui rajeunit artificiellement une news rétrospective (ex. l'or « avril »,
+    # hash 26051cf17f92, vu il y a ~20j mais re-loggé ce matin → passait FRESH_MAX_H).
+    # On indexe donc, par identité, l'`ingest_ts` MINIMALE (la plus ancienne) sur
+    # toutes les lignes partageant ce hash, et on l'utilise comme fraîcheur de
+    # référence. ZÉRO invention : sans hash exploitable, on garde l'ingest_ts de
+    # la ligne (comportement actuel).
+    first_seen_by_id: Dict[str, datetime] = {}
+    for ev in events:
+        ev_id = (ev.get("event_id", "") or "").strip()
+        ts0 = ev.get("ingest_ts")
+        if not ev_id or not isinstance(ts0, datetime):
+            continue
+        prev = first_seen_by_id.get(ev_id)
+        if prev is None or ts0 < prev:
+            first_seen_by_id[ev_id] = ts0
+
     # News par actif (clé = fiche_key).
     news_par_key: Dict[str, List[sj.NewsItem]] = {}
     for ev in events:
+        ev_id = (ev.get("event_id", "") or "").strip()
         ts = ev.get("ingest_ts")
+        # Fraîcheur = 1ʳᵉ apparition de cette identité (R1), sinon ingest_ts de la ligne.
+        if ev_id and ev_id in first_seen_by_id:
+            ts = first_seen_by_id[ev_id]
         materiality_ev = (ev.get("materiality", "") or "")
         for imp in _impacts(ev):
             label = _CODE_TO_LABEL.get(imp.get("asset", ""))

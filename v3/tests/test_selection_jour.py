@@ -160,3 +160,95 @@ def test_meilleure_news_gardee_par_actif():
     a = _asset(news=[_news("LONG", "high", "reported"), _news("SHORT", "high", "confirmed")])
     top = sj.select_top3([a], NOW, ORDRE)
     assert top and top[0].direction == "SHORT" and top[0].palier == sj.PALIER_P1
+
+
+# ── R2 : garde-fou fond sur la porte news ────────────────────────────────────
+def test_R2_catalyseur_P2_contre_fond_est_rejete():
+    # News LONG P2 (medium×confirmed) vs fond SHORT → catalyseur faible ne prime pas.
+    n = _news("LONG", "medium", "confirmed", age_h=1.0)
+    a = _asset(news=[n], fond_dir="SHORT")
+    assert sj.select_top3([a], NOW, ORDRE) == []
+
+
+def test_R2_catalyseur_P1_frais_contre_fond_est_retenu():
+    # News LONG P1 (high×confirmed) ET fraîche (1h) vs fond SHORT → la grosse news
+    # casse l'habitude et prime.
+    n = _news("LONG", "high", "confirmed", age_h=1.0)
+    a = _asset(news=[n], fond_dir="SHORT")
+    top = sj.select_top3([a], NOW, ORDRE)
+    assert top and top[0].porte == "news" and top[0].direction == "LONG"
+
+
+def test_R2_catalyseur_P1_moins_frais_contre_fond_est_rejete():
+    # P1 mais age 8h (> FRESH_OK_H=6h) à contre-fond → ne casse plus l'habitude → rejet.
+    n = _news("LONG", "high", "confirmed", age_h=8.0)
+    a = _asset(news=[n], fond_dir="SHORT")
+    assert sj.select_top3([a], NOW, ORDRE) == []
+
+
+def test_R2_catalyseur_P2_sans_fond_oppose_est_retenu():
+    # P2 LONG sans fond opposé (fond vide) → retenu (le garde-fou R2 ne s'applique pas).
+    n = _news("LONG", "medium", "confirmed", age_h=1.0)
+    a = _asset(news=[n], fond_dir="")
+    top = sj.select_top3([a], NOW, ORDRE)
+    assert top and top[0].porte == "news" and top[0].direction == "LONG"
+
+
+def test_R2_catalyseur_P2_fond_concordant_est_retenu():
+    # P2 LONG avec fond LONG (concordant) → retenu.
+    n = _news("LONG", "medium", "confirmed", age_h=1.0)
+    a = _asset(news=[n], fond_dir="LONG")
+    top = sj.select_top3([a], NOW, ORDRE)
+    assert top and top[0].direction == "LONG"
+
+
+# ── R3 : alignement sur le net des news fraîches ─────────────────────────────
+def test_R3_news_minoritaire_contre_net_frais_est_rejetee():
+    # Net frais nettement SHORT (deux SHORT P1) ; une news LONG minoritaire P1 ne
+    # doit PAS commander → seule la SHORT est retenue.
+    a = _asset(news=[
+        _news("SHORT", "high", "confirmed", age_h=1.0),
+        _news("SHORT", "high", "confirmed", age_h=2.0),
+        _news("LONG", "high", "confirmed", age_h=1.0),
+    ])
+    top = sj.select_top3([a], NOW, ORDRE)
+    assert top and top[0].direction == "SHORT"
+
+
+def test_R3_net_nul_ne_bloque_pas():
+    # Vrai 50/50 (un LONG P1 et un SHORT P1, scores égaux) → net == 0 → R3 ne bloque
+    # pas ; la news la mieux classée (départage interne) est retenue.
+    a = _asset(news=[
+        _news("LONG", "high", "confirmed", age_h=1.0),
+        _news("SHORT", "high", "confirmed", age_h=2.0),
+    ])
+    top = sj.select_top3([a], NOW, ORDRE)
+    assert top and top[0].porte == "news"
+
+
+# ── Cas réel Or du 23/06 : aucun pari Or LONG ne doit sortir ──────────────────
+def test_cas_or_23_06_aucun_pari_long():
+    # Reproduction : fond SHORT fort ; news catalyseur Or LONG « avril » (structurel,
+    # high/confirmed = P1) mais VIEILLE (1ʳᵉ apparition ~20j → R1 la date à 20j) ;
+    # net des news FRAÎCHES baissier (Fed + paix dominent en SHORT). Triple garde-fou.
+    age_avril_h = 20 * 24.0  # 1ʳᵉ apparition il y a ~20 jours (R1 applique ce min)
+    news = [
+        # Catalyseur récurrent « avril » : haussier mais vieux.
+        _news("LONG", "high", "confirmed", nature="structurel",
+              age_h=age_avril_h, resume="Banques centrales achats nets d'or en avril"),
+        # Contexte frais baissier qui domine (Fed hawkish + désescalade géopolitique).
+        _news("SHORT", "high", "confirmed", age_h=2.0, resume="Fed hawkish"),
+        _news("SHORT", "medium", "confirmed", age_h=3.0, resume="désescalade"),
+    ]
+    a = _asset(actif="Or", key="or", news=news, fond_dir="SHORT")
+    top = sj.select_top3([a], NOW, ORDRE)
+    # Aucun pari Or LONG. (Le SHORT, lui, reste cohérent fond + net frais.)
+    assert all(not (p.fiche_key == "or" and p.direction == "LONG") for p in top)
+
+
+def test_cas_or_23_06_r1_seule_tue_le_long():
+    # Même news « avril » SEULE (sans contexte) : R1 (1ʳᵉ apparition 20j > 12h) suffit
+    # à la tuer, indépendamment de R2/R3.
+    n = _news("LONG", "high", "confirmed", nature="structurel", age_h=20 * 24.0)
+    a = _asset(actif="Or", key="or", news=[n], fond_dir="")
+    assert sj.select_top3([a], NOW, ORDRE) == []

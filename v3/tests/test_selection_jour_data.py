@@ -123,8 +123,11 @@ def test_build_top3_block_vide():
 def test_per_impact_confidence_filtre_le_tag_faible(monkeypatch):
     # Cas réel : « Warsh hawkish » → EURUSD:LONG:low (tag douteux) ET EURUSD:SHORT:medium.
     # Le LONG:low ne doit PAS déclencher ; le SHORT:medium gagne → EUR/USD SHORT.
+    # NB : fond 24h SHORT (concordant) pour isoler la propriété testée (filtrage du
+    # tag par-impact) sans la coupler au garde-fou fond R2 — qui rejette à juste titre
+    # une news P2 à contre-fond. R2 est couvert par les tests dédiés de selection_jour.
     monkeypatch.setattr(sjd, "_CODE_TO_LABEL", {"EURUSD": "EUR/USD"})
-    results = [_R("EUR/USD", "eurusd", {"24h": "LONG"})]
+    results = [_R("EUR/USD", "eurusd", {"24h": "SHORT"})]
     events = [
         {"ingest_ts": NOW - timedelta(hours=1), "materiality": "high",
          "reliability": "confirmed", "nature": "ponctuel", "trigger": "Warsh hawkish A",
@@ -160,6 +163,47 @@ def test_pas_de_proxy_futures_inerte():
     # Vérifié sur pièces : Twelve ne sert aucun future CME + yfinance bloqué CI →
     # un proxy ES=F/NQ=F serait INERTE. On n'en met donc aucun (honnêteté data).
     assert sjd.PROXY_OVERNIGHT == {}
+
+
+def test_R1_fraicheur_sur_premiere_apparition(monkeypatch):
+    # Cas réel Or « avril » (hash 26051cf17f92) : RE-LOGGÉE ce matin (ingest_ts frais)
+    # mais 1ʳᵉ apparition il y a ~20j. assemble_assets doit retenir l'ingest_ts MINIMAL
+    # par event_id → la NewsItem a un âge de ~20j → tuée par FRESH_MAX_H. Sans cette
+    # règle, la ligne re-loggée (1h) passerait le filtre et justifierait un Or LONG.
+    monkeypatch.setattr(sjd, "_CODE_TO_LABEL", {"GOLD": "Or"})
+    results = [_R("Or", "or", {"24h": "SHORT"})]
+    vieux = NOW - timedelta(days=20)
+    frais = NOW - timedelta(hours=1)
+    base = {"materiality": "medium", "reliability": "confirmed", "nature": "structurel",
+            "trigger": "Banques centrales achats nets d'or en avril",
+            "impacts": "GOLD:LONG:high", "event_id": "26051cf17f92"}
+    events = [
+        {**base, "ingest_ts": vieux},   # 1ʳᵉ apparition
+        {**base, "ingest_ts": frais},   # re-journalisation de ce matin
+    ]
+    assets = sjd.assemble_assets(
+        results, events, NOW, fiche_meta={"or": {"famille": "métaux-précieux"}},
+        get_closes=lambda k: [], get_session_move=lambda k: None,
+        get_post_news_move=lambda k, dt: None)
+    a = assets[0]
+    # Les deux lignes sont rattachées, mais toutes deux datées de la 1ʳᵉ apparition.
+    ages = sorted(sj._fresh_hours(n, NOW) for n in a.news)
+    assert all(age > sj.FRESH_MAX_H for age in ages)
+    # → aucun pari Or LONG (catalyseur trop vieux).
+    assert sj.select_top3(assets, NOW, ["or"]) == []
+
+
+def test_R1_sans_event_id_garde_ingest_ts_de_ligne(monkeypatch):
+    # Pas de hash exploitable → comportement actuel conservé (zéro invention) :
+    # la news garde l'ingest_ts de sa ligne (frais → reste éligible).
+    monkeypatch.setattr(sjd, "_CODE_TO_LABEL", {"GOLD": "Or"})
+    results = [_R("Or", "or", {"24h": "SHORT"})]
+    events = [_ev("GOLD", "SHORT", age_h=1.0)]  # _ev ne pose pas d'event_id
+    assets = sjd.assemble_assets(
+        results, events, NOW, fiche_meta={"or": {"famille": "x"}},
+        get_closes=lambda k: [], get_session_move=lambda k: None,
+        get_post_news_move=lambda k, dt: None)
+    assert abs(sj._fresh_hours(assets[0].news[0], NOW) - 1.0) < 1e-6
 
 
 def test_garde_fou_contradiction_via_session_move(monkeypatch):

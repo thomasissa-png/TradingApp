@@ -152,9 +152,37 @@ def _contradiction_active(asset: "AssetDay", direction: str, palier: int) -> boo
     return False
 
 
+def _net_news_frais(asset: "AssetDay", now: datetime) -> float:
+    """Net directionnel des news FRAÎCHES (age <= FRESH_MAX_H) de l'actif : somme
+    des scores de matérialité SIGNÉS par direction (LONG = +, SHORT = −). Sert au
+    garde-fou R3 (une news de sens minoritaire ne doit pas commander quand le net
+    frais penche dans l'autre sens). Les news sans horodatage ou non déclencheuses
+    (score 0) ne pèsent pas. 0.0 = vrai 50/50 → R3 ne bloque pas."""
+    net = 0.0
+    for n in asset.news:
+        if n.direction not in ("LONG", "SHORT"):
+            continue
+        score = _materiality_score(n)
+        if score <= 0:
+            continue
+        age = _fresh_hours(n, now)
+        if age is None or age > FRESH_MAX_H:
+            continue
+        net += score if n.direction == "LONG" else -score
+    return net
+
+
 def _news_door(asset: "AssetDay", now: datetime) -> Optional[Pick]:
     """Porte CATALYSEUR : meilleure news déclencheuse, fraîche, non déjà cotée,
-    non activement contredite. Retourne un Pick ou None."""
+    non activement contredite. Retourne un Pick ou None.
+
+    Garde-fous AJOUTÉS (juin 2026, sans rien retirer de l'anti-faux-négatif) :
+      - R2 : si le fond contredit la news, le catalyseur ne prime QUE s'il est un
+        vrai P1 frais (grosse news qui casse l'habitude). P2 ou P1 moins frais à
+        contre-fond → rejeté (s'aligne sur le fond).
+      - R3 : une news de sens MINORITAIRE est rejetée quand le net des news fraîches
+        de l'actif penche dans l'autre sens (net != 0)."""
+    net_frais = _net_news_frais(asset, now)
     best: Optional[Tuple[int, int, float, float, NewsItem]] = None
     for n in asset.news:
         if n.direction not in ("LONG", "SHORT"):
@@ -165,6 +193,18 @@ def _news_door(asset: "AssetDay", now: datetime) -> Optional[Pick]:
             continue
         age = _fresh_hours(n, now)
         if age is None or age > FRESH_MAX_H:
+            continue
+        # R2 — Garde-fou fond : si le fond va à l'inverse de la news, seul un vrai
+        # catalyseur P1 ET frais (age <= FRESH_OK_H) peut casser l'habitude. Sinon
+        # (P2, ou P1 moins frais), le catalyseur doit s'aligner sur le fond → rejet.
+        if asset.fond_dir in ("LONG", "SHORT") and asset.fond_dir != n.direction:
+            if not (palier == PALIER_P1 and age <= FRESH_OK_H):
+                continue
+        # R3 — Alignement sur le sens NET des news fraîches : on rejette une news
+        # de sens minoritaire quand le net frais (non nul) penche à l'inverse.
+        if net_frais > 0 and n.direction == "SHORT":
+            continue
+        if net_frais < 0 and n.direction == "LONG":
             continue
         consomme = _consomme_ratio(n)
         # 6-12h : éligible seulement si le move n'est pas déjà consommé.

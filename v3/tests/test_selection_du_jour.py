@@ -242,21 +242,43 @@ def test_decision_log_selection_du_jour_true():
 
 
 def test_decision_log_selection_motif_exclusion():
-    fort = _actif("Or", "or", score_24h=0.9, driver_cle="drv_macro", driver_nom="Fed")
-    faible = _actif("Argent", "argent", score_24h=0.7, driver_cle="drv_macro", driver_nom="Fed")
-    records = sa.build_decision_log_records([fort, faible], _NOW)
-    rec_or = next(r for r in records if r["actif"] == "Or" and r["horizon"] == "24h")
-    rec_ag = next(r for r in records if r["actif"] == "Argent" and r["horizon"] == "24h")
-    assert rec_or["selection_du_jour"] is True
-    assert rec_ag["selection_du_jour"] is False
-    assert rec_ag["selection_motif_exclusion"] == "même pari (drv_macro) que Or"
+    """UNE SEULE sélection (refonte 23/06) : le decision-log dérive de
+    `select_paris_du_jour` (Option C, top 3 par |note|, PAS de dédup famille).
+    Avec 4 actifs jouables, les 3 plus forts sont sélectionnés et le 4e est
+    écarté avec le motif « hors top 3 »."""
+    a = _actif("Or", "or", score_24h=0.9)
+    b = _actif("Argent", "argent", score_24h=0.8)
+    c = _actif("Cacao", "cacao", score_24h=0.75)
+    d = _actif("Café", "cafe", score_24h=0.65)  # 4e par |note| → hors top 3
+    records = sa.build_decision_log_records([a, b, c, d], _NOW)
+
+    def _rec(actif):
+        return next(r for r in records if r["actif"] == actif and r["horizon"] == "24h")
+
+    assert _rec("Or")["selection_du_jour"] is True
+    assert _rec("Argent")["selection_du_jour"] is True
+    assert _rec("Cacao")["selection_du_jour"] is True
+    assert _rec("Café")["selection_du_jour"] is False
+    assert _rec("Café")["selection_motif_exclusion"] == "hors top 3"
+    # Pas de dédup famille macro au decision-log : Or et Argent (même driver par
+    # défaut) sont TOUS DEUX sélectionnés (cohérence avec la tête approuvée).
 
 
 def test_decision_log_selection_false_quand_non_selectionnee():
-    a = _actif("Or", "or", score_24h=0.4)  # molle → non sélectionnée
-    records = sa.build_decision_log_records([a], _NOW)
-    rec_24h = next(r for r in records if r["horizon"] == "24h")
+    """Une cellule jouable surnuméraire (au-delà du top 3) → selection_du_jour
+    False + motif « hors top 3 ». Source = `select_paris_du_jour`."""
+    forts = [
+        _actif("Or", "or", score_24h=0.9),
+        _actif("Argent", "argent", score_24h=0.8),
+        _actif("Cacao", "cacao", score_24h=0.7),
+    ]
+    surnumeraire = _actif("Café", "cafe", score_24h=0.4)  # 4e → hors top 3
+    records = sa.build_decision_log_records(forts + [surnumeraire], _NOW)
+    rec_24h = next(
+        r for r in records if r["actif"] == "Café" and r["horizon"] == "24h"
+    )
     assert rec_24h["selection_du_jour"] is False
+    assert rec_24h["selection_motif_exclusion"] == "hors top 3"
 
 
 # ---------------------------------------------------------------------------
@@ -687,3 +709,88 @@ def test_positions_1m_objectif_1m_et_dedup(monkeypatch):
 def test_carry_1m_allonge_a_96h():
     # Cohérence horizon (audit 1m) : le maintien 1m ne doit plus être < le 7j.
     assert sa.CARRY_MAX_AGE_H["1m"] >= sa.CARRY_MAX_AGE_H["7j"]
+
+
+# ---------------------------------------------------------------------------
+# UNE SEULE sélection du jour, partout (refonte 23/06, brief fondateur)
+# La tête « 🎯 Aujourd'hui » (select_paris_du_jour) == le champ decision-log
+# selection_du_jour == ce que le suivi/bilan traquent (load_selection_map).
+# ---------------------------------------------------------------------------
+
+def _actif_contresens(nom, fiche_key, *, score_24h, direction="LONG"):
+    """ActifResult dont la cellule 24h porte un ↯ (news à contre-sens) via
+    divergence_quant_news — même source de vérité que la colonne Drapeaux."""
+    a = _actif(nom, fiche_key, score_24h=score_24h, direction=direction)
+    a.divergence_quant_news = {"24h": True}
+    return a
+
+
+def test_selection_du_jour_map_egale_select_paris_du_jour():
+    """Le set de fiche_key marqués selection_du_jour:true (via selection_du_jour_map,
+    qui alimente le decision-log) == EXACTEMENT le set retourné par
+    select_paris_du_jour (la tête). Aucune divergence possible."""
+    actifs = [
+        _actif("Or", "or", score_24h=0.9),
+        _actif("Argent", "argent", score_24h=0.8),
+        _actif("Cacao", "cacao", score_24h=0.7),
+        _actif("Café", "cafe", score_24h=0.6),  # 4e → hors top 3
+    ]
+    tete = {p["fiche_key"] for p in sa.select_paris_du_jour(actifs, _NOW)}
+    keys, _motifs = sa.selection_du_jour_map(actifs, _NOW)
+    assert keys == tete
+    assert keys == {"or", "argent", "cacao"}
+
+
+def test_profil_23_06_contresens_exclu_tete_egale_decision_log():
+    """Reproduit le profil 23/06 : Or et EUR portent un ↯ (news à contre-sens) et
+    sont EXCLUS. La sélection écrite au decision-log = les non-↯ (Cacao/Argent/CAC),
+    IDENTIQUE à la tête. C'est ce que load_selection_map renverrait → le suivi
+    traque CES positions (plus de divergence tête ↔ suivi)."""
+    actifs = [
+        _actif_contresens("Or", "or", score_24h=0.95),       # ↯ → exclu
+        _actif_contresens("EUR/USD", "eurusd", score_24h=0.90),  # ↯ → exclu
+        _actif("Cacao", "cacao", score_24h=0.80),
+        _actif("Argent", "argent", score_24h=0.75),
+        _actif("CAC", "cac", score_24h=0.70),
+    ]
+    # 1) La tête affiche les non-↯ (top 3 par |note|).
+    tete = {p["fiche_key"] for p in sa.select_paris_du_jour(actifs, _NOW)}
+    assert tete == {"cacao", "argent", "cac"}
+
+    # 2) Le decision-log marque selection_du_jour:true sur EXACTEMENT ces cellules.
+    records = sa.build_decision_log_records(actifs, _NOW)
+    selected = {
+        r["fiche_key"] for r in records
+        if r["horizon"] == "24h" and r.get("selection_du_jour") is True
+    }
+    assert selected == tete
+
+    # 3) Les ↯ écartés portent le motif « écarté : news à contre-sens (↯) ».
+    motifs = {
+        r["fiche_key"]: r.get("selection_motif_exclusion")
+        for r in records if r["horizon"] == "24h"
+    }
+    assert motifs["or"] == "écarté : news à contre-sens (↯)"
+    assert motifs["eurusd"] == "écarté : news à contre-sens (↯)"
+
+    # 4) load_selection_map (ce que le suivi/bilan traquent) renvoie les MÊMES
+    #    cellules sélectionnées que la tête (écriture → lecture round-trip).
+    import json as _json
+    import tempfile
+    from datetime import date as _date
+    from pathlib import Path as _Path
+
+    import bilan_jour as _bj
+    with tempfile.TemporaryDirectory() as d:
+        log_dir = _Path(d)
+        fp = log_dir / "2026-06-12-07h.jsonl"
+        with fp.open("w", encoding="utf-8") as fh:
+            for r in records:
+                fh.write(_json.dumps(r, ensure_ascii=False) + "\n")
+        sel_map = _bj.load_selection_map(_date(2026, 6, 12), decision_log_dir=log_dir)
+    selected_via_map = {
+        actif for (actif, h), v in sel_map.items() if h == "24h" and v is True
+    }
+    # load_selection_map indexe par NOM d'actif (pas fiche_key) → on convertit.
+    noms_attendus = {"Cacao", "Argent", "CAC"}
+    assert selected_via_map == noms_attendus

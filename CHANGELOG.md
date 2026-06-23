@@ -2,6 +2,41 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-06-23 — Futures US le matin (Phase 1) : fetch VPS + lecture suivi
+
+Le matin, le cash US est fermé (ouvre 15h30) et Twelve Data ne sert AUCUN future
+CME (ES=F/NQ=F vides), yfinance bloqué sur les runners GitHub. Solution : un fetch
+des futures depuis une IP non bloquée (le VPS) qui écrit un fichier, lu par le
+cycle (GitHub Actions). Phase 1 = CÔTÉ REPO uniquement. Aucune touche au scoring /
+matrice / conclusions / sélection / bilan. WIN RATE ONLY.
+
+### A — Nouveau script `v3/scripts/fetch_us_futures.py`
+- Fetch yfinance de ES=F (S&P 500) et NQ=F (Nasdaq). VIX hors Phase 1.
+- Append d'un snapshot horodaté dans `v3/data/futures-us/{YYYY-MM-DD}.json` :
+  dernier prix par ticker (top niveau) + série `snapshots` (1er snapshot = réf).
+- Best-effort TOTAL : yfinance KO/vide → n'écrit RIEN (zéro fichier vide, zéro
+  invention), log + exit 0. Conçu pour tourner sur le VPS (cron). Le commit/push
+  est délégué au wrapper VPS (câblage séparé).
+
+### B — Intégration suivi (`run_suivi.py`)
+- Quand le cash US est fermé (`us_pas_ouvert`) ET qu'un prix future FRAIS (ts ≤
+  30 min) existe : statut « 🔵 via future ES=F/NQ=F » au lieu de « cash fermé ».
+- % calculé FUTURE vs FUTURE (snapshot courant vs 1er snapshot du jour) → échelle
+  cohérente, JAMAIS mélangé avec un proxy cash. Favorable signé par le call.
+- Fichier absent/périmé → repli « 🕐 cash fermé (ouvre 15h30) » inchangé.
+- VIX reste « cash fermé » (pas de future Phase 1).
+
+### Tests
+- `tests/test_fetch_us_futures.py` (NOUVEAU, 6 tests, fetcher injecté, zéro réseau).
+- `tests/test_run_suivi.py` : +3 tests (via future frais / périmé / échelle), test
+  « cash fermé » existant adapté (dir futures dédié vide) — reste vert.
+- Résultat : `test_fetch_us_futures` + `test_run_suivi` + `test_build_html*` =
+  98 passed (baseline : pandas/holidays absents de l'env, inchangé).
+
+### Reste à câbler (Phase 1bis, VPS) — hors repo
+- Wrapper cron VPS : `python v3/scripts/fetch_us_futures.py && git add
+  v3/data/futures-us && git commit -m "data: futures US snapshot" && git push`.
+
 ## 2026-06-23 — Suivi 12h/18h : 4 fixes de rendu (cohérence sorties, news, signe, légende)
 
 Audit du rendu du suivi (`run_suivi.py`) sur le rapport réel `2026-06-23-12h.md`,

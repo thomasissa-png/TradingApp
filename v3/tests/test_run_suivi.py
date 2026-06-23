@@ -73,8 +73,11 @@ def env(tmp_path):
     dlog = tmp_path / "decision-log"
     dlog.mkdir()
     sdir = tmp_path / "suivi"
+    # Dir futures-us DÉDIÉ et VIDE par défaut : garantit le repli « cash fermé »
+    # dans les tests qui n'injectent pas de future (isolation du dir data réel).
+    fdir = tmp_path / "futures-us"
     return {
-        "bdir": bdir, "odir": odir, "dlog": dlog, "sdir": sdir,
+        "bdir": bdir, "odir": odir, "dlog": dlog, "sdir": sdir, "fdir": fdir,
         "fiches": FICHES, "tmp": tmp_path,
     }
 
@@ -90,6 +93,7 @@ def _build(env, report_type, now, cur, fiches=None):
         prix_ouverture_dir=env["odir"],
         fiches=fiches or env["fiches"],
         fetch_price=lambda t: cur.get(t),
+        futures_us_dir=env["fdir"],
     )
 
 
@@ -208,6 +212,7 @@ def test_suggestion_sortie_dans_rapport(env):
 # ---------------------------------------------------------------------------
 
 def test_us_pas_encore_ouvert_a_12h(env):
+    # SANS fichier futures (dir vide) → repli « cash fermé » INCHANGÉ.
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
     r = _build(env, "12h", now, {"GC=F": 3400.0, "^FCHI": 8120.0, "^GSPC": 5301.0})
     sp = _ligne(r, "S&P 500")
@@ -216,6 +221,69 @@ def test_us_pas_encore_ouvert_a_12h(env):
     assert sp.delta_pct is None  # pas de delta trompeur
     # Note honnête : cash fermé jusqu'à 15h30, futures non servis par notre source.
     assert "Cash US" in r.markdown and "futures" in r.markdown
+
+
+def _ecrire_future(env, day, snapshots, last_ts):
+    """Écrit un fichier futures-us minimal {date}.json pour les tests."""
+    env["fdir"].mkdir(parents=True, exist_ok=True)
+    data = {"date": day, "snapshots": snapshots}
+    for tkr in ("ES=F", "NQ=F"):
+        # Dernier prix = dernier snapshot contenant le ticker.
+        vals = [s[tkr] for s in snapshots if tkr in s]
+        if vals:
+            data[tkr] = {"price": vals[-1], "ts": last_ts}
+    (env["fdir"] / f"{day}.json").write_text(
+        json.dumps(data, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def test_us_via_future_frais_affiche_le_mouvement_signe(env):
+    # ES=F : ref (1er snapshot) 5500 → courant 5533 = +0.60% de mouvement.
+    # S&P 500 est LONG dans le bulletin → fav_now positif (va dans le sens du call).
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    ts = now.astimezone(ZoneInfo("UTC")).isoformat()  # frais (= now)
+    _ecrire_future(env, "2026-06-08", [
+        {"ts": ts, "ES=F": 5500.0, "NQ=F": 19800.0},
+        {"ts": ts, "ES=F": 5533.0, "NQ=F": 19850.0},
+    ], last_ts=ts)
+    r = _build(env, "12h", now, {"GC=F": 3400.0, "^FCHI": 8120.0})
+    sp = _ligne(r, "S&P 500")
+    assert sp.us_pas_ouvert is True
+    assert sp.statut == "🔵 via future ES=F"
+    assert sp.delta_pct == 0.6  # mouvement future vs future
+    assert sp.fav_now == 0.6    # LONG → favorable positif
+    # ÉCHELLE : le prix affiché est bien celui du FUTURE (≈5533), jamais un cash.
+    assert sp.prix_courant == 5533.0
+
+
+def test_us_via_future_perime_repli_cash_ferme(env):
+    # Snapshot vieux de > 30 min → périmé → repli « cash fermé ».
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    vieux = datetime(2026, 6, 8, 9, 0, tzinfo=ZoneInfo("UTC")).isoformat()
+    _ecrire_future(env, "2026-06-08", [
+        {"ts": vieux, "ES=F": 5500.0},
+        {"ts": vieux, "ES=F": 5533.0},
+    ], last_ts=vieux)
+    r = _build(env, "12h", now, {"GC=F": 3400.0, "^FCHI": 8120.0})
+    sp = _ligne(r, "S&P 500")
+    assert sp.statut == "🕐 cash fermé (ouvre 15h30)"
+    assert sp.delta_pct is None
+
+
+def test_us_via_future_echelle_jamais_melangee(env):
+    # Le % du future (5500→5533) ne doit JAMAIS se calculer contre un cash (748).
+    # On vérifie que le delta est cohérent avec un mouvement future vs future.
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    ts = now.astimezone(ZoneInfo("UTC")).isoformat()
+    _ecrire_future(env, "2026-06-08", [
+        {"ts": ts, "ES=F": 5500.0},
+        {"ts": ts, "ES=F": 5533.0},
+    ], last_ts=ts)
+    r = _build(env, "12h", now, {"GC=F": 3400.0, "^FCHI": 8120.0})
+    sp = _ligne(r, "S&P 500")
+    # +0.6% = (5533-5500)/5500. Un mélange avec 748 donnerait un % aberrant.
+    assert sp.delta_pct == 0.6
+    assert abs(sp.delta_pct) < 5  # garde-fou : pas un % aberrant type 639%
 
 
 def test_us_ouvert_a_18h(env):

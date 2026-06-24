@@ -126,8 +126,10 @@ def test_a_bloc_tete_affiche_aujourdhui_et_sens():
     res = [_make("Or", -0.90), _make("EurUsd", -0.95)]
     block = "\n".join(sa.build_paris_du_jour_block(res, NOW))
     assert "## 🎯 Aujourd'hui" in block
-    assert "**Or** SHORT" in block
-    assert "**EurUsd** SHORT" in block
+    # Tableau aligné (fondateur 24/06) au lieu de puces de texte.
+    assert "| Actif | Sens | Prix d'entrée | Conviction | Pourquoi |" in block
+    assert "| **Or** | SHORT |" in block
+    assert "| **EurUsd** | SHORT |" in block
 
 
 def test_a_moins_de_trois_jouables_pas_de_remplissage():

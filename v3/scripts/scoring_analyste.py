@@ -1604,11 +1604,19 @@ def _enrich_net_news_label(
     if label != SYNTHESE_NET_LABEL:
         return label
     sens, titre = _dominant_news_for_actif(now).get(r.nom, ("", ""))
-    if not sens:
-        return label  # rien d'exploitable → on garde l'existant (jamais de crash)
-    if titre:
+    if titre and sens:
         return f"news net {sens} : {titre}"
-    return f"news net {sens}"
+    # Pas de titre événementiel exploitable : on NE retombe PLUS sur le jargon
+    # « Synthèse news (net, IA) » (fondateur : « ça n'a aucun sens »). On dérive le
+    # sens net du call (24h prioritaire) pour rester PARLANT, sinon repli neutre.
+    if not sens:
+        conc = r.conclusions.get("24h") or next(
+            (c for c in r.conclusions.values() if c in ("LONG", "SHORT")), ""
+        )
+        sens = {"LONG": "haussière", "SHORT": "baissière"}.get(conc, "")
+    if sens:
+        return f"news net {sens} (pas de titre marquant aujourd'hui)"
+    return "contexte news (synthèse du flux)"
 
 
 def _feed_news_contredit_call(
@@ -2588,13 +2596,17 @@ def build_paris_du_jour_block(
         "**Les paris du jour (max 3)** — les plus fortes convictions 24h jouables"
     )
     out.append("")
+    # Tableau (aligné sur le reste des rapports) au lieu d'un bloc de puces de texte
+    # (demande fondateur 24/06). Colonnes courtes → lisible sur mobile (5 col.).
+    out.append("| Actif | Sens | Prix d'entrée | Conviction | Pourquoi |")
+    out.append("|---|---|---|---|---|")
     for p in picks:
         px = prix_reference.get(p["fiche_key"])
-        px_str = f" @ {px:g}" if isinstance(px, (int, float)) else ""
-        raison = f" — {p['raison']}" if p.get("raison") else ""
+        px_str = f"{px:g}" if isinstance(px, (int, float)) else "—"
+        raison = p.get("raison") or "—"
         out.append(
-            f"- **{p['actif']}** {p['direction']}{px_str} "
-            f"(conviction {p['note_str']}){raison}"
+            f"| **{p['actif']}** | {p['direction']} | {px_str} "
+            f"| {p['note_str']} | {raison} |"
         )
     out.append("")
     out.extend(_ligne_ecartes())

@@ -189,7 +189,7 @@ def test_b_transparence_mention_dans_le_bloc(monkeypatch):
     monkeypatch.setattr(sa, "_fresh_high_feed_dirs",
                         _feed_dirs_for({"Or": {"LONG"}}))
     block = "\n".join(sa.build_paris_du_jour_block(res, NOW))
-    assert "**Argent** SHORT" in block
+    assert "| **Argent** | SHORT |" in block   # tableau aligné (fondateur 24/06)
     assert "Or" in block and "news à contre-sens" in block and "↯" in block
 
 

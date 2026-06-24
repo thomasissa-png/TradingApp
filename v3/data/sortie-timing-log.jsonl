@@ -4,3 +4,6 @@
 {"date": "2026-06-23", "actif": "Cacao", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 0.91, "pic_heure": "clôture", "cloture_pct": 0.91}
 {"date": "2026-06-23", "actif": "EUR/USD", "call": "SHORT", "categorie": "bien_tenu", "pic_pct": 0.38, "pic_heure": "clôture", "cloture_pct": 0.38}
 {"date": "2026-06-23", "actif": "Or", "call": "SHORT", "categorie": "bien_tenu", "pic_pct": 0.04, "pic_heure": "clôture", "cloture_pct": 0.04}
+{"date": "2026-06-24", "actif": "Argent", "call": "SHORT", "categorie": "bien_tenu", "pic_pct": 6.54, "pic_heure": "clôture", "cloture_pct": 6.54}
+{"date": "2026-06-24", "actif": "Cacao", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 7.26, "pic_heure": "clôture", "cloture_pct": 7.26}
+{"date": "2026-06-24", "actif": "Café (Arabica)", "call": "LONG", "categorie": "trop_tard", "pic_pct": 1.1, "pic_heure": "18h", "cloture_pct": 0.65}

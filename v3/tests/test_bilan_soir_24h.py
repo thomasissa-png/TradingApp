@@ -292,6 +292,37 @@ def test_win_rate_max_gain_exclut_non_mesurable():
     assert wr.top1_actif == "A" and wr.top1_gagnant is True
 
 
+def test_learnings_section_omise_si_rien_a_apprendre():
+    """Section 4 OMISE quand il n'y a aucun learning (décision fondateur 24/06 :
+    fini le cadre répété chaque jour). Top 1 gagné + aucun gros move → rien à dire."""
+    b = bj.BilanJour(date_j=date(2026, 6, 23),
+                     now=datetime(2026, 6, 23, 22, 15, tzinfo=PARIS))
+    b.perf_top3 = [
+        bj.PerfTop3Ligne(actif="Or", call="SHORT", fav_12h=None, fav_18h=None,
+                         fav_cloture=1.5, pic_valeur=1.5, pic_heure="clôture",
+                         points_manquants=[], verdict="x", vendre_reco=None,
+                         max_gain_pct=1.5, score_conviction=10.0),
+    ]
+    b.gros_moves_autres = []
+    assert bj._learnings_jour(b) == []          # rien à apprendre
+    md = bj._render_markdown(b, {})
+    assert "## 4. Les learnings du jour" not in md   # section omise
+
+
+def test_learnings_top1_rate_emet_spec():
+    """Top 1 (conviction max) qui rate le seuil → learning Spéculateur émis."""
+    b = bj.BilanJour(date_j=date(2026, 6, 23),
+                     now=datetime(2026, 6, 23, 22, 15, tzinfo=PARIS))
+    b.perf_top3 = [
+        bj.PerfTop3Ligne(actif="Or", call="SHORT", fav_12h=None, fav_18h=None,
+                         fav_cloture=0.3, pic_valeur=0.3, pic_heure="clôture",
+                         points_manquants=[], verdict="x", vendre_reco=None,
+                         max_gain_pct=0.3, score_conviction=16.0),
+    ]
+    learnings = "\n".join(bj._learnings_jour(b))
+    assert "Spéculateur" in learnings and "conviction n°1 (Or)" in learnings
+
+
 def test_max_gain_du_jour_high_low():
     """max_gain_du_jour : LONG sur le high, SHORT sur le low ; 0 si jamais favorable."""
     assert mb.max_gain_du_jour(103.0, 99.0, 100.0, "LONG") == 3.0

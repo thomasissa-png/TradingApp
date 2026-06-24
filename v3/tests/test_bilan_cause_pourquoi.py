@@ -200,13 +200,15 @@ def test_perf_top3_raison_absente_si_pas_de_records():
 
 
 def test_rendu_bloc2_cause_non_tracee(log_or_news_apres_pic: Path):
+    # Pas de news catalyseur ET pas de drivers (conviction_records={}) → on le dit
+    # honnêtement (« ni catalyseur news ni driver quant tracé »), jamais une invention.
     meas = [_measure("Cuivre", "LONG", 2.0, 0.5)]
     bilan = bj.BilanJour(date_j=DJ, now=datetime(2026, 6, 18, 22, 15))
     bilan.gros_moves_autres = bj.compute_gros_moves_autres(
         meas, {}, {}, 0.6, date_j=DJ, events_path=log_or_news_apres_pic
     )
     md = "\n".join(bj._render_bloc2_gros_moves(bilan))
-    assert "cause non tracée" in md
+    assert "ni catalyseur news ni driver quant tracé" in md
 
 
 # ===========================================================================

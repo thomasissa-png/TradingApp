@@ -937,15 +937,21 @@ def compute_gros_moves_autres(
         direction_juste = (fav > 0) if isinstance(fav, (int, float)) else None
         rec = conviction_records.get((actif, m.horizon))
         raison = reason_non_selection(actif, rec, score_fort_seuil, selection_coverage_min)
-        # Brief B — POURQUOI le move : news high sur l'actif ce jour (toute heure),
-        # ou None si rien de tracé (zéro invention → « cause non tracée » au rendu).
+        # POURQUOI le move (la valeur d'une amélioration EST dans le pourquoi,
+        # exigence fondateur 24/06 : ne jamais se contenter de « pas de raison »).
+        # 1) catalyseur NEWS cohérent avec le sens du mouvement (le plus parlant) ;
+        # 2) à défaut, REPLI QUANT : les drivers dominants du score expliquent la
+        #    tendance qui a porté le move (toujours disponibles, decision-log). On ne
+        #    laisse « cause non tracée » que si NI news NI drivers (cas rarissime).
+        sens_move = "LONG" if delta > 0 else "SHORT" if delta < 0 else None
         cause_move = None
-        if date_j is not None:
-            # News cohérente avec le SENS du mouvement (monte → LONG, baisse → SHORT) :
-            # ce qui a réellement porté le move, pas une news à contre-sens.
-            sens_move = "LONG" if delta > 0 else "SHORT" if delta < 0 else None
-            if sens_move:
-                cause_move = cause_news_high_dir(actif, date_j, sens_move, None, events_path)
+        if date_j is not None and sens_move:
+            cause_move = cause_news_high_dir(actif, date_j, sens_move, None, events_path)
+        if cause_move is None and rec is not None and sens_move:
+            from journaliste import drivers_du_call  # noqa: PLC0415
+            drv = drivers_du_call(rec, sens_move)
+            if drv:
+                cause_move = "tendance quant (" + " + ".join(drv[:3]) + ")"
         out.append(GrosMoveAutre(
             actif=actif, call=call, mouvement_pct=round(delta, 2),
             direction_juste=direction_juste, raison_non_select=raison,
@@ -1610,7 +1616,8 @@ def _render_bloc2_gros_moves(bilan: "BilanJour") -> List[str]:
         if g.cause_move:
             L.append(f"  - _Pourquoi ce move : {g.cause_move}._")
         else:
-            L.append("  - _Pourquoi ce move : cause non tracée (pas de news high sur l'actif ce jour)._")
+            L.append("  - _Pourquoi ce move : ni catalyseur news ni driver quant tracé "
+                     "(à investiguer : la news a pu échapper à l'ingestion)._")
         L.append(f"  - _Apprentissage : {g.apprentissage}_")
     L.append("")
     return L
@@ -1782,28 +1789,48 @@ def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
 
 
 def _learnings_jour(bilan: "BilanJour") -> List[str]:
-    """SECTION 4 — Les learnings du jour (calque hebdo) : cadre + synthèse du jour.
-    Un jour = échantillon minuscule : ça ORIENTE, ça ne change aucune règle (cf. bilan
-    semaine pour les ajustements structurels)."""
+    """SECTION 4 — Learnings du jour PILOTÉS PAR LES 3 EXPERTS (Spéculateur / News
+    Trader / Analyst, cf. v3/audit/README.md). Décision fondateur 24/06 : un
+    learning n'est émis QUE s'il y a un vrai signal du jour. S'il n'y a rien à
+    apprendre, on renvoie [] et la section est OMISE (fini le cadre répété chaque
+    jour qui ne sert à rien). Déterministe, zéro invention."""
     out: List[str] = []
-    out.append(
-        "Cadre : une seule journée = échantillon minuscule, aucun chiffre n'est "
-        "significatif seul. Ces constats ORIENTENT ; les ajustements de RÈGLE se "
-        "décident sur le bilan SEMAINE (≥ ~50 paris cumulés), jamais sur un jour."
-    )
-    s = bilan.selection
-    if s.taux is not None:
+    wr = win_rate_max_gain(bilan.perf_top3)
+
+    # Spéculateur — notre conviction n°1 (Top 1) a-t-elle payé ? (le pari où l'on
+    # met le plus de cash : s'il rate, c'est le signal le plus instructif du jour).
+    if wr.top1_actif is not None and wr.top1_gagnant is False:
         out.append(
-            f"Sélection du jour : {s.n_vrai_select}/{s.n_select} justes "
-            f"({s.taux:.0f}%) — à confirmer dans la durée."
+            f"💡 Spéculateur : notre conviction n°1 ({wr.top1_actif}) n'a pas atteint "
+            "+1 % de max gain. La conviction la plus forte n'a pas payé aujourd'hui ; "
+            "à surveiller si ça se répète (signal de calibration du Top 1)."
         )
-    rates = [g for g in bilan.gros_moves_autres if g.direction_juste]
-    if rates:
-        out.append(
-            f"{len(rates)} gros mouvement(s) dans le bon sens hors top 3 (détail en "
-            "section 3) : revoir pourquoi ils n'ont pas été sélectionnés."
-        )
-    return out[:5]
+
+    # News Trader — gros move hors Sélection DANS notre sens, avec catalyseur tracé :
+    # on avait le bon sens mais pas joué (à capter plus tôt). Le plus gros d'abord.
+    for g in bilan.gros_moves_autres:
+        if g.direction_juste and g.cause_move:
+            out.append(
+                f"💡 News Trader : {g.actif} a fait {_fmt_pct(g.mouvement_pct)} dans "
+                f"notre sens hors Sélection, porté par {g.cause_move}. Catalyseur à "
+                "capter plus tôt pour le faire entrer dans le Top 3."
+            )
+            break
+
+    # News Trader — call à CONTRE-SENS d'un gros move : le driver nous a trompés.
+    for g in bilan.gros_moves_autres:
+        if g.direction_juste is False:
+            cause = f", porté par {g.cause_move}" if g.cause_move else ""
+            out.append(
+                f"💡 News Trader : call à contre-sens sur {g.actif} "
+                f"({_fmt_pct(g.mouvement_pct)} contre nous{cause}). Driver à réexaminer."
+            )
+            break
+
+    # NB : pas de caveat stat « échantillon minuscule » quotidien (le fondateur le
+    # juge vacuous : il se déclencherait presque chaque jour). Le cadrage « 1 jour
+    # ne change aucune règle » vit dans le bilan SEMAINE, pas ici.
+    return out[:4]
 
 
 def _mesure_indisponible(bilan: BilanJour) -> bool:
@@ -1880,10 +1907,15 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         L.append("Aucun pari raté ni opportunité ratée nette aujourd'hui.")
     L.append("")
 
-    L.append("## 4. Les learnings du jour")                        # 4. Learnings
-    L.append("")
-    L.extend(f"- {x}" for x in _learnings_jour(bilan))
-    L.append("")
+    # 4. Learnings — section OMISE s'il n'y a aucun learning du jour (décision
+    # fondateur 24/06 : pas de section vide/blabla chaque jour ; les 3 experts ne
+    # parlent que s'ils ont quelque chose à dire).
+    learnings = _learnings_jour(bilan)
+    if learnings:
+        L.append("## 4. Les learnings du jour")
+        L.append("")
+        L.extend(f"- {x}" for x in learnings)
+        L.append("")
 
     L.append("## 5. Catalyseurs J+1")                              # 5. À surveiller demain
     L.append("")

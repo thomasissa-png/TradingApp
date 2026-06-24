@@ -200,6 +200,13 @@ def _bilan_1_8_3():
                          points_manquants=[], verdict="x", vendre_reco=None,
                          max_gain_pct=0.04, score_conviction=5.0),
     ]
+    # Un gros move hors Sélection dans le bon sens avec catalyseur → déclenche un
+    # learning « News Trader » (la section 4 n'apparaît que s'il y a un vrai signal).
+    b.gros_moves_autres = [
+        bj.GrosMoveAutre(actif="Café", call="LONG", mouvement_pct=3.3,
+                         direction_juste=True, raison_non_select="conviction sous le seuil",
+                         apprentissage="x", cause_move="gel au Brésil (news high)"),
+    ]
     return b
 
 

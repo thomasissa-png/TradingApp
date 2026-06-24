@@ -125,9 +125,12 @@ class SuiviLigne:
     # max ≥ 0) et « pire point » (adverse max ≤ 0). None si non calculable (zéro invention).
     max_favorable_pct: Optional[float] = None
     max_adverse_pct: Optional[float] = None
-    # Max gain du jour ATTEINT à cet instant (high/low journalier ∪ excursion 1h) :
-    # base du statut « gagné > 1 % / pas encore » (décision fondateur 24/06).
+    # Max gain du jour ATTEINT à cet instant (excursion 1h ∪ % courant) : base du
+    # statut « gagné > 1 % / pas encore » (décision fondateur 24/06).
     max_gain_pct: Optional[float] = None
+    # Reco d'ACTION turbo (🟢 Laisse courir / 🟡 Sécurise / 🔴 Coupe / ⚪ Tiens) —
+    # remplace le « Vendre / Pas vendre » binaire (fondateur 24/06).
+    action: str = "—"
 
 
 @dataclass
@@ -443,19 +446,15 @@ def prix_courant_cascade(
 
     Ordre (zéro invention — source absente → None, jamais comblé) :
       1. dernière barre 1h du jour J (close le plus frais de la séance) ;
-      2. spot via fetch_price(ticker).
-    C'est l'ordre miroir de `mesure_bilan._resolve_cloture` (1h → spot) restreint
-    aux sources disponibles à chaud pendant la séance (pas de bougie 1day du jour
-    encore, pas de relevé de suivi puisqu'on EST le suivi). Best-effort.
+      2. dernière barre 1h du jour J (fallback si pas de spot).
+    FONDATEUR 24/06 — ordre CORRIGÉ : le SPOT TEMPS RÉEL d'abord. En pleine séance,
+    le « prix courant » doit être le dernier prix RÉEL, pas la barre 1h (close de
+    l'heure précédente, qui peut avoir plusieurs minutes/heures de retard). L'ancien
+    ordre (1h d'abord) servait un prix périmé (bug cacao : +1.79% affiché alors que
+    le vrai prix était +7%). La barre 1h ne sert plus que de filet si le spot manque.
     """
     if not ticker:
         return None
-    import mesure_bilan as MB  # noqa: PLC0415
-    bars = MB._bars_du_jour(series_1h, date_j)
-    if bars:
-        px = bars[-1][1]
-        if isinstance(px, (int, float)) and px > 0:
-            return float(px)
     if fetch_price is not None:
         try:
             spot = fetch_price(ticker)
@@ -464,6 +463,12 @@ def prix_courant_cascade(
             spot = None
         if isinstance(spot, (int, float)) and spot > 0:
             return float(spot)
+    import mesure_bilan as MB  # noqa: PLC0415
+    bars = MB._bars_du_jour(series_1h, date_j)
+    if bars:
+        px = bars[-1][1]
+        if isinstance(px, (int, float)) and px > 0:
+            return float(px)
     return None
 
 
@@ -524,6 +529,35 @@ def statut_max_gain(max_gain_pct: Optional[float],
     if max_gain_pct > seuil:
         return "✅ gagné"
     return f"⏳ pas encore ({max_gain_pct:+.2f}%)"
+
+
+def compute_action(
+    fav_now: Optional[float],
+    max_gain_pct: Optional[float],
+    seuil_pct: Optional[float],
+    seuil_gain: float = SEUIL_MAX_GAIN_SUIVI,
+) -> str:
+    """Reco d'ACTION turbo (Spéculateur, décision fondateur 24/06). Remplace le
+    « Vendre / Pas vendre » binaire (qui ne gérait que le stop-loss).
+
+    `fav_now` = % favorable COURANT signé (+ = sens du call) ; `max_gain_pct` =
+    meilleur % atteint jusqu'ici ; `seuil_pct` = seuil de réussite/stop de l'actif.
+    - 🔴 Coupe : on est contre le call au-delà du seuil (le pari est cassé).
+    - 🟡 Sécurise : on a dépassé la cible (> 1 %) MAIS on est retombé sous la
+      MOITIÉ du pic (le gain reflue → prends tes gains).
+    - 🟢 Laisse courir : on gagne et on est encore proche du pic (ça monte).
+    - ⚪ Tiens : à plat ou perte sous le seuil (rien à faire).
+    « — » si pas de relevé exploitable (zéro invention)."""
+    if not isinstance(fav_now, (int, float)):
+        return "—"
+    if isinstance(seuil_pct, (int, float)) and fav_now <= -abs(seuil_pct):
+        return "🔴 Coupe"
+    if (isinstance(max_gain_pct, (int, float)) and max_gain_pct > seuil_gain
+            and fav_now < max_gain_pct / 2.0):
+        return "🟡 Sécurise"
+    if fav_now > 0:
+        return "🟢 Laisse courir"
+    return "⚪ Tiens"
 
 
 def us_trend_flag(delta_pct: Optional[float], call: str) -> str:
@@ -1337,6 +1371,8 @@ def build_suivi(
         # courant. JAMAIS le plus-haut de la bougie du jour (fuiterait le futur/la
         # nuit — bug Cacao, fondateur 24/06).
         max_gain = max_gain_suivi(max_fav, fav_now_v)
+        # Reco d'action turbo (remplace Vendre/Pas vendre).
+        action = compute_action(fav_now_v, max_gain, seuil)
 
         rapport.lignes.append(SuiviLigne(
             actif=actif, call=call, ouverture=ouverture, prix_courant=prix_courant,
@@ -1350,7 +1386,7 @@ def build_suivi(
             fav_prec=(round(fav_prec_v, 2) if fav_prec_v is not None else None),
             max_favorable_pct=(round(max_fav, 2) if max_fav is not None else None),
             max_adverse_pct=(round(max_adv, 2) if max_adv is not None else None),
-            max_gain_pct=max_gain,
+            max_gain_pct=max_gain, action=action,
         ))
 
     # FIX 2a/2c (fondateur 23/06) — la section news est CENTRÉE sur les paris :
@@ -1461,7 +1497,7 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
         "| <span class=\"c-full\">% vs ouv. 18h</span><span class=\"c-short\">% 18h</span> "
         "| <span class=\"c-full\">Max gain jour</span><span class=\"c-short\">Max</span> "
         "| <span class=\"c-full\">Gagné &gt; 1 % ?</span><span class=\"c-short\">&gt;1%</span> "
-        f"| Vendre à {hour_label} ? |"
+        "| Action |"
     )
     L.append("|---|---|---|---|---|---|---|")
     for li in selection:
@@ -1473,18 +1509,19 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
             # Au 18h : colonne 12h = favorable précédent (snapshot 12h), 18h = courant.
             col_12 = _fmt_fav(li.fav_prec)
             col_18 = _fmt_fav(li.fav_now)
-        # Max gain du jour atteint (high/low ∪ 1h) + statut vs cible turbo > 1 %.
+        # Max gain du jour atteint (1h ∪ courant) + statut vs cible turbo > 1 %.
         col_max = _fmt_pct(li.max_gain_pct)
         col_statut = statut_max_gain(li.max_gain_pct)
         L.append(
             f"| {li.actif} | {li.call} | {col_12} | {col_18} | "
-            f"{col_max} | {col_statut} | **{li.vendre}** |"
+            f"{col_max} | {col_statut} | **{li.action}** |"
         )
     L.append("")
     # FIX 4 (fondateur 23/06) — légende courte : 1 phrase, détail replié.
     L.append(
-        "_% 12h / 18h = évolution du call en séance ; Max gain jour = meilleur % atteint "
-        "depuis l'entrée (cible turbo > 1 % = gagné) ; Vendre = sortir maintenant._"
+        "_% 12h / 18h = évolution du call ; Max gain = meilleur % atteint depuis "
+        "l'entrée (> 1 % = gagné). **Action** : 🟢 laisse courir · 🟡 sécurise (gain "
+        "qui reflue sous la moitié du pic) · 🔴 coupe (pari cassé) · ⚪ tiens._"
     )
     L.append("")
     # Pourquoi on tient ces positions : la VRAIE raison du call (drivers du score à
@@ -1615,19 +1652,25 @@ def _render_markdown(r: SuiviRapport) -> str:
     # PORTE UNIQUEMENT sur les 3 paris du jour (selection=True), JAMAIS sur un
     # actif non détenu. Même verdict que la colonne « Vendre ? » (source unique).
     L.append("### Suggestions de sortie")
-    sorties = [
-        li for li in r.lignes
-        if li.selection and li.suggestion == "Sortie à envisager"
-    ]
-    if sorties:
-        for li in sorties:
-            L.append(
-                f"- ⚠️ **{li.actif}** ({li.call}) : {_fmt_pct(li.delta_pct)} contre "
-                f"le call (seuil {_fmt_pct(li.seuil_pct, signed=False)}). "
-                f"Sortie à envisager : drapeau, Thomas décide."
-            )
+    # Cohérent avec la colonne « Action » (fondateur 24/06, source unique) : on
+    # remonte les paris qui demandent un geste — 🔴 Coupe (pari cassé) ou 🟡 Sécurise
+    # (gain qui reflue sous la moitié du pic). Drapeaux : Thomas décide.
+    a_agir = [li for li in r.lignes
+              if li.selection and li.action[:1] in ("🔴", "🟡")]
+    if a_agir:
+        for li in a_agir:
+            if li.action.startswith("🔴"):
+                L.append(
+                    f"- 🔴 **{li.actif}** ({li.call}) : {_fmt_fav(li.fav_now)} contre "
+                    f"le call (seuil {_fmt_pct(li.seuil_pct, signed=False)}) → couper."
+                )
+            else:  # 🟡 Sécurise
+                L.append(
+                    f"- 🟡 **{li.actif}** ({li.call}) : a fait {_fmt_pct(li.max_gain_pct)} "
+                    f"de max, retombé à {_fmt_fav(li.fav_now)} → sécuriser une partie."
+                )
     else:
-        L.append("Aucune alerte de sortie.")
+        L.append("Aucune alerte (laisse courir / rien à faire).")
     L.append("")
 
     # [I-6 audit visuel 12/06] : catalyseurs du lendemain au suivi 18h (Thomas

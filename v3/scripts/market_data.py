@@ -490,6 +490,12 @@ def fetch_history(ticker: str, period_days: int = 25, interval: str = "1day"):
             "symbol": td_sym,
             "interval": interval,
             "outputsize": period_days,
+            # FONDATEUR 24/06 — BUG CRITIQUE corrigé : sans `timezone`, Twelve renvoie
+            # les horodatages en heure d'ÉCHANGE, que le code étiquetait UTC → barres
+            # mal rangées par jour → « prix courant » périmé de plusieurs heures (ex.
+            # cacao affiché +1.79% alors qu'il était à +7%). On force UTC : timestamps
+            # vrais → `_to_paris_date` / `_bars_du_jour` correctes pour TOUS les actifs.
+            "timezone": "UTC",
             **extra_params,
         }
         data = _td_request("time_series", params, yf_ticker=ticker)
@@ -530,6 +536,7 @@ def fetch_history_range(ticker: str, start, end, interval: str = "1h"):
             "interval": interval,
             "start_date": start_str,
             "end_date": end_str,
+            "timezone": "UTC",   # horodatages vrais UTC (cf. fix fetch_history 24/06)
             **extra_params,
         }
         data = _td_request("time_series", params, yf_ticker=ticker)
@@ -584,6 +591,7 @@ def fetch_history_batch(tickers: list[str], period_days: int = 2, interval: str 
             "symbol": ",".join(td_syms),
             "interval": interval,
             "outputsize": period_days,
+            "timezone": "UTC",   # horodatages vrais UTC (cf. fix fetch_history 24/06)
             **extra,
         }
         data = _td_request("time_series", params)

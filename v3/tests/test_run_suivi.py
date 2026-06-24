@@ -202,9 +202,9 @@ def test_suggestion_sortie_dans_rapport(env):
     _decision_log_selection(env, {"Or"})
     r = _build(env, "12h", now, {"GC=F": 3438.0, "^FCHI": 8120.0, "^GSPC": None})
     or_li = _ligne(r, "Or")
-    assert or_li.suggestion == "Sortie à envisager"
-    assert or_li.vendre == "Vendre"  # source unique : cohérent avec la suggestion
-    assert "Sortie à envisager" in r.markdown
+    # Or contre le call au-delà du seuil → reco d'action 🔴 Coupe (fondateur 24/06).
+    assert or_li.action == "🔴 Coupe"
+    assert "🔴" in r.markdown and "couper" in r.markdown  # bloc « Suggestions de sortie »
 
 
 # ---------------------------------------------------------------------------
@@ -457,15 +457,15 @@ def test_selection_table_12h_seule_colonne_12h(env):
     # En-tête du tableau Sélection présent (libellés complets desktop, dans des
     # spans à double libellé .c-full/.c-short — on vérifie les deux colonnes %).
     assert "% vs ouv. 12h" in md and "% vs ouv. 18h" in md
-    # Décision ancrée à l'heure du rapport (ici 12h).
-    assert "Vendre à 12h ?" in md
+    # Colonne « Action » (remplace « Vendre ? », fondateur 24/06).
+    assert "| Action |" in md
     # Le tableau Sélection est AVANT le suivi détaillé.
     assert md.index("Sélection du jour — progression") < md.index("Suivi détaillé")
     # Au 12h : colonne 18h vide (placeholder —), 12h remplie. Or SHORT baisse → favorable +.
     or_li = _ligne(r, "Or")
     assert or_li.fav_now is not None and or_li.fav_now > 0
     assert or_li.fav_prec is None
-    assert or_li.vendre == "Pas vendre"  # 12h → on laisse courir
+    assert or_li.action.startswith("🟢")  # gagne et proche du pic → laisse courir
 
 
 def test_selection_table_18h_deux_colonnes_et_vendre(env):
@@ -484,9 +484,9 @@ def test_selection_table_18h_deux_colonnes_et_vendre(env):
     or_li = _ligne(r18, "Or")
     assert or_li.fav_prec == pytest.approx(1.0, abs=0.05)
     assert or_li.fav_now == pytest.approx(-1.12, abs=0.05)
-    assert or_li.suggestion == "Sortie à envisager"
-    assert or_li.vendre == "Vendre"  # cohérent avec la suggestion (source unique)
-    assert "**Vendre**" in r18.markdown
+    # Contre le call au-delà du seuil → reco d'action 🔴 Coupe (fondateur 24/06).
+    assert or_li.action == "🔴 Coupe"
+    assert "**🔴 Coupe**" in r18.markdown
 
 
 def test_selection_table_aucune_selection(env):
@@ -588,21 +588,23 @@ def test_suivi_statut_pas_encore_sous_seuil(env):
     assert rs.statut_max_gain(None) == "—"
 
 
-def test_cascade_prix_derniere_barre_1h_prioritaire_sur_spot(env):
-    # La dernière barre 1h du jour PRIME sur le spot (cascade cohérente bilan).
+def test_cascade_prix_spot_temps_reel_prioritaire(env):
+    # FONDATEUR 24/06 (bug prix périmé) : le SPOT TEMPS RÉEL prime sur la barre 1h
+    # (qui peut avoir des heures de retard). En séance, « courant » = dernier prix réel.
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
-    series = {"GC=F": _series_1h_jour([3400, 3410, 3366])}  # dernière barre = 3366
-    r = _build_series(env, "12h", now, series, spot={"GC=F": 9999.0})
+    series = {"GC=F": _series_1h_jour([3400, 3410, 3366])}  # barres 1h (potentiellement en retard)
+    r = _build_series(env, "12h", now, series, spot={"GC=F": 3372.0})
     orr = _ligne(r, "Or")
-    assert orr.prix_courant == pytest.approx(3366.0)  # 1h, pas le spot 9999
+    assert orr.prix_courant == pytest.approx(3372.0)  # spot, pas la barre 1h 3366
 
 
-def test_cascade_prix_fallback_spot_si_pas_de_barre(env):
-    # Aucune barre 1h exploitable → on retombe sur le spot (zéro invention sinon).
+def test_cascade_prix_fallback_barre_1h_si_pas_de_spot(env):
+    # Pas de spot exploitable → on retombe sur la dernière barre 1h (filet).
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
-    r = _build_series(env, "12h", now, {"GC=F": None}, spot={"GC=F": 3372.0})
+    series = {"GC=F": _series_1h_jour([3400, 3410, 3366])}
+    r = _build_series(env, "12h", now, series, spot={"GC=F": None})
     orr = _ligne(r, "Or")
-    assert orr.prix_courant == pytest.approx(3372.0)
+    assert orr.prix_courant == pytest.approx(3366.0)
 
 
 def test_cascade_prix_aucune_source_donne_tiret(env):
@@ -787,34 +789,31 @@ def test_fix1_aucune_suggestion_sur_actif_non_pari(env):
     assert "Or" not in bloc
 
 
-def test_fix1_coherence_colonne_vendre_et_suggestions(env):
-    # FIX 1 : un pari dont le % favorable dépasse le seuil → « sortie à envisager »
-    # DANS LES DEUX endroits (colonne « Vendre ? » == Vendre ET bloc Suggestions).
+def test_coherence_action_table_et_suggestions(env):
+    # L'action 🔴 Coupe apparaît DANS LES DEUX endroits (colonne Action de la table
+    # Sélection ET bloc Suggestions de sortie) — source unique, jamais de contradiction.
     _decision_log_selection(env, {"Or"})
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
     r = _build(env, "12h", now, {"GC=F": 3438.0, "^FCHI": 8120.0, "^GSPC": None})
     or_li = _ligne(r, "Or")
-    assert or_li.suggestion == "Sortie à envisager"
-    assert or_li.vendre == "Vendre"
+    assert or_li.action == "🔴 Coupe"
     md = r.markdown
-    # Colonne Vendre = **Vendre** dans la table Sélection ET dans le bloc Suggestions.
-    assert "**Vendre**" in md
+    assert "**🔴 Coupe**" in md            # colonne Action de la table Sélection
     bloc = md.split("### Suggestions de sortie")[1]
-    assert "**Or**" in bloc and "Sortie à envisager" in bloc
+    assert "**Or**" in bloc and "couper" in bloc   # même verdict dans le bloc
 
 
-def test_fix1_pari_qui_tient_jamais_de_contradiction(env):
-    # FIX 1 : un pari favorable (gagne) → « Pas vendre » ET absent du bloc
-    # Suggestions (jamais l'un qui dit vendre et l'autre tenir).
+def test_pari_qui_tient_jamais_de_contradiction(env):
+    # Un pari favorable (gagne, proche du pic) → 🟢 Laisse courir ET absent du bloc
+    # Suggestions (jamais l'un qui dit couper et l'autre tenir).
     _decision_log_selection(env, {"Or"})
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
-    # Or SHORT baisse à 3366 (favorable +1.0%) → gagne → Hold/Pas vendre.
+    # Or SHORT baisse à 3366 (favorable +1.0%) → gagne → 🟢 Laisse courir.
     r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
     or_li = _ligne(r, "Or")
-    assert or_li.vendre == "Pas vendre"
-    assert or_li.suggestion == "Hold"
+    assert or_li.action.startswith("🟢")
     bloc = r.markdown.split("### Suggestions de sortie")[1]
-    assert "Aucune alerte de sortie." in bloc
+    assert "Aucune alerte" in bloc
 
 
 def test_fix3_convention_signe_short_gagnant_positif_partout(env):
@@ -852,7 +851,8 @@ def test_fix4_legende_courte(env):
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
     r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
     md = r.markdown
-    assert "Vendre = sortir maintenant" in md
+    assert "Max gain = meilleur % atteint depuis" in md  # légende reformulée (Action)
+    assert "🟡 sécurise" in md
     assert "Décision datée à" not in md  # ancien pavé supprimé
 
 

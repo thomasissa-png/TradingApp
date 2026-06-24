@@ -1707,8 +1707,8 @@ def _render_jour_selection(bilan: "BilanJour") -> List[str]:
         "> Le win rate qui compte = notre **Sélection** (notre niveau de certitude). "
         "Un pari est **GAGNÉ si son max gain du jour dépasse 1 %** (cible turbo, "
         "mesuré sur le plus haut/bas de la journée). **12h / 18h / 22h** = "
-        "trajectoire du call en séance (% favorable signé). **Raison** = les drivers "
-        "du score à l'émission (decision-log)."
+        "trajectoire du call en séance (% favorable signé). La raison de chaque pari "
+        "est listée sous le tableau."
     )
     L.append("")
     if wr.top1_actif is not None:
@@ -1719,8 +1719,11 @@ def _render_jour_selection(bilan: "BilanJour") -> List[str]:
     taux = f" = {wr.taux_top3:.0f}%" if wr.taux_top3 is not None else ""
     L.append(f"{top1} · **Top 3** : {wr.n_gagnants_top3}/{wr.n_top3}{taux} (max gain > 1 %).")
     L.append("")
-    L.append("| Actif | Call | 12h | 18h | 22h | Max gain jour | Gagné >1% | Raison |")
-    L.append("|---|---|---|---|---|---|---|---|")
+    # 7 colonnes (Raison sortie en sous-liste) : sous le seuil « table dense » de la
+    # page → AUCUNE colonne masquée sur mobile (fondateur 24/06 : 12h/18h/Max gain
+    # doivent rester visibles sur téléphone).
+    L.append("| Actif | Call | 12h | 18h | 22h | Max gain jour | Gagné >1% |")
+    L.append("|---|---|---|---|---|---|---|")
     # Top 1 en tête (conviction max), puis le reste de la sélection.
     perf_ordered = sorted(
         perf,
@@ -1735,8 +1738,17 @@ def _render_jour_selection(bilan: "BilanJour") -> List[str]:
         L.append(
             f"| {p.actif} | {p.call} | {_fmt_fav_cell(p.fav_12h)} | "
             f"{_fmt_fav_cell(p.fav_18h)} | {_fmt_fav_cell(p.fav_cloture)} | "
-            f"{_fmt_fav_cell(p.max_gain_pct)} | {g} | {p.raison_call or '—'} |"
+            f"{_fmt_fav_cell(p.max_gain_pct)} | {g} |"
         )
+    L.append("")
+    # Raison de chaque pari (drivers du score à l'émission) — en sous-liste pour
+    # garder le tableau étroit (lisible sur mobile), comme le suivi.
+    avec_raison = [p for p in perf_ordered if p.raison_call]
+    if avec_raison:
+        L.append("**Pourquoi ces paris (signal à 7h) :**")
+        L.append("")
+        for p in avec_raison:
+            L.append(f"- **{p.actif}** ({p.call}) : {p.raison_call}")
     L.append("")
     return L
 

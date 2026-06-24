@@ -267,7 +267,10 @@ def test_section1_winrate_top1_top3_sur_max_gain():
                          score_conviction=16.0),
     ]
     md = "\n".join(bj._render_jour_selection(b))
-    assert "| Actif | Call | 12h | 18h | 22h | Max gain jour | Gagné >1% | Raison |" in md
+    # 7 colonnes (Raison en sous-liste) → pas de masquage mobile des colonnes clés.
+    assert "| Actif | Call | 12h | 18h | 22h | Max gain jour | Gagné >1% |" in md
+    assert "| Raison |" not in md          # la raison n'est plus une colonne
+    assert "**Pourquoi ces paris (signal à 7h) :**" in md  # ...mais une sous-liste
     # Top 1 = Or (conviction max) et il a RATÉ (max gain 0.33% < 1%).
     assert "**Top 1** (Or) : ❌ raté" in md
     # Top 3 : seul Cacao > 1% → 1/3.

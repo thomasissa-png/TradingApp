@@ -1467,16 +1467,13 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
     L.append(
         "| Actif "
         "| <span class=\"c-full\">Call 7h</span><span class=\"c-short\">Call</span> "
-        "| <span class=\"c-full\">Prix d'entrée</span><span class=\"c-short\">Entrée</span> "
         "| <span class=\"c-full\">% vs ouv. 12h</span><span class=\"c-short\">% 12h</span> "
         "| <span class=\"c-full\">% vs ouv. 18h</span><span class=\"c-short\">% 18h</span> "
         "| <span class=\"c-full\">Max gain jour</span><span class=\"c-short\">Max</span> "
         "| <span class=\"c-full\">Gagné &gt; 1 % ?</span><span class=\"c-short\">&gt;1%</span> "
-        "| <span class=\"c-full\">Pire point</span><span class=\"c-short\">Pire</span> "
-        "| Tendance "
         f"| Vendre à {hour_label} ? |"
     )
-    L.append("|---|---|---|---|---|---|---|---|---|---|")
+    L.append("|---|---|---|---|---|---|---|")
     for li in selection:
         if is_12h:
             # Au 12h : colonne 12h = favorable courant, colonne 18h = vide.
@@ -1489,17 +1486,15 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
         # Max gain du jour atteint (high/low ∪ 1h) + statut vs cible turbo > 1 %.
         col_max = _fmt_pct(li.max_gain_pct)
         col_statut = statut_max_gain(li.max_gain_pct)
-        col_pire = _fmt_pct(li.max_adverse_pct)
-        # Prix d'entrée = prix d'ouverture (la référence du %).
         L.append(
-            f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | {col_12} | {col_18} | "
-            f"{col_max} | {col_statut} | {col_pire} | {li.tendance} | **{li.vendre}** |"
+            f"| {li.actif} | {li.call} | {col_12} | {col_18} | "
+            f"{col_max} | {col_statut} | **{li.vendre}** |"
         )
     L.append("")
     # FIX 4 (fondateur 23/06) — légende courte : 1 phrase, détail replié.
     L.append(
-        "_Max gain jour = meilleur % atteint depuis l'entrée (cible turbo > 1 % = gagné) ; "
-        "% favorable `+`=gagne / `-`=perd ; Vendre = sortir maintenant._"
+        "_% 12h / 18h = évolution du call en séance ; Max gain jour = meilleur % atteint "
+        "depuis l'entrée (cible turbo > 1 % = gagné) ; Vendre = sortir maintenant._"
     )
     L.append("")
     # Pourquoi on tient ces positions : la VRAIE raison du call (drivers du score à

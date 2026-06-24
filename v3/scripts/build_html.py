@@ -1032,15 +1032,12 @@ def render_html(
     .selection-progression, .bilan-perf-table {{ font-size: 12px; }}
     .selection-progression th, .selection-progression td,
     .bilan-perf-table th, .bilan-perf-table td {{ padding: 7px 6px; }}
-    /* À 390px les colonnes ne tiennent pas toutes. On masque UNE colonne par table,
-       jamais une colonne « résultat ». SUIVI : masque « Tendance » (col 5) ; la
-       progression 12h/18h + la reco « Vendre ? » restent. BILAN : masque
-       l'intermédiaire « 18h » (col 4) ; la CLÔTURE (col 5, résultat final) et le
-       Pic (col 6) restent TOUJOURS visibles. */
-    .selection-progression td:nth-child(6),
-    .selection-progression th:nth-child(6) {{ display: none; }}
-    .bilan-perf-table td:nth-child(4),
-    .bilan-perf-table th:nth-child(4) {{ display: none; }}
+    /* [Fondateur 24/06] On ne MASQUE plus aucune colonne de ces tables : les
+       colonnes clés (% 12h, % 18h, Max gain, Gagné > 1 %) sont à GAUCHE donc
+       visibles d'emblée ; si la largeur dépasse, la table scrolle horizontalement
+       (overflow-x). Masquer une colonne cachait justement ce que le fondateur veut
+       voir. On garde seulement la police resserrée ci-dessus. */
+    .selection-progression, .bilan-perf-table {{ overflow-x: auto; }}
     /* En-têtes : version courte sur mobile (la complète prend trop de largeur) —
        pour les DEUX tables (suivi + bilan). */
     .selection-progression .c-full, .bilan-perf-table .c-full {{ display: none; }}
@@ -1529,6 +1526,12 @@ function markDenseTables(root) {{
   root.querySelectorAll('table').forEach(t => {{
     const headRow = t.querySelector('thead tr') || t.querySelector('tr');
     if (!headRow) return;
+    const heads = Array.from(headRow.querySelectorAll('th, td')).map(c => (c.textContent || '').trim());
+    // EXEMPTION (fondateur 24/06) : les tables « max gain » (suivi Sélection,
+    // bilan Top 1/Top 3) gèrent leur propre largeur (scroll horizontal, colonnes
+    // clés à gauche). Le masquage générique col-3/4/6 cachait justement % 12h et
+    // Max gain sur mobile → on ne le leur applique JAMAIS.
+    if (heads.some(h => h.indexOf('Max gain') !== -1)) return;
     const cols = headRow.querySelectorAll('th, td').length;
     if (cols >= DENSE_TABLE_MIN_COLS) t.classList.add('dense-table');
   }});

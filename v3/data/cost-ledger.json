@@ -124,5 +124,11 @@
     "calls": 504,
     "tokens_in": 1252014,
     "tokens_out": 60513
+  },
+  "2026-06-24": {
+    "cost_usd": 0.095525,
+    "calls": 252,
+    "tokens_in": 621598,
+    "tokens_out": 30362
   }
 }

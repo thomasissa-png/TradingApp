@@ -212,15 +212,17 @@ def test_suggestion_sortie_dans_rapport(env):
 # ---------------------------------------------------------------------------
 
 def test_us_pas_encore_ouvert_a_12h(env):
-    # Cash US fermé à 12h, SANS cotation OANDA (dir vide) → repli « cash fermé ».
+    # Cash US à 12h SANS cotation OANDA (dir vide) → « future : cotation en attente »
+    # (on trade le future, pas « cash fermé » — cadrage fondateur 24/06).
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
     r = _build(env, "12h", now, {"GC=F": 3400.0, "^FCHI": 8120.0, "^GSPC": 5301.0})
     sp = _ligne(r, "S&P 500")
     assert sp.us_pas_ouvert is True
-    assert sp.statut == "🕐 cash fermé (ouvre 15h30)"
+    assert sp.statut == "⏳ future : cotation en attente"
     assert sp.delta_pct is None  # pas de delta trompeur
-    # Note US présente dans le rapport 12h.
-    assert "Cash US" in r.markdown
+    # Plus de « Note sur les marchés US » répétée à chaque suivi (fondateur 24/06).
+    assert "Note sur les marchés US" not in r.markdown
+    assert "Cash US" not in r.markdown
 
 
 def _ecrire_oanda(env, day, snapshots, last_ts):
@@ -256,7 +258,7 @@ def test_us_via_future_oanda_frais_affiche_le_mouvement_signe(env):
 
 
 def test_us_via_future_oanda_perime_repli_cash_ferme(env):
-    # Cotation vieille de > 30 min → périmée → repli « cash fermé ».
+    # Cotation vieille de > 30 min → périmée → repli « future : cotation en attente ».
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
     vieux = datetime(2026, 6, 8, 9, 0, tzinfo=ZoneInfo("UTC")).isoformat()
     _ecrire_oanda(env, "2026-06-08", [
@@ -265,7 +267,7 @@ def test_us_via_future_oanda_perime_repli_cash_ferme(env):
     ], last_ts=vieux)
     r = _build(env, "12h", now, {"GC=F": 3400.0, "^FCHI": 8120.0})
     sp = _ligne(r, "S&P 500")
-    assert sp.statut == "🕐 cash fermé (ouvre 15h30)"
+    assert sp.statut == "⏳ future : cotation en attente"
     assert sp.delta_pct is None
 
 

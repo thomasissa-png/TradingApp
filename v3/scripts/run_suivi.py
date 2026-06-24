@@ -107,7 +107,7 @@ class SuiviLigne:
     ouverture: Optional[float]
     prix_courant: Optional[float]
     delta_pct: Optional[float]     # (courant - ouverture) / ouverture * 100
-    statut: str                    # "✅ gagne" / "⚠️ perd" / "— neutre" / "🕐 cash fermé (ouvre 15h30)"
+    statut: str                    # "✅ gagne" / "⚠️ perd" / "— neutre" / "🔵 via future …" / "⏳ future : cotation en attente"
     tendance: str                  # "—" / "↑ s'accélère" / "↓ s'essouffle" / "⇄ se retourne" / "↗ confirmé US" / "↘ infirmé US"
     delta_vs_prec: Optional[float] # points de % vs le suivi précédent (18h), None au 12h
     suggestion: str                # "Hold" / "Surveiller" / "Sortie à envisager" / "—"
@@ -1296,7 +1296,7 @@ def build_suivi(
                 continue
             rapport.lignes.append(SuiviLigne(
                 actif=actif, call=call, ouverture=None, prix_courant=None,
-                delta_pct=None, statut="🕐 cash fermé (ouvre 15h30)", tendance="—",
+                delta_pct=None, statut="⏳ future : cotation en attente", tendance="—",
                 delta_vs_prec=None, suggestion="—", seuil_pct=seuil,
                 us_pas_ouvert=True, vendre="Pas vendre", selection=is_select,
                 fav_now=None, fav_prec=None,
@@ -1553,15 +1553,9 @@ def _render_markdown(r: SuiviRapport) -> str:
     L.append("### Suivi détaillé : toutes les positions 24h")
     L.append("")
     if h == REPORT_12H:
-        L.append("### Note sur les marchés US")
-        L.append(
-            "ℹ️ Cash US (S&P 500, Nasdaq, VIX) ouvre à 15h30 Paris. Comme on trade "
-            "en turbo (qui suit le future), on suit l'indice US en continu dès 8h "
-            "(« 🔵 via future ») : le % est le mouvement de l'indice depuis l'entrée "
-            "du matin, cohérent avec une revente avant 15h30. Le VIX, sans cotation "
-            "continue, reste « cash fermé » jusqu'à 15h30."
-        )
-        L.append("")
+        # (Plus de « Note sur les marchés US » répétée à chaque suivi : on trade des
+        # turbos sur future → tout est ouvert en continu ; l'explication méthodo vit
+        # une seule fois dans « Comment lire », pas dans chaque rapport — fondateur 24/06.)
         L.append("### Positions du matin vs ouverture")
     else:
         L.append("### Positions vs ouverture + dynamique intraday")

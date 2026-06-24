@@ -503,7 +503,9 @@ def test_selection_table_pas_de_mention_monetaire(env):
     r18 = _build(env, "18h", datetime(2026, 6, 8, 18, 3, tzinfo=PARIS),
                  {"GC=F": 3380.0, "^FCHI": 8110.0, "^GSPC": 5300.0})
     md = r18.markdown.lower()
-    for token in ("€", "$", "gain", "perte", "rendement", "p&l"):
+    # « gain » autorisé : le suivi affiche le « max gain » (% d'amplitude vers la
+    # cible turbo > 1 %, jamais un montant — décision fondateur 24/06).
+    for token in ("€", "$", "rendement", "p&l"):
         assert token not in md, f"mention monétaire interdite : {token!r}"
 
 
@@ -558,6 +560,30 @@ def test_excursions_max_short_depuis_ouverture(env):
     # Persistance : champs additifs écrits dans suivi-tracking si sélectionné (testé
     # ailleurs) ; ici on s'assure juste que le rendu n'a pas cassé.
     assert r.markdown
+
+
+def test_suivi_statut_max_gain_gagne_et_pas_encore(env):
+    """Le suivi affiche le max gain du jour + le statut vs cible turbo > 1 %
+    (décision fondateur 24/06 : « gagné » / « pas encore »), sans réseau (high/low
+    sauté faute de clé → max gain = excursion 1h injectée)."""
+    _decision_log_selection(env, {"Or"})
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    # Or SHORT, ouverture 3400 → baisse à 3340 = +1.76% favorable (> 1% → gagné).
+    series = {"GC=F": _series_1h_jour([3400, 3340])}
+    r = _build_series(env, "12h", now, series)
+    orr = _ligne(r, "Or")
+    assert orr.max_gain_pct is not None and orr.max_gain_pct > 1.0
+    md = r.markdown
+    assert "Max gain jour" in md          # colonne max gain
+    assert "Gagné" in md                  # colonne statut
+    assert "✅ gagné" in md               # Or a dépassé 1 %
+
+
+def test_suivi_statut_pas_encore_sous_seuil(env):
+    """Pari sous 1 % → statut « pas encore » avec le max atteint (zéro invention)."""
+    assert rs.statut_max_gain(0.6) == "⏳ pas encore (+0.60%)"
+    assert rs.statut_max_gain(1.4) == "✅ gagné"
+    assert rs.statut_max_gain(None) == "—"
 
 
 def test_cascade_prix_derniere_barre_1h_prioritaire_sur_spot(env):

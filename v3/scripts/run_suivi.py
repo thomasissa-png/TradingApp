@@ -125,6 +125,9 @@ class SuiviLigne:
     # max ≥ 0) et « pire point » (adverse max ≤ 0). None si non calculable (zéro invention).
     max_favorable_pct: Optional[float] = None
     max_adverse_pct: Optional[float] = None
+    # Max gain du jour ATTEINT à cet instant (high/low journalier ∪ excursion 1h) :
+    # base du statut « gagné > 1 % / pas encore » (décision fondateur 24/06).
+    max_gain_pct: Optional[float] = None
 
 
 @dataclass
@@ -487,6 +490,52 @@ def excursions_suivi(
     if not bars:
         return (None, None)
     return MB._excursions_intraday(bars, ouverture, call)
+
+
+# Cible turbo (décision fondateur 24/06) : un pari est GAGNÉ quand son max gain du
+# jour dépasse 1 %. Le suivi 12h/18h doit le dire (gagné / pas encore).
+SEUIL_MAX_GAIN_SUIVI = 1.0
+
+
+def max_gain_suivi(
+    ticker: str,
+    series_1h: Optional[List[Any]],
+    date_j: date,
+    ouverture: Optional[float],
+    call: str,
+    max_fav_1h: Optional[float] = None,
+) -> Optional[float]:
+    """Max gain du jour ATTEINT à cet instant (12h / 18h), pour savoir si le pari
+    a déjà touché la cible turbo (> 1 %). On prend le MEILLEUR de deux sources :
+    le high/low de la bougie journalière (couvre tous les actifs, même sans 1h) et
+    l'excursion 1h (garantit l'intraday réel). None si rien d'exploitable.
+
+    Le high/low journalier n'est tenté QUE si une clé Twelve est dispo (prod) :
+    sans clé (tests / hors-ligne), on s'appuie sur l'excursion 1h injectée — pas
+    d'appel réseau parasite."""
+    import mesure_bilan as MB  # noqa: PLC0415
+    mg_hl = None
+    try:
+        import market_data as _md  # noqa: PLC0415
+        if _md._twelve_key():
+            hi, lo = MB._day_high_low(ticker, date_j)
+            mg_hl = MB.max_gain_du_jour(hi, lo, ouverture, call)
+    except Exception as e:  # noqa: BLE001 — best-effort, jamais bloquant
+        logger.warning("max_gain_suivi : high/low jour KO %s : %s", ticker, e)
+    cands = [x for x in (mg_hl, max_fav_1h) if isinstance(x, (int, float))]
+    return round(max(cands), 2) if cands else None
+
+
+def statut_max_gain(max_gain_pct: Optional[float],
+                    seuil: float = SEUIL_MAX_GAIN_SUIVI) -> str:
+    """Statut du pari vs la cible turbo (> 1 %), affiché dans le suivi.
+    « ✅ gagné » si déjà au-dessus ; « ⏳ pas encore » avec le max atteint ;
+    « — » si non mesurable (zéro invention)."""
+    if not isinstance(max_gain_pct, (int, float)):
+        return "—"
+    if max_gain_pct > seuil:
+        return "✅ gagné"
+    return f"⏳ pas encore ({max_gain_pct:+.2f}%)"
 
 
 def us_trend_flag(delta_pct: Optional[float], call: str) -> str:
@@ -1263,6 +1312,8 @@ def build_suivi(
         max_fav, max_adv = excursions_suivi(
             ticker, series_1h, date_j, ouverture, call
         )
+        # Max gain du jour atteint à cet instant (high/low ∪ 1h) → statut > 1 %.
+        max_gain = max_gain_suivi(ticker, series_1h, date_j, ouverture, call, max_fav)
         delta = None
         if isinstance(ouverture, (int, float)) and isinstance(prix_courant, (int, float)) and ouverture:
             delta = (prix_courant - ouverture) / ouverture * 100.0
@@ -1309,6 +1360,7 @@ def build_suivi(
             fav_prec=(round(fav_prec_v, 2) if fav_prec_v is not None else None),
             max_favorable_pct=(round(max_fav, 2) if max_fav is not None else None),
             max_adverse_pct=(round(max_adv, 2) if max_adv is not None else None),
+            max_gain_pct=max_gain,
         ))
 
     # FIX 2a/2c (fondateur 23/06) — la section news est CENTRÉE sur les paris :
@@ -1418,12 +1470,13 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
         "| <span class=\"c-full\">Prix d'entrée</span><span class=\"c-short\">Entrée</span> "
         "| <span class=\"c-full\">% vs ouv. 12h</span><span class=\"c-short\">% 12h</span> "
         "| <span class=\"c-full\">% vs ouv. 18h</span><span class=\"c-short\">% 18h</span> "
-        "| <span class=\"c-full\">Meilleur point</span><span class=\"c-short\">Best</span> "
+        "| <span class=\"c-full\">Max gain jour</span><span class=\"c-short\">Max</span> "
+        "| <span class=\"c-full\">Gagné &gt; 1 % ?</span><span class=\"c-short\">&gt;1%</span> "
         "| <span class=\"c-full\">Pire point</span><span class=\"c-short\">Pire</span> "
         "| Tendance "
         f"| Vendre à {hour_label} ? |"
     )
-    L.append("|---|---|---|---|---|---|---|---|---|")
+    L.append("|---|---|---|---|---|---|---|---|---|---|")
     for li in selection:
         if is_12h:
             # Au 12h : colonne 12h = favorable courant, colonne 18h = vide.
@@ -1433,19 +1486,20 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
             # Au 18h : colonne 12h = favorable précédent (snapshot 12h), 18h = courant.
             col_12 = _fmt_fav(li.fav_prec)
             col_18 = _fmt_fav(li.fav_now)
-        # Meilleur / pire point depuis l'ouverture (excursions max, mesure_bilan).
-        col_best = _fmt_pct(li.max_favorable_pct)
+        # Max gain du jour atteint (high/low ∪ 1h) + statut vs cible turbo > 1 %.
+        col_max = _fmt_pct(li.max_gain_pct)
+        col_statut = statut_max_gain(li.max_gain_pct)
         col_pire = _fmt_pct(li.max_adverse_pct)
         # Prix d'entrée = prix d'ouverture (la référence du %).
         L.append(
             f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | {col_12} | {col_18} | "
-            f"{col_best} | {col_pire} | {li.tendance} | **{li.vendre}** |"
+            f"{col_max} | {col_statut} | {col_pire} | {li.tendance} | **{li.vendre}** |"
         )
     L.append("")
     # FIX 4 (fondateur 23/06) — légende courte : 1 phrase, détail replié.
     L.append(
-        "_Vendre = sortir maintenant ; % favorable `+`=gagne / `-`=perd ; "
-        "Meilleur/Pire = excursion max depuis l'ouverture._"
+        "_Max gain jour = meilleur % atteint depuis l'entrée (cible turbo > 1 % = gagné) ; "
+        "% favorable `+`=gagne / `-`=perd ; Vendre = sortir maintenant._"
     )
     L.append("")
     # Pourquoi on tient ces positions : la VRAIE raison du call (drivers du score à

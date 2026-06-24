@@ -320,6 +320,9 @@ def test_cr1_pr1_enhance_winrate_present():
 def test_sr1_synthese_en_tete_performance():
     md = J.render_performance({}, [], NOW, fiches={})
     lignes = [l for l in md.splitlines() if l.strip()]
-    # 1re ligne = H1 ; 2e ligne significative = la synthèse « cellules fiables ».
+    # 1re ligne = H1. Décision fondateur 24/06 : EN TÊTE = la Sélection cumulée
+    # (Top 1 / Top 3), AVANT le détail par cellule (synthèse « cellules fiables »).
     assert lignes[0].startswith("# ")
-    assert "cellules fiables" in lignes[1]
+    idx_sel = next(i for i, l in enumerate(lignes) if "Sélection cumulée" in l)
+    idx_synth = next(i for i, l in enumerate(lignes) if "cellules fiables" in l)
+    assert idx_sel < idx_synth

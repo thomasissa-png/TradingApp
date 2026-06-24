@@ -2635,6 +2635,164 @@ def _render_winrate_table(rows: List[Dict[str, Any]]) -> List[str]:
     return lines
 
 
+SEUIL_MAX_GAIN_CUMUL = 1.0   # cible turbo : un pick gagne si max gain du jour > 1 %
+
+
+def _selection_scores_jour(
+    bulletin_date: date, decision_log_dir: Path = DECISION_LOG_DIR,
+) -> Dict[str, float]:
+    """{actif: |score|} des cellules 24h `selection_du_jour: true` du jour donné.
+
+    Sert à identifier le Top 1 (conviction max) et le Top 3 (les sélectionnés)
+    pour le win rate cumulé. Dernier record par actif gagne. Zéro invention."""
+    out: Dict[str, float] = {}
+    if not decision_log_dir.exists():
+        return out
+    prefix = bulletin_date.isoformat()
+    for fp in sorted(decision_log_dir.glob(f"{prefix}-*.jsonl")):
+        try:
+            for line in fp.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if (not isinstance(rec, dict) or rec.get("horizon") != "24h"
+                        or rec.get("bulletin_date") != prefix
+                        or not rec.get("selection_du_jour")):
+                    continue
+                sc = rec.get("score_pm1")
+                if not isinstance(sc, (int, float)):
+                    sc = rec.get("score_pond")
+                if isinstance(sc, (int, float)) and rec.get("actif"):
+                    out[str(rec["actif"])] = abs(float(sc))
+        except OSError:
+            continue
+    return out
+
+
+def _pick_gagnant_max_gain(rec: dict, seuil: float = SEUIL_MAX_GAIN_CUMUL) -> Optional[bool]:
+    """Un pick est GAGNÉ si son max gain du jour > seuil. Repli sur le verdict
+    clôture (VRAI/FAUSSE) pour les anciens records sans max_gain_pct. None si non
+    mesurable (zéro invention)."""
+    mg = rec.get("max_gain_pct")
+    if isinstance(mg, (int, float)):
+        return mg > seuil
+    o = rec.get("outcome")
+    if o in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+        return o == OUTCOME_VRAI
+    return None
+
+
+@dataclass
+class SelectionCumul:
+    """Win rate CUMULÉ de la Sélection sur le max gain (> 1 %). WIN RATE ONLY.
+    Top 1 = la conviction n°1 du jour ; Top 3 = tous les sélectionnés."""
+    top1_n: int = 0
+    top1_win: int = 0
+    top3_n: int = 0
+    top3_win: int = 0
+
+    def _taux(self, win: int, n: int) -> Optional[float]:
+        return round(win / n * 100.0, 1) if n else None
+
+    @property
+    def taux_top1(self) -> Optional[float]:
+        return self._taux(self.top1_win, self.top1_n)
+
+    @property
+    def taux_top3(self) -> Optional[float]:
+        return self._taux(self.top3_win, self.top3_n)
+
+
+def selection_cumulative(
+    measures_log_path: Path = MEASURES_LOG_FILE,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+    seuil: float = SEUIL_MAX_GAIN_CUMUL,
+) -> SelectionCumul:
+    """Win rate CUMULÉ (tout l'historique) de la Sélection sur le max gain > seuil.
+
+    Top 1 = le pick de conviction max chaque jour ; Top 3 = tous les sélectionnés.
+    Source = measures-log (max_gain_pct persisté) jointe au decision-log (sélection
+    + scores). Picks non mesurables exclus (zéro invention)."""
+    res = SelectionCumul()
+    if not measures_log_path.exists():
+        return res
+    # Dernier record 24h par (actif, bulletin_date).
+    recs: Dict[Tuple[str, str], dict] = {}
+    for line in measures_log_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(r, dict) or r.get("horizon") != "24h":
+            continue
+        recs[(str(r.get("actif")), str(r.get("bulletin_date")))] = r
+    by_date: Dict[str, Dict[str, dict]] = {}
+    for (actif, bdate), r in recs.items():
+        by_date.setdefault(bdate, {})[actif] = r
+    for bdate, amap in by_date.items():
+        try:
+            bd = date.fromisoformat(bdate)
+        except (TypeError, ValueError):
+            continue
+        scores = _selection_scores_jour(bd, decision_log_dir)
+        if not scores:
+            continue
+        # Top 3 : chaque sélectionné mesurable.
+        mesurables: List[Tuple[str, float]] = []
+        for actif, sc in scores.items():
+            r = amap.get(actif)
+            if r is None:
+                continue
+            won = _pick_gagnant_max_gain(r, seuil)
+            if won is None:
+                continue
+            res.top3_n += 1
+            res.top3_win += 1 if won else 0
+            mesurables.append((actif, sc))
+        # Top 1 : la conviction max parmi les mesurables du jour.
+        if mesurables:
+            a1 = max(mesurables, key=lambda x: x[1])[0]
+            res.top1_n += 1
+            res.top1_win += 1 if _pick_gagnant_max_gain(amap[a1], seuil) else 0
+    return res
+
+
+def _render_selection_cumulative_block() -> List[str]:
+    """Bloc EN TÊTE de la page Performance : win rate cumulé Top 1 / Top 3 sur le
+    max gain (> 1 %) = le niveau de certitude (décision fondateur 24/06)."""
+    s = selection_cumulative()
+    L: List[str] = ["## 🎯 Sélection cumulée (Top 1 / Top 3)", ""]
+    L.append(
+        "> Le win rate qui compte : nos paris de conviction, jugés sur le **max gain "
+        "du jour > 1 %** (cible turbo). **Top 1** = notre conviction n°1 ; **Top 3** = "
+        "la Sélection complète. Cumulé sur tout l'historique mesuré."
+    )
+    L.append("")
+    if s.top3_n == 0:
+        L.append("_Pas encore de pick de Sélection mesuré (en warm-up)._")
+        L.append("")
+        return L
+
+    def _ligne(label: str, win: int, n: int, taux: Optional[float]) -> str:
+        if not n:
+            return f"- **{label}** : pas encore mesuré."
+        wlow, _ = wilson_ci(win, n)
+        warn = " _(N faible, non concluant)_" if n < N_EFFECTIVE_MIN else ""
+        return (f"- **{label}** : {taux:.0f}% ({win}/{n}) · borne basse "
+                f"{wlow * 100:.0f}%{warn}")
+    L.append(_ligne("Top 1 (conviction n°1)", s.top1_win, s.top1_n, s.taux_top1))
+    L.append(_ligne("Top 3 (Sélection)", s.top3_win, s.top3_n, s.taux_top3))
+    L.append("")
+    return L
+
+
 def render_performance(
     kpis: Dict[Tuple[str, str], CellKPI],
     measures: List[Measure],
@@ -2654,8 +2812,14 @@ def render_performance(
     lines: List[str] = []
     lines.append("# Win rate du bulletin — Journaliste")
     lines.append("")
+    # EN TÊTE (décision fondateur 24/06) : le win rate cumulé de la SÉLECTION
+    # (Top 1 / Top 3) sur le max gain > 1 % = le niveau de certitude qui compte.
+    # Le détail des 36 cellules (mesure clôture historique) reste dessous.
+    lines.extend(_render_selection_cumulative_block())
     # [S-R1 audit visuel 12/06] : la synthèse « X / 36 cellules fiables » est le
     # chiffre le plus important → EN TÊTE, avant les métadonnées explicatives.
+    lines.append("## Détail par cellule (mesure clôture)")
+    lines.append("")
     lines.append(_winrate_synthese_line(rows))
     lines.append("")
     lines.append(f"- Généré : {horodatage_fr(now)}")

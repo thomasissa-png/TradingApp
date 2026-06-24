@@ -404,7 +404,8 @@ class TestWinRateView:
         kpis = {("petrole", "24h"): jr.compute_kpi(ms)}
         now = datetime(2026, 5, 30, 12, 0, tzinfo=timezone.utc)
         content = jr.render_performance(kpis, ms, now)
-        for banned in ["Taux_brut", "Brier", "| Alertes", "P&L", "€", "$", "gain"]:
+        # « gain » autorisé (max gain = % d'amplitude, décision fondateur 24/06).
+        for banned in ["Taux_brut", "Brier", "| Alertes", "P&L", "€", "$"]:
             assert banned not in content, f"Terme interdit présent : {banned}"
 
 

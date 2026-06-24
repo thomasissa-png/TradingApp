@@ -95,8 +95,10 @@ def test_table_zero_argent_et_jargon_retire():
     """Aucune notion d'argent ; Brier / Taux_brut / Alertes retirés de la vue."""
     ms = [_measure("or", "Or", jr.OUTCOME_VRAI, date(2026, 6, 1))]
     out = jr.render_performance(_kpis_from(ms), ms, NOW, fiches=FICHES)
+    # « gain » n'est plus interdit : le win rate se mesure sur le max gain (%
+    # d'amplitude, jamais un montant — décision fondateur 24/06).
     for banned in ["Brier", "Taux_brut", "| Alertes", "P&L", "€", "$",
-                   "gain", "Wilson_low", "LONG/SHORT"]:
+                   "Wilson_low", "LONG/SHORT"]:
         assert banned not in out, f"Terme interdit affiché : {banned}"
 
 

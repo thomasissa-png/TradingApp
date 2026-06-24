@@ -26,21 +26,21 @@
     "Argent": {
       "call": "SHORT",
       "fav_pct": 4.17,
-      "heure": "17h38",
+      "heure": "18h15",
       "max_adv_pct": 0.0,
       "max_fav_pct": 4.17
     },
     "Cacao": {
       "call": "LONG",
       "fav_pct": 1.79,
-      "heure": "17h38",
+      "heure": "18h15",
       "max_adv_pct": -1.04,
       "max_fav_pct": 1.79
     },
     "Café (Arabica)": {
       "call": "LONG",
       "fav_pct": 1.1,
-      "heure": "17h38",
+      "heure": "18h15",
       "max_adv_pct": -2.44,
       "max_fav_pct": 1.1
     }

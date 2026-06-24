@@ -2538,6 +2538,7 @@ function closeSidebarMobile() {{
   bindNav('nav-today', showToday);
   bindNav('nav-week', showWeek);
   bindNav('nav-history', showHistory);
+  bindNav('nav-variations', showVariations);   // FIX 24/06 : lien « Variations 24h » mort (handler de clic manquant)
 
   const rawHash = (location.hash || '').replace(/^#/, '');
   // Routage des vues auxiliaires (avant la résolution d'un jour). #vue=performance

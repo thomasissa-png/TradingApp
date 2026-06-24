@@ -1382,6 +1382,20 @@ def _fmt_fav_cell(v: Optional[float]) -> str:
     return f"{v:+.2f}%" if isinstance(v, (int, float)) else "—"
 
 
+def _fmt_maxgain(p: "PerfTop3Ligne") -> str:
+    """Meilleur % favorable de la journée + son heure (12h / 18h / 22h).
+
+    Le « max gain » est le pic favorable atteint parmi les points de relevé
+    disponibles (midi / 18h / clôture), avec l'heure où il a eu lieu — utile en
+    turbo (où sortir aurait verrouillé le plus). « — » si aucun point favorable
+    exploitable (zéro invention). L'heure « clôture » est affichée « 22h » pour
+    coller au vocabulaire du bilan de fin de journée."""
+    if not (isinstance(p.pic_valeur, (int, float)) and p.pic_heure):
+        return "—"
+    heure = "22h" if p.pic_heure == "clôture" else p.pic_heure
+    return f"{p.pic_valeur:+.2f}% ({heure})"
+
+
 def _a_reflue(p: "PerfTop3Ligne") -> bool:
     """Le pic favorable a-t-il reflué AVANT la clôture (sommet à 12h/18h, clôture
     plus basse) ? = on a tenu trop longtemps (clôturé trop tard)."""
@@ -1630,9 +1644,12 @@ def _render_jour_selection(bilan: "BilanJour") -> List[str]:
     wr = f"{nv / nN * 100:.0f}%" if nN else "—"
     wrs = f"{nv_sig / nN * 100:.0f}%" if nN else "—"
     L.append(
-        "> Nos paris 24h du jour. **Variation actif** = mouvement RÉEL de l'actif sur "
-        "24h (monte → +, baisse → −) ; le ✅/❌ dit si notre call était dans le bon "
-        "sens. **Raison** = les vrais drivers du score à l'émission (decision-log)."
+        "> Nos paris 24h du jour, suivis tout au long de la journée. **12h / 18h / "
+        "22h** = performance du call à midi, à 18h et à la clôture (% favorable "
+        "signé : `+` va dans le sens du call, `-` contre nous). **Max gain** = le "
+        "meilleur point favorable de la journée et son heure (en turbo : où sortir "
+        "aurait verrouillé le plus). **Résultat** ✅/❌/⚪ = call dans le bon sens "
+        "sur 24h. **Raison** = les vrais drivers du score à l'émission (decision-log)."
     )
     L.append("")
     L.append(
@@ -1640,11 +1657,15 @@ def _render_jour_selection(bilan: "BilanJour") -> List[str]:
         f"· ampleur moyenne : **{_fmt_pct(amp)}**."
     )
     L.append("")
-    L.append("| Actif | Call | Variation actif | Résultat | Raison |")
-    L.append("|---|---|---|---|---|")
+    L.append("| Actif | Call | 12h | 18h | 22h | Max gain | Résultat | Raison |")
+    L.append("|---|---|---|---|---|---|---|---|")
     for p in perf:
         g = glyph.get(out_by.get(p.actif), "⚪")
-        L.append(f"| {p.actif} | {p.call} | {_fmt_pct(delta_by.get(p.actif))} | {g} | {p.raison_call or '—'} |")
+        L.append(
+            f"| {p.actif} | {p.call} | {_fmt_fav_cell(p.fav_12h)} | "
+            f"{_fmt_fav_cell(p.fav_18h)} | {_fmt_fav_cell(p.fav_cloture)} | "
+            f"{_fmt_maxgain(p)} | {g} | {p.raison_call or '—'} |"
+        )
     L.append("")
     return L
 

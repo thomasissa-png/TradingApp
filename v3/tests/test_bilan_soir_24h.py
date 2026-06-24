@@ -237,6 +237,46 @@ def test_apprentissage_rien_de_notable():
     assert len(lignes) == 1 and "Rien de notable" in lignes[0]
 
 
+def test_section1_synthese_montre_12h_18h_22h_et_maxgain():
+    """SECTION 1 (synthèse) : pour chaque pari du trio, on voit la performance à
+    midi / 18h / 22h ET le max gain de la journée + son heure (besoin fondateur :
+    « on ne se rend pas compte des performances du trio de tête »)."""
+    b = bj.BilanJour(date_j=date(2026, 6, 23),
+                     now=datetime(2026, 6, 23, 22, 15, tzinfo=PARIS))
+    b.measures_24h = [
+        NS(cell=NS(actif_name="Cacao", conclusion="LONG"), horizon="24h",
+           delta_pct=0.91, outcome="non-conclusive"),
+        NS(cell=NS(actif_name="EUR/USD", conclusion="SHORT"), horizon="24h",
+           delta_pct=-0.38, outcome="VRAI"),
+    ]
+    b.perf_top3 = [
+        bj.PerfTop3Ligne(actif="Cacao", call="LONG", fav_12h=-0.52, fav_18h=-0.52,
+                         fav_cloture=0.91, pic_valeur=0.91, pic_heure="clôture",
+                         points_manquants=[], verdict="x", vendre_reco=None,
+                         raison_call="Météo Côte d'Ivoire"),
+        bj.PerfTop3Ligne(actif="EUR/USD", call="SHORT", fav_12h=0.35, fav_18h=0.35,
+                         fav_cloture=0.33, pic_valeur=0.35, pic_heure="12h",
+                         points_manquants=[], verdict="x", vendre_reco=None,
+                         raison_call="Écart de taux US-DE"),
+    ]
+    md = "\n".join(bj._render_jour_selection(b))
+    # En-tête : les 3 points de contrôle + le max gain sont des colonnes visibles.
+    assert "| Actif | Call | 12h | 18h | 22h | Max gain | Résultat | Raison |" in md
+    # Cacao : pic à la clôture → heure affichée « 22h » (vocabulaire du bilan du soir).
+    assert "| Cacao | LONG | -0.52% | -0.52% | +0.91% | +0.91% (22h) | ⚪ |" in md
+    # EUR/USD : pic à midi → « 12h » conservé, perf visible aux 3 créneaux.
+    assert "| EUR/USD | SHORT | +0.35% | +0.35% | +0.33% | +0.35% (12h) | ✅ |" in md
+
+
+def test_maxgain_cell_sans_point_favorable():
+    """Aucun point favorable exploitable → « — » (zéro invention), pas de fausse heure."""
+    p = bj.PerfTop3Ligne(actif="VIX", call="SHORT", fav_12h=None, fav_18h=None,
+                         fav_cloture=None, pic_valeur=None, pic_heure=None,
+                         points_manquants=["12h", "18h", "clôture"], verdict="x",
+                         vendre_reco=None)
+    assert bj._fmt_maxgain(p) == "—"
+
+
 # ===========================================================================
 # Persistance intraday 12h/18h (run_suivi) — idempotente, zéro invention
 # ===========================================================================

@@ -73,8 +73,8 @@ def env(tmp_path):
     dlog = tmp_path / "decision-log"
     dlog.mkdir()
     sdir = tmp_path / "suivi"
-    # Dir futures-us DÉDIÉ et VIDE par défaut : garantit le repli « cash fermé »
-    # dans les tests qui n'injectent pas de future (isolation du dir data réel).
+    # Dir indices-US (OANDA) DÉDIÉ et VIDE par défaut : garantit le repli « cash
+    # fermé » dans les tests qui n'injectent pas de cotation continue.
     fdir = tmp_path / "futures-us"
     return {
         "bdir": bdir, "odir": odir, "dlog": dlog, "sdir": sdir, "fdir": fdir,
@@ -212,57 +212,56 @@ def test_suggestion_sortie_dans_rapport(env):
 # ---------------------------------------------------------------------------
 
 def test_us_pas_encore_ouvert_a_12h(env):
-    # SANS fichier futures (dir vide) → repli « cash fermé » INCHANGÉ.
+    # Cash US fermé à 12h, SANS cotation OANDA (dir vide) → repli « cash fermé ».
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
     r = _build(env, "12h", now, {"GC=F": 3400.0, "^FCHI": 8120.0, "^GSPC": 5301.0})
     sp = _ligne(r, "S&P 500")
     assert sp.us_pas_ouvert is True
     assert sp.statut == "🕐 cash fermé (ouvre 15h30)"
     assert sp.delta_pct is None  # pas de delta trompeur
-    # Note honnête : cash fermé jusqu'à 15h30, futures non servis par notre source.
-    assert "Cash US" in r.markdown and "futures" in r.markdown
+    # Note US présente dans le rapport 12h.
+    assert "Cash US" in r.markdown
 
 
-def _ecrire_future(env, day, snapshots, last_ts):
-    """Écrit un fichier futures-us minimal {date}.json pour les tests."""
+def _ecrire_oanda(env, day, snapshots, last_ts):
+    """Écrit un fichier futures-us minimal {date}.json façon fetch_us_index."""
     env["fdir"].mkdir(parents=True, exist_ok=True)
     data = {"date": day, "snapshots": snapshots}
-    for tkr in ("ES=F", "NQ=F"):
-        # Dernier prix = dernier snapshot contenant le ticker.
-        vals = [s[tkr] for s in snapshots if tkr in s]
+    for inst in ("SPX500_USD", "NAS100_USD"):
+        vals = [s[inst] for s in snapshots if inst in s]
         if vals:
-            data[tkr] = {"price": vals[-1], "ts": last_ts}
+            data[inst] = {"price": vals[-1], "ts": last_ts}
     (env["fdir"] / f"{day}.json").write_text(
         json.dumps(data, ensure_ascii=False), encoding="utf-8"
     )
 
 
-def test_us_via_future_frais_affiche_le_mouvement_signe(env):
-    # ES=F : ref (1er snapshot) 5500 → courant 5533 = +0.60% de mouvement.
-    # S&P 500 est LONG dans le bulletin → fav_now positif (va dans le sens du call).
+def test_us_via_future_oanda_frais_affiche_le_mouvement_signe(env):
+    # SPX500_USD : ref (1ère cotation) 5500 → courant 5533 = +0.60%.
+    # S&P 500 est LONG dans le bulletin → fav_now positif (sens du call).
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
     ts = now.astimezone(ZoneInfo("UTC")).isoformat()  # frais (= now)
-    _ecrire_future(env, "2026-06-08", [
-        {"ts": ts, "ES=F": 5500.0, "NQ=F": 19800.0},
-        {"ts": ts, "ES=F": 5533.0, "NQ=F": 19850.0},
+    _ecrire_oanda(env, "2026-06-08", [
+        {"ts": ts, "SPX500_USD": 5500.0, "NAS100_USD": 19800.0},
+        {"ts": ts, "SPX500_USD": 5533.0, "NAS100_USD": 19850.0},
     ], last_ts=ts)
     r = _build(env, "12h", now, {"GC=F": 3400.0, "^FCHI": 8120.0})
     sp = _ligne(r, "S&P 500")
     assert sp.us_pas_ouvert is True
-    assert sp.statut == "🔵 via future ES=F"
-    assert sp.delta_pct == 0.6  # mouvement future vs future
+    assert sp.statut == "🔵 via future S&P 500"
+    assert sp.delta_pct == 0.6  # mouvement indice vs indice
     assert sp.fav_now == 0.6    # LONG → favorable positif
-    # ÉCHELLE : le prix affiché est bien celui du FUTURE (≈5533), jamais un cash.
     assert sp.prix_courant == 5533.0
+    assert sp.ouverture == 5500.0  # référence = entrée du matin
 
 
-def test_us_via_future_perime_repli_cash_ferme(env):
-    # Snapshot vieux de > 30 min → périmé → repli « cash fermé ».
+def test_us_via_future_oanda_perime_repli_cash_ferme(env):
+    # Cotation vieille de > 30 min → périmée → repli « cash fermé ».
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
     vieux = datetime(2026, 6, 8, 9, 0, tzinfo=ZoneInfo("UTC")).isoformat()
-    _ecrire_future(env, "2026-06-08", [
-        {"ts": vieux, "ES=F": 5500.0},
-        {"ts": vieux, "ES=F": 5533.0},
+    _ecrire_oanda(env, "2026-06-08", [
+        {"ts": vieux, "SPX500_USD": 5500.0},
+        {"ts": vieux, "SPX500_USD": 5533.0},
     ], last_ts=vieux)
     r = _build(env, "12h", now, {"GC=F": 3400.0, "^FCHI": 8120.0})
     sp = _ligne(r, "S&P 500")
@@ -270,20 +269,18 @@ def test_us_via_future_perime_repli_cash_ferme(env):
     assert sp.delta_pct is None
 
 
-def test_us_via_future_echelle_jamais_melangee(env):
-    # Le % du future (5500→5533) ne doit JAMAIS se calculer contre un cash (748).
-    # On vérifie que le delta est cohérent avec un mouvement future vs future.
+def test_us_via_future_oanda_echelle_jamais_melangee(env):
+    # Le % de l'indice (5500→5533) ne doit JAMAIS se calculer contre un cash.
     now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
     ts = now.astimezone(ZoneInfo("UTC")).isoformat()
-    _ecrire_future(env, "2026-06-08", [
-        {"ts": ts, "ES=F": 5500.0},
-        {"ts": ts, "ES=F": 5533.0},
+    _ecrire_oanda(env, "2026-06-08", [
+        {"ts": ts, "SPX500_USD": 5500.0},
+        {"ts": ts, "SPX500_USD": 5533.0},
     ], last_ts=ts)
     r = _build(env, "12h", now, {"GC=F": 3400.0, "^FCHI": 8120.0})
     sp = _ligne(r, "S&P 500")
-    # +0.6% = (5533-5500)/5500. Un mélange avec 748 donnerait un % aberrant.
     assert sp.delta_pct == 0.6
-    assert abs(sp.delta_pct) < 5  # garde-fou : pas un % aberrant type 639%
+    assert abs(sp.delta_pct) < 5  # garde-fou : pas un % aberrant
 
 
 def test_us_ouvert_a_18h(env):

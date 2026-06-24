@@ -50,19 +50,27 @@ SUIVI_DIR = ROOT / "data" / "suivi"
 # mesure (n'alimente NI measures-log NI performance). v3/data/ jamais commité ici.
 SUIVI_TRACKING_DIR = ROOT / "data" / "suivi-tracking"
 EVENTS_LOG_DIR = ROOT / "data" / "events-log"
-# Futures US (ES=F / NQ=F) écrits par `fetch_us_futures.py` (tourne sur le VPS,
-# IP non bloquée par Yahoo). Lus le MATIN quand le cash US est fermé pour afficher
-# un statut « via future » au lieu de « cash fermé (ouvre 15h30) ». Best-effort :
-# fichier absent/périmé → repli sur le comportement « cash fermé » inchangé.
+# Indices US (S&P 500 / Nasdaq) — prix continu DÈS 8h via OANDA (CFD ~24h/5),
+# écrit par `fetch_us_index.py` dans le cycle (pas de VPS). Lu le MATIN, quand le
+# cash US est fermé, pour suivre le pari US comme un TURBO (qui suit le future) :
+# % de mouvement indice vs indice depuis la 1ère cotation du jour (= entrée ~8h).
+# Best-effort : fichier absent / périmé / marché OANDA fermé → repli « cash fermé ».
 FUTURES_US_DIR = ROOT / "data" / "futures-us"
 
-# Mapping cash US → future CME correspondant (ticker_principal de la fiche).
-# ^GSPC (S&P 500) → ES=F ; ^IXIC (Nasdaq) → NQ=F. ^VIX : pas de future en Phase 1.
+# Mapping cash US (ticker_principal fiche) → instrument OANDA continu.
+# ^GSPC (S&P 500) → SPX500_USD ; ^IXIC (Nasdaq) → NAS100_USD.
+# ^VIX : pas d'instrument OANDA overnight → reste « cash fermé » au matin.
 US_CASH_TO_FUTURE = {
-    "^GSPC": "ES=F",
-    "^IXIC": "NQ=F",
+    "^GSPC": "SPX500_USD",
+    "^IXIC": "NAS100_USD",
 }
-# Fraîcheur max d'un snapshot future pour être affichable (minutes).
+# Libellé lisible de l'instrument continu (affiché dans le statut du suivi).
+US_FUTURE_LABEL = {
+    "SPX500_USD": "S&P 500",
+    "NAS100_USD": "Nasdaq",
+}
+# Fraîcheur max d'une cotation pour être affichable (minutes). Le cycle écrit un
+# snapshot juste avant le suivi → en pratique quelques secondes.
 FUTURE_FRESH_MAX_MIN = 30
 
 PARIS_TZ = ZoneInfo("Europe/Paris")
@@ -299,24 +307,24 @@ def load_us_future_status(
     base_dir: Path = FUTURES_US_DIR,
     fresh_max_min: int = FUTURE_FRESH_MAX_MIN,
 ) -> Optional[Dict[str, Any]]:
-    """Statut US « via future » quand le cash est fermé (matin). None si indispo.
+    """Statut US « via future » (turbo) quand le cash est fermé. None si indispo.
 
-    Lit `futures-us/{date}.json` écrit par `fetch_us_futures.py` (VPS). Pour le
-    cash US `cash_ticker` (^GSPC / ^IXIC), mappe vers son future (ES=F / NQ=F) et
-    calcule un % de MOUVEMENT *future vs future* :
-        mvt = (prix_courant_future − prix_ref_future) / prix_ref_future * 100
-    où `prix_ref_future` = 1er snapshot du jour du future (proxy d'ouverture).
+    Lit `futures-us/{date}.json` écrit par `fetch_us_index.py` (OANDA, dans le
+    cycle). Pour le cash US `cash_ticker` (^GSPC / ^IXIC), mappe vers son
+    instrument OANDA (SPX500_USD / NAS100_USD) et calcule un % de MOUVEMENT
+    *indice vs indice* :
+        mvt = (prix_courant − prix_ref) / prix_ref * 100
+    où `prix_ref` = 1ère cotation du jour (snapshot du bulletin ~8h = entrée turbo).
 
-    ⚠️ COHÉRENCE D'ÉCHELLE : le % est calculé EXCLUSIVEMENT entre prix de futures
-    (ES≈5500 vs ES≈5500). On ne mélange JAMAIS un future (≈5500) avec un proxy
-    cash type SPY (≈748). Le résultat est un % de mouvement comparable au cash.
+    ⚠️ COHÉRENCE D'ÉCHELLE : le % est calculé EXCLUSIVEMENT entre cotations du
+    MÊME instrument (SPX500 vs SPX500). On ne mélange JAMAIS avec un proxy cash.
 
-    Retourne None (repli « cash fermé ») si : pas de future mappé, fichier absent,
-    illisible, snapshot trop vieux (> `fresh_max_min`), ou référence manquante.
-    Best-effort total : toute exception → None (zéro invention, zéro crash).
+    Retourne None (repli « cash fermé ») si : pas d'instrument mappé, fichier
+    absent/illisible, cotation trop vieille (> `fresh_max_min`) ou référence
+    manquante. Best-effort total : toute exception → None (zéro invention).
     """
-    fut = US_CASH_TO_FUTURE.get(cash_ticker)
-    if not fut:
+    inst = US_CASH_TO_FUTURE.get(cash_ticker)
+    if not inst:
         return None
     path = base_dir / f"{date_j.isoformat()}.json"
     if not path.exists():
@@ -324,12 +332,12 @@ def load_us_future_status(
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:  # noqa: BLE001 — fichier KO → repli propre
-        logger.warning("suivi future %s : fichier illisible (%s)", fut, e)
+        logger.warning("suivi US %s : fichier illisible (%s)", inst, e)
         return None
     if not isinstance(data, dict):
         return None
 
-    last = data.get(fut)
+    last = data.get(inst)
     if not isinstance(last, dict):
         return None
     price = last.get("price")
@@ -337,7 +345,7 @@ def load_us_future_status(
     if not isinstance(price, (int, float)) or price <= 0 or not ts_iso:
         return None
 
-    # Fraîcheur : le dernier snapshot doit dater de ≤ fresh_max_min.
+    # Fraîcheur : la dernière cotation doit dater de ≤ fresh_max_min.
     try:
         ts = datetime.fromisoformat(ts_iso)
         ts = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
@@ -347,23 +355,24 @@ def load_us_future_status(
     if age_min < 0 or age_min > fresh_max_min:
         return None
 
-    # Référence = 1er snapshot du jour CONTENANT ce future (proxy d'ouverture).
+    # Référence = 1ère cotation du jour CONTENANT cet instrument (entrée ~8h).
     ref_price = None
     snaps = data.get("snapshots")
     if isinstance(snaps, list):
         for snap in snaps:
-            if isinstance(snap, dict) and isinstance(snap.get(fut), (int, float)):
-                ref_price = float(snap[fut])
+            if isinstance(snap, dict) and isinstance(snap.get(inst), (int, float)):
+                ref_price = float(snap[inst])
                 break
     if not isinstance(ref_price, (int, float)) or ref_price <= 0:
         return None
 
     mvt_pct = round((float(price) - ref_price) / ref_price * 100.0, 2)
     return {
-        "future": fut,
+        "instrument": inst,
+        "label": US_FUTURE_LABEL.get(inst, inst),
         "price": float(price),
         "ref_price": ref_price,
-        "mvt_pct": mvt_pct,  # % de mouvement future vs future (échelle cohérente)
+        "mvt_pct": mvt_pct,  # % mouvement indice vs indice (échelle cohérente)
         "ts": ts_iso,
     }
 
@@ -1210,26 +1219,26 @@ def build_suivi(
         except (TypeError, ValueError):
             seuil = None
 
-        # Marché US pas encore ouvert (typiquement à 12h) → ligne explicite.
+        # Marché cash US pas encore ouvert (typiquement à 12h).
         us_pas_ouvert = (
             group == "us" and not MO.is_open_for_stamp("us", now, config)
         )
         is_select = bool(selection_map.get((actif, "24h"), False))
         if us_pas_ouvert:
-            # Cash US fermé (matin). Si on a un PRIX FRAIS de future (ES=F / NQ=F,
-            # écrit par fetch_us_futures.py sur le VPS), on affiche le statut « via
-            # future » au lieu de « cash fermé ». Le % est un MOUVEMENT future vs
-            # future (1er snapshot du jour = référence) : échelle cohérente, jamais
-            # mélangé avec un proxy cash. VIX reste « cash fermé » (pas de future).
+            # On trade le pari US en TURBO (qui suit le future). On suit donc
+            # l'indice US continu via OANDA (SPX500/NAS100) DÈS 8h : % de mouvement
+            # indice vs indice depuis la 1ère cotation du jour (= entrée ~8h),
+            # échelle cohérente (jamais mélangé avec un proxy cash). VIX (pas
+            # d'instrument OANDA overnight) ou donnée absente → « cash fermé ».
             fut_status = load_us_future_status(ticker, date_j, now, base_dir=futures_us_dir)
             if fut_status is not None:
-                fut_tkr = fut_status["future"]
+                lbl = fut_status["label"]
                 mvt = fut_status["mvt_pct"]
                 fav = fav_delta(mvt, call)  # signé PAR LE CALL (+ = sens du call)
                 rapport.lignes.append(SuiviLigne(
-                    actif=actif, call=call, ouverture=None,
+                    actif=actif, call=call, ouverture=fut_status["ref_price"],
                     prix_courant=fut_status["price"], delta_pct=mvt,
-                    statut=f"🔵 via future {fut_tkr}", tendance="—",
+                    statut=f"🔵 via future {lbl}", tendance="—",
                     delta_vs_prec=None, suggestion="—", seuil_pct=seuil,
                     us_pas_ouvert=True, vendre="Pas vendre", selection=is_select,
                     fav_now=(round(fav, 2) if fav is not None else None),
@@ -1492,10 +1501,11 @@ def _render_markdown(r: SuiviRapport) -> str:
     if h == REPORT_12H:
         L.append("### Note sur les marchés US")
         L.append(
-            "⚠️ Cash US (S&P 500, Nasdaq, VIX) ouvre à 15h30 Paris. Les futures "
-            "cotent déjà, mais notre fournisseur de données ne les sert pas → pas "
-            "de prix US avant l'ouverture cash (ce n'est pas le marché qui dort, "
-            "c'est la donnée qui manque). Premier statut US au suivi 18h."
+            "ℹ️ Cash US (S&P 500, Nasdaq, VIX) ouvre à 15h30 Paris. Comme on trade "
+            "en turbo (qui suit le future), on suit l'indice US en continu dès 8h "
+            "(« 🔵 via future ») : le % est le mouvement de l'indice depuis l'entrée "
+            "du matin, cohérent avec une revente avant 15h30. Le VIX, sans cotation "
+            "continue, reste « cash fermé » jusqu'à 15h30."
         )
         L.append("")
         L.append("### Positions du matin vs ouverture")

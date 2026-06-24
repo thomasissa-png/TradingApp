@@ -498,31 +498,19 @@ SEUIL_MAX_GAIN_SUIVI = 1.0
 
 
 def max_gain_suivi(
-    ticker: str,
-    series_1h: Optional[List[Any]],
-    date_j: date,
-    ouverture: Optional[float],
-    call: str,
     max_fav_1h: Optional[float] = None,
+    fav_now: Optional[float] = None,
 ) -> Optional[float]:
-    """Max gain du jour ATTEINT à cet instant (12h / 18h), pour savoir si le pari
-    a déjà touché la cible turbo (> 1 %). On prend le MEILLEUR de deux sources :
-    le high/low de la bougie journalière (couvre tous les actifs, même sans 1h) et
-    l'excursion 1h (garantit l'intraday réel). None si rien d'exploitable.
+    """Max gain ATTEINT À CET INSTANT (12h / 18h) = meilleur % favorable depuis
+    l'entrée, mesuré UNIQUEMENT sur les prix connus jusqu'à l'heure du rapport.
 
-    Le high/low journalier n'est tenté QUE si une clé Twelve est dispo (prod) :
-    sans clé (tests / hors-ligne), on s'appuie sur l'excursion 1h injectée — pas
-    d'appel réseau parasite."""
-    import mesure_bilan as MB  # noqa: PLC0415
-    mg_hl = None
-    try:
-        import market_data as _md  # noqa: PLC0415
-        if _md._twelve_key():
-            hi, lo = MB._day_high_low(ticker, date_j)
-            mg_hl = MB.max_gain_du_jour(hi, lo, ouverture, call)
-    except Exception as e:  # noqa: BLE001 — best-effort, jamais bloquant
-        logger.warning("max_gain_suivi : high/low jour KO %s : %s", ticker, e)
-    cands = [x for x in (mg_hl, max_fav_1h) if isinstance(x, (int, float))]
+    ⚠️ On N'utilise PAS le plus-haut de la bougie JOURNALIÈRE (fondateur 24/06,
+    bug Cacao) : celui-ci est le plus-haut de TOUTE la journée (y compris APRÈS
+    l'heure du rapport, et pour les actifs ~24h, la nuit) → il ferait croire à un
+    gain déjà reflué qui n'existe pas encore. On combine donc l'excursion 1h
+    (max des barres jusqu'à maintenant) et le % favorable courant `fav_now`, pour
+    que le max reste ≥ courant sans jamais fuiter le futur. None si rien."""
+    cands = [x for x in (max_fav_1h, fav_now) if isinstance(x, (int, float))]
     return round(max(cands), 2) if cands else None
 
 
@@ -1312,8 +1300,6 @@ def build_suivi(
         max_fav, max_adv = excursions_suivi(
             ticker, series_1h, date_j, ouverture, call
         )
-        # Max gain du jour atteint à cet instant (high/low ∪ 1h) → statut > 1 %.
-        max_gain = max_gain_suivi(ticker, series_1h, date_j, ouverture, call, max_fav)
         delta = None
         if isinstance(ouverture, (int, float)) and isinstance(prix_courant, (int, float)) and ouverture:
             delta = (prix_courant - ouverture) / ouverture * 100.0
@@ -1347,6 +1333,10 @@ def build_suivi(
         vendre = vendre_from_suggestion(suggestion)
         fav_now_v = fav_delta(delta, call)
         fav_prec_v = fav_delta(delta_prec, call) if isinstance(delta_prec, (int, float)) else None
+        # Max gain ATTEINT à cet instant : excursion 1h (jusqu'à maintenant) ∪ %
+        # courant. JAMAIS le plus-haut de la bougie du jour (fuiterait le futur/la
+        # nuit — bug Cacao, fondateur 24/06).
+        max_gain = max_gain_suivi(max_fav, fav_now_v)
 
         rapport.lignes.append(SuiviLigne(
             actif=actif, call=call, ouverture=ouverture, prix_courant=prix_courant,

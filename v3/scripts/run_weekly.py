@@ -347,10 +347,14 @@ def selection_semaine(
     absent → exclu de l'ampleur (mais compté au win rate via son outcome).
     """
     from journaliste import (  # noqa: PLC0415
-        iso_week_bounds, OUTCOME_VRAI, OUTCOME_FAUSSE,
+        iso_week_bounds, OUTCOME_VRAI, OUTCOME_FAUSSE, OUTCOME_NC,
     )
-    from bilan_jour import load_selection_map  # noqa: PLC0415
+    from bilan_jour import (  # noqa: PLC0415
+        load_selection_map, SEUIL_MAX_GAIN_JOUR, gagnant_max_gain,
+    )
     from datetime import timedelta  # noqa: PLC0415
+    # Statuts non jugeables (marché fermé / non mesuré) : toujours exclus.
+    _NON_JUGEABLE = {"marche-ferme", "non-notee", "suivi-interrompu"}
 
     monday, sunday = iso_week_bounds(now)
     res = SelectionSemaine()
@@ -374,7 +378,17 @@ def selection_semaine(
 
     sel_cache: Dict[date, Dict[Tuple[str, str], bool]] = {}
     for r in records.values():
-        if r.get("outcome") not in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+        outcome = r.get("outcome")
+        mg = r.get("max_gain_pct")
+        has_mg = isinstance(mg, (int, float))
+        # Décision fondateur 24/06 : un pick GAGNE si son max gain du jour > 1 %.
+        # Records récents (max_gain_pct présent) → jugés sur le max gain (le verdict
+        # clôture NC inclus puisqu'on a désormais la donnée). Anciens records (pas de
+        # max gain) → repli sur le verdict clôture VRAI/FAUSSE (NC exclu, zéro invention).
+        if has_mg:
+            if outcome in _NON_JUGEABLE:
+                continue
+        elif outcome not in (OUTCOME_VRAI, OUTCOME_FAUSSE):
             continue
         try:
             ech = date.fromisoformat(str(r.get("echeance")))
@@ -393,7 +407,10 @@ def selection_semaine(
         if not sel_cache[decision_day].get((actif, "24h"), False):
             continue
         res.n_select += 1
-        if r.get("outcome") == OUTCOME_VRAI:
+        if has_mg:
+            if gagnant_max_gain(mg, SEUIL_MAX_GAIN_JOUR):
+                res.n_vrai += 1
+        elif outcome == OUTCOME_VRAI:
             res.n_vrai += 1
         rp = r.get("realized_pct")
         concl = r.get("conclusion")

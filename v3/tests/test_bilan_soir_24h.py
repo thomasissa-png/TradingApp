@@ -25,6 +25,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import bilan_jour as bj  # noqa: E402
+import mesure_bilan as mb  # noqa: E402
 import run_suivi as rs  # noqa: E402
 
 PARIS = ZoneInfo("Europe/Paris")
@@ -237,44 +238,66 @@ def test_apprentissage_rien_de_notable():
     assert len(lignes) == 1 and "Rien de notable" in lignes[0]
 
 
-def test_section1_synthese_montre_12h_18h_22h_et_maxgain():
-    """SECTION 1 (synthèse) : pour chaque pari du trio, on voit la performance à
-    midi / 18h / 22h ET le max gain de la journée + son heure (besoin fondateur :
-    « on ne se rend pas compte des performances du trio de tête »)."""
+def test_section1_winrate_top1_top3_sur_max_gain():
+    """SECTION 1 : win rate Top 1 / Top 3 sur le MAX GAIN du jour (> 1 %), perf =
+    max gain (décision fondateur 24/06). Top 1 = conviction (|score|) max."""
     b = bj.BilanJour(date_j=date(2026, 6, 23),
                      now=datetime(2026, 6, 23, 22, 15, tzinfo=PARIS))
-    b.measures_24h = [
-        NS(cell=NS(actif_name="Cacao", conclusion="LONG"), horizon="24h",
-           delta_pct=0.91, outcome="non-conclusive"),
-        NS(cell=NS(actif_name="EUR/USD", conclusion="SHORT"), horizon="24h",
-           delta_pct=-0.38, outcome="VRAI"),
-    ]
     b.perf_top3 = [
+        # Or : conviction max (|score| 16.7) mais max gain 0.33% → Top 1 raté.
+        bj.PerfTop3Ligne(actif="Or", call="SHORT", fav_12h=-0.10, fav_18h=-0.10,
+                         fav_cloture=0.04, pic_valeur=0.33, pic_heure="18h",
+                         points_manquants=[], verdict="x", vendre_reco=None,
+                         raison_call="Taux réels", max_gain_pct=0.33,
+                         score_conviction=16.7),
+        # Cacao : max gain 1.40% > 1% → gagné.
         bj.PerfTop3Ligne(actif="Cacao", call="LONG", fav_12h=-0.52, fav_18h=-0.52,
                          fav_cloture=0.91, pic_valeur=0.91, pic_heure="clôture",
                          points_manquants=[], verdict="x", vendre_reco=None,
-                         raison_call="Météo Côte d'Ivoire"),
+                         raison_call="Météo CI", max_gain_pct=1.40,
+                         score_conviction=7.7),
+        # EUR/USD : max gain 0.38% → raté.
         bj.PerfTop3Ligne(actif="EUR/USD", call="SHORT", fav_12h=0.35, fav_18h=0.35,
-                         fav_cloture=0.33, pic_valeur=0.35, pic_heure="12h",
+                         fav_cloture=0.38, pic_valeur=0.38, pic_heure="clôture",
                          points_manquants=[], verdict="x", vendre_reco=None,
-                         raison_call="Écart de taux US-DE"),
+                         raison_call="Écart taux", max_gain_pct=0.38,
+                         score_conviction=16.0),
     ]
     md = "\n".join(bj._render_jour_selection(b))
-    # En-tête : les 3 points de contrôle + le max gain sont des colonnes visibles.
-    assert "| Actif | Call | 12h | 18h | 22h | Max gain | Résultat | Raison |" in md
-    # Cacao : pic à la clôture → heure affichée « 22h » (vocabulaire du bilan du soir).
-    assert "| Cacao | LONG | -0.52% | -0.52% | +0.91% | +0.91% (22h) | ⚪ |" in md
-    # EUR/USD : pic à midi → « 12h » conservé, perf visible aux 3 créneaux.
-    assert "| EUR/USD | SHORT | +0.35% | +0.35% | +0.33% | +0.35% (12h) | ✅ |" in md
+    assert "| Actif | Call | 12h | 18h | 22h | Max gain jour | Gagné >1% | Raison |" in md
+    # Top 1 = Or (conviction max) et il a RATÉ (max gain 0.33% < 1%).
+    assert "**Top 1** (Or) : ❌ raté" in md
+    # Top 3 : seul Cacao > 1% → 1/3.
+    assert "**Top 3** : 1/3 = 33%" in md
+    # Or affiché en tête (Top 1), max gain 0.33% → ❌.
+    assert "| Or | SHORT | -0.10% | -0.10% | +0.04% | +0.33% | ❌ |" in md
+    # Cacao gagné (1.40% > 1%).
+    assert "| Cacao | LONG | -0.52% | -0.52% | +0.91% | +1.40% | ✅ |" in md
 
 
-def test_maxgain_cell_sans_point_favorable():
-    """Aucun point favorable exploitable → « — » (zéro invention), pas de fausse heure."""
-    p = bj.PerfTop3Ligne(actif="VIX", call="SHORT", fav_12h=None, fav_18h=None,
+def test_win_rate_max_gain_exclut_non_mesurable():
+    """Un pick sans max gain mesurable (high/low absent) est exclu (zéro invention)."""
+    perf = [
+        bj.PerfTop3Ligne(actif="A", call="LONG", fav_12h=None, fav_18h=None,
                          fav_cloture=None, pic_valeur=None, pic_heure=None,
-                         points_manquants=["12h", "18h", "clôture"], verdict="x",
-                         vendre_reco=None)
-    assert bj._fmt_maxgain(p) == "—"
+                         points_manquants=[], verdict="x", vendre_reco=None,
+                         max_gain_pct=2.0, score_conviction=5.0),
+        bj.PerfTop3Ligne(actif="B", call="SHORT", fav_12h=None, fav_18h=None,
+                         fav_cloture=None, pic_valeur=None, pic_heure=None,
+                         points_manquants=[], verdict="x", vendre_reco=None,
+                         max_gain_pct=None, score_conviction=9.0),
+    ]
+    wr = bj.win_rate_max_gain(perf)
+    assert wr.n_top3 == 1 and wr.n_gagnants_top3 == 1  # B exclu (max gain None)
+    assert wr.top1_actif == "A" and wr.top1_gagnant is True
+
+
+def test_max_gain_du_jour_high_low():
+    """max_gain_du_jour : LONG sur le high, SHORT sur le low ; 0 si jamais favorable."""
+    assert mb.max_gain_du_jour(103.0, 99.0, 100.0, "LONG") == 3.0
+    assert mb.max_gain_du_jour(101.0, 98.0, 100.0, "SHORT") == 2.0
+    assert mb.max_gain_du_jour(100.0, 99.0, 100.0, "LONG") == 0.0  # n'est jamais monté
+    assert mb.max_gain_du_jour(None, None, 100.0, "SHORT") is None  # donnée absente
 
 
 # ===========================================================================

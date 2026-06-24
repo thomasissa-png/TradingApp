@@ -426,7 +426,10 @@ def test_bilan_jour_aucun_montant_monetaire(tmp_path):
         fetch_price=lambda t: 3460.0,
     )
     md = bilan.markdown.lower()
-    for interdit in ("€", "$", "gain", "perte", "rendement", "p&l", "profit"):
+    # « gain » n'est plus interdit : le win rate se mesure sur le MAX GAIN du jour
+    # (% d'amplitude, jamais un montant — décision fondateur 24/06). Seules les
+    # mentions MONÉTAIRES restent proscrites.
+    for interdit in ("€", "$", "rendement", "p&l", "profit"):
         assert interdit not in md, f"mention monétaire interdite trouvée : {interdit}"
 
 

@@ -1179,6 +1179,11 @@ class Measure:
     #   prix_cloture_heure : heure (Paris) de la barre de clôture retenue, si connue.
     max_favorable_pct: Optional[float] = None
     max_adverse_pct: Optional[float] = None
+    # max_gain_pct : MEILLEUR gain favorable du JOUR, mesuré sur le HIGH/LOW de la
+    #   bougie journalière (LONG → (high-réf)/réf ; SHORT → (réf-low)/réf ; ≥ 0).
+    #   C'est la base du win rate « cible turbo > 1% » (décision fondateur 24/06).
+    #   None si le high/low du jour est indisponible (zéro invention).
+    max_gain_pct: Optional[float] = None
     prix_cloture_source: Optional[str] = None
     prix_cloture_heure: Optional[str] = None
 
@@ -3141,6 +3146,10 @@ def measure_to_record(m: Measure) -> Dict[str, Any]:
         "score": cell.score,
         "outcome": m.outcome,
         "realized_pct": m.delta_pct,
+        # Max gain du JOUR (high/low de la bougie) — base du win rate « cible turbo
+        # > 1% » (décision fondateur 24/06). Persisté pour que le bilan SEMAINE et
+        # le KPI cumulé puissent juger sur le max gain. None si high/low absent.
+        "max_gain_pct": getattr(m, "max_gain_pct", None),
         # Prix de DÉPART (émission/ouverture) et de SORTIE (clôture à l'échéance) :
         # toujours tracés pour le tableau « Variations 24h » ET pour auditer la
         # mesure (realized_pct doit valoir (sortie − départ) / départ). None si un

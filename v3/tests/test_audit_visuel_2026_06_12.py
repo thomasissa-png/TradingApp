@@ -184,27 +184,43 @@ def _bilan_1_8_3():
     b.n_vrai, b.n_fausse, b.n_nc = 1, 8, 3
     b.win_rate_jour = 11.1
     b.wr_tradable_jour = round(1 / 12 * 100, 1)
+    # Sélection (Top 1 / Top 3) mesurée sur le max gain (décision fondateur 24/06).
+    # Argent = conviction max et seul > 1 % → Top 1 gagné, Top 3 = 1/3.
+    b.perf_top3 = [
+        bj.PerfTop3Ligne(actif="Argent", call="LONG", fav_12h=None, fav_18h=None,
+                         fav_cloture=1.6, pic_valeur=1.6, pic_heure="clôture",
+                         points_manquants=[], verdict="x", vendre_reco=None,
+                         max_gain_pct=1.6, score_conviction=12.0),
+        bj.PerfTop3Ligne(actif="F0", call="LONG", fav_12h=None, fav_18h=None,
+                         fav_cloture=0.0, pic_valeur=0.0, pic_heure="clôture",
+                         points_manquants=[], verdict="x", vendre_reco=None,
+                         max_gain_pct=0.2, score_conviction=8.0),
+        bj.PerfTop3Ligne(actif="N0", call="SHORT", fav_12h=None, fav_18h=None,
+                         fav_cloture=0.04, pic_valeur=0.04, pic_heure="clôture",
+                         points_manquants=[], verdict="x", vendre_reco=None,
+                         max_gain_pct=0.04, score_conviction=5.0),
+    ]
     return b
 
 
 def test_hbd1_ligne_resume_en_tete():
+    """En-tête (décision fondateur 24/06) = le SEUL win rate qui compte : Top 1 /
+    Top 3 sur le max gain (> 1 %). Les compteurs sur les 12 ne sont plus en tête."""
     b = _bilan_1_8_3()
     md = bj._render_markdown(b, {})
-    # Ligne résumé AVANT le titre « Résultat des calls 7h ».
     head = md.split("### Résultat des calls 7h")[0]
-    assert "1 ✅ / 8 ❌ / 3 ⚪" in head
-    assert "Win rate : 11%" in head
+    assert "Top 1 (Argent) ✅" in head      # conviction max ET max gain > 1 %
+    assert "Top 3 : 1/3 = 33%" in head
+    assert "max gain > 1 %" in head
 
 
 def test_resume_en_tete_win_rate_et_signif():
-    """Ligne résumé EN TÊTE (calque hebdo) : win rate + WR ≥ 0,5 % d'un coup d'œil."""
+    """En-tête EN TÊTE : Top 1 + Top 3 sur le max gain, d'un coup d'œil."""
     b = _bilan_1_8_3()
-    b.n_vrai_signif = 1
-    b.win_rate_signif_jour = round(1 / 9 * 100.0, 1)
     md = bj._render_markdown(b, {})
     head = md.split("## 1.")[0]
     assert "**Résultat du" in head
-    assert "Win rate : 11%" in head and "WR ≥ 0,5 % : 11%" in head
+    assert "Top 1 (Argent) ✅" in head and "Top 3 : 1/3 = 33%" in head
 
 
 def test_bilan_jour_calque_sur_bilan_semaine():

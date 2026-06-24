@@ -217,5 +217,8 @@ def test_bilan_aucune_mention_monetaire(env):
         prix_ouverture_dir=env["odir"], prix_emission_dir=env["edir"],
     )
     md = bilan.markdown.lower()
-    for token in ("€", "$", "gain", "perte", "rendement", "p&l"):
+    # « gain » n'est PLUS interdit : depuis la décision fondateur 24/06, le win rate
+    # se mesure sur le MAX GAIN du jour (% d'amplitude, jamais un montant). Seules
+    # les mentions MONÉTAIRES restent proscrites (symboles, rendement, p&l).
+    for token in ("€", "$", "rendement", "p&l"):
         assert token not in md, f"mention monétaire interdite : {token!r}"

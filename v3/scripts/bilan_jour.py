@@ -669,6 +669,11 @@ class PerfTop3Ligne:
     # VRAIE raison du call (drivers dominants du score à l'émission, decision-log) —
     # « pourquoi on a pris ce pari ». Aligné avec le bilan semaine. None si non tracé.
     raison_call: Optional[str] = None
+    # Max gain du JOUR (high/low de la bougie journalière) — base du win rate
+    # « cible turbo > 1% » (décision fondateur 24/06). None si high/low indisponible.
+    max_gain_pct: Optional[float] = None
+    # |score| de conviction (decision-log) pour classer Top 1 / Top 3. None si absent.
+    score_conviction: Optional[float] = None
 
 
 def _verdict_sortie(
@@ -791,12 +796,24 @@ def compute_perf_top3(
         # VRAIE raison du call = drivers dominants du score (decision-log), comme le
         # bilan semaine. Source unique journaliste.drivers_du_call. None si non tracé.
         raison_call = None
+        score_conv = None
         if conviction_records is not None:
             from journaliste import drivers_du_call  # noqa: PLC0415
             rec = conviction_records.get((actif, "24h")) or {}
             drivers = drivers_du_call(rec, call)
             if drivers:
                 raison_call = " + ".join(drivers)
+            # |score| = conviction (classe Top 1 / Top 3). score_pm1 prioritaire.
+            sc = rec.get("score_pm1")
+            if not isinstance(sc, (int, float)):
+                sc = rec.get("score_pond")
+            if isinstance(sc, (int, float)):
+                score_conv = abs(float(sc))
+        # Max gain du jour (high/low). Repli sur le pic des relevés si la mesure ne
+        # l'a pas fourni (high/low indisponible) — plancher honnête, jamais inventé.
+        mg = getattr(m, "max_gain_pct", None)
+        if not isinstance(mg, (int, float)):
+            mg = pic_valeur if isinstance(pic_valeur, (int, float)) and pic_valeur > 0 else None
         out.append(PerfTop3Ligne(
             actif=actif, call=call,
             fav_12h=(round(fav_12h, 2) if fav_12h is not None else None),
@@ -806,6 +823,8 @@ def compute_perf_top3(
             pic_heure=pic_heure, points_manquants=manquants, verdict=verdict,
             vendre_reco=vendre_map.get(actif), cause_repli=cause_repli,
             raison_call=raison_call,
+            max_gain_pct=(round(mg, 2) if isinstance(mg, (int, float)) else None),
+            score_conviction=score_conv,
         ))
     out.sort(key=lambda x: x.actif)
     return out
@@ -1616,55 +1635,103 @@ def _render_bloc3_apprentissage(bilan: "BilanJour") -> List[str]:
 
 _SEUIL_BIEN_FAIT_JOUR = 1.0   # mouvement favorable > 1 % = vraie réussite (def. fondateur)
 
+# Win rate « max gain » — décision fondateur 24/06 ============================
+# Le SEUL win rate qui compte = la Sélection (Top 1 = conviction max, Top 3 = les
+# 3 sélectionnés) = « notre niveau de certitude ». Un pick GAGNE si son MAX GAIN
+# du jour (high/low de la bougie) dépasse la cible turbo de 1 %. La performance
+# affichée n'est plus la clôture mais ce max gain.
+SEUIL_MAX_GAIN_JOUR = 1.0
+
+
+def gagnant_max_gain(max_gain_pct: Optional[float],
+                     seuil: float = SEUIL_MAX_GAIN_JOUR) -> bool:
+    """True si le max gain du jour dépasse la cible (> 1 % par défaut)."""
+    return isinstance(max_gain_pct, (int, float)) and max_gain_pct > seuil
+
+
+@dataclass
+class WinRateMaxGain:
+    """Win rate de la Sélection sur le MAX GAIN du jour. WIN RATE ONLY.
+
+    Top 1 = le pick de conviction max (|score|) ; Top 3 = les sélectionnés mesurables.
+    Un pick sans max gain mesurable (high/low absent) est exclu (zéro invention)."""
+    top1_actif: Optional[str] = None
+    top1_gagnant: Optional[bool] = None
+    n_top3: int = 0
+    n_gagnants_top3: int = 0
+
+    @property
+    def taux_top3(self) -> Optional[float]:
+        return round(self.n_gagnants_top3 / self.n_top3 * 100.0, 0) if self.n_top3 else None
+
+
+def win_rate_max_gain(perf_top3: List["PerfTop3Ligne"],
+                      seuil: float = SEUIL_MAX_GAIN_JOUR) -> WinRateMaxGain:
+    """Top 1 / Top 3 sur le max gain du jour (> seuil). Top 1 = conviction max
+    (|score|), fallback : meilleur max gain si aucun score. Picks sans max gain
+    mesurable exclus."""
+    mesurables = [p for p in perf_top3 if isinstance(p.max_gain_pct, (int, float))]
+    wr = WinRateMaxGain(
+        n_top3=len(mesurables),
+        n_gagnants_top3=sum(1 for p in mesurables if gagnant_max_gain(p.max_gain_pct, seuil)),
+    )
+    ranked = sorted(
+        mesurables,
+        key=lambda p: (
+            p.score_conviction if p.score_conviction is not None else -1.0,
+            p.max_gain_pct,
+        ),
+        reverse=True,
+    )
+    if ranked:
+        wr.top1_actif = ranked[0].actif
+        wr.top1_gagnant = gagnant_max_gain(ranked[0].max_gain_pct, seuil)
+    return wr
+
 
 def _render_jour_selection(bilan: "BilanJour") -> List[str]:
-    """SECTION 1 — Performance de la Sélection du jour (calque de la section 1 hebdo)."""
-    from journaliste import (  # noqa: PLC0415
-        OUTCOME_VRAI, OUTCOME_FAUSSE, OUTCOME_NC, SEUIL_MVT_SIGNIFICATIF,
-    )
+    """SECTION 1 — Performance de la Sélection : win rate Top 1 / Top 3 sur le
+    MAX GAIN du jour (> 1 %). C'est le seul win rate qui compte (notre niveau de
+    certitude), décision fondateur 24/06. La perf affichée = le max gain du jour."""
     L: List[str] = ["## 1. Performance de la Sélection du jour", ""]
     perf = bilan.perf_top3
     if not perf:
-        L += ["Pas de sélection conclusive aujourd'hui (aucun top 3 à noter).", ""]
+        L += ["Pas de sélection aujourd'hui (aucun top 3 à noter).", ""]
         return L
-    delta_by = {m.cell.actif_name: m.delta_pct for m in bilan.measures_24h}
-    out_by = {m.cell.actif_name: m.outcome for m in bilan.measures_24h}
-    glyph = {OUTCOME_VRAI: "✅", OUTCOME_FAUSSE: "❌", OUTCOME_NC: "⚪"}
-    concl = [p for p in perf if out_by.get(p.actif) in (OUTCOME_VRAI, OUTCOME_FAUSSE)]
-    nN = len(concl)
-    nv = sum(1 for p in concl if out_by.get(p.actif) == OUTCOME_VRAI)
-    nv_sig = sum(
-        1 for p in concl
-        if out_by.get(p.actif) == OUTCOME_VRAI
-        and isinstance(delta_by.get(p.actif), (int, float))
-        and abs(delta_by[p.actif]) >= SEUIL_MVT_SIGNIFICATIF
-    )
-    amps = [p.fav_cloture for p in concl if isinstance(p.fav_cloture, (int, float))]
-    amp = sum(amps) / len(amps) if amps else None
-    wr = f"{nv / nN * 100:.0f}%" if nN else "—"
-    wrs = f"{nv_sig / nN * 100:.0f}%" if nN else "—"
+    wr = win_rate_max_gain(perf)
     L.append(
-        "> Nos paris 24h du jour, suivis tout au long de la journée. **12h / 18h / "
-        "22h** = performance du call à midi, à 18h et à la clôture (% favorable "
-        "signé : `+` va dans le sens du call, `-` contre nous). **Max gain** = le "
-        "meilleur point favorable de la journée et son heure (en turbo : où sortir "
-        "aurait verrouillé le plus). **Résultat** ✅/❌/⚪ = call dans le bon sens "
-        "sur 24h. **Raison** = les vrais drivers du score à l'émission (decision-log)."
+        "> Le win rate qui compte = notre **Sélection** (notre niveau de certitude). "
+        "Un pari est **GAGNÉ si son max gain du jour dépasse 1 %** (cible turbo, "
+        "mesuré sur le plus haut/bas de la journée). **12h / 18h / 22h** = "
+        "trajectoire du call en séance (% favorable signé). **Raison** = les drivers "
+        "du score à l'émission (decision-log)."
     )
     L.append("")
-    L.append(
-        f"Win rate : **{wr}** ({nv}/{nN} jugés) · WR ≥ 0,5 % : **{wrs}** ({nv_sig}/{nN}) "
-        f"· ampleur moyenne : **{_fmt_pct(amp)}**."
-    )
+    if wr.top1_actif is not None:
+        t1 = "✅ gagné" if wr.top1_gagnant else "❌ raté"
+        top1 = f"**Top 1** ({wr.top1_actif}) : {t1}"
+    else:
+        top1 = "**Top 1** : non mesurable (donnée absente)"
+    taux = f" = {wr.taux_top3:.0f}%" if wr.taux_top3 is not None else ""
+    L.append(f"{top1} · **Top 3** : {wr.n_gagnants_top3}/{wr.n_top3}{taux} (max gain > 1 %).")
     L.append("")
-    L.append("| Actif | Call | 12h | 18h | 22h | Max gain | Résultat | Raison |")
+    L.append("| Actif | Call | 12h | 18h | 22h | Max gain jour | Gagné >1% | Raison |")
     L.append("|---|---|---|---|---|---|---|---|")
-    for p in perf:
-        g = glyph.get(out_by.get(p.actif), "⚪")
+    # Top 1 en tête (conviction max), puis le reste de la sélection.
+    perf_ordered = sorted(
+        perf,
+        key=lambda p: (p.score_conviction if p.score_conviction is not None else -1.0),
+        reverse=True,
+    )
+    for p in perf_ordered:
+        if not isinstance(p.max_gain_pct, (int, float)):
+            g = "⚪"
+        else:
+            g = "✅" if gagnant_max_gain(p.max_gain_pct) else "❌"
         L.append(
             f"| {p.actif} | {p.call} | {_fmt_fav_cell(p.fav_12h)} | "
             f"{_fmt_fav_cell(p.fav_18h)} | {_fmt_fav_cell(p.fav_cloture)} | "
-            f"{_fmt_maxgain(p)} | {g} | {p.raison_call or '—'} |"
+            f"{_fmt_fav_cell(p.max_gain_pct)} | {g} | {p.raison_call or '—'} |"
         )
     L.append("")
     return L
@@ -1769,18 +1836,20 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     L.append("")
     L.append(f"_Généré : {horodatage_fr(bilan.now)} (Europe/Paris)._")
     L.append("")
-    # [H-BD1] ligne résumé du score EN TÊTE, calquée sur le bilan semaine
-    # (win rate + WR ≥ 0,5 % d'un coup d'œil).
-    bits = []
-    if bilan.win_rate_jour is not None:
-        bits.append(f"Win rate : {bilan.win_rate_jour:.0f}%")
-    if bilan.win_rate_signif_jour is not None:
-        bits.append(f"WR ≥ 0,5 % : {bilan.win_rate_signif_jour:.0f}%")
-    wr_txt = (" · " + " · ".join(bits)) if bits else ""
-    L.append("- WIN RATE ONLY · aucune mesure monétaire.")
+    # [Fondateur 24/06] EN TÊTE = le SEUL win rate qui compte : la Sélection
+    # (Top 1 = conviction max, Top 3 = les sélectionnés), sur le MAX GAIN > 1 %.
+    # Les compteurs sur les 12 actifs ne sont plus en tête (bruit) — détail en annexe.
+    wr_sel = win_rate_max_gain(bilan.perf_top3)
+    L.append("- WIN RATE ONLY · aucune mesure monétaire · win rate sur le max gain (> 1 %).")
+    if wr_sel.top1_actif is not None:
+        t1 = "✅" if wr_sel.top1_gagnant else "❌"
+        top1_txt = f"Top 1 ({wr_sel.top1_actif}) {t1}"
+    else:
+        top1_txt = "Top 1 : n/a"
+    taux = f" = {wr_sel.taux_top3:.0f}%" if wr_sel.taux_top3 is not None else ""
     L.append(
-        f"**Résultat du {bilan.date_j.strftime('%d/%m')} : "
-        f"{bilan.n_vrai} ✅ / {bilan.n_fausse} ❌ / {bilan.n_nc} ⚪{wr_txt}**"
+        f"**Résultat du {bilan.date_j.strftime('%d/%m')} : {top1_txt} · "
+        f"Top 3 : {wr_sel.n_gagnants_top3}/{wr_sel.n_top3}{taux} (max gain > 1 %)**"
     )
     L.append("")
 

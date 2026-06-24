@@ -111,6 +111,69 @@ def _excursions_intraday(
     return (round(favorable, 4), round(adverse, 4))
 
 
+def max_gain_du_jour(
+    high: Optional[float],
+    low: Optional[float],
+    reference: Optional[float],
+    call: str,
+) -> Optional[float]:
+    """MEILLEUR gain favorable du jour, depuis le HIGH/LOW de la bougie journalière.
+
+    C'est LA base du win rate « cible turbo > 1% » (décision fondateur 24/06) :
+    on ne mesure plus la clôture mais le meilleur point atteint dans la journée
+    (le trader turbo peut sortir au plus haut). Le high/low de la bougie 1day
+    suffit, pas besoin d'intraday.
+    - LONG  → (high - réf) / réf  (gain si l'actif est monté) ;
+    - SHORT → (réf - low)  / réf  (gain si l'actif est descendu).
+    Retour en % ≥ 0 (0 si jamais favorable). None si donnée insuffisante (zéro
+    invention : high/low absent → on ne devine pas).
+    """
+    from run_suivi import call_sign  # noqa: PLC0415
+
+    sign = call_sign(call)
+    if sign is None or not reference or reference <= 0:
+        return None
+    extreme = high if sign > 0 else low
+    if not isinstance(extreme, (int, float)) or extreme <= 0:
+        return None
+    gain = (extreme - reference) / reference * 100.0 * sign
+    return round(max(gain, 0.0), 4)
+
+
+def _day_high_low(
+    ticker: str,
+    date_j: date,
+    fetch_history: Optional[Any] = None,
+) -> Tuple[Optional[float], Optional[float]]:
+    """(high, low) de la bougie journalière du jour J via `market_data.fetch_history`.
+
+    Le DataFrame fetch_history porte déjà les colonnes High/Low (toutes sources :
+    Twelve OHLC, yfinance, stooq). (None, None) si indispo (zéro invention).
+    `fetch_history` injectable pour les tests (sans réseau ni pandas)."""
+    if fetch_history is None:
+        try:
+            import market_data as md  # noqa: PLC0415
+            fetch_history = md.fetch_history
+        except Exception as e:  # noqa: BLE001
+            logger.warning("mesure_bilan : market_data indispo (%s) — high/low jour n/a", e)
+            return (None, None)
+    try:
+        df = fetch_history(ticker, period_days=5, interval="1day")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("mesure_bilan : fetch_history high/low KO %s : %s", ticker, e)
+        return (None, None)
+    if df is None or getattr(df, "empty", True):
+        return (None, None)
+    try:
+        for idx, row in df.iterrows():
+            if _to_paris_date(idx.to_pydatetime() if hasattr(idx, "to_pydatetime") else idx) == date_j:
+                hi = float(row["High"]); lo = float(row["Low"])
+                return (hi if hi > 0 else None, lo if lo > 0 else None)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("mesure_bilan : lecture high/low %s KO : %s", ticker, e)
+    return (None, None)
+
+
 def _resolve_cloture(
     ticker: str,
     date_j: date,
@@ -195,6 +258,8 @@ def measure_cellule_journee(
     suivi_fav_pct: Optional[float] = None,
     series_1day: Optional[List[Tuple[datetime, float]]] = None,
     series_1h: Optional[List[Tuple[datetime, float]]] = None,
+    day_high_low: Optional[Tuple[Optional[float], Optional[float]]] = None,
+    fetch_history: Optional[Any] = None,
 ) -> Any:
     """Mesure UNE cellule 7h sur la journée de bourse J (ouverture → clôture).
 
@@ -301,6 +366,16 @@ def measure_cellule_journee(
         fav, adv = _excursions_intraday(bars_h, reference, call)
         m.max_favorable_pct = fav
         m.max_adverse_pct = adv
+
+        # --- Max gain du jour (HIGH/LOW de la bougie journalière) ---
+        # Base du win rate « cible turbo > 1% » (fondateur 24/06). On privilégie le
+        # high/low de la bougie 1day (vrai extrême du jour) ; à défaut, repli sur
+        # l'excursion 1h mesurée ci-dessus (estimation plancher, jamais une invention).
+        if day_high_low is None:
+            day_high_low = _day_high_low(ticker, date_j, fetch_history)
+        hi, lo = day_high_low
+        mg = max_gain_du_jour(hi, lo, reference, call)
+        m.max_gain_pct = mg if mg is not None else m.max_favorable_pct
 
     return m
 

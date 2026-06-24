@@ -864,7 +864,7 @@ def reason_non_selection(
     3. Record absent / aucun critère déterminable → « raison non tracée ».
     """
     if not isinstance(record, dict):
-        return "raison non tracée"
+        return "décision d'émission non retrouvée (decision-log)"
     motif = record.get("selection_motif_exclusion")
     if isinstance(motif, str) and motif.strip():
         return motif.strip()
@@ -887,9 +887,10 @@ def reason_non_selection(
             f"couverture insuffisante ({cov * 100:.0f}% < "
             f"{selection_coverage_min * 100:.0f}% requis)"
         )
-    # Conviction forte ET couverture OK mais non sélectionné, sans motif tracé :
-    # on ne devine pas (le cas normal est couvert par selection_motif_exclusion).
-    return "raison non tracée"
+    # Conviction forte ET couverture OK mais non sélectionné : c'est qu'il n'était
+    # pas dans les 3 meilleures convictions du jour (la Sélection est capée à 3).
+    # C'est une VRAIE raison (le classement), pas un trou — fini le « non tracée ».
+    return "hors des 3 meilleures convictions du jour (Sélection limitée à 3)"
 
 
 def _apprentissage_gros_move(direction_juste: Optional[bool], raison: str) -> str:
@@ -1558,29 +1559,25 @@ def _render_intraday_table(bilan: "BilanJour") -> List[str]:
         "sens du call, `-` contre nous. « — » = point non relevé (zéro invention)._"
     )
     L.append("")
-    # Cours max INTRADAY du jour (excursion favorable max sur la série 1h),
-    # par actif, pour le top 3. Distinct du « pic » des relevés 12h/18h.
-    maxfav_by = {m.cell.actif_name: getattr(m, "max_favorable_pct", None)
-                 for m in bilan.measures_24h}
     L.append(
         "| Actif "
         "| <span class=\"c-full\">Call 7h</span><span class=\"c-short\">Call</span> "
         "| <span class=\"c-full\">% fav. 12h</span><span class=\"c-short\">12h</span> "
         "| <span class=\"c-full\">% fav. 18h</span><span class=\"c-short\">18h</span> "
         "| <span class=\"c-full\">% fav. clôture</span><span class=\"c-short\">Clôt.</span> "
-        "| <span class=\"c-full\">Cours max jour</span><span class=\"c-short\">Max</span> "
-        "| Pic |"
+        "| <span class=\"c-full\">Max gain jour</span><span class=\"c-short\">Max</span> "
+        "| Gagné >1% |"
     )
     L.append("|---|---|---|---|---|---|---|")
     for p in bilan.perf_top3:
-        pic = (
-            f"**{_fmt_pct(p.pic_valeur)} à {p.pic_heure}**"
-            if p.pic_valeur is not None and p.pic_heure else "—"
-        )
+        if isinstance(p.max_gain_pct, (int, float)):
+            g = "✅" if gagnant_max_gain(p.max_gain_pct) else "❌"
+        else:
+            g = "⚪"
         L.append(
             f"| {p.actif} | {p.call} | {_fmt_fav_cell(p.fav_12h)} | "
             f"{_fmt_fav_cell(p.fav_18h)} | {_fmt_fav_cell(p.fav_cloture)} | "
-            f"{_fmt_fav_cell(maxfav_by.get(p.actif))} | {pic} |"
+            f"{_fmt_fav_cell(p.max_gain_pct)} | {g} |"
         )
     L.append("")
     return L
@@ -1781,9 +1778,9 @@ def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
         if not g.direction_juste:
             continue
         ligne = (f"{g.actif} {g.call} {_fmt_pct(g.mouvement_pct)} (hors top 3) : "
-                 f"opportunité ratée — {g.raison_non_select}")
+                 f"opportunité ratée. Pas sélectionné car {g.raison_non_select}")
         if g.cause_move:
-            ligne += f", sur : {g.cause_move}"
+            ligne += f". Pourquoi ça a bougé : {g.cause_move}"
         pts.append(ligne + ".")
     return pts[:9]
 
@@ -1980,26 +1977,18 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         )
         L.append("")
 
-    # Win rate détaillé (tradable / sélection / conviction).
-    L.append("### Win rate détaillé")
+    # Win rate détaillé = Sélection (Top 1 / Top 3) sur le max gain > 1 % : le seul
+    # qui compte (fondateur 24/06). On ne ré-affiche plus les WR clôture sur les 12 /
+    # tradable / conviction (le bruit que le fondateur a écarté) pour ne pas
+    # contredire l'en-tête.
+    wr_mg = win_rate_max_gain(bilan.perf_top3)
+    L.append("### Win rate détaillé (Sélection, sur max gain > 1 %)")
     L.append("")
-    denom = bilan.n_vrai + bilan.n_fausse
-    denom_trad = bilan.n_vrai + bilan.n_fausse + bilan.n_nc
-    if bilan.wr_tradable_jour is not None:
-        L.append(
-            f"- WR tradable du jour : {bilan.n_vrai}/{denom_trad} = "
-            f"{bilan.wr_tradable_jour:.0f}% (VRAI / VRAI+FAUSSE+non-conclusif)"
-        )
-    s = bilan.selection
-    if s.taux is not None:
-        L.append(
-            f"- WR Sélection du jour : {s.n_vrai_select}/{s.n_select} = {s.taux:.0f}%"
-        )
-    c = bilan.conviction
-    tf = f"{c.taux_forte:.0f}%" if c.taux_forte is not None else "— (N insuffisant)"
-    tw = f"{c.taux_faible:.0f}%" if c.taux_faible is not None else "— (N insuffisant)"
-    L.append(f"- Win rate conviction forte (jour) : {tf} (N={c.n_forte})")
-    L.append(f"- Win rate conviction faible (jour) : {tw} (N={c.n_faible})")
+    if wr_mg.top1_actif is not None:
+        t1 = "✅" if wr_mg.top1_gagnant else "❌"
+        L.append(f"- Top 1 ({wr_mg.top1_actif}) : {t1}")
+    taux = f" = {wr_mg.taux_top3:.0f}%" if wr_mg.taux_top3 is not None else ""
+    L.append(f"- Top 3 (Sélection) : {wr_mg.n_gagnants_top3}/{wr_mg.n_top3}{taux}")
     L.append("- Win rate cumulé : voir page Performance.")
     L.append("")
 

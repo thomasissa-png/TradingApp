@@ -186,11 +186,14 @@ def test_reason_drapeau_mono_critere():
 
 
 def test_reason_non_tracee_si_indeterminable():
-    # Record absent → zéro invention.
-    assert bj.reason_non_selection("X", None, 0.6, 0.7) == "raison non tracée"
-    # Conviction forte + couverture OK mais pas sélectionné sans motif → non tracée.
+    # Record absent → on le dit honnêtement (plus de « raison non tracée » vague).
+    assert bj.reason_non_selection("X", None, 0.6, 0.7) == \
+        "décision d'émission non retrouvée (decision-log)"
+    # Conviction forte + couverture OK mais pas sélectionné = hors des 3 meilleures
+    # convictions (la Sélection est capée à 3) — une VRAIE raison, fondateur 24/06.
     rec = {"score_pm1": 5.0, "coverage": 0.95}
-    assert bj.reason_non_selection("X", rec, 0.6, 0.7) == "raison non tracée"
+    assert bj.reason_non_selection("X", rec, 0.6, 0.7) == \
+        "hors des 3 meilleures convictions du jour (Sélection limitée à 3)"
 
 
 # ===========================================================================

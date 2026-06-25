@@ -608,7 +608,7 @@ def render_html(
      footer pleine largeur vient APRÈS le layout (hors colonne de contenu). */
   .layout {{
     display: flex;
-    min-height: calc(100dvh - var(--header-height));
+    min-height: calc(100vh - var(--header-height));
   }}
   aside {{
     width: 280px;
@@ -618,7 +618,7 @@ def render_html(
     position: sticky;
     top: var(--header-height);
     align-self: flex-start;
-    height: calc(100dvh - var(--header-height));
+    height: calc(100vh - var(--header-height));
     overflow-y: auto;
   }}
   aside ul {{ list-style: none; margin: 0; padding: 8px 0; }}
@@ -1155,7 +1155,11 @@ def render_html(
     .brand-name .brand-wordmark {{ font-size: 15px; }}
     .brand-name .brand-tagline {{ display: none; }}  /* gain de place : tagline masquée sur mobile */
     .brand-mark {{ width: 28px; height: 28px; font-size: 14px; border-radius: 7px; }}
-    .layout {{ height: calc(100dvh - var(--header-height-mobile)); }}
+    /* Mobile : flux naturel (la sidebar est en overlay fixe hors-flux, le main
+       prend toute la largeur, le footer suit dessous). PAS de hauteur fixe : sinon
+       le contenu déborde sous un footer mal placé (bug iOS Safari 25/06). */
+    .layout {{ display: block; min-height: 0; }}
+    main {{ width: 100%; }}
     .page-hero {{ padding: 32px 16px 28px; }}
     .hero-stats {{ gap: 8px; }}
     .hero-stat {{ padding: 10px 14px; min-width: 0; flex: 1; }}
@@ -1325,13 +1329,6 @@ def render_html(
               <div class="hs-label">Win rate<br>(en mesure depuis le 9 juin 2026)</div>
             </div>
           </div>
-          <div class="hero-status">
-            <span class="hero-status-badge">En phase de mesure</span>
-            <span class="hero-status-text">Mise en service prévue le 08/08/2026. On mesure avant d'ouvrir.</span>
-          </div>
-          <p class="hero-disclaimer-inline">
-            Le système ne place aucun ordre et ne promet aucun gain. Il donne une direction, pas un résultat.
-          </p>
         </div>
       </section>
       <div id="bulletin-content">

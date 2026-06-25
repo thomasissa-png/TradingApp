@@ -407,13 +407,13 @@ def render_html(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Issa Capital · Le sens du marché. Mesuré.</title>
-<meta name="description" content="Positionnement directionnel sur 12 actifs, 3 fois par jour. Win rate en mesure. Système en validation.">
-<!-- Favicon : triangle outline doré sur fond bleu nuit (identité Issa Capital, S10). -->
-<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzFhMmU0YScvPjxwb2x5Z29uIHBvaW50cz0nMTYsNyAyNSwyNCA3LDI0JyBmaWxsPSdub25lJyBzdHJva2U9JyNjOWE4NGMnIHN0cm9rZS13aWR0aD0nMi4yJyBzdHJva2UtbGluZWpvaW49J3JvdW5kJy8+PC9zdmc+">
+<title>TradingApp · Le sens du marché</title>
+<meta name="description" content="Positionnement directionnel sur 12 marchés, 3 fois par jour. Win rate en mesure. Système en validation.">
+<!-- Favicon : triangle blanc sur carré bleu (identité TradingApp, thème clair S10). -->
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzI1NjNlYicvPjxwb2x5Z29uIHBvaW50cz0nMTYsNyAyNSwyNCA3LDI0JyBmaWxsPSdub25lJyBzdHJva2U9JyNmZmZmZmYnIHN0cm9rZS13aWR0aD0nMi40JyBzdHJva2UtbGluZWpvaW49J3JvdW5kJy8+PC9zdmc+">
 <!-- Open Graph : aperçu propre quand le lien est partagé (WhatsApp, LinkedIn). -->
-<meta property="og:title" content="Issa Capital · Le sens du marché. Mesuré.">
-<meta property="og:description" content="Positionnement directionnel sur 12 actifs, 3 fois par jour. Win rate en mesure. Système en validation.">
+<meta property="og:title" content="TradingApp · Le sens du marché">
+<meta property="og:description" content="Positionnement directionnel sur 12 marchés, 3 fois par jour. Win rate en mesure. Système en validation.">
 <meta property="og:type" content="website">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
@@ -441,21 +441,23 @@ def render_html(
     --status-text: #64748b;
     --status-dot: #f59e0b;
     --header-divider: #253348;
-    /* ── Identité publique « Issa Capital » (S10) ──────────────────────────
-       Couche marque ajoutée SANS toucher aux tokens existants ci-dessus. */
-    --brand-primary: #1a2e4a;      /* bleu nuit : fond header */
-    --brand-accent-light: #3b82f6; /* survol liens en dark */
-    --brand-gold: #c9a84c;         /* glyphe marque + accents chauds */
-    --hero-bg: #0d1f35;            /* fond hero, plus foncé que --bg */
-    --hero-text: #f1f5f9;          /* texte clair sur fond nuit */
-    --hero-muted: #94a3b8;         /* sous-titres hero */
-    --hero-border: rgba(255,255,255,0.08);
-    --validation-bg: rgba(245, 158, 11, 0.12);
-    --validation-border: rgba(245, 158, 11, 0.3);
-    --validation-dot: #f59e0b;
-    --footer-bg: #0d1826;          /* nuit profond pour le footer */
-    --footer-text: #94a3b8;
-    --footer-border: #1e2d40;
+    /* ── Identité publique « TradingApp » (S10, thème CLAIR façon Twelve Data) ──
+       Zone marketing (header / hero / footer) en clair : blanc, bleu accent,
+       beaucoup d'air. Le dark reste pour les tableaux de bulletin (fonctionnels).
+       Variant dark propre défini plus bas dans @media (prefers-color-scheme). */
+    --brand-primary: #ffffff;      /* fond header : blanc (Twelve Data) */
+    --brand-accent-light: #1d4ed8; /* survol liens */
+    --brand-gold: #2563eb;         /* accent marque (glyphe ▲) : bleu, plus d'or */
+    --hero-bg: #ffffff;            /* fond hero : blanc, carte épurée */
+    --hero-text: #0f172a;          /* texte foncé sur fond clair */
+    --hero-muted: #475569;         /* sous-titres hero */
+    --hero-border: #e2e8f0;
+    --validation-bg: rgba(217, 119, 6, 0.10);
+    --validation-border: rgba(217, 119, 6, 0.30);
+    --validation-dot: #d97706;
+    --footer-bg: #f8fafc;          /* footer : gris très clair */
+    --footer-text: #475569;
+    --footer-border: #e2e8f0;
     --header-height: 64px;
     --header-height-mobile: 52px;
     --hero-title-size: clamp(28px, 4vw, 42px);
@@ -489,10 +491,22 @@ def render_html(
       --accent-tint: #16243c;
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.28);
       --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.24), 0 4px 12px rgba(0, 0, 0, 0.32);
-      /* Identité publique en dark : les fonds nuit (brand/hero/footer) restent
-         naturels ; seul le badge validation gagne en contraste. */
+      /* Identité publique en dark : variant propre de la zone marketing
+         (header/hero/footer) cohérent avec le corps sombre. La marque reste
+         bleue, pas dorée. */
+      --brand-primary: #111c2e;     /* header sombre cohérent avec --bg dark */
+      --brand-gold: #60a5fa;        /* accent marque bleu clair (lisible dark) */
+      --brand-accent-light: #93c5fd;
+      --hero-bg: #1e293b;
+      --hero-text: #f1f5f9;
+      --hero-muted: #94a3b8;
+      --hero-border: #334155;
+      --footer-bg: #111c2e;
+      --footer-text: #94a3b8;
+      --footer-border: #334155;
       --validation-bg: rgba(245, 158, 11, 0.15);
       --validation-border: rgba(245, 158, 11, 0.35);
+      --validation-dot: #f59e0b;
     }}
   }}
   * {{ box-sizing: border-box; }}
@@ -505,15 +519,14 @@ def render_html(
     font-size: 16px;
     -webkit-font-smoothing: antialiased;
   }}
-  /* HEADER REFONDU (identité publique Issa Capital, S10) — fond bleu nuit
-     (--brand-primary), sticky, 64px desktop / 52px mobile. Glyphe doré
-     « ▲ » dans cadre + wordmark « Issa Capital » + tagline (masquée mobile)
-     + badge validation pill ambre (côté droit). Fond sombre dans les deux
-     modes (pas de surcharge dark sur --brand-primary). */
+  /* HEADER (identité publique TradingApp, S10, thème clair) — fond blanc
+     (--brand-primary), sticky, 64px desktop / 52px mobile. Glyphe ▲ bleu
+     encadré + wordmark « TradingApp » + tagline (masquée mobile) + badge
+     validation pill ambre (côté droit). Variant dark via @media. */
   header {{
     background: var(--brand-primary);
     border-bottom: 1px solid var(--hero-border);
-    box-shadow: 0 1px 0 rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.18);
+    box-shadow: 0 1px 3px rgba(15,23,42,0.06);
     padding: 0 28px;
     position: sticky; top: 0; z-index: 20;
     height: var(--header-height);
@@ -537,7 +550,7 @@ def render_html(
     display: flex; align-items: baseline; gap: 6px; white-space: nowrap;
   }}
   .brand-name .brand-wordmark {{
-    font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: #f1f5f9;
+    font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--hero-text);
   }}
   .brand-name .brand-tagline {{
     font-size: 13px; font-weight: 400; color: var(--hero-muted); letter-spacing: 0;
@@ -566,7 +579,7 @@ def render_html(
   }}
   @media (prefers-reduced-motion: reduce) {{ .vb-dot {{ animation: none; }} }}
   .vb-text {{
-    font-size: 12px; font-weight: 600; color: #f1f5f9;
+    font-size: 12px; font-weight: 600; color: var(--hero-text);
     white-space: nowrap; letter-spacing: 0.01em;
   }}
   .vb-date {{
@@ -633,9 +646,10 @@ def render_html(
      (--hero-bg), pleine largeur du contenu, replié sur mobile. */
   .page-hero {{
     background: var(--hero-bg);
-    padding: 48px 32px 40px;
-    border-bottom: 1px solid var(--hero-border);
+    padding: 48px 40px 40px;
+    border: 1px solid var(--hero-border);
     border-radius: 14px;
+    box-shadow: var(--shadow-sm);
     margin-bottom: 24px;
   }}
   .page-hero .hero-inner {{ max-width: 860px; margin: 0 auto; }}
@@ -658,7 +672,7 @@ def render_html(
   }}
   .hero-stats {{ display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 28px; }}
   .hero-stat {{
-    background: rgba(255,255,255,0.05);
+    background: var(--bg);
     border: 1px solid var(--hero-border);
     border-radius: 10px;
     padding: 14px 20px;
@@ -1201,11 +1215,11 @@ def render_html(
 <header>
   <div class="header-row">
     <button class="hamburger" id="hamburger" aria-label="Ouvrir la navigation" aria-expanded="false">☰</button>
-    <a class="brand" href="#vue=aujourdhui" aria-label="Issa Capital, retour à l'accueil">
+    <a class="brand" href="#vue=aujourdhui" aria-label="TradingApp, retour à l'accueil">
       <span class="brand-mark" aria-hidden="true">▲</span>
       <span class="brand-name">
-        <span class="brand-wordmark">Issa Capital</span>
-        <span class="brand-tagline">· Le sens du marché. Mesuré.</span>
+        <span class="brand-wordmark">TradingApp</span>
+        <span class="brand-tagline">· Le sens du marché</span>
       </span>
     </a>
     <span class="header-divider" aria-hidden="true"></span>
@@ -1269,7 +1283,7 @@ def render_html(
         <div class="hero-inner">
           <h1 class="hero-title">Savoir dans quel sens souffle le marché.</h1>
           <p class="hero-subtitle">
-            Issa Capital publie 3 fois par jour un bulletin de positionnement directionnel :
+            TradingApp publie 3 fois par jour un bulletin de positionnement directionnel :
             pour chaque marché suivi, une seule réponse, hausse probable ou baisse probable.
             C'est à vous de décider quoi en faire.
           </p>
@@ -1366,17 +1380,17 @@ def render_html(
       <footer class="page-footer" role="contentinfo">
         <div class="footer-inner">
           <div class="footer-top">
-            <a class="footer-brand" href="#vue=aujourdhui" aria-label="Issa Capital, retour en haut">
+            <a class="footer-brand" href="#vue=aujourdhui" aria-label="TradingApp, retour en haut">
               <span class="fb-mark" aria-hidden="true">▲</span>
-              <span class="fb-name">Issa Capital</span>
+              <span class="fb-name">TradingApp</span>
             </a>
             <div class="footer-meta">
-              <span class="fm-tagline">Le sens du marché. Mesuré.</span>
+              <span class="fm-tagline">Le sens du marché</span>
               <span class="fm-status">En phase de mesure, mise en service prévue le 08/08/2026</span>
             </div>
           </div>
           <p class="footer-desc">
-            Issa Capital est un système d'analyse directionnelle qui publie, trois fois par jour,
+            TradingApp est un système d'analyse directionnelle qui publie, trois fois par jour,
             un positionnement sur 12 marchés financiers à travers trois horizons de temps.
           </p>
           <p class="footer-disclaimer">
@@ -1387,7 +1401,7 @@ def render_html(
             résultat financier personnel n'est communiqué. Toute décision d'investissement reste
             de la seule responsabilité de l'utilisateur. Utilisation strictement personnelle.
           </p>
-          <p class="footer-copyright">© 2026 Issa Capital · Phase de mesure</p>
+          <p class="footer-copyright">© 2026 TradingApp · Phase de mesure</p>
         </div>
       </footer>
     </div>
@@ -2316,7 +2330,7 @@ function showAuxView(sectionId, navId) {{
     'nav-week': 'Bilan de la semaine', 'nav-history': 'Résultats',
     'nav-variations': 'Mouvements de marché',
   }};
-  document.title = `${{AUX_TITLES[navId] || 'Vue'}} · Issa Capital`;
+  document.title = `${{AUX_TITLES[navId] || 'Vue'}} · TradingApp`;
   renderList(null);
   const mainEl = document.getElementById('bulletin-main');
   if (mainEl) mainEl.scrollTop = 0;
@@ -2718,7 +2732,7 @@ function selectDay(dateIso) {{
   history.replaceState(null, '', '#jour=' + encodeURIComponent(dateIso));
   renderList(dateIso);
   const dt = formatBulletinDate(dateIso);
-  document.title = `${{dt.short}} · Issa Capital`;
+  document.title = `${{dt.short}} · TradingApp`;
   if (mainEl) mainEl.scrollTop = 0;
 }}
 

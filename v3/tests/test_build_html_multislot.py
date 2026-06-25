@@ -221,9 +221,9 @@ def test_html_contient_favicon_data_uri():
     assert _m, "favicon base64 introuvable"
     _svg = _b64.b64decode(_m.group(1)).decode("utf-8")
     assert "<svg" in _svg
-    # Refonte S10 : favicon = triangle outline doré sur fond bleu nuit (identité
-    # Issa Capital), remplace l'ancien chandelier vert/rouge (outil interne).
-    assert "#c9a84c" in _svg and "#1a2e4a" in _svg
+    # Refonte S10 (thème clair TradingApp) : favicon = triangle blanc sur carré
+    # bleu accent, remplace l'ancien chandelier vert/rouge (outil interne).
+    assert "#2563eb" in _svg and "#ffffff" in _svg
     assert "polygon" in _svg
     # page toujours bien formée
     assert html.startswith("<!DOCTYPE html>")

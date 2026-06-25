@@ -53,8 +53,24 @@ import triggers_classifier as tc  # noqa: E402
 import weighting as wg  # noqa: E402
 import market_data as md  # noqa: E402 — module validé (symboles testés 2026-03)
 import http_retry as _http_retry  # noqa: E402 — helper HTTP partagé (retry/backoff)
+import last_good_cache as lgc  # noqa: E402 — fallback « dernière valeur valide »
 
 SKIP_COUNTER: Counter = Counter()
+
+# Cache « dernière valeur valide » chargé une fois par run() (mutation in place
+# au fil des succès, sauvegardé en fin de run). État de module pour ne pas
+# alourdir toutes les signatures de build_critere_value/collect_for_fiche.
+# {} hors run = aucun repli (comportement actuel exact). Compteur des reports
+# effectivement servis ce cycle, persisté dans criteres-health.
+_LAST_GOOD_CACHE: Dict[str, Any] = {}
+REPORTED_COUNTER: Counter = Counter()
+# Le fallback last-good (persistance + repli) n'est ACTIF que pendant un run()
+# réel. Les appels unitaires directs à build_critere_value (tests legacy qui
+# valident le comportement n/a STRICT d'une source : EIA sans clé, météo KO sans
+# cache…) ne doivent NI mémoriser NI replier — sinon un état de cache fuiterait
+# entre cas de test et changerait leur résultat attendu. run() l'arme ; les tests
+# dédiés au fallback l'arment explicitement (cf. fixture _clean_state).
+_LAST_GOOD_ENABLED: bool = False
 DEFAULT_TIMEOUT = 15  # seconds
 
 # ---------------------------------------------------------------------------
@@ -2931,7 +2947,7 @@ def _handle_caixin_pmi(crit: dict, events: List[dict], now: datetime, ts: str) -
     return {"valeur": val, "ts": ts}
 
 
-def build_critere_value(
+def _build_critere_value_inner(
     fiche_key: str,
     crit: dict,
     triplets: Dict[str, int],
@@ -3135,6 +3151,92 @@ def build_critere_value(
     return None
 
 
+def _try_last_good_fallback(cle: str, crit: dict, now: datetime,
+                            ts: str) -> Optional[dict]:
+    """Repli « dernière valeur valide » quand un critère réseau échoue (None).
+
+    Lit le cache last-good chargé pour ce run : si le critère est ÉLIGIBLE (source
+    réseau LENTE, pas prix/momentum/vol) ET qu'une dernière bonne valeur existe ET
+    est FRAÎCHE (âge ≤ LAST_GOOD_MAX_AGE_DAYS jours ouvrés), on la REJOUE en la
+    MARQUANT `reporte: true` + `reporte_age_j` (échec VISIBLE). Sinon None (n/a,
+    comportement actuel — zéro invention).
+
+    La cause de l'échec source (préfixe SKIP_COUNTER le plus récent pour ce
+    cycle/critère) est annexée pour l'affichage health/decision-log.
+    """
+    if not lgc.is_last_good_eligible(cle, crit):
+        return None
+    entry = lgc.lookup_fresh(_LAST_GOOD_CACHE, cle, now, crit=crit)
+    if entry is None:
+        return None
+    age = int(entry.get("age_business_days", 0))
+    out: Dict[str, Any] = {"ts": ts, "reporte": True, "reporte_age_j": age,
+                           "reporte_date": entry.get("date", "")}
+    for k in ("valeur", "valeur_normalisee", "valeur_ponderee"):
+        if k in entry:
+            out[k] = entry[k]
+    # Cause de l'échec source ce cycle (best-effort) : la dernière clé
+    # SKIP_COUNTER qui mentionne ce critère, sinon un libellé générique.
+    cause = _last_skip_cause_for(cle)
+    out["reporte_cause"] = cause
+    REPORTED_COUNTER[f"{cle}|{cause}|j{age}"] += 1
+    logger.warning("Critère %s n/a (source KO: %s) → REPORTÉ J-%d (%s)",
+                   cle, cause, age, entry.get("date", "?"))
+    return out
+
+
+def _last_skip_cause_for(cle: str) -> str:
+    """Meilleure cause d'échec connue ce cycle pour `cle` (depuis SKIP_COUNTER).
+
+    Best-effort lisible : on cherche une clé SKIP_COUNTER dont le détail contient
+    `cle`, ou un préfixe réseau plausible. Sinon « source réseau indisponible ».
+    """
+    for key in SKIP_COUNTER:
+        if cle in key:
+            return _skip_reason(key)
+    return "source réseau indisponible"
+
+
+def build_critere_value(
+    fiche_key: str,
+    crit: dict,
+    triplets: Dict[str, int],
+    triggers_cfg: dict,
+    events: List[dict],
+    now: datetime,
+) -> Optional[dict]:
+    """Chokepoint générique `cle → dict valeur`, enrichi du fallback last-good.
+
+    1. Résout le critère via la logique existante (_build_critere_value_inner).
+    2. SUCCÈS (dict non-None portant une valeur, hors « hors fenêtre / triplet
+       vide ») → mémorise la dernière bonne valeur dans le cache last-good (pour
+       les seuls critères ÉLIGIBLES, sources réseau lentes).
+    3. ÉCHEC (None, cause réseau/429/vide) → tente le repli depuis le cache AVANT
+       de tomber en n/a. Une valeur reportée est marquée `reporte: true` (échec
+       VISIBLE). Cache vide/périmé → None (n/a comme aujourd'hui, zéro invention).
+    """
+    cle = crit.get("cle_courante")
+    ts = now.isoformat()
+    res = _build_critere_value_inner(fiche_key, crit, triplets, triggers_cfg, events, now)
+    # Fallback inactif (appel unitaire direct hors run) → comportement historique
+    # EXACT : ni mémorisation ni repli. Zéro fuite d'état entre cas de test.
+    if not _LAST_GOOD_ENABLED:
+        return res
+    if res is not None:
+        # Mémoriser au succès (les critères non éligibles sont filtrés par remember
+        # côté caller : on ne range au cache QUE les éligibles). Une valeur « hors
+        # fenêtre » (pas de valeur numérique réelle) n'est pas mémorisée par
+        # _entry_from_value (has_value=False) → no-op naturel.
+        if cle and lgc.is_last_good_eligible(cle, crit) and not res.get("reporte"):
+            d_run = now.astimezone(timezone.utc).date() if now.tzinfo else now.date()
+            lgc.remember(_LAST_GOOD_CACHE, cle, res, d_run)
+        return res
+    # Échec : repli last-good (éligibles uniquement).
+    if cle:
+        return _try_last_good_fallback(cle, crit, now, ts)
+    return None
+
+
 def collect_for_fiche(
     fiche_key: str,
     fiche: dict,
@@ -3257,9 +3359,39 @@ def _render_provenance_block(provenance: Dict[str, str]) -> List[str]:
     return lines
 
 
+def _render_reported_block(reported: Dict[str, int]) -> List[str]:
+    """Rend le bloc « Valeurs reportées » (fallback last-good servi ce cycle).
+
+    Chaque clé = `cle|cause|jN`. Rend l'échec VISIBLE : on a évité le n/a en
+    rejouant la dernière bonne valeur, mais on DIT laquelle, son âge et pourquoi
+    la source a échoué. Vide si aucun report ce cycle.
+    """
+    if not reported:
+        return []
+    lines = [
+        "## Valeurs reportées (fallback dernière valeur valide)",
+        "",
+        "_La source réseau a échoué ce cycle ; pour éviter un n/a qui ferait "
+        "chuter la couverture, on a rejoué la dernière bonne valeur (fraîche). "
+        "Échec VISIBLE : drapeau ⚠️ reportée._",
+        "",
+        "| Critère | Âge (j ouvrés) | Cause de l'échec source |",
+        "|---|---:|---|",
+    ]
+    for key in sorted(reported):
+        parts = key.split("|")
+        cle = parts[0] if parts else key
+        cause = parts[1] if len(parts) > 1 else ""
+        age = parts[2].lstrip("j") if len(parts) > 2 else "?"
+        lines.append(f"| ⚠️ `{cle}` | {age} | {cause} |")
+    lines.append("")
+    return lines
+
+
 def write_criteres_health(skips: Dict[str, int], now: datetime,
                           path: Path = CRITERES_HEALTH_OUT,
-                          provenance: Optional[Dict[str, str]] = None) -> Path:
+                          provenance: Optional[Dict[str, str]] = None,
+                          reported: Optional[Dict[str, int]] = None) -> Path:
     """Persiste la santé des critères : chaque SKIP/n/a → la RAISON exacte.
 
     Format compact type source-health.md. Rend l'« échec invisible » VISIBLE :
@@ -3278,9 +3410,11 @@ def write_criteres_health(skips: Dict[str, int], now: datetime,
         "",
     ]
     prov_block = _render_provenance_block(provenance or {})
+    reported_block = _render_reported_block(reported or {})
     if not skips:
         lines.append("**Aucun critère skippé ce cycle.** Tous les critères câblés ont été alimentés.")
         lines.append("")
+        lines.extend(reported_block)
         lines.extend(prov_block)
         path.write_text("\n".join(lines), encoding="utf-8")
         return path
@@ -3298,6 +3432,7 @@ def write_criteres_health(skips: Dict[str, int], now: datetime,
         label = SKIP_REASON_LABELS.get(prefix, prefix)
         lines.append(f"| {skips[key]} | {label} | `{detail}` |")
     lines.append("")
+    lines.extend(reported_block)
     lines.extend(prov_block)
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
@@ -3368,7 +3503,14 @@ def _prime_fresh_prices(fiches: Dict[str, dict], now: datetime) -> None:
 
 
 def run(now: Optional[datetime] = None) -> Path:
+    global _LAST_GOOD_CACHE, _LAST_GOOD_ENABLED
     SKIP_COUNTER.clear()
+    REPORTED_COUNTER.clear()
+    # Cache « dernière valeur valide » : chargé une fois, muté in place au fil des
+    # succès (remember) et lu en cas d'échec réseau (fallback). Sauvegardé en fin
+    # de run. {} si absent → aucun repli possible (n/a comme avant, zéro invention).
+    _LAST_GOOD_CACHE = lgc.load_cache()
+    _LAST_GOOD_ENABLED = True  # fallback armé pour ce run (désarmé en fin de run)
     # Provenance par symbole : on repart à zéro pour ne refléter QUE ce cycle
     # (sinon le registre de market_data accumulerait entre runs/tests).
     md.clear_provenance()
@@ -3434,7 +3576,15 @@ def run(now: Optional[datetime] = None) -> Path:
     total_filled = sum(len(v) for k, v in payload.items() if k != "last_update")
 
     out = write_criteres(payload)
-    health = write_criteres_health(dict(SKIP_COUNTER), now, provenance=md.get_provenance())
+    # Persiste le cache last-good enrichi par les succès de ce cycle (mutation in
+    # place pendant le calcul). Best-effort : un échec d'écriture ne casse pas le run.
+    try:
+        lgc.save_cache(_LAST_GOOD_CACHE)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("sauvegarde cache last-good KO : %s — ignoré", e)
+    health = write_criteres_health(dict(SKIP_COUNTER), now,
+                                   provenance=md.get_provenance(),
+                                   reported=dict(REPORTED_COUNTER))
     logger.info("Critères : %d/%d alimentés (%.0f%%)", total_filled, total_crit,
                 100.0 * total_filled / max(total_crit, 1))
     logger.info("Santé critères persistée : %s", health)
@@ -3442,6 +3592,10 @@ def run(now: Optional[datetime] = None) -> Path:
         logger.info("Skips : %s", dict(SKIP_COUNTER))
     # Nettoyage des overrides de prix frais : pas de fuite d'état entre runs.
     clear_fresh_price_overrides()
+    # Désarme le fallback : un appel direct à build_critere_value après un run()
+    # (tests, scripts) retrouve le comportement n/a strict par défaut.
+    # (_LAST_GOOD_ENABLED est déjà déclaré global en tête de run().)
+    _LAST_GOOD_ENABLED = False
     return out
 
 
@@ -3475,7 +3629,20 @@ def _retry_meteo_once(fiches: Dict[str, dict], payload: Dict[str, Any],
             res = None
         if res is not None:
             payload.setdefault(key, {})[cle] = res
+            d_run = now.astimezone(timezone.utc).date() if now.tzinfo else now.date()
+            if lgc.is_last_good_eligible(cle, crit) and not res.get("reporte"):
+                lgc.remember(_LAST_GOOD_CACHE, cle, res, d_run)
             logger.info("Open-Meteo retry OK : %s récupéré", cle)
+            continue
+        # Retry météo encore KO → repli last-good (le cas prouvé du 2026-06-25 :
+        # panne Open-Meteo persistante sur le cycle, valeur cacao fraîche en cache).
+        if not _LAST_GOOD_ENABLED:
+            continue
+        fb = _try_last_good_fallback(cle, crit, now, ts)
+        if fb is not None:
+            payload.setdefault(key, {})[cle] = fb
+            logger.info("Open-Meteo retry KO : %s REPORTÉ J-%d (last-good)",
+                        cle, fb.get("reporte_age_j", 0))
 
 
 def main(argv: Optional[List[str]] = None) -> int:

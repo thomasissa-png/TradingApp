@@ -627,6 +627,15 @@ class CritereResult:
     is_gate: bool = False
     gate_active: bool = False
     is_na: bool = False
+    # --- Fallback « dernière valeur valide » (incident 2026-06-25) ----------
+    # True si la valeur a été REPORTÉE depuis le cache last-good (source réseau KO
+    # ce cycle, valeur précédente fraîche rejouée). Échec VISIBLE : âge en jours
+    # ouvrés + cause de l'échec source. Une valeur reportée COMPTE à plein poids
+    # dans la couverture (but du fallback), mais plafonne la conviction si elle
+    # est le driver dominant (cf. _conviction_cell).
+    reporte: bool = False
+    reporte_age_j: int = 0
+    reporte_cause: str = ""
     # --- Pondération (v3.1) : chemin secondaire en parallèle du ±1 ---------
     valeur_ponderee: Optional[float] = None
     contributions_pond: Dict[str, float] = field(default_factory=dict)
@@ -991,6 +1000,14 @@ def score_actif(
         signe = int(crit.get("signe", 1))
         pertinence = {h: float(crit.get("pertinence", {}).get(h, 0.0)) for h in HORIZONS}
         is_na = (valeur_norm is None) and not is_gate
+        # Fallback « dernière valeur valide » : si la valeur a été reportée depuis
+        # le cache last-good (source réseau KO ce cycle), on propage le drapeau et
+        # son contexte (âge, cause) pour l'échec VISIBLE (decision-log / bulletin /
+        # garde-fou conviction). Une valeur reportée n'est PAS n/a (elle compte à
+        # plein poids dans la couverture), mais elle est marquée ⚠️.
+        _reporte = bool(raw.get("reporte")) if isinstance(raw, dict) else False
+        _reporte_age = int(raw.get("reporte_age_j", 0) or 0) if isinstance(raw, dict) else 0
+        _reporte_cause = str(raw.get("reporte_cause", "") or "") if isinstance(raw, dict) else ""
         # Pondéré : extrait depuis raw (triplet) ou fallback = valeur_norm (numérique).
         valeur_ponderee = extract_valeur_ponderee(crit, raw, valeur_norm)
 
@@ -1113,6 +1130,9 @@ def score_actif(
                 is_gate=is_gate,
                 gate_active=gate_active,
                 is_na=is_na,
+                reporte=_reporte,
+                reporte_age_j=_reporte_age,
+                reporte_cause=_reporte_cause,
                 valeur_ponderee=valeur_ponderee,
                 contributions_pond=contributions_pond,
                 materiality=mat,
@@ -1468,6 +1488,7 @@ SURVEILLANCE_FLAGS = {
     "deja_cote": "⌛",       # already-priced
     "dementi": "⊘",         # démenti / correction
     "mono_critere": "◧",    # A1 — un seul critère porte >50% du |score| (fragilité)
+    "reportee": "⚠️♻",      # valeur reportée (cache last-good, source réseau KO)
 }
 
 
@@ -1718,6 +1739,14 @@ def _compute_cell_risk_flags(
         if mono_dom:
             flags.append(SURVEILLANCE_FLAGS["mono_critere"])
 
+    # ⚠️♻ valeur reportée (fallback last-good) : au moins un critère contributif de
+    # la cellule a été reporté depuis le cache (source réseau KO ce cycle). Échec
+    # VISIBLE sur le bulletin. N'altère PAS la conclusion (la valeur compte à plein
+    # poids dans la couverture ; le plafond de conviction est géré séparément).
+    if any(getattr(c, "reporte", False) for c in r.criteres
+           if not c.is_gate and not c.is_na):
+        flags.append(SURVEILLANCE_FLAGS["reportee"])
+
     return flags
 
 
@@ -1864,6 +1893,7 @@ _LEGENDE_DEFS: List[Tuple[str, str]] = [
     ("⊘", "démenti / correction détecté sur l'event source"),
     ("◧", "mono-critère dominant (>50% du score sur 1 seul critère) : fragilité, à lire avec prudence"),
     ("⚭", "driver macro partagé : plusieurs cellules de même direction portées par le MÊME signal macro (faux consensus, voir bloc dédié)"),
+    ("⚠️♻", "valeur reportée : une source réseau a échoué ce cycle, dernière bonne valeur (fraîche) rejouée ; conviction plafonnée si elle est le driver dominant"),
 ]
 
 
@@ -2135,6 +2165,28 @@ def _max_weight_critere_is_na(r: "ActifResult") -> bool:
     return all(c.is_na for c in porteurs_max)
 
 
+def _driver_dominant_is_reporte(r: "ActifResult", h: str) -> bool:
+    """True si le DRIVER DOMINANT de la cellule (actif×horizon) est un critère
+    dont la valeur a été REPORTÉE depuis le cache last-good.
+
+    Réutilise `_driver_dominant_net` (la même source que la synthèse et « Porté
+    par ») pour identifier le critère porteur, puis lit son drapeau `reporte`.
+    Sert au garde-fou conviction : une valeur reportée porteuse ne peut pas
+    produire une conviction « forte » à elle seule. False si aucun driver, ou si
+    le driver dominant porte une valeur vivante. Zéro effet de bord.
+    """
+    direction = r.conclusions.get(h, "")
+    if direction not in ("LONG", "SHORT"):
+        return False
+    cle_dom, _nom, _ctr = _driver_dominant_net(r, h, direction)
+    if not cle_dom:
+        return False
+    for c in r.criteres:
+        if getattr(c, "cle_courante", "") == cle_dom:
+            return bool(getattr(c, "reporte", False))
+    return False
+
+
 def _conviction_cell(r: "ActifResult", h: str, seuil: float) -> str:
     """Libellé EXPLICITE de conviction d'une cellule (audit UX 2026-06-11 :
     « forte »/« faible » binaire illisible — « faible » sur un score de 13 semble
@@ -2178,6 +2230,14 @@ def _conviction_cell(r: "ActifResult", h: str, seuil: float) -> str:
         and _max_weight_critere_is_na(r)
     ):
         return "fragile (couverture insuffisante)"
+    # GARDE-FOU « valeur reportée porteuse » (panel 3 experts 2026-06-25) : une
+    # cellule dont le DRIVER DOMINANT est une valeur REPORTÉE depuis le cache
+    # (source réseau KO ce cycle) ne peut pas porter une conviction « forte » à
+    # elle seule — on la plafonne à « contestée ». Si le critère reporté n'est
+    # PAS le driver dominant (cas cacao : driver = news El Niño vivante), aucun
+    # plafonnement. Libellé only : ni le score ni la conclusion ne changent.
+    if score >= seuil and _driver_dominant_is_reporte(r, h):
+        return "contestée (donnée reportée)"
     if score >= seuil:
         return "forte"
     # |score| entre NEUTRAL_BAND et seuil, sans drapeau : ancien « faible »
@@ -5160,6 +5220,13 @@ def build_decision_log_records(
                     "contrib_pm1": c.contributions.get(h, 0.0),
                     "contrib_pond": c.contributions_pond.get(h, 0.0),
                 }
+                # Fallback « dernière valeur valide » (échec VISIBLE) : on trace le
+                # report dans le decision-log UNIQUEMENT quand il a lieu (zéro bloat
+                # sur les critères vivants). Âge en jours ouvrés + cause source.
+                if getattr(c, "reporte", False):
+                    contrib_entry["reporte"] = True
+                    contrib_entry["reporte_age_j"] = c.reporte_age_j
+                    contrib_entry["reporte_cause"] = c.reporte_cause
                 # Persistance "pourquoi" DeepSeek (demande Thomas 2026-06-01) :
                 # pour les critères news (source_track="ia_*"), on persiste
                 # synthese_rationale + conviction (=materiality bucket high/medium/low).

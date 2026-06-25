@@ -407,12 +407,12 @@ def render_html(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TradingApp · Le sens du marché</title>
+<title>Today Trade · Le sens du marché</title>
 <meta name="description" content="Positionnement directionnel sur 12 marchés, 3 fois par jour. Win rate en mesure. Système en validation.">
-<!-- Favicon : triangle blanc sur carré bleu (identité TradingApp, thème clair S10). -->
+<!-- Favicon : triangle blanc sur carré bleu (identité Today Trade, thème clair S10). -->
 <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzI1NjNlYicvPjxwb2x5Z29uIHBvaW50cz0nMTYsNyAyNSwyNCA3LDI0JyBmaWxsPSdub25lJyBzdHJva2U9JyNmZmZmZmYnIHN0cm9rZS13aWR0aD0nMi40JyBzdHJva2UtbGluZWpvaW49J3JvdW5kJy8+PC9zdmc+">
 <!-- Open Graph : aperçu propre quand le lien est partagé (WhatsApp, LinkedIn). -->
-<meta property="og:title" content="TradingApp · Le sens du marché">
+<meta property="og:title" content="Today Trade · Le sens du marché">
 <meta property="og:description" content="Positionnement directionnel sur 12 marchés, 3 fois par jour. Win rate en mesure. Système en validation.">
 <meta property="og:type" content="website">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -441,7 +441,7 @@ def render_html(
     --status-text: #64748b;
     --status-dot: #f59e0b;
     --header-divider: #253348;
-    /* ── Identité publique « TradingApp » (S10, thème CLAIR façon Twelve Data) ──
+    /* ── Identité publique « Today Trade » (S10, thème CLAIR façon Twelve Data) ──
        Zone marketing (header / hero / footer) en clair : blanc, bleu accent,
        beaucoup d'air. Le dark reste pour les tableaux de bulletin (fonctionnels).
        Variant dark propre défini plus bas dans @media (prefers-color-scheme). */
@@ -519,9 +519,9 @@ def render_html(
     font-size: 16px;
     -webkit-font-smoothing: antialiased;
   }}
-  /* HEADER (identité publique TradingApp, S10, thème clair) — fond blanc
+  /* HEADER (identité publique Today Trade, S10, thème clair) — fond blanc
      (--brand-primary), sticky, 64px desktop / 52px mobile. Glyphe ▲ bleu
-     encadré + wordmark « TradingApp » + tagline (masquée mobile) + badge
+     encadré + wordmark « Today Trade » + tagline (masquée mobile) + badge
      validation pill ambre (côté droit). Variant dark via @media. */
   header {{
     background: var(--brand-primary);
@@ -651,7 +651,7 @@ def render_html(
      Plus de chrome permanent sous le header → la page respire. */
   /* Date de génération — discrète, en pied de contenu (refonte S9). */
   .gen-meta {{ margin-top: 40px; font-size: 11px; color: var(--text-muted); text-align: right; }}
-  /* ── HERO / bandeau d'accueil (identité publique TradingApp, S10) ────────
+  /* ── HERO / bandeau d'accueil (identité publique Today Trade, S10) ────────
      Première section visible en haut de la vue d'accueil (bulletin du jour),
      masquée dès qu'une vue auxiliaire est active (géré en JS). Fond nuit
      (--hero-bg), pleine largeur du contenu, replié sur mobile. */
@@ -708,7 +708,7 @@ def render_html(
     border-left: 2px solid var(--hero-border); padding-left: 12px;
     margin: 0; line-height: 1.55; max-width: 620px;
   }}
-  /* ── FOOTER (identité publique TradingApp, S10) ──────────────────────────
+  /* ── FOOTER (identité publique Today Trade, S10) ──────────────────────────
      Posé en fin de .content-inner (qui scrolle) plutôt qu'après .layout :
      l'architecture existante a .layout à hauteur fixe avec main scrollable,
      donc un footer après .layout serait hors viewport. En fin de contenu, il
@@ -1239,10 +1239,10 @@ def render_html(
 <header>
   <div class="header-row">
     <button class="hamburger" id="hamburger" aria-label="Ouvrir la navigation" aria-expanded="false">☰</button>
-    <a class="brand" href="#vue=aujourdhui" aria-label="TradingApp, retour à l'accueil">
+    <a class="brand" href="#vue=aujourdhui" aria-label="Today Trade, retour à l'accueil">
       <span class="brand-mark" aria-hidden="true">▲</span>
       <span class="brand-name">
-        <span class="brand-wordmark">TradingApp</span>
+        <span class="brand-wordmark">Today Trade</span>
         <span class="brand-tagline">· Le sens du marché</span>
       </span>
     </a>
@@ -1307,7 +1307,7 @@ def render_html(
         <div class="hero-inner">
           <h1 class="hero-title">Savoir dans quel sens souffle le marché.</h1>
           <p class="hero-subtitle">
-            TradingApp publie 3 fois par jour un bulletin de positionnement directionnel :
+            Today Trade publie 3 fois par jour un bulletin de positionnement directionnel :
             pour chaque marché suivi, une seule réponse, hausse probable ou baisse probable.
             C'est à vous de décider quoi en faire.
           </p>
@@ -1408,9 +1408,9 @@ def render_html(
         <div class="footer-inner">
           <div class="footer-cols">
             <div class="footer-col footer-col-brand">
-              <a class="footer-brand" href="#vue=aujourdhui" aria-label="TradingApp, retour à l'accueil">
+              <a class="footer-brand" href="#vue=aujourdhui" aria-label="Today Trade, retour à l'accueil">
                 <span class="fb-mark" aria-hidden="true">▲</span>
-                <span class="fb-name">TradingApp</span>
+                <span class="fb-name">Today Trade</span>
               </a>
               <p class="footer-tagline">Le sens du marché</p>
               <p class="footer-blurb">
@@ -1445,7 +1445,7 @@ def render_html(
               (seul le taux de bonnes directions est suivi). Toute décision reste de la seule
               responsabilité de l'utilisateur.
             </p>
-            <p class="footer-copyright">© 2026 TradingApp, en phase de mesure.</p>
+            <p class="footer-copyright">© 2026 Today Trade, en phase de mesure.</p>
           </div>
         </div>
       </footer>
@@ -2375,7 +2375,7 @@ function showAuxView(sectionId, navId) {{
     'nav-week': 'Bilan de la semaine', 'nav-history': 'Résultats',
     'nav-variations': 'Mouvements de marché',
   }};
-  document.title = `${{AUX_TITLES[navId] || 'Vue'}} · TradingApp`;
+  document.title = `${{AUX_TITLES[navId] || 'Vue'}} · Today Trade`;
   renderList(null);
   const mainEl = document.getElementById('bulletin-main');
   if (mainEl) mainEl.scrollTop = 0;
@@ -2777,7 +2777,7 @@ function selectDay(dateIso) {{
   history.replaceState(null, '', '#jour=' + encodeURIComponent(dateIso));
   renderList(dateIso);
   const dt = formatBulletinDate(dateIso);
-  document.title = `${{dt.short}} · TradingApp`;
+  document.title = `${{dt.short}} · Today Trade`;
   if (mainEl) mainEl.scrollTop = 0;
 }}
 

@@ -203,7 +203,8 @@ def test_build_html_generates_non_empty_index(tmp_path, monkeypatch):
     assert out.exists(), "index.html non créé"
     content = out.read_text(encoding="utf-8")
     assert len(content) > 500, "index.html trop court"
-    assert "TradingApp v3" in content
+    # Refonte S10 : la marque publique est « Issa Capital » (ex « TradingApp v3 »).
+    assert "Issa Capital" in content
     assert "marked.min.js" in content  # marked.js inclus
     assert "BULLETINS = [" in content  # données embarquées
     # Légende
@@ -261,7 +262,9 @@ def test_build_html_contains_sticky_legend_and_subnav():
     # Sous-navigation d'ancres intra-bulletin
     assert 'id="subnav"' in content, "Élément subnav absent"
     assert "buildSubnav" in content, "Fonction buildSubnav absente"
-    assert "Sauter à" in content, "Label de sous-nav absent"
+    # Refonte S10 : le jargon « Sauter à : » est remplacé par le libellé naturel
+    # « Dans ce bulletin : » (la barre de navigation rapide reste présente).
+    assert "Dans ce bulletin" in content, "Label de sous-nav absent"
     # Hamburger mobile + sidebar toggle
     assert 'id="hamburger"' in content, "Bouton hamburger absent"
     assert "openSidebarMobile" in content, "Fonction openSidebarMobile absente"

@@ -78,11 +78,12 @@ def test_render_html_embarque_le_tableau_winrate():
 
 
 def test_render_html_vue_performance_unique():
-    # Une SEULE vue Performance (fusion) : la nav et la section Historique
-    # portent désormais le libellé « Performance », routée par #vue=performance.
+    # Une SEULE vue Résultats (fusion) : la nav et la section Historique portent
+    # le libellé humain « Résultats · Win rate » (refonte S10, identité Issa
+    # Capital), routée par #vue=performance (ancre inchangée).
     html = bh.render_html([], 0, performance_md=SAMPLE_WINRATE_MD)
     assert 'id="nav-history"' in html
-    assert "📊 Performance" in html
+    assert "Résultats · Win rate" in html
     assert 'id="history-view"' in html
     assert 'id="history-winrate"' in html
     assert "vue=performance" in html

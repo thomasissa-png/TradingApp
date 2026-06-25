@@ -149,14 +149,15 @@ def test_html_grisage_et_badge_niveau():
 
 
 def test_html_bandeau_contexte_present():
-    """P0-B / refonte S9 : le statut « mode test » reste visible en permanence,
-    désormais sous forme de badge discret inline dans le header (le bandeau
-    context-banner a été absorbé dedans). Intention conservée : Thomas voit
-    qu'il est en mode test + la date de go-live."""
+    """P0-B / refonte S10 (identité Issa Capital) : le statut de validation reste
+    visible en permanence, sous forme de badge pill ambre « Validation · 08/08 »
+    inline dans le header. Intention conservée : on voit que le système est en
+    phase de mesure (garde-fou) + le jalon go-live 08/08."""
     html = _render_sample_html()
     assert "header-status" in html
-    assert "Mode test" in html
-    assert "go-live 08/08" in html
+    assert "validation-badge" in html
+    assert "Validation" in html
+    assert "08/08" in html
 
 
 def test_html_header_gate_pas_flip():
@@ -220,7 +221,10 @@ def test_html_contient_favicon_data_uri():
     assert _m, "favicon base64 introuvable"
     _svg = _b64.b64decode(_m.group(1)).decode("utf-8")
     assert "<svg" in _svg
-    assert "limegreen" in _svg and "crimson" in _svg
+    # Refonte S10 : favicon = triangle outline doré sur fond bleu nuit (identité
+    # Issa Capital), remplace l'ancien chandelier vert/rouge (outil interne).
+    assert "#c9a84c" in _svg and "#1a2e4a" in _svg
+    assert "polygon" in _svg
     # page toujours bien formée
     assert html.startswith("<!DOCTYPE html>")
     assert html.rstrip().endswith("</html>")

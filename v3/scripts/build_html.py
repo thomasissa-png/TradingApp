@@ -407,8 +407,14 @@ def render_html(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TradingApp v3 · Bulletins</title>
-<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3QgeD0nOCcgeT0nNicgd2lkdGg9JzQnIGhlaWdodD0nMjAnIHJ4PScxJyBmaWxsPSdjcmltc29uJy8+PGxpbmUgeDE9JzEwJyB5MT0nMicgeDI9JzEwJyB5Mj0nNicgc3Ryb2tlPSdjcmltc29uJyBzdHJva2Utd2lkdGg9JzInLz48bGluZSB4MT0nMTAnIHkxPScyNicgeDI9JzEwJyB5Mj0nMzAnIHN0cm9rZT0nY3JpbXNvbicgc3Ryb2tlLXdpZHRoPScyJy8+PHJlY3QgeD0nMjAnIHk9JzEyJyB3aWR0aD0nNCcgaGVpZ2h0PScxNCcgcng9JzEnIGZpbGw9J2xpbWVncmVlbicvPjxsaW5lIHgxPScyMicgeTE9JzQnIHgyPScyMicgeTI9JzEyJyBzdHJva2U9J2xpbWVncmVlbicgc3Ryb2tlLXdpZHRoPScyJy8+PGxpbmUgeDE9JzIyJyB5MT0nMjYnIHgyPScyMicgeTI9JzI4JyBzdHJva2U9J2xpbWVncmVlbicgc3Ryb2tlLXdpZHRoPScyJy8+PC9zdmc+">
+<title>Issa Capital · Le sens du marché. Mesuré.</title>
+<meta name="description" content="Positionnement directionnel sur 12 actifs, 3 fois par jour. Win rate en mesure. Système en validation.">
+<!-- Favicon : triangle outline doré sur fond bleu nuit (identité Issa Capital, S10). -->
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzFhMmU0YScvPjxwb2x5Z29uIHBvaW50cz0nMTYsNyAyNSwyNCA3LDI0JyBmaWxsPSdub25lJyBzdHJva2U9JyNjOWE4NGMnIHN0cm9rZS13aWR0aD0nMi4yJyBzdHJva2UtbGluZWpvaW49J3JvdW5kJy8+PC9zdmc+">
+<!-- Open Graph : aperçu propre quand le lien est partagé (WhatsApp, LinkedIn). -->
+<meta property="og:title" content="Issa Capital · Le sens du marché. Mesuré.">
+<meta property="og:description" content="Positionnement directionnel sur 12 actifs, 3 fois par jour. Win rate en mesure. Système en validation.">
+<meta property="og:type" content="website">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
   :root {{
@@ -435,6 +441,25 @@ def render_html(
     --status-text: #64748b;
     --status-dot: #f59e0b;
     --header-divider: #253348;
+    /* ── Identité publique « Issa Capital » (S10) ──────────────────────────
+       Couche marque ajoutée SANS toucher aux tokens existants ci-dessus. */
+    --brand-primary: #1a2e4a;      /* bleu nuit : fond header */
+    --brand-accent-light: #3b82f6; /* survol liens en dark */
+    --brand-gold: #c9a84c;         /* glyphe marque + accents chauds */
+    --hero-bg: #0d1f35;            /* fond hero, plus foncé que --bg */
+    --hero-text: #f1f5f9;          /* texte clair sur fond nuit */
+    --hero-muted: #94a3b8;         /* sous-titres hero */
+    --hero-border: rgba(255,255,255,0.08);
+    --validation-bg: rgba(245, 158, 11, 0.12);
+    --validation-border: rgba(245, 158, 11, 0.3);
+    --validation-dot: #f59e0b;
+    --footer-bg: #0d1826;          /* nuit profond pour le footer */
+    --footer-text: #94a3b8;
+    --footer-border: #1e2d40;
+    --header-height: 64px;
+    --header-height-mobile: 52px;
+    --hero-title-size: clamp(28px, 4vw, 42px);
+    --hero-subtitle-size: clamp(15px, 2vw, 18px);
     /* Ombres douces (refonte design S9 vague 4) — donnent du relief aux cartes
        sans alourdir : la page « respire » au lieu d'empiler des filets 1px. */
     --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
@@ -464,6 +489,10 @@ def render_html(
       --accent-tint: #16243c;
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.28);
       --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.24), 0 4px 12px rgba(0, 0, 0, 0.32);
+      /* Identité publique en dark : les fonds nuit (brand/hero/footer) restent
+         naturels ; seul le badge validation gagne en contraste. */
+      --validation-bg: rgba(245, 158, 11, 0.15);
+      --validation-border: rgba(245, 158, 11, 0.35);
     }}
   }}
   * {{ box-sizing: border-box; }}
@@ -476,51 +505,74 @@ def render_html(
     font-size: 16px;
     -webkit-font-smoothing: antialiased;
   }}
-  /* HEADER — ligne unique, sticky, 48px (refonte design S9 vague 4). Marque
-     produit avec pastille accent (identité visuelle) + statut « mode test »
-     discret, le tout sur une seule ligne. Ombre douce sous le header pour le
-     détacher du contenu au scroll. */
+  /* HEADER REFONDU (identité publique Issa Capital, S10) — fond bleu nuit
+     (--brand-primary), sticky, 64px desktop / 52px mobile. Glyphe doré
+     « ▲ » dans cadre + wordmark « Issa Capital » + tagline (masquée mobile)
+     + badge validation pill ambre (côté droit). Fond sombre dans les deux
+     modes (pas de surcharge dark sur --brand-primary). */
   header {{
-    background: var(--bg-panel);
-    border-bottom: 1px solid var(--border);
-    box-shadow: var(--shadow-sm);
-    padding: 0 22px;
+    background: var(--brand-primary);
+    border-bottom: 1px solid var(--hero-border);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.18);
+    padding: 0 28px;
     position: sticky; top: 0; z-index: 20;
-    height: 48px;
+    height: var(--header-height);
     display: flex; align-items: center;
   }}
-  header .header-row {{ display: flex; align-items: center; gap: 10px; width: 100%; }}
-  /* Marque : pastille accent + nom. Cliquable → retour « Aujourd'hui ». */
+  header .header-row {{ display: flex; align-items: center; gap: 12px; width: 100%; }}
+  /* Marque : glyphe doré encadré + wordmark. Cliquable → retour « Aujourd'hui ». */
   .brand {{
-    display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0;
-    text-decoration: none; color: var(--text);
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    text-decoration: none; color: var(--hero-text);
   }}
   .brand-mark {{
     display: inline-flex; align-items: center; justify-content: center;
-    width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0;
-    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-    color: #fff; font-size: 14px; font-weight: 800; line-height: 1;
-    box-shadow: var(--shadow-sm);
+    width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+    background: transparent;
+    border: 1.5px solid var(--brand-gold);
+    color: var(--brand-gold);
+    font-size: 16px; font-weight: 900; line-height: 1; letter-spacing: 0;
   }}
   .brand-name {{
-    font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--text);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1;
+    display: flex; align-items: baseline; gap: 6px; white-space: nowrap;
   }}
-  .brand-name .brand-v {{ color: var(--text-muted); font-weight: 600; }}
-  .brand-name .brand-sub {{
-    color: var(--text-muted); font-weight: 500; font-size: 13px; margin-left: 2px;
+  .brand-name .brand-wordmark {{
+    font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: #f1f5f9;
   }}
-  header .meta-note {{ font-size: 11px; color: var(--text-muted); margin-left: 6px; }}
-  /* Badge statut « mode test » — inline, côté droit, point ambre + texte discret. */
-  .header-status {{ display: flex; align-items: center; gap: 6px; flex-shrink: 0; }}
-  .header-status-dot {{
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--status-dot); flex-shrink: 0;
+  .brand-name .brand-tagline {{
+    font-size: 13px; font-weight: 400; color: var(--hero-muted); letter-spacing: 0;
   }}
-  .header-status-text {{
-    font-size: 11px; font-weight: 500; color: var(--status-text); white-space: nowrap;
+  /* Pousse le badge statut tout à droite. */
+  .header-divider {{ flex: 1; }}
+  header .meta-note {{ font-size: 11px; color: var(--hero-muted); margin-left: 6px; }}
+  /* Badge statut « validation » — pill ambre désaturé, dot animé (pulse lent). */
+  .header-status {{ display: flex; align-items: center; gap: 8px; flex-shrink: 0; }}
+  .validation-badge {{
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--validation-bg);
+    border: 1px solid var(--validation-border);
+    border-radius: 999px;
+    padding: 5px 12px 5px 9px;
+    cursor: default;
   }}
-  @media (max-width: 380px) {{ .header-status-date {{ display: none; }} }}
+  .vb-dot {{
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--validation-dot); flex-shrink: 0;
+    animation: vb-pulse 2.4s ease-in-out infinite;
+  }}
+  @keyframes vb-pulse {{
+    0%, 100% {{ opacity: 1; transform: scale(1); }}
+    50% {{ opacity: 0.55; transform: scale(0.88); }}
+  }}
+  @media (prefers-reduced-motion: reduce) {{ .vb-dot {{ animation: none; }} }}
+  .vb-text {{
+    font-size: 12px; font-weight: 600; color: #f1f5f9;
+    white-space: nowrap; letter-spacing: 0.01em;
+  }}
+  .vb-date {{
+    font-size: 11px; font-weight: 400; color: var(--hero-muted); white-space: nowrap;
+  }}
+  @media (max-width: 400px) {{ .vb-date {{ display: none; }} }}
   /* Hamburger (mobile uniquement) */
   .hamburger {{
     display: none;
@@ -536,7 +588,7 @@ def render_html(
   .hamburger:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
   .layout {{
     display: flex;
-    height: calc(100vh - 48px);
+    height: calc(100dvh - var(--header-height));
   }}
   aside {{
     width: 280px;
@@ -575,6 +627,99 @@ def render_html(
      Plus de chrome permanent sous le header → la page respire. */
   /* Date de génération — discrète, en pied de contenu (refonte S9). */
   .gen-meta {{ margin-top: 40px; font-size: 11px; color: var(--text-muted); text-align: right; }}
+  /* ── HERO / bandeau d'accueil (identité publique Issa Capital, S10) ────────
+     Première section visible en haut de la vue d'accueil (bulletin du jour),
+     masquée dès qu'une vue auxiliaire est active (géré en JS). Fond nuit
+     (--hero-bg), pleine largeur du contenu, replié sur mobile. */
+  .page-hero {{
+    background: var(--hero-bg);
+    padding: 48px 32px 40px;
+    border-bottom: 1px solid var(--hero-border);
+    border-radius: 14px;
+    margin-bottom: 24px;
+  }}
+  .page-hero .hero-inner {{ max-width: 860px; margin: 0 auto; }}
+  .page-hero .hero-title {{
+    font-size: var(--hero-title-size);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--hero-text);
+    line-height: 1.15;
+    margin: 0 0 14px;
+    border: none; padding: 0;
+  }}
+  .page-hero .hero-subtitle {{
+    font-size: var(--hero-subtitle-size);
+    color: var(--hero-muted);
+    line-height: 1.6;
+    margin: 0 0 28px;
+    max-width: 620px;
+    font-weight: 400;
+  }}
+  .hero-stats {{ display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 28px; }}
+  .hero-stat {{
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--hero-border);
+    border-radius: 10px;
+    padding: 14px 20px;
+    min-width: 130px;
+  }}
+  .hero-stat .hs-value {{
+    font-size: 22px; font-weight: 800; color: var(--hero-text);
+    line-height: 1; letter-spacing: -0.02em;
+  }}
+  .hero-stat .hs-label {{ font-size: 12px; color: var(--hero-muted); margin-top: 4px; line-height: 1.4; }}
+  .hero-stat.hs-accent .hs-value {{ color: var(--brand-gold); }}
+  .hero-status {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }}
+  .hero-status-badge {{
+    background: var(--validation-bg); color: var(--brand-gold);
+    border: 1px solid var(--validation-border);
+    border-radius: 999px; padding: 3px 11px;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
+  }}
+  .hero-status-text {{ font-size: 13px; color: var(--hero-muted); line-height: 1.5; }}
+  .hero-disclaimer-inline {{
+    font-size: 13px; color: var(--hero-muted);
+    border-left: 2px solid var(--hero-border); padding-left: 12px;
+    margin: 0; line-height: 1.55; max-width: 620px;
+  }}
+  /* ── FOOTER (identité publique Issa Capital, S10) ──────────────────────────
+     Posé en fin de .content-inner (qui scrolle) plutôt qu'après .layout :
+     l'architecture existante a .layout à hauteur fixe avec main scrollable,
+     donc un footer après .layout serait hors viewport. En fin de contenu, il
+     reste visible au bas du scroll sur toutes les vues. */
+  .page-footer {{
+    background: var(--footer-bg);
+    border: 1px solid var(--footer-border);
+    border-radius: 14px;
+    padding: 32px;
+    margin-top: 48px;
+  }}
+  .footer-inner {{ max-width: 860px; margin: 0 auto; }}
+  .footer-top {{
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px;
+    padding-bottom: 18px; border-bottom: 1px solid var(--footer-border); margin-bottom: 18px;
+  }}
+  .footer-brand {{ display: flex; align-items: center; gap: 8px; text-decoration: none; }}
+  .footer-brand .fb-mark {{
+    width: 24px; height: 24px; border-radius: 6px;
+    border: 1.5px solid var(--brand-gold); color: var(--brand-gold);
+    font-size: 11px; font-weight: 900;
+    display: inline-flex; align-items: center; justify-content: center;
+  }}
+  .footer-brand .fb-name {{ font-size: 14px; font-weight: 600; color: var(--footer-text); letter-spacing: -0.01em; }}
+  .footer-meta {{ display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }}
+  .footer-meta .fm-tagline {{ font-size: 12px; color: var(--footer-text); opacity: 0.75; }}
+  .footer-meta .fm-status {{ font-size: 11px; color: var(--footer-text); opacity: 0.55; }}
+  .footer-desc {{ font-size: 12.5px; color: var(--footer-text); opacity: 0.8; line-height: 1.6; max-width: 720px; margin: 0 0 12px; }}
+  .footer-disclaimer {{ font-size: 11.5px; color: var(--footer-text); opacity: 0.6; line-height: 1.65; max-width: 720px; margin: 0; }}
+  .footer-copyright {{ margin-top: 16px; font-size: 11px; color: var(--footer-text); opacity: 0.45; }}
+  /* Label de groupe dans la sidebar (Résultats / Bulletins / Marchés). */
+  .nav-group-label {{
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-muted); padding: 12px 16px 4px; pointer-events: none; display: block;
+  }}
   /* Sous-navigation d'ancres intra-bulletin (seule barre sticky sous le header) */
   .subnav {{
     position: static;
@@ -967,12 +1112,19 @@ def render_html(
   @media (max-width: 768px) {{
     body {{ font-size: 15.5px; }}
     .hamburger {{ display: inline-block; }}
-    header {{ height: 44px; padding: 0 12px; }}
-    .brand-name {{ font-size: 14px; }}
-    .brand-name .brand-sub {{ display: none; }}  /* gain de place : « · Bulletins » masqué sur mobile */
-    .brand-mark {{ width: 23px; height: 23px; font-size: 12px; }}
-    .header-status-text {{ font-size: 10px; }}
-    .layout {{ height: calc(100vh - 44px); }}
+    header {{ height: var(--header-height-mobile); padding: 0 14px; }}
+    .brand-name .brand-wordmark {{ font-size: 15px; }}
+    .brand-name .brand-tagline {{ display: none; }}  /* gain de place : tagline masquée sur mobile */
+    .brand-mark {{ width: 28px; height: 28px; font-size: 14px; border-radius: 7px; }}
+    .layout {{ height: calc(100dvh - var(--header-height-mobile)); }}
+    .page-hero {{ padding: 32px 16px 28px; }}
+    .hero-stats {{ gap: 8px; }}
+    .hero-stat {{ padding: 10px 14px; min-width: 0; flex: 1; }}
+    .hero-stat .hs-value {{ font-size: 18px; }}
+    .hero-stat .hs-label {{ font-size: 11px; }}
+    .page-footer {{ padding: 24px 16px; }}
+    .footer-top {{ flex-direction: column; align-items: flex-start; }}
+    .footer-meta {{ align-items: flex-start; }}
     aside {{
       position: fixed;
       top: 0; left: 0; bottom: 0;
@@ -1048,14 +1200,21 @@ def render_html(
 <body>
 <header>
   <div class="header-row">
-    <button class="hamburger" id="hamburger" aria-label="Ouvrir la liste des bulletins" aria-expanded="false">☰</button>
-    <a class="brand" href="#vue=aujourdhui" aria-label="TradingApp v3 — accueil">
+    <button class="hamburger" id="hamburger" aria-label="Ouvrir la navigation" aria-expanded="false">☰</button>
+    <a class="brand" href="#vue=aujourdhui" aria-label="Issa Capital, retour à l'accueil">
       <span class="brand-mark" aria-hidden="true">▲</span>
-      <span class="brand-name">TradingApp <span class="brand-v">v3</span><span class="brand-sub">· Bulletins</span></span>
+      <span class="brand-name">
+        <span class="brand-wordmark">Issa Capital</span>
+        <span class="brand-tagline">· Le sens du marché. Mesuré.</span>
+      </span>
     </a>
-    <div class="header-status" role="status" aria-label="Statut : mode test, go-live le 08/08">
-      <span class="header-status-dot" aria-hidden="true"></span>
-      <span class="header-status-text">Mode test<span class="header-status-date"> · go-live 08/08</span></span>
+    <span class="header-divider" aria-hidden="true"></span>
+    <div class="header-status" role="status" aria-label="Statut : validation en cours, jalon 08/08">
+      <span class="validation-badge" title="Système en phase de validation. Jalon de mise en service : 08 août 2026.">
+        <span class="vb-dot" aria-hidden="true"></span>
+        <span class="vb-text">Validation</span>
+        <span class="vb-date"> · 08/08</span>
+      </span>
     </div>
   </div>
 </header>
@@ -1063,18 +1222,21 @@ def render_html(
 <div class="layout">
   <aside id="sidebar">
     <ul id="nav-views">
-      <li><a href="#vue=aujourdhui" id="nav-today" class="nav-view-link">📅 Aujourd'hui</a></li>
-      <li><a href="#vue=semaine" id="nav-week" class="nav-view-link">🗓️ Bilan semaine</a></li>
-      <li><a href="#vue=performance" id="nav-history" class="nav-view-link">📊 Performance</a></li>
-      <li><a href="#vue=variations" id="nav-variations" class="nav-view-link">📈 Variations 24h</a></li>
+      <li class="nav-group-label" aria-hidden="true">Résultats</li>
+      <li><a href="#vue=performance" id="nav-history" class="nav-view-link">📊 Résultats · Win rate</a></li>
+      <li class="nav-group-label" aria-hidden="true">Bulletins</li>
+      <li><a href="#vue=aujourdhui" id="nav-today" class="nav-view-link">📅 Bulletin du jour</a></li>
+      <li><a href="#vue=semaine" id="nav-week" class="nav-view-link">🗓️ Bilan de la semaine</a></li>
+      <li class="nav-group-label" aria-hidden="true">Marchés</li>
+      <li><a href="#vue=variations" id="nav-variations" class="nav-view-link">📈 Mouvements de marché</a></li>
     </ul>
-    <div class="nav-section-label">Bulletins</div>
+    <div class="nav-section-label">Archives</div>
     <ul id="bulletin-list"></ul>
   </aside>
   <main id="bulletin-main">
     <nav class="subnav" id="subnav" aria-label="Sections du bulletin">
       <div class="subnav-inner">
-        <span class="subnav-label">Sauter à :</span>
+        <span class="subnav-label">Dans ce bulletin :</span>
         <span id="subnav-links"></span>
       </div>
     </nav>
@@ -1103,23 +1265,54 @@ def render_html(
           </ul>
         </div>
       </details>
+      <section class="page-hero" id="hero-intro" aria-label="Présentation du système">
+        <div class="hero-inner">
+          <h1 class="hero-title">Savoir dans quel sens souffle le marché.</h1>
+          <p class="hero-subtitle">
+            Issa Capital publie 3 fois par jour un bulletin de positionnement directionnel :
+            pour chaque marché suivi, une seule réponse, hausse probable ou baisse probable.
+            C'est à vous de décider quoi en faire.
+          </p>
+          <div class="hero-stats" role="list" aria-label="Chiffres clés">
+            <div class="hero-stat" role="listitem">
+              <div class="hs-value">12</div>
+              <div class="hs-label">Actifs couverts<br>(indices, métaux, changes, matières)</div>
+            </div>
+            <div class="hero-stat" role="listitem">
+              <div class="hs-value">3</div>
+              <div class="hs-label">Bulletins par jour<br>(7h · 12h · 18h, heure de Paris)</div>
+            </div>
+            <div class="hero-stat hs-accent" role="listitem">
+              <div class="hs-value" id="hero-wr-value">en chauffe</div>
+              <div class="hs-label">Win rate<br>(en mesure depuis le 9 juin 2026)</div>
+            </div>
+          </div>
+          <div class="hero-status">
+            <span class="hero-status-badge">En phase de mesure</span>
+            <span class="hero-status-text">Mise en service prévue le 08/08/2026. On mesure avant d'ouvrir.</span>
+          </div>
+          <p class="hero-disclaimer-inline">
+            Le système ne place aucun ordre et ne promet aucun gain. Il donne une direction, pas un résultat.
+          </p>
+        </div>
+      </section>
       <div id="bulletin-content">
         <p>Chargement...</p>
       </div>
       <section id="today-view" hidden aria-label="Rapports d'aujourd'hui">
-        <h1>📅 Aujourd'hui</h1>
+        <h1>📅 Bulletin du jour</h1>
         <p class="lead">Le briefing du matin et les suivis de la journée, regroupés par jour. Le plus récent en premier.</p>
         <div id="today-list"></div>
         <p id="today-empty" hidden></p>
       </section>
       <section id="week-view" hidden aria-label="Bilan de la semaine">
-        <h1>🗓️ Bilan semaine</h1>
+        <h1>🗓️ Bilan de la semaine</h1>
         <p id="week-human-title" class="week-human-title" hidden></p>
         <div id="week-content"></div>
         <p id="week-empty" hidden></p>
       </section>
-      <section id="history-view" hidden aria-label="Performance : win rate et historique des décisions">
-        <h1>📊 Performance</h1>
+      <section id="history-view" hidden aria-label="Résultats : win rate et historique des décisions">
+        <h1>📊 Résultats · Win rate</h1>
         <p class="lead">Ce qui marche : le win rate par actif et par horizon (le taux de bonnes directions), puis le détail décision par décision.</p>
         <p class="history-intro">Deux mesures : le <strong>Win rate</strong> (sur les paris conclus) et le <strong>WR tradable</strong> (VRAI / VRAI+FAUSSE+non-conclusif, qui inclut les jours sous seuil où une position aurait quand même été prise, donc toujours ≤ Win rate). <strong>⏳ trop peu (N/15)</strong> = il faut au moins 15 paris indépendants par cellule pour qu'un chiffre soit fiable ; en dessous, le taux affiché ne veut encore rien dire.</p>
         <div class="winrate-warmup" role="note">
@@ -1161,8 +1354,8 @@ def render_html(
         </div>
         <p id="history-empty" hidden></p>
       </section>
-      <section id="variations-view" hidden aria-label="Variations 24h de nos actifs (mouvements de plus de 1%)">
-        <h1>📈 Variations 24h</h1>
+      <section id="variations-view" hidden aria-label="Mouvements de marché sur 24h (variations de plus de 1%)">
+        <h1>📈 Mouvements de marché</h1>
         <p class="lead">Toutes les variations 24h de nos actifs de plus de 1 %, du plus récent au plus ancien : le jour, l'actif, le sens, le prix de départ et de sortie, la variation, si on l'a joué, et la raison du mouvement.</p>
         <div id="variations-content"></div>
         <p id="variations-empty" hidden></p>
@@ -1170,6 +1363,33 @@ def render_html(
       <p class="gen-meta" aria-label="Date de génération de la page">
         Page générée le <time datetime="{generated_at_iso}">{generated_at}</time>{truncated_note}
       </p>
+      <footer class="page-footer" role="contentinfo">
+        <div class="footer-inner">
+          <div class="footer-top">
+            <a class="footer-brand" href="#vue=aujourdhui" aria-label="Issa Capital, retour en haut">
+              <span class="fb-mark" aria-hidden="true">▲</span>
+              <span class="fb-name">Issa Capital</span>
+            </a>
+            <div class="footer-meta">
+              <span class="fm-tagline">Le sens du marché. Mesuré.</span>
+              <span class="fm-status">En phase de mesure, mise en service prévue le 08/08/2026</span>
+            </div>
+          </div>
+          <p class="footer-desc">
+            Issa Capital est un système d'analyse directionnelle qui publie, trois fois par jour,
+            un positionnement sur 12 marchés financiers à travers trois horizons de temps.
+          </p>
+          <p class="footer-disclaimer">
+            Les bulletins publiés sur ce site sont produits à titre informatif uniquement et ne
+            constituent pas un conseil en investissement, une recommandation d'achat ou de vente,
+            ni une sollicitation au sens de la réglementation financière. Le suivi porte
+            exclusivement sur le taux de bonnes directions (win rate) : aucun montant, aucun
+            résultat financier personnel n'est communiqué. Toute décision d'investissement reste
+            de la seule responsabilité de l'utilisateur. Utilisation strictement personnelle.
+          </p>
+          <p class="footer-copyright">© 2026 Issa Capital · Phase de mesure</p>
+        </div>
+      </footer>
     </div>
   </main>
 </div>
@@ -2082,19 +2302,21 @@ function showAuxView(sectionId, navId) {{
   const bc = document.getElementById('bulletin-content');
   const subnav = document.getElementById('subnav');
   const help = document.querySelector('.help-box');
+  const hero = document.getElementById('hero-intro');
   if (bc) bc.hidden = true;
   if (subnav) subnav.style.display = 'none';
   if (help) help.style.display = 'none';
+  if (hero) hero.hidden = true;  // hero visible seulement sur la vue d'accueil (bulletin du jour)
   clearAuxNavActive();
   const nav = document.getElementById(navId);
   if (nav) nav.classList.add('active');
   // [CH-4] titre d'onglet par vue auxiliaire.
   const AUX_TITLES = {{
-    'nav-today': 'Aujourd\\'hui',
-    'nav-week': 'Bilan semaine', 'nav-history': 'Performance',
-    'nav-variations': 'Variations 24h',
+    'nav-today': 'Bulletin du jour',
+    'nav-week': 'Bilan de la semaine', 'nav-history': 'Résultats',
+    'nav-variations': 'Mouvements de marché',
   }};
-  document.title = `${{AUX_TITLES[navId] || 'Vue'}} · TradingApp v3`;
+  document.title = `${{AUX_TITLES[navId] || 'Vue'}} · Issa Capital`;
   renderList(null);
   const mainEl = document.getElementById('bulletin-main');
   if (mainEl) mainEl.scrollTop = 0;
@@ -2108,8 +2330,10 @@ function hideAuxViews() {{
   }});
   const bc = document.getElementById('bulletin-content');
   const help = document.querySelector('.help-box');
+  const hero = document.getElementById('hero-intro');
   if (bc) bc.hidden = false;
   if (help) help.style.display = '';
+  if (hero) hero.hidden = false;  // retour vue bulletin (accueil) → hero réaffiché
   clearAuxNavActive();
 }}
 
@@ -2311,7 +2535,7 @@ function buildTodayView() {{
 
   const days = listDays().map(d => d.date);  // déjà trié récent d'abord
   if (days.length === 0) {{
-    if (empty) {{ empty.hidden = false; empty.textContent = "Aucun rapport pour l'instant : les briefings et suivis apparaîtront ici."; }}
+    if (empty) {{ empty.hidden = false; empty.textContent = "Le bulletin du jour n'est pas encore disponible. Il est publié à 7h, 12h et 18h (heure de Paris)."; }}
     return;
   }}
   if (empty) empty.hidden = true;
@@ -2494,7 +2718,7 @@ function selectDay(dateIso) {{
   history.replaceState(null, '', '#jour=' + encodeURIComponent(dateIso));
   renderList(dateIso);
   const dt = formatBulletinDate(dateIso);
-  document.title = `${{dt.short}} · TradingApp v3`;
+  document.title = `${{dt.short}} · Issa Capital`;
   if (mainEl) mainEl.scrollTop = 0;
 }}
 

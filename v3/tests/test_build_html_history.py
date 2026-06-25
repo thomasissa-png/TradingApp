@@ -140,9 +140,10 @@ def test_render_html_genere_tableau_et_filtres():
 def test_render_html_entree_de_nav():
     html = bh.render_html([], 0, measures=SAMPLE_MEASURES, perf_ab={})
     assert 'id="nav-history"' in html
-    # Refonte S9 : l'entrée porte le libellé « Performance » (fusion Résultats +
-    # Historique), routée par #vue=performance.
-    assert "📊 Performance" in html
+    # Refonte S10 (identité Issa Capital) : l'entrée porte le libellé humain
+    # « Résultats · Win rate » (ex « Performance »), routée par #vue=performance
+    # (ancre inchangée). Fusion Résultats + Historique conservée.
+    assert "Résultats · Win rate" in html
     assert "function showHistory" in html
 
 

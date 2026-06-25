@@ -151,16 +151,17 @@ def test_historique_regroupement_par_jour_et_jour_courant():
 # --- Transverse ------------------------------------------------------------
 
 def test_bandeau_mode_test_hors_du_main():
-    """Refonte S9 : le statut MODE TEST doit rester hors <main> pour être visible
-    sur TOUTES les vues. Il vit désormais dans le header (badge .header-status),
-    qui précède <main> — intention conservée."""
+    """Refonte S10 (identité Issa Capital) : le statut de validation doit rester
+    hors <main> pour être visible sur TOUTES les vues. Il vit dans le header
+    (badge .validation-badge « Validation · 08/08 »), qui précède <main> :
+    intention conservée (statut toujours visible)."""
     html = bh.render_html([], 0)
     assert "header-status" in html
-    assert "Mode test" in html
+    assert "validation-badge" in html
     # Le badge statut précède l'ouverture du <main> (donc commun à toutes les vues).
     idx_status = html.index("header-status")
     idx_main = html.index("<main")
-    assert idx_status < idx_main, "Le statut MODE TEST doit précéder <main>"
+    assert idx_status < idx_main, "Le statut de validation doit précéder <main>"
 
 
 def test_pas_de_placeholder_non_substitue():

@@ -1,0 +1,25 @@
+{
+  "12h": {
+    "Argent": {
+      "call": "SHORT",
+      "fav_pct": -0.6,
+      "heure": "11h41",
+      "max_adv_pct": -0.91,
+      "max_fav_pct": 0.68
+    },
+    "Café (Arabica)": {
+      "call": "LONG",
+      "fav_pct": 1.38,
+      "heure": "11h41",
+      "max_adv_pct": -0.04,
+      "max_fav_pct": 1.38
+    },
+    "Pétrole (Brent)": {
+      "call": "SHORT",
+      "fav_pct": -0.67,
+      "heure": "11h41",
+      "max_adv_pct": -1.29,
+      "max_fav_pct": 0.0
+    }
+  }
+}

@@ -1,8 +1,8 @@
 # Santé des critères
 
-_Cycle : 2026-06-24 05:23 UTC_
+_Cycle : 2026-06-25 05:23 UTC_
 
-**Synthèse** : 36 motifs de skip distincts, 54 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
+**Synthèse** : 37 motifs de skip distincts, 56 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 
 | Occurrences | Motif | Détail (cause exacte) |
 |---:|---|---|
@@ -15,6 +15,7 @@ _Cycle : 2026-06-24 05:23 UTC_
 | 2 | fresh_price_refreshed | `EUR=X` |
 | 2 | fresh_price_refreshed | `SI=F` |
 | 2 | fresh_price_refreshed | `ZW=F` |
+| 2 | Open-Meteo injoignable (récents) | `6.8,-5.3:net_error` |
 | 1 | CBOE non câblé (Put/Call sans CSV public) | `put_call_ratio_cboe_5j` |
 | 1 | composite_no_subsource | `demande_pv_mining_strikes` |
 | 1 | composite_partial | `hf_positioning_flux_options` |

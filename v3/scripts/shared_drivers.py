@@ -323,6 +323,89 @@ def compute_shared_drivers_summary(
     return out
 
 
+def compute_selection_shared_drivers(
+    selection_cells: List[Tuple[Any, str]],
+    part_min: float = DRIVER_PART_MIN_CONSENSUS,
+) -> List[Dict[str, Any]]:
+    """Drivers partagés RESTREINTS à la Sélection (paris 24h + swing 7j + positions
+    1m). Recentrage fondateur 25/06 : « à quoi me sert ce paragraphe ? » — le bloc
+    sur les 36 cellules était redondant avec la synthèse et le ⚭ du tableau « À
+    jouer ». On ne le garde que là où il coûte vraiment : quand ≥ 2 paris qu'on a
+    RÉELLEMENT engagés reposent sur le MÊME driver de même direction (corrélation
+    cachée entre nos propres positions).
+
+    `selection_cells` : liste de `(actif_result, horizon)` réellement sélectionnés.
+    Retour (même forme que `compute_shared_drivers_summary`, mais `n_actifs` compte
+    les actifs DISTINCTS de la Sélection — un même actif tenu sur 2 horizons = 1) :
+        {cle, label, direction, actifs (list triée), n_actifs}
+    Vide si aucun driver n'est partagé par ≥ 2 actifs distincts → bloc non affiché.
+    """
+    agg: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for r, h in selection_cells:
+        parts = _cell_driver_parts(r.criteres, h)
+        label_par_cle = {
+            (getattr(c, "cle_courante", "") or ""): c.nom for c in r.criteres
+        }
+        for cle, (part, signe) in parts.items():
+            if not cle or part < part_min or signe == 0:
+                continue
+            direction = "LONG" if signe > 0 else "SHORT"
+            key = (cle, direction)
+            entry = agg.setdefault(
+                key,
+                {
+                    "cle": cle,
+                    "label": driver_label(cle, label_par_cle.get(cle, "")),
+                    "direction": direction,
+                    "actifs": set(),
+                },
+            )
+            entry["actifs"].add(r.nom)
+    out: List[Dict[str, Any]] = []
+    for entry in agg.values():
+        if len(entry["actifs"]) < DRIVER_MIN_CELLULES:
+            continue
+        actifs_tries = sorted(entry["actifs"])
+        out.append(
+            {
+                "cle": entry["cle"],
+                "label": entry["label"],
+                "direction": entry["direction"],
+                "actifs": actifs_tries,
+                "n_actifs": len(actifs_tries),
+            }
+        )
+    out.sort(key=lambda d: (-d["n_actifs"], d["label"]))
+    return out
+
+
+def build_selection_shared_drivers_block(summary: List[Dict[str, Any]]) -> List[str]:
+    """Bloc markdown « ⚭ Drivers macro partagés » RECENTRÉ sur la Sélection.
+
+    Une seule ligne actionnable par driver partagé. Vide → [] (pas de bloc, pas de
+    bruit ; cas le plus fréquent depuis le recentrage 25/06)."""
+    if not summary:
+        return []
+    lines: List[str] = [f"## {SHARED_DRIVERS_SYMBOL} Drivers macro partagés", ""]
+    lines.append(
+        "_Plusieurs paris de la Sélection reposent sur le MÊME driver : c'est UN "
+        "pari répété, pas N indépendants. Un retournement le fausse en bloc._"
+    )
+    lines.append("")
+    for d in summary:
+        actifs = list(d["actifs"])
+        if len(actifs) > 1:
+            actifs_str = ", ".join(actifs[:-1]) + " et " + actifs[-1]
+        else:
+            actifs_str = actifs[0] if actifs else "—"
+        lines.append(
+            f"- {SHARED_DRIVERS_SYMBOL} **{d['label']}** : {actifs_str} "
+            f"{d['direction']} — un retournement les fausse ensemble."
+        )
+    lines.append("")
+    return lines
+
+
 # Symbole de la légende compacte (réf. audit Reco A : ⚭).
 SHARED_DRIVERS_SYMBOL: str = "⚭"
 

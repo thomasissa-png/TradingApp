@@ -164,6 +164,60 @@ def test_pas_de_bloc_si_aucun_driver():
 
 
 # ===========================================================================
+# Recentrage Sélection (fondateur 25/06) — le bloc ⚭ ne porte plus sur les 36
+# cellules mais UNIQUEMENT sur les paris réellement engagés (24h + 7j + 1m).
+# ===========================================================================
+
+def test_selection_shared_drivers_signale_si_deux_paris_meme_driver():
+    """Deux paris DISTINCTS de la Sélection portés par le même driver, même
+    direction → signalé (corrélation cachée entre nos propres positions)."""
+    argent = _Actif("Argent", [
+        _crit("taux_10y_us_reels_tips", -8.0, "Taux réels US"),
+        _crit("propre_argent", -1.0),
+    ])
+    orr = _Actif("Or", [
+        _crit("taux_10y_us_reels_tips", -8.0, "Taux réels US"),
+        _crit("propre_or", -1.0),
+    ])
+    # Argent retenu en pari 24h, Or en swing 7j → 2 actifs distincts, même driver.
+    summary = sd.compute_selection_shared_drivers([(argent, "24h"), (orr, "7j")])
+    assert len(summary) == 1
+    assert summary[0]["cle"] == "taux_10y_us_reels_tips"
+    assert summary[0]["label"] == "Taux réels US (TIPS)"
+    assert summary[0]["direction"] == "SHORT"
+    assert summary[0]["actifs"] == ["Argent", "Or"]
+    assert summary[0]["n_actifs"] == 2
+
+
+def test_selection_shared_drivers_silencieux_si_un_seul_actif():
+    """Un même actif tenu sur 2 horizons (Or 7j + Or 1m) = 1 pari, pas une
+    corrélation cachée entre positions → AUCUN signalement."""
+    orr = _Actif("Or", [
+        _crit("taux_10y_us_reels_tips", -8.0, "Taux réels US"),
+        _crit("propre_or", -1.0),
+    ])
+    assert sd.compute_selection_shared_drivers([(orr, "7j"), (orr, "1m")]) == []
+
+
+def test_selection_shared_drivers_silencieux_si_drivers_differents():
+    """Deux paris portés par des drivers distincts → pas de pari répété → silence."""
+    petrole = _Actif("Pétrole", [_crit("stocks_brut_us", -8.0, "Stocks brut US")])
+    cafe = _Actif("Café", [_crit("tendance_cafe", 8.0, "Tendance café")])
+    assert sd.compute_selection_shared_drivers([(petrole, "24h"), (cafe, "7j")]) == []
+
+
+def test_selection_shared_drivers_bloc_rendu():
+    argent = _Actif("Argent", [_crit("taux_10y_us_reels_tips", -8.0), _crit("x", -1.0)])
+    orr = _Actif("Or", [_crit("taux_10y_us_reels_tips", -8.0), _crit("y", -1.0)])
+    summary = sd.compute_selection_shared_drivers([(argent, "24h"), (orr, "7j")])
+    text = "\n".join(sd.build_selection_shared_drivers_block(summary))
+    assert "## ⚭ Drivers macro partagés" in text
+    assert "Taux réels US (TIPS)" in text
+    assert "Argent et Or" in text and "SHORT" in text
+    assert sd.build_selection_shared_drivers_block([]) == []
+
+
+# ===========================================================================
 # Champ shadow par cellule (decision-log requêtable)
 # ===========================================================================
 

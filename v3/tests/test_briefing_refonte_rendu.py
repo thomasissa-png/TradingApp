@@ -147,6 +147,38 @@ def test_p245_sections_du_jour_sans_blabla():
     assert "« Porté par » = le critère" not in ajouer
 
 
+# ---------------------------------------------------------------------------
+# Couper le gras (fondateur 25/06) : « prend du recul... à quoi me sert ce
+# paragraphe ». Suppression des blocs verbeux redondants avec la synthèse 12×3 :
+# « Top swing (7j/1m) », « Top convictions multi-horizons », « Biais agrégé ».
+# ---------------------------------------------------------------------------
+
+def test_couper_le_gras_blocs_verbeux_supprimes():
+    r = _actif("Or", "or", -7.82, "SHORT", "Taux réels US (10 ans)", "taux_reels")
+    b = sa.render_bulletin([r], {}, NOW, "h", "fraîcheur OK")
+    assert "## Top swing (7j / 1m)" not in b      # bloc verbeux multi-horizons
+    assert "Top convictions multi-horizons" not in b  # légende du bloc supprimé
+    assert "Biais agrégé" not in b                 # ligne non actionnable
+    # Les sélections (24h / 7j / 1m) restent — recentrage, pas suppression.
+    assert "## 🎯 Aujourd'hui" in b
+    assert "## 📈 Swing 7j (max 3)" in b
+    assert "## 🗓️ Positions 1 mois (max 3)" in b
+
+
+def test_swing_rendu_en_tableau():
+    """Swing 7j / Positions 1m affichés en TABLEAU aligné (fondateur 25/06) avec
+    enrichissement du porteur news (plus de jargon « Synthèse news (net, IA) »)."""
+    r = _actif("Or", "or", -7.82, "SHORT", "Taux réels US (10 ans)", "taux_reels")
+    r.conclusions = {h: "SHORT" for h in sa.HORIZONS}
+    r.scores = {h: -7.82 for h in sa.HORIZONS}
+    fiches = {"or": {"seuils_reussite_pct": {"7j": 1.3, "1m": 3.0}}}
+    txt = "\n".join(sa.build_swing_7j_block([r], prix_reference={"or": 3993.45},
+                                            fiches=fiches, now=NOW))
+    assert "| Actif | Sens | Objectif | Entrée | Porté par |" in txt
+    assert "| **Or** | SHORT |" in txt
+    assert "Synthèse news (net, IA)" not in txt
+
+
 def test_p245_comment_lire_present_une_fois_dans_bulletin():
     r = _actif("Or", "or", -7.82, "SHORT", "Taux réels US (10 ans)", "taux_reels")
     b = sa.render_bulletin([r], {}, NOW, "h", "fraîcheur OK — x")

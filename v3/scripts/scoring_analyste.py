@@ -4128,23 +4128,17 @@ def _seuil_conviction_defaut() -> float:
         return 0.6
 
 
-def build_swing_block(
-    results: List["ActifResult"],
-    horizon: str,
-    titre: str,
-    intro: str,
-    prix_reference: Optional[Dict[str, float]] = None,
-    fiches: Optional[Dict[str, dict]] = None,
-) -> List[str]:
-    """Sélection de tendance JOUABLE (max 3) pour un horizon (7j ou 1m) — réponse à
-    l'audit (Spéculateur : « c'est un thermomètre, pas un trade »). On passe du
-    panorama à des trades cadrés : convictions FORTES à couverture suffisante,
-    DÉDUPLIQUÉES PAR DRIVER (famille macro — « taux réels US » ne compte qu'une fois,
-    pas N paris déguisés), max 3. Pour chaque : objectif = seuil de réussite de
-    l'actif à CET horizon (config), entrée = prix de réf., sortie = retournement du
-    fond. ZÉRO invention (objectif en config, prix stampé)."""
-    prix_reference = prix_reference or {}
-    fiches = fiches or {}
+def select_swing_retenus(
+    results: List["ActifResult"], horizon: str,
+) -> List[Tuple[float, "ActifResult", str, str]]:
+    """Sélection de tendance JOUABLE (max 3) pour un horizon (7j ou 1m).
+
+    Source UNIQUE de la sélection swing (utilisée par `build_swing_block` ET par
+    le recentrage des drivers partagés ⚭ sur la Sélection — 25/06). Convictions
+    FORTES à couverture suffisante, DÉDUPLIQUÉES PAR FAMILLE de driver macro
+    (« taux réels US » ne compte qu'une fois, pas N paris déguisés), max 3, triées
+    par |note| décroissante. Retourne la liste de tuples `(|note|, r, direction,
+    famille)` retenus (vide si rien de jouable — on ne force pas)."""
     seuil = _seuil_conviction_defaut()
     H = horizon
     try:
@@ -4182,6 +4176,28 @@ def build_swing_block(
         retenus.append(c)
         if len(retenus) >= SELECTION_MAX:
             break
+    return retenus
+
+
+def build_swing_block(
+    results: List["ActifResult"],
+    horizon: str,
+    titre: str,
+    intro: str,
+    prix_reference: Optional[Dict[str, float]] = None,
+    fiches: Optional[Dict[str, dict]] = None,
+    now: Optional[datetime] = None,
+) -> List[str]:
+    """Sélection de tendance JOUABLE (max 3) pour un horizon (7j ou 1m) — réponse à
+    l'audit (Spéculateur : « c'est un thermomètre, pas un trade »). On passe du
+    panorama à des trades cadrés. Rendu en TABLEAU aligné sur le reste du bulletin
+    (fondateur 25/06 : « plus visuel, aligné »), objectif = seuil de réussite de
+    l'actif à CET horizon (config), entrée = prix de réf. ZÉRO invention."""
+    prix_reference = prix_reference or {}
+    fiches = fiches or {}
+    H = horizon
+    now = now or datetime.now(timezone.utc)
+    retenus = select_swing_retenus(results, H)
 
     out: List[str] = [titre, ""]
     if not retenus:
@@ -4191,35 +4207,39 @@ def build_swing_block(
         return out
     out.append(intro)
     out.append("")
+    out.append("| Actif | Sens | Objectif | Entrée | Porté par |")
+    out.append("|---|---|---|---|---|")
     for _abs, r, direction, _fam in retenus:
         key = r.fiche_key
         seuil_pct = (((fiches.get(key) or {}).get("seuils_reussite_pct") or {}).get(H))
         if isinstance(seuil_pct, (int, float)):
             signe = "+" if direction == "LONG" else "−"
-            obj = f"objectif {signe}{abs(float(seuil_pct)):.1f} %"
+            obj = f"{signe}{abs(float(seuil_pct)):.1f} %"
         else:
-            obj = "objectif n/a"
+            obj = "n/a"
         px = prix_reference.get(key)
-        entree = f"entrée @ {px:g}" if isinstance(px, (int, float)) else "entrée au prix d'émission"
+        entree = f"{px:g}" if isinstance(px, (int, float)) else "—"
         cle, nom = _top_driver(r, H)
-        porte = _truncate_driver(nom) if nom else "—"
-        out.append(f"- **{r.nom}** {direction} · {obj} · {entree} · porté par {porte}")
+        # (25/06) Enrichit le porteur net news (« Synthèse news (net, IA) » → sens
+        # net + titre réel) : plus jamais de jargon dans « Porté par ».
+        porte = _truncate_driver(_enrich_net_news_label(nom, r, now)) if nom else "—"
+        out.append(f"| **{r.nom}** | {direction} | {obj} | {entree} | {porte} |")
     out.append("")
     return out
 
 
-def build_swing_7j_block(results, prix_reference=None, fiches=None) -> List[str]:
+def build_swing_7j_block(results, prix_reference=None, fiches=None, now=None) -> List[str]:
     """Swing 7 jours jouable (cf. build_swing_block)."""
     return build_swing_block(
         results, "7j", "## 📈 Swing 7j (max 3)",
         "_Tendances de fond à tenir ~7 jours (objectif = seuil de l'actif ; sortie si "
         "la tendance de fond se retourne ; un seul pari par moteur). Tendance courte 7j "
         "(retard ~2-3j)._",
-        prix_reference=prix_reference, fiches=fiches,
+        prix_reference=prix_reference, fiches=fiches, now=now,
     )
 
 
-def build_positions_1m_block(results, prix_reference=None, fiches=None) -> List[str]:
+def build_positions_1m_block(results, prix_reference=None, fiches=None, now=None) -> List[str]:
     """Positions 1 mois jouables (cf. build_swing_block) — réponse à l'audit 1m."""
     return build_swing_block(
         results, "1m", "## 🗓️ Positions 1 mois (max 3)",
@@ -4227,7 +4247,7 @@ def build_positions_1m_block(results, prix_reference=None, fiches=None) -> List[
         "la tendance de fond se retourne ; un seul pari par moteur). Portées par la "
         "tendance 20j + la macro : on capte le gros d'un mouvement de plusieurs "
         "semaines (entrée ~1-2 sem. après le début, acceptable à cet horizon)._",
-        prix_reference=prix_reference, fiches=fiches,
+        prix_reference=prix_reference, fiches=fiches, now=now,
     )
 
 
@@ -4370,14 +4390,9 @@ def build_comment_lire_block(flags_present: set) -> List[str]:
     )
     out.append("")
 
-    out.append("### Top convictions multi-horizons")
-    out.append(
-        "_Les meilleures convictions tous horizons confondus, avec leurs "
-        "drapeaux : une note forte portée par 1 seul critère (◧) ou divergente "
-        "(↯) reste à lire avec prudence. Ces convictions peuvent recouper les "
-        "lignes 24h de « À jouer » (mêmes actifs, autres horizons)._"
-    )
-    out.append("")
+    # [Couper le gras — fondateur 25/06] La légende « Top convictions multi-horizons »
+    # est supprimée avec le bloc verbeux qu'elle décrivait. Les sélections Swing 7j /
+    # Positions 1m (tableaux) sont auto-explicites (titre + intro + colonnes).
 
     # Légende des symboles + définition de « Note » (déplacées depuis la synthèse).
     out.append("### Symboles et Note")
@@ -4526,26 +4541,37 @@ def render_bulletin(
     # Si aucun driver ne dépasse le seuil → pas de bloc (anti-bruit). Le symbole
     # ⚭ n'est ajouté à la légende QUE si le bloc est émis (pattern « présents only »).
     import shared_drivers as _shared_drivers  # noqa: F401 (lazy, cf. pattern existant)
-    _shared_summary = _shared_drivers.compute_shared_drivers_summary(results, HORIZONS)
-    _shared_block = _shared_drivers.build_shared_drivers_block(_shared_summary)
+    # [Recentrage fondateur 25/06] « à quoi me sert ce paragraphe ? » — le bloc ⚭
+    # sur les 36 cellules était redondant avec la synthèse + le ⚭ du tableau « À
+    # jouer ». On le recentre sur la Sélection RÉELLEMENT engagée (paris 24h + swing
+    # 7j + positions 1m) : il ne s'affiche que si ≥ 2 de NOS paris partagent un
+    # driver de même direction (la corrélation cachée qui coûte vraiment).
+    _selection_cells: List[Tuple["ActifResult", str]] = []
+    _res_by_nom = {r.nom: r for r in results}
+    try:
+        for _p in select_paris_du_jour(results, now):
+            _r = _res_by_nom.get(_p["actif"])
+            if _r is not None:
+                _selection_cells.append((_r, "24h"))
+        for _h in ("7j", "1m"):
+            for _abs, _r, _dir, _fam in select_swing_retenus(results, _h):
+                _selection_cells.append((_r, _h))
+    except Exception:  # noqa: BLE001 — best-effort, jamais de crash du bulletin
+        _selection_cells = []
+    _shared_summary = _shared_drivers.compute_selection_shared_drivers(_selection_cells)
+    _shared_block = _shared_drivers.build_selection_shared_drivers_block(_shared_summary)
     # [Refonte S9 vague 3 — I14] Comme « Cellules à surveiller », le bloc Drivers
     # macro est une alerte de décision : on le capture sans l'injecter dans le flux
     # `lines` naturel ; il est ré-inséré juste après « Décision du jour » dans le
     # splice de tête (cf. `head_block`). (Inchangé : ⚭ n'entre dans la légende que
     # si le bloc est émis — voir `flags_present` plus bas.)
 
-    # Biais agrégé : ligne UNIQUE qui résume le compte de conclusions (LONG /
-    # SHORT / INSUFFISANT). Le marqueur ⚠ INCOHÉRENCE n'apparaît que si le
-    # compte re-calculé indépendamment diverge (bug d'agrégation).
-    bias_counts = compute_bias_aggregate(results)
-    bias_ok, bias_msg = assert_bias_coherence(bias_counts, results)
-    bias_marker = "" if bias_ok else f" ⚠ INCOHÉRENCE : {bias_msg}"
-    lines.append(
-        f"- Biais agrégé : LONG {bias_counts['LONG']} · SHORT {bias_counts['SHORT']} · "
-        f"INSUFFISANT {bias_counts[CONCLUSION_INSUFFISANT]} "
-        f"(sur {bias_counts['total']} cellules){bias_marker}"
-    )
-    lines.append("")
+    # [Couper le gras — fondateur 25/06] La ligne « Biais agrégé : LONG x · SHORT y »
+    # est SUPPRIMÉE du bulletin (gras non actionnable, redondant avec la synthèse
+    # 12×3 qui montre déjà chaque direction). La cohérence de biais reste vérifiée
+    # en interne (garde-fou anti-bug d'agrégation) sans polluer l'affichage.
+    _bias_counts = compute_bias_aggregate(results)
+    assert_bias_coherence(_bias_counts, results)
     # Pré-calcul des flips AVANT le rendu matrice (l'ordre d'affichage est :
     # Briefing → Flips vs veille → Matrice → Détail → Limites — demande Thomas
     # 2026-06-01 : remonter les changements de position en tête de bulletin).
@@ -4903,14 +4929,22 @@ def render_bulletin(
     )
     # I14 — alertes de décision remontées juste sous « Décision du jour », avant
     # le panorama. surveillance_block est toujours présent (placeholder si vide) ;
-    # _shared_block ne l'est que si un driver partagé dépasse le seuil (anti-bruit).
+    # _shared_block ne l'est que si ≥ 2 paris de la Sélection partagent un driver.
     alertes_block = surveillance_block + (_shared_block if _shared_block else [])
-    top_swing_block = build_top_multi_horizons_block(results, _shared_summary)
+    # [Couper le gras — fondateur 25/06] Le bloc verbeux « ## Top swing (7j / 1m) »
+    # (build_top_multi_horizons_block) est SUPPRIMÉ de l'assemblage : il faisait
+    # tripler-emploi avec la synthèse 12×3, le tableau « À jouer » et les sélections
+    # Swing 7j / Positions 1m (ces dernières gardées, désormais en TABLEAU). La
+    # fonction reste définie (tests unitaires) mais n'alimente plus le bulletin.
+    # ⚭ dans la légende : aussi si le tableau « À jouer » l'utilise (driver partagé
+    # détecté localement), pas seulement quand le bloc dédié est émis.
+    if SHARED_DRIVERS_SYMBOL_LOCAL in "\n".join(head_block):
+        flags_present.add(_shared_drivers.SHARED_DRIVERS_SYMBOL)
     lines = (
         lines[:_meta_end] + [""]
-        + head_block + alertes_block + synth_lines + top_swing_block
-        + build_swing_7j_block(results, prix_reference=prix_reference, fiches=fiches)
-        + build_positions_1m_block(results, prix_reference=prix_reference, fiches=fiches)
+        + head_block + alertes_block + synth_lines
+        + build_swing_7j_block(results, prix_reference=prix_reference, fiches=fiches, now=now)
+        + build_positions_1m_block(results, prix_reference=prix_reference, fiches=fiches, now=now)
         + lines[_meta_end:]
     )
 

@@ -225,15 +225,14 @@ def test_bias_coherence_detecte_incoherence(caplog):
     assert any("INCOHÉRENCE BIAIS" in r.message for r in caplog.records)
 
 
-def test_bulletin_contient_ligne_biais_agrege():
-    """Le bulletin rendu contient la ligne 'Biais agrégé' calculée."""
+def test_bulletin_ne_contient_plus_ligne_biais_agrege():
+    """[Couper le gras — fondateur 25/06] La ligne « Biais agrégé » est SUPPRIMÉE du
+    bulletin (gras non actionnable, redondant avec la synthèse 12×3). La cohérence de
+    biais reste vérifiée en interne (cf. test_assert_bias_coherence ci-dessus)."""
     fiche = _fiche()
     res = sa.score_actif("test", fiche, _vals(1.0, 1.0))
     bulletin = sa.render_bulletin([res], {}, NOW, "h", "ok")
-    assert "Biais agrégé" in bulletin
-    assert "LONG" in bulletin and "SHORT" in bulletin
-    # Total = 3 cellules pour 1 actif
-    assert "sur 3 cellules" in bulletin
+    assert "Biais agrégé" not in bulletin
 
 
 def test_bulletin_pas_de_marqueur_incoherence_par_defaut():

@@ -106,7 +106,7 @@
     }
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; height: 100%; }
+  html, body { margin: 0; padding: 0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background: var(--bg);
@@ -132,8 +132,11 @@
   /* Marque : glyphe doré encadré + wordmark. Cliquable → retour « Aujourd'hui ». */
   .brand {
     display: flex; align-items: center; gap: 10px; flex-shrink: 0;
-    text-decoration: none; color: var(--hero-text);
+    text-decoration: none; color: var(--hero-text); cursor: pointer;
   }
+  /* Affordance de clic (le logo ramène à l'accueil, fondateur 25/06). */
+  .brand:hover .brand-wordmark { color: var(--accent); }
+  .brand:hover .brand-mark { background: var(--accent-bg); }
   .brand-mark {
     display: inline-flex; align-items: center; justify-content: center;
     width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
@@ -141,6 +144,7 @@
     border: 1.5px solid var(--brand-gold);
     color: var(--brand-gold);
     font-size: 16px; font-weight: 900; line-height: 1; letter-spacing: 0;
+    transition: background 0.15s ease;
   }
   .brand-name {
     display: flex; align-items: baseline; gap: 6px; white-space: nowrap;
@@ -195,16 +199,23 @@
   }
   .hamburger:hover { background: var(--accent-bg); }
   .hamburger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Scroll de PAGE naturel (refonte footer 25/06) : la page entière scrolle,
+     le header reste sticky en haut, la sidebar sticky dans sa colonne, et le
+     footer pleine largeur vient APRÈS le layout (hors colonne de contenu). */
   .layout {
     display: flex;
-    height: calc(100dvh - var(--header-height));
+    min-height: calc(100dvh - var(--header-height));
   }
   aside {
     width: 280px;
     border-right: 1px solid var(--border);
     background: var(--bg-panel);
-    overflow-y: auto;
     flex-shrink: 0;
+    position: sticky;
+    top: var(--header-height);
+    align-self: flex-start;
+    height: calc(100dvh - var(--header-height));
+    overflow-y: auto;
   }
   aside ul { list-style: none; margin: 0; padding: 8px 0; }
   aside li { padding: 0; }
@@ -220,7 +231,7 @@
   aside .item-date { flex: 1; }
   main {
     flex: 1;
-    overflow-y: auto;
+    min-width: 0;
     padding: 0;
     max-width: 100%;
     position: relative;
@@ -298,33 +309,47 @@
      l'architecture existante a .layout à hauteur fixe avec main scrollable,
      donc un footer après .layout serait hors viewport. En fin de contenu, il
      reste visible au bas du scroll sur toutes les vues. */
+  /* Footer : vrai footer de site (marque + navigation + principe + barre légale).
+     Thème clair, 3 colonnes desktop, empilé mobile. */
   .page-footer {
     background: var(--footer-bg);
-    border: 1px solid var(--footer-border);
-    border-radius: 14px;
-    padding: 32px;
-    margin-top: 48px;
+    border-top: 1px solid var(--footer-border);
+    padding: 44px 40px 26px;
   }
-  .footer-inner { max-width: 860px; margin: 0 auto; }
-  .footer-top {
-    display: flex; align-items: center; justify-content: space-between;
-    flex-wrap: wrap; gap: 12px;
-    padding-bottom: 18px; border-bottom: 1px solid var(--footer-border); margin-bottom: 18px;
+  .footer-inner { max-width: 1080px; margin: 0 auto; }
+  .footer-cols {
+    display: grid;
+    grid-template-columns: 1.7fr 1fr 1.5fr;
+    gap: 40px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--footer-border);
   }
-  .footer-brand { display: flex; align-items: center; gap: 8px; text-decoration: none; }
+  .footer-col { min-width: 0; }
+  .footer-brand { display: inline-flex; align-items: center; gap: 9px; text-decoration: none; margin-bottom: 12px; cursor: pointer; }
   .footer-brand .fb-mark {
-    width: 24px; height: 24px; border-radius: 6px;
+    width: 27px; height: 27px; border-radius: 7px;
     border: 1.5px solid var(--brand-gold); color: var(--brand-gold);
-    font-size: 11px; font-weight: 900;
+    font-size: 13px; font-weight: 900;
     display: inline-flex; align-items: center; justify-content: center;
   }
-  .footer-brand .fb-name { font-size: 14px; font-weight: 600; color: var(--footer-text); letter-spacing: -0.01em; }
-  .footer-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-  .footer-meta .fm-tagline { font-size: 12px; color: var(--footer-text); opacity: 0.75; }
-  .footer-meta .fm-status { font-size: 11px; color: var(--footer-text); opacity: 0.55; }
-  .footer-desc { font-size: 12.5px; color: var(--footer-text); opacity: 0.8; line-height: 1.6; max-width: 720px; margin: 0 0 12px; }
-  .footer-disclaimer { font-size: 11.5px; color: var(--footer-text); opacity: 0.6; line-height: 1.65; max-width: 720px; margin: 0; }
-  .footer-copyright { margin-top: 16px; font-size: 11px; color: var(--footer-text); opacity: 0.45; }
+  .footer-brand .fb-name { font-size: 16px; font-weight: 700; color: var(--hero-text); letter-spacing: -0.01em; }
+  .footer-tagline { font-size: 13px; color: var(--footer-text); margin: 0 0 12px; }
+  .footer-blurb { font-size: 12.5px; color: var(--footer-text); opacity: 0.85; line-height: 1.6; margin: 0 0 16px; max-width: 320px; }
+  .footer-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11.5px; font-weight: 600; color: #b45309;
+    background: var(--validation-bg); border: 1px solid var(--validation-border);
+    border-radius: 999px; padding: 4px 11px;
+  }
+  .footer-h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin: 2px 0 14px; }
+  .footer-col-nav a { display: block; font-size: 13px; color: var(--footer-text); text-decoration: none; padding: 4px 0; cursor: pointer; }
+  .footer-col-nav a:hover { color: var(--accent); }
+  .footer-list { list-style: none; margin: 0; padding: 0; }
+  .footer-list li { font-size: 12.5px; color: var(--footer-text); line-height: 1.5; padding: 4px 0 4px 15px; position: relative; }
+  .footer-list li::before { content: '·'; position: absolute; left: 3px; color: var(--accent); font-weight: 700; }
+  .footer-bottom { padding-top: 20px; }
+  .footer-disclaimer { font-size: 11.5px; color: var(--footer-text); opacity: 0.7; line-height: 1.6; margin: 0 0 10px; }
+  .footer-copyright { font-size: 11px; color: var(--footer-text); opacity: 0.55; margin: 0; }
   /* Label de groupe dans la sidebar (Résultats / Bulletins / Marchés). */
   .nav-group-label {
     font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
@@ -732,9 +757,8 @@
     .hero-stat { padding: 10px 14px; min-width: 0; flex: 1; }
     .hero-stat .hs-value { font-size: 18px; }
     .hero-stat .hs-label { font-size: 11px; }
-    .page-footer { padding: 24px 16px; }
-    .footer-top { flex-direction: column; align-items: flex-start; }
-    .footer-meta { align-items: flex-start; }
+    .page-footer { padding: 28px 18px 18px; }
+    .footer-cols { grid-template-columns: 1fr; gap: 28px; }
     aside {
       position: fixed;
       top: 0; left: 0; bottom: 0;
@@ -832,13 +856,13 @@
 <div class="layout">
   <aside id="sidebar">
     <ul id="nav-views">
-      <li class="nav-group-label" aria-hidden="true">Résultats</li>
-      <li><a href="#vue=performance" id="nav-history" class="nav-view-link">📊 Résultats · Win rate</a></li>
       <li class="nav-group-label" aria-hidden="true">Bulletins</li>
       <li><a href="#vue=aujourdhui" id="nav-today" class="nav-view-link">📅 Bulletin du jour</a></li>
       <li><a href="#vue=semaine" id="nav-week" class="nav-view-link">🗓️ Bilan de la semaine</a></li>
       <li class="nav-group-label" aria-hidden="true">Marchés</li>
       <li><a href="#vue=variations" id="nav-variations" class="nav-view-link">📈 Mouvements de marché</a></li>
+      <li class="nav-group-label" aria-hidden="true">Résultats</li>
+      <li><a href="#vue=performance" id="nav-history" class="nav-view-link">📊 Résultats · Win rate</a></li>
     </ul>
     <div class="nav-section-label">Archives</div>
     <ul id="bulletin-list"></ul>
@@ -966,43 +990,61 @@
       </section>
       <section id="variations-view" hidden aria-label="Mouvements de marché sur 24h (variations de plus de 1%)">
         <h1>📈 Mouvements de marché</h1>
-        <p class="lead">Toutes les variations 24h de nos actifs de plus de 1 %, du plus récent au plus ancien : le jour, l'actif, le sens, le prix de départ et de sortie, la variation, si on l'a joué, et la raison du mouvement.</p>
+        <p class="lead">Tous les mouvements 24h de nos marchés de plus de 1 %, du plus récent au plus ancien. Pour chacun : notre call (LONG / SHORT), le prix d'entrée à 7h, l'avancée du call à 12h, 18h et à la clôture (en % favorable), le meilleur gain atteint dans la journée (max), si on l'a joué, et la raison du mouvement.</p>
         <div id="variations-content"></div>
         <p id="variations-empty" hidden></p>
       </section>
       <p class="gen-meta" aria-label="Date de génération de la page">
-        Page générée le <time datetime="2026-06-25T10:16:04Z">25 juin 2026 · 10h16 (UTC)</time>
+        Page générée le <time datetime="2026-06-25T13:09:21Z">25 juin 2026 · 13h09 (UTC)</time>
       </p>
-      <footer class="page-footer" role="contentinfo">
-        <div class="footer-inner">
-          <div class="footer-top">
-            <a class="footer-brand" href="#vue=aujourdhui" aria-label="TradingApp, retour en haut">
-              <span class="fb-mark" aria-hidden="true">▲</span>
-              <span class="fb-name">TradingApp</span>
-            </a>
-            <div class="footer-meta">
-              <span class="fm-tagline">Le sens du marché</span>
-              <span class="fm-status">En phase de mesure, mise en service prévue le 08/08/2026</span>
-            </div>
-          </div>
-          <p class="footer-desc">
-            TradingApp est un système d'analyse directionnelle qui publie, trois fois par jour,
-            un positionnement sur 12 marchés financiers à travers trois horizons de temps.
-          </p>
-          <p class="footer-disclaimer">
-            Les bulletins publiés sur ce site sont produits à titre informatif uniquement et ne
-            constituent pas un conseil en investissement, une recommandation d'achat ou de vente,
-            ni une sollicitation au sens de la réglementation financière. Le suivi porte
-            exclusivement sur le taux de bonnes directions (win rate) : aucun montant, aucun
-            résultat financier personnel n'est communiqué. Toute décision d'investissement reste
-            de la seule responsabilité de l'utilisateur. Utilisation strictement personnelle.
-          </p>
-          <p class="footer-copyright">© 2026 TradingApp · Phase de mesure</p>
-        </div>
-      </footer>
     </div>
   </main>
 </div>
+<footer class="page-footer" role="contentinfo">
+        <div class="footer-inner">
+          <div class="footer-cols">
+            <div class="footer-col footer-col-brand">
+              <a class="footer-brand" href="#vue=aujourdhui" aria-label="TradingApp, retour à l'accueil">
+                <span class="fb-mark" aria-hidden="true">▲</span>
+                <span class="fb-name">TradingApp</span>
+              </a>
+              <p class="footer-tagline">Le sens du marché</p>
+              <p class="footer-blurb">
+                Positionnement directionnel sur 12 marchés, trois fois par jour,
+                à 24 heures, 7 jours et 1 mois. Vous lisez, vous décidez.
+              </p>
+              <span class="footer-badge">En validation, mise en service prévue le 08/08/2026</span>
+            </div>
+            <nav class="footer-col footer-col-nav" aria-label="Navigation du pied de page">
+              <h3 class="footer-h">Naviguer</h3>
+              <a href="#vue=aujourdhui" data-go="today">Bulletin du jour</a>
+              <a href="#vue=variations" data-go="variations">Mouvements de marché</a>
+              <a href="#vue=performance" data-go="performance">Résultats, win rate</a>
+              <a href="#vue=semaine" data-go="semaine">Bilan de la semaine</a>
+            </nav>
+            <div class="footer-col footer-col-about">
+              <h3 class="footer-h">Le principe</h3>
+              <ul class="footer-list">
+                <li>12 marchés suivis (indices, métaux, énergie, devises, agricoles)</li>
+                <li>3 bulletins par jour : 7h, 12h, 18h (heure de Paris)</li>
+                <li>Une direction tranchée : hausse (LONG) ou baisse (SHORT)</li>
+                <li>Seule mesure : le win rate, le taux de bonnes directions</li>
+                <li>Le système ne place aucun ordre, l'exécution reste humaine</li>
+              </ul>
+            </div>
+          </div>
+          <div class="footer-bottom">
+            <p class="footer-disclaimer">
+              Informatif uniquement. Les bulletins publiés ici ne constituent pas un conseil en
+              investissement, une recommandation d'achat ou de vente, ni une sollicitation au sens
+              de la réglementation financière. Aucun montant ni résultat financier n'est communiqué
+              (seul le taux de bonnes directions est suivi). Toute décision reste de la seule
+              responsabilité de l'utilisateur.
+            </p>
+            <p class="footer-copyright">© 2026 TradingApp, en phase de mesure.</p>
+          </div>
+        </div>
+      </footer>
 <script>
 const BULLETINS = [
 {...{"id": "2026-06-25-07h", "label": "2026-06-25-07h", "slot": "07h", "filename": "bulletin-2026-06-25-07h.md"}, markdown: `# Bulletin Analyste · 2026-06-25 · 07h23 (Paris)
@@ -3585,7 +3627,10 @@ function markDenseTables(root) {
     // bilan Top 1/Top 3) gèrent leur propre largeur (scroll horizontal, colonnes
     // clés à gauche). Le masquage générique col-3/4/6 cachait justement % 12h et
     // Max gain sur mobile → on ne le leur applique JAMAIS.
-    if (heads.some(h => h.indexOf('Max gain') !== -1)) return;
+    // (fondateur 25/06) idem pour l'onglet « Mouvements de marché » (10 colonnes,
+    // en-tête « Max du jour ») : le fondateur veut VOIR toutes les colonnes, pas
+    // qu'on en cache → scroll horizontal via .table-wrap, aucun masquage.
+    if (heads.some(h => h.indexOf('Max gain') !== -1 || h.indexOf('Max du jour') !== -1)) return;
     const cols = headRow.querySelectorAll('th, td').length;
     if (cols >= DENSE_TABLE_MIN_COLS) t.classList.add('dense-table');
   });
@@ -4597,6 +4642,31 @@ function closeSidebarMobile() {
   bindNav('nav-week', showWeek);
   bindNav('nav-history', showHistory);
   bindNav('nav-variations', showVariations);   // FIX 24/06 : lien « Variations 24h » mort (handler de clic manquant)
+  // Logo (header ET footer) → retour à l'accueil = le bulletin du jour le plus
+  // récent, depuis N'IMPORTE QUELLE vue (fondateur 25/06 : « clic logo ramène sur
+  // page bulletin du jour »). Les <a class="brand"> n'avaient AUCUN handler (pas de
+  // routeur hashchange) → le clic ne faisait rien. selectDay() rappelle hideAuxViews.
+  function goHome() {
+    const days = listDays();
+    if (days.length) selectDay(days[0].date);
+    else hideAuxViews();
+    try { window.scrollTo({ top: 0, behavior: 'instant' }); } catch (e) { window.scrollTo(0, 0); }
+    closeSidebarMobile();
+  }
+  document.querySelectorAll('.brand, .footer-brand').forEach(el => {
+    el.addEventListener('click', (e) => { e.preventDefault(); goHome(); });
+  });
+  // Liens de navigation du footer (data-go) → mêmes vues que la sidebar.
+  const FOOTER_GO = { today: showToday, variations: showVariations, performance: showHistory, semaine: showWeek };
+  document.querySelectorAll('.footer-col-nav a[data-go]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const fn = FOOTER_GO[a.dataset.go];
+      if (fn) fn();
+      try { window.scrollTo({ top: 0, behavior: 'instant' }); } catch (err) { window.scrollTo(0, 0); }
+      closeSidebarMobile();
+    });
+  });
 
   const rawHash = (location.hash || '').replace(/^#/, '');
   // Routage des vues auxiliaires (avant la résolution d'un jour). #vue=performance

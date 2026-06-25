@@ -1878,22 +1878,9 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     L.append("")
     L.append(f"_Généré : {horodatage_fr(bilan.now)} (Europe/Paris)._")
     L.append("")
-    # [Fondateur 24/06] EN TÊTE = le SEUL win rate qui compte : la Sélection
-    # (Top 1 = conviction max, Top 3 = les sélectionnés), sur le MAX GAIN > 1 %.
-    # Les compteurs sur les 12 actifs ne sont plus en tête (bruit) — détail en annexe.
-    wr_sel = win_rate_max_gain(bilan.perf_top3)
-    L.append("- WIN RATE ONLY · aucune mesure monétaire · win rate sur le max gain (> 1 %).")
-    if wr_sel.top1_actif is not None:
-        t1 = "✅" if wr_sel.top1_gagnant else "❌"
-        top1_txt = f"Top 1 ({wr_sel.top1_actif}) {t1}"
-    else:
-        top1_txt = "Top 1 : n/a"
-    taux = f" = {wr_sel.taux_top3:.0f}%" if wr_sel.taux_top3 is not None else ""
-    L.append(
-        f"**Résultat du {bilan.date_j.strftime('%d/%m')} : {top1_txt} · "
-        f"Top 3 : {wr_sel.n_gagnants_top3}/{wr_sel.n_top3}{taux} (max gain > 1 %)**"
-    )
-    L.append("")
+    # [Fondateur 25/06] L'ancien bandeau d'en-tête (« WIN RATE ONLY · … · Résultat
+    # du JJ/MM : Top 1 … Top 3 … ») est SUPPRIMÉ : doublon exact, en moins propre,
+    # de la section 1 « Performance de la Sélection » qui affiche déjà Top 1 / Top 3.
 
     # === Structure CALQUÉE sur le bilan semaine ===
     L.extend(_render_jour_selection(bilan))                         # 1. Performance (table)

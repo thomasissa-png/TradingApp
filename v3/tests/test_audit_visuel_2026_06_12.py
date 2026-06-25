@@ -210,24 +210,29 @@ def _bilan_1_8_3():
     return b
 
 
-def test_hbd1_ligne_resume_en_tete():
-    """En-tête (décision fondateur 24/06) = le SEUL win rate qui compte : Top 1 /
-    Top 3 sur le max gain (> 1 %). Les compteurs sur les 12 ne sont plus en tête."""
-    b = _bilan_1_8_3()
-    md = bj._render_markdown(b, {})
-    head = md.split("### Résultat des calls 7h")[0]
-    assert "Top 1 (Argent) ✅" in head      # conviction max ET max gain > 1 %
-    assert "Top 3 : 1/3 = 33%" in head
-    assert "max gain > 1 %" in head
-
-
-def test_resume_en_tete_win_rate_et_signif():
-    """En-tête EN TÊTE : Top 1 + Top 3 sur le max gain, d'un coup d'œil."""
+def test_hbd1_resultat_en_section1_pas_en_tete():
+    """[Fondateur 25/06] Le bandeau d'en-tête (« WIN RATE ONLY · … · Résultat du
+    JJ/MM : Top 1 … Top 3 … ») est SUPPRIMÉ : doublon de la section 1 « Performance
+    de la Sélection » qui affiche déjà le même Top 1 / Top 3, en plus propre."""
     b = _bilan_1_8_3()
     md = bj._render_markdown(b, {})
     head = md.split("## 1.")[0]
-    assert "**Résultat du" in head
-    assert "Top 1 (Argent) ✅" in head and "Top 3 : 1/3 = 33%" in head
+    # Plus de bandeau dupliqué en tête (ni la note WIN RATE ONLY, ni le Résultat).
+    assert "Résultat du" not in head
+    assert "WIN RATE ONLY · aucune mesure" not in head
+    # Le Top 1 / Top 3 vit dans la section 1.
+    sec1 = md.split("## 1.")[1].split("## 2.")[0]
+    assert "Top 1" in sec1 and "Argent" in sec1 and "✅" in sec1
+    assert "1/3 = 33%" in sec1
+    assert "max gain > 1 %" in sec1
+
+
+def test_pas_de_bandeau_resume_duplique_en_tete():
+    """Garde-fou : aucun « **Résultat du** » en tête (le résumé est en section 1)."""
+    b = _bilan_1_8_3()
+    md = bj._render_markdown(b, {})
+    head = md.split("## 1.")[0]
+    assert "**Résultat du" not in head
 
 
 def test_bilan_jour_calque_sur_bilan_semaine():

@@ -204,7 +204,7 @@
      footer pleine largeur vient APRÈS le layout (hors colonne de contenu). */
   .layout {
     display: flex;
-    min-height: calc(100dvh - var(--header-height));
+    min-height: calc(100vh - var(--header-height));
   }
   aside {
     width: 280px;
@@ -214,7 +214,7 @@
     position: sticky;
     top: var(--header-height);
     align-self: flex-start;
-    height: calc(100dvh - var(--header-height));
+    height: calc(100vh - var(--header-height));
     overflow-y: auto;
   }
   aside ul { list-style: none; margin: 0; padding: 8px 0; }
@@ -751,7 +751,11 @@
     .brand-name .brand-wordmark { font-size: 15px; }
     .brand-name .brand-tagline { display: none; }  /* gain de place : tagline masquée sur mobile */
     .brand-mark { width: 28px; height: 28px; font-size: 14px; border-radius: 7px; }
-    .layout { height: calc(100dvh - var(--header-height-mobile)); }
+    /* Mobile : flux naturel (la sidebar est en overlay fixe hors-flux, le main
+       prend toute la largeur, le footer suit dessous). PAS de hauteur fixe : sinon
+       le contenu déborde sous un footer mal placé (bug iOS Safari 25/06). */
+    .layout { display: block; min-height: 0; }
+    main { width: 100%; }
     .page-hero { padding: 32px 16px 28px; }
     .hero-stats { gap: 8px; }
     .hero-stat { padding: 10px 14px; min-width: 0; flex: 1; }
@@ -921,13 +925,6 @@
               <div class="hs-label">Win rate<br>(en mesure depuis le 9 juin 2026)</div>
             </div>
           </div>
-          <div class="hero-status">
-            <span class="hero-status-badge">En phase de mesure</span>
-            <span class="hero-status-text">Mise en service prévue le 08/08/2026. On mesure avant d'ouvrir.</span>
-          </div>
-          <p class="hero-disclaimer-inline">
-            Le système ne place aucun ordre et ne promet aucun gain. Il donne une direction, pas un résultat.
-          </p>
         </div>
       </section>
       <div id="bulletin-content">
@@ -995,7 +992,7 @@
         <p id="variations-empty" hidden></p>
       </section>
       <p class="gen-meta" aria-label="Date de génération de la page">
-        Page générée le <time datetime="2026-06-25T13:17:56Z">25 juin 2026 · 13h17 (UTC)</time>
+        Page générée le <time datetime="2026-06-25T13:35:36Z">25 juin 2026 · 13h35 (UTC)</time>
       </p>
     </div>
   </main>
@@ -3253,29 +3250,29 @@ const WINRATE_MD = `# Win rate du bulletin — Journaliste
 
 - Win rate sur continuations : **83.3%** (N=6) _(N trop faible, non interprétable)_
 `;   // tableau win-rate-only (performance.md) ou null
-const VARIATIONS_MD = `# Variations 24h de nos actifs (mouvements de plus de 1 %)
+const VARIATIONS_MD = `# Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 25 juin 2026, 07h28 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 25 juin 2026, 15h35 (Europe/Paris) · du plus récent au plus ancien._
 
-_Toutes les variations 24h de nos 12 actifs dépassant 1 % (en valeur absolue). « Joué » = l'actif était dans le top 3 du jour (avec notre call). « Raison » = la news cohérente avec le sens du mouvement (« — » si non tracée)._
+_Tous les mouvements 24h de nos 12 actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (\`+\` va dans le sens du call, \`-\` contre nous), mêmes relevés que le Bilan du jour. « Max du jour » = meilleur gain favorable atteint. « Joué » = l'actif était dans le top 3 du jour. « — » = point non relevé (zéro invention : les jours sans relevé 12h/18h restent vides)._
 
-| Jour | Actif | Sens | Prix départ | Prix sortie | Variation | Joué | Raison du mouvement |
-|---|---|---|---|---|---|---|---|
-| jeu 25/06 | Pétrole (Brent) | ↓ baisse | 76.56 | 72.57 | -5.21% | Non | — |
-| jeu 25/06 | Or | ↓ baisse | 4071 | 3994 | -1.89% | Non | Hawkish Fed stance outweighs peace deal relief, causing gold selloff |
-| jeu 25/06 | Cuivre | ↓ baisse | 6.117 | 5.999 | -1.91% | Non | — |
-| jeu 25/06 | Cacao | ↑ hausse | 4644 | 4975 | +7.13% | Oui · LONG | Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP |
-| jeu 25/06 | Argent | ↓ baisse | 61.42 | 57.43 | -6.50% | Oui · SHORT | — |
-| mer 24/06 | VIX | ↑ hausse | 21.84 | 22.85 | +4.62% | Non | — |
-| mer 24/06 | S&P 500 | ↓ baisse | 744.4 | 733.1 | -1.52% | Non | PPI mai +1.1% vs consensus 0.7%, poussé par l'énergie |
-| mer 24/06 | Pétrole (Brent) | ↓ baisse | 76.65 | 72.57 | -5.32% | Non | — |
-| mer 24/06 | Or | ↓ baisse | 4113 | 3994 | -2.88% | Oui · SHORT | Hawkish Fed stance outweighs peace deal relief, causing gold selloff |
-| mer 24/06 | Nasdaq | ↓ baisse | 738 | 710.6 | -3.72% | Non | — |
-| mer 24/06 | Cuivre | ↓ baisse | 6.211 | 5.999 | -3.41% | Non | — |
-| mer 24/06 | Café (Arabica) | ↑ hausse | 267.1 | 277.2 | +3.77% | Non | — |
-| mer 24/06 | Cacao | ↑ hausse | 4621 | 4975 | +7.67% | Oui · LONG | Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP |
-| mer 24/06 | Blé | ↓ baisse | 592.8 | 586.4 | -1.07% | Non | — |
-| mer 24/06 | Argent | ↓ baisse | 62.3 | 57.43 | -7.82% | Non | — |
+| Jour | Actif | Call | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Raison du mouvement |
+|---|---|---|---|---|---|---|---|---|---|
+| jeu 25/06 | Pétrole (Brent) | SHORT | 76.56 | -0.84% | — | +5.21% | — | Non | — |
+| jeu 25/06 | Or | SHORT | 4071 | -0.08% | — | +1.89% | — | Non | Hawkish Fed stance outweighs peace deal relief, causing gold selloff |
+| jeu 25/06 | Cuivre | SHORT | 6.117 | -1.90% | — | +1.91% | — | Non | — |
+| jeu 25/06 | Cacao | LONG | 4644 | +4.66% | — | +7.13% | — | Oui | Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP |
+| jeu 25/06 | Argent | SHORT | 61.42 | -0.33% | — | +6.50% | — | Oui | — |
+| mer 24/06 | VIX | SHORT | 21.84 | — | — | -4.62% | — | Non | — |
+| mer 24/06 | S&P 500 | LONG | 744.4 | — | — | -1.52% | — | Non | PPI mai +1.1% vs consensus 0.7%, poussé par l'énergie |
+| mer 24/06 | Pétrole (Brent) | SHORT | 76.65 | +1.20% | — | +5.32% | — | Non | — |
+| mer 24/06 | Or | SHORT | 4113 | +0.82% | — | +2.88% | — | Oui | Hawkish Fed stance outweighs peace deal relief, causing gold selloff |
+| mer 24/06 | Nasdaq | LONG | 738 | — | — | -3.72% | — | Non | — |
+| mer 24/06 | Cuivre | SHORT | 6.211 | +1.63% | — | +3.41% | — | Non | — |
+| mer 24/06 | Café (Arabica) | LONG | 267.1 | -0.29% | +1.10% | +0.65% | — | Non | — |
+| mer 24/06 | Cacao | LONG | 4621 | -0.91% | +1.79% | +7.26% | — | Oui | Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP |
+| mer 24/06 | Blé | SHORT | 592.8 | -0.24% | — | +1.07% | — | Non | — |
+| mer 24/06 | Argent | SHORT | 62.3 | +1.99% | +4.17% | +6.54% | — | Non | — |
 
 `;   // grand tableau « Variations 24h > 1 % » ou null
 

@@ -7,3 +7,6 @@
 {"date": "2026-06-24", "actif": "Argent", "call": "SHORT", "categorie": "bien_tenu", "pic_pct": 6.54, "pic_heure": "clôture", "cloture_pct": 6.54}
 {"date": "2026-06-24", "actif": "Cacao", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 7.26, "pic_heure": "clôture", "cloture_pct": 7.26}
 {"date": "2026-06-24", "actif": "Café (Arabica)", "call": "LONG", "categorie": "trop_tard", "pic_pct": 1.1, "pic_heure": "18h", "cloture_pct": 0.65}
+{"date": "2026-06-25", "actif": "Argent", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.33, "pic_heure": "12h", "cloture_pct": -0.8}
+{"date": "2026-06-25", "actif": "Café (Arabica)", "call": "LONG", "categorie": "trop_tard", "pic_pct": 1.56, "pic_heure": "12h", "cloture_pct": -0.11}
+{"date": "2026-06-25", "actif": "Pétrole (Brent)", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.84, "pic_heure": "12h", "cloture_pct": -4.13}

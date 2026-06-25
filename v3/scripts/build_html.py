@@ -640,7 +640,7 @@ def render_html(
      Plus de chrome permanent sous le header → la page respire. */
   /* Date de génération — discrète, en pied de contenu (refonte S9). */
   .gen-meta {{ margin-top: 40px; font-size: 11px; color: var(--text-muted); text-align: right; }}
-  /* ── HERO / bandeau d'accueil (identité publique Issa Capital, S10) ────────
+  /* ── HERO / bandeau d'accueil (identité publique TradingApp, S10) ────────
      Première section visible en haut de la vue d'accueil (bulletin du jour),
      masquée dès qu'une vue auxiliaire est active (géré en JS). Fond nuit
      (--hero-bg), pleine largeur du contenu, replié sur mobile. */
@@ -697,7 +697,7 @@ def render_html(
     border-left: 2px solid var(--hero-border); padding-left: 12px;
     margin: 0; line-height: 1.55; max-width: 620px;
   }}
-  /* ── FOOTER (identité publique Issa Capital, S10) ──────────────────────────
+  /* ── FOOTER (identité publique TradingApp, S10) ──────────────────────────
      Posé en fin de .content-inner (qui scrolle) plutôt qu'après .layout :
      l'architecture existante a .layout à hauteur fixe avec main scrollable,
      donc un footer après .layout serait hors viewport. En fin de contenu, il

@@ -334,7 +334,11 @@ def test_aucune_mention_monetaire(env):
     r = _build(env, "12h", datetime(2026, 6, 8, 12, 3, tzinfo=PARIS),
                {"GC=F": 3438.0, "^FCHI": 8100.0, "^GSPC": None})
     md = r.markdown.lower()
-    for token in ("€", "$", "gain", "perte", "rendement", "p&l"):
+    # « gain » / « perte » = AMPLITUDE directionnelle, autorisée depuis la décision
+    # fondateur 24/06 (« max gain » = % vers la cible turbo > 1 %, jamais un montant —
+    # cohérent avec test_selection_table_pas_de_mention_monetaire). Seuls les vrais
+    # marqueurs MONÉTAIRES restent interdits (WIN RATE ONLY).
+    for token in ("€", "$", "rendement", "p&l", "expectancy", "equity"):
         assert token not in md, f"mention monétaire interdite : {token!r}"
 
 
@@ -586,6 +590,96 @@ def test_suivi_statut_pas_encore_sous_seuil(env):
     assert rs.statut_max_gain(0.6) == "⏳ pas encore (+0.60%)"
     assert rs.statut_max_gain(1.4) == "✅ gagné"
     assert rs.statut_max_gain(None) == "—"
+
+
+# ---------------------------------------------------------------------------
+# Conviction (note signée du signal 7h) — fondateur 25/06
+# ---------------------------------------------------------------------------
+
+def _decision_log_conviction(env, scores, selection=None):
+    """Écrit un decision-log 7h avec `score_pm1` par actif (24h) + sélection.
+
+    `scores` : dict actif -> score_pm1 (signé). `selection` : set d'actifs
+    `selection_du_jour: true` (défaut = aucun)."""
+    selection = selection or set()
+    fp = env["dlog"] / "2026-06-08-07h.jsonl"
+    lines = []
+    for actif in ("Or", "CAC 40", "S&P 500"):
+        rec = {
+            "bulletin_date": "2026-06-08", "actif": actif, "horizon": "24h",
+            "selection_du_jour": actif in selection,
+        }
+        if actif in scores:
+            rec["score_pm1"] = scores[actif]
+        lines.append(json.dumps(rec))
+    fp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_conviction_signee_priorite_pm1_puis_pond():
+    # score_pm1 prioritaire (même priorité que le Bilan du jour, source unique).
+    assert rs.conviction_signee({"score_pm1": -10.74, "score_pond": 2.0}) == -10.74
+    # Fallback score_pond si pm1 absent.
+    assert rs.conviction_signee({"score_pond": 3.24}) == 3.24
+    # Aucun score → None (zéro invention).
+    assert rs.conviction_signee({}) is None
+    assert rs.conviction_signee({"score_pm1": None}) is None
+
+
+def test_fmt_conviction_format_call_signe():
+    assert rs._fmt_conviction("SHORT", -10.74) == "SHORT -10.74"
+    assert rs._fmt_conviction("LONG", 3.24) == "LONG +3.24"
+    # Score absent → placeholder de cellule vide (zéro invention).
+    assert rs._fmt_conviction("SHORT", None) == "—"
+
+
+def test_positions_vs_ouverture_colonnes_riches(env):
+    # Le panorama « Positions du matin vs ouverture » porte désormais les MÊMES
+    # colonnes riches que le Top 3 + Conviction (fondateur 25/06).
+    _decision_log_conviction(env, {"Or": -10.74, "CAC 40": 4.0, "S&P 500": 1.5})
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8100.0, "^GSPC": None})
+    panorama = r.markdown.split("### Positions du matin vs ouverture")[1]
+    # En-tête : colonnes ajoutées (l'en-tête doit contenir « Max gain » pour
+    # l'exemption HTML qui empêche de masquer ces colonnes).
+    assert "Max gain du jour" in panorama
+    assert "Gagné" in panorama
+    assert "Action" in panorama
+    assert "Conviction" in panorama
+    # Ligne Or : conviction signée affichée (SHORT -10.74), action en gras.
+    ligne_or = next(l for l in panorama.splitlines() if l.startswith("| Or |"))
+    assert "SHORT -10.74" in ligne_or
+    assert "**🟢" in ligne_or or "**🟡" in ligne_or or "**⚪" in ligne_or or "**🔴" in ligne_or
+
+
+def test_positions_vs_ouverture_conviction_absente_placeholder(env):
+    # Pas de score dans le decision-log → Conviction « — » (zéro invention).
+    _decision_log_conviction(env, {})  # aucun score_pm1
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8100.0, "^GSPC": None})
+    or_li = _ligne(r, "Or")
+    assert or_li.conviction is None
+
+
+def test_coherence_top3_positions_memes_chiffres(env):
+    # CONTRÔLE DE COHÉRENCE (fondateur 25/06) : un actif présent dans le Top 3 ET
+    # dans « Positions vs ouverture » doit afficher EXACTEMENT les mêmes Max gain,
+    # Action et Conviction (mêmes objets SuiviLigne, zéro re-dérivation).
+    _decision_log_conviction(env, {"Or": -10.74, "CAC 40": 4.0},
+                             selection={"Or"})
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8100.0, "^GSPC": None})
+    md = r.markdown
+    top3 = md.split("### Sélection du jour — progression")[1].split("###")[0]
+    panorama = md.split("### Positions du matin vs ouverture")[1]
+    or_top3 = next(l for l in top3.splitlines() if l.startswith("| Or |"))
+    or_pano = next(l for l in panorama.splitlines() if l.startswith("| Or |"))
+    or_li = _ligne(r, "Or")
+    # Max gain, Action et Conviction (mêmes valeurs dérivées de la même ligne).
+    max_str = rs._fmt_pct(or_li.max_gain_pct)
+    conv_str = rs._fmt_conviction(or_li.call, or_li.conviction)
+    assert max_str in or_top3 and max_str in or_pano
+    assert f"**{or_li.action}**" in or_top3 and f"**{or_li.action}**" in or_pano
+    assert conv_str in or_top3 and conv_str in or_pano
 
 
 def test_cascade_prix_spot_temps_reel_prioritaire(env):

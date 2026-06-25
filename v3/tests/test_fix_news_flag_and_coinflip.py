@@ -203,8 +203,8 @@ def test_build_html_generates_non_empty_index(tmp_path, monkeypatch):
     assert out.exists(), "index.html non créé"
     content = out.read_text(encoding="utf-8")
     assert len(content) > 500, "index.html trop court"
-    # Refonte S10 : la marque publique est « Issa Capital » (ex « TradingApp v3 »).
-    assert "Issa Capital" in content
+    # Refonte S10 : la marque publique est « TradingApp » (ex « TradingApp v3 · Bulletins »).
+    assert "TradingApp" in content
     assert "marked.min.js" in content  # marked.js inclus
     assert "BULLETINS = [" in content  # données embarquées
     # Légende

@@ -54,6 +54,12 @@ MANAGER_CONFIG_FILE = ROOT / "config" / "manager.yaml"
 MEASURES_LOG_FILE = ROOT / "data" / "measures-log.jsonl"
 VARIATIONS_24H_FILE = ROOT / "data" / "variations-24h.md"
 SEUIL_VARIATION_PCT = 1.0
+# Snapshots du suivi 12h/18h (mêmes sources que le bilan, pour le % favorable
+# intraday de l'onglet « Mouvements de marché »). `suivi-tracking/{date}.json`
+# = relevé Sélection (fav% déjà signé, call vérifié) ; `suivi/{date}-12h.json`
+# = delta% BRUT (vs ouverture) de TOUS les actifs (à convertir en favorable).
+SUIVI_TRACKING_DIR = ROOT / "data" / "suivi-tracking"
+SUIVI_SNAPSHOT_DIR = ROOT / "data" / "suivi"
 
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
@@ -2139,13 +2145,129 @@ def write_bilan_jour(bilan: BilanJour, base_dir: Path = BILAN_JOUR_DIR) -> Path:
 class Variation24h:
     jour: date                     # échéance (jour où la variation 24h est constatée)
     actif: str
-    sens: str                      # "hausse" / "baisse"
-    prix_depart: Optional[float]   # prix d'émission (départ)
-    prix_sortie: Optional[float]   # prix à l'échéance (sortie)
-    variation_pct: float           # variation brute signée (realized_pct)
+    prix_entree: Optional[float]   # prix d'émission 7h (= entrée turbo)
+    perf_12h: Optional[float]      # % FAVORABLE au call à 12h (relevé suivi, signé)
+    perf_18h: Optional[float]      # % FAVORABLE au call à 18h (relevé suivi, signé)
+    perf_cloture_fav: Optional[float]  # % FAVORABLE au call à la clôture (24h)
+    max_jour: Optional[float]      # MAX gain favorable du jour (% ; None si non mesuré)
     joue: bool                     # l'actif était-il dans le top 3 du jour ?
-    call: Optional[str]            # notre call si joué (LONG/SHORT)
+    call: Optional[str]            # notre call (LONG/SHORT)
     raison: Optional[str]          # news cohérente avec le sens du mouvement (ou None)
+
+
+def _call_sign(call: Optional[str]) -> Optional[int]:
+    """+1 pour LONG, -1 pour SHORT, None sinon (zéro invention).
+
+    Même convention que run_suivi.call_sign — le mouvement FAVORABLE au call
+    = variation brute × signe. Dupliqué ici (3 lignes) pour éviter un import
+    croisé run_suivi→bilan_jour au chargement du module."""
+    if call == "LONG":
+        return 1
+    if call == "SHORT":
+        return -1
+    return None
+
+
+def load_perf_intraday_favorable(
+    jour: date,
+    actif: str,
+    call: Optional[str],
+    tracking_dir: Path = SUIVI_TRACKING_DIR,
+    snapshot_dir: Path = SUIVI_SNAPSHOT_DIR,
+) -> Tuple[Optional[float], Optional[float]]:
+    """(% favorable 12h, % favorable 18h) pour (actif, jour), depuis les MÊMES
+    sources que le bilan du jour. Zéro re-dérivation, zéro invention.
+
+    - 12h/18h pour la Sélection : `suivi-tracking/{jour}.json` (`fav_pct` déjà
+      signé favorable, call VÉRIFIÉ par run_suivi/compute_perf_top3) → valeurs
+      strictement identiques au bilan.
+    - 12h pour les actifs HORS Sélection : `suivi/{jour}-12h.json` (delta% BRUT
+      vs ouverture, TOUS les actifs) converti en favorable (× signe du call).
+    - 18h hors Sélection : aucun snapshot « tous actifs » n'est persisté à 18h
+      (run_suivi n'écrit le delta-snapshot qu'au 12h) → reste « — » (pas inventé).
+    - Jour sans snapshot (historique avant capture) → (None, None).
+    Le call passé en argument est celui du measures-log ; on n'utilise un relevé
+    tracking que si SON call concorde (sinon on l'ignore, comme le bilan)."""
+    sign = _call_sign(call)
+    perf_12h: Optional[float] = None
+    perf_18h: Optional[float] = None
+
+    # 1) Relevé Sélection (fav% signé, source de vérité du bilan) — 12h ET 18h.
+    tpath = tracking_dir / f"{jour.isoformat()}.json"
+    if tpath.exists():
+        try:
+            data = json.loads(tpath.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        if isinstance(data, dict):
+            for slot, target in (("12h", "perf_12h"), ("18h", "perf_18h")):
+                rec = (data.get(slot) or {}).get(actif)
+                if not isinstance(rec, dict):
+                    continue
+                # Concordance de call (comme compute_perf_top3) : sinon on ignore.
+                if str(rec.get("call", "")).upper() != str(call or "").upper():
+                    continue
+                v = rec.get("fav_pct")
+                if isinstance(v, (int, float)):
+                    if target == "perf_12h":
+                        perf_12h = round(float(v), 2)
+                    else:
+                        perf_18h = round(float(v), 2)
+
+    # 2) Repli 12h pour les actifs HORS Sélection : delta BRUT vs ouverture (tous
+    #    actifs) × signe du call = favorable (même primitive que fav_delta).
+    if perf_12h is None and sign is not None:
+        spath = snapshot_dir / f"{jour.isoformat()}-12h.json"
+        if spath.exists():
+            try:
+                snap = json.loads(spath.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                snap = {}
+            if isinstance(snap, dict):
+                d = snap.get(actif)
+                if isinstance(d, (int, float)):
+                    perf_12h = round(float(d) * sign, 2)
+
+    return perf_12h, perf_18h
+
+
+def load_cloture_favorable_bilan(
+    sortie_timing_path: Path = SORTIE_TIMING_LOG,
+) -> Dict[Tuple[str, str], Tuple[Optional[str], Optional[float]]]:
+    """Clôture FAVORABLE telle qu'AFFICHÉE par le Bilan du jour, par (date, actif).
+
+    Lit `sortie-timing-log.jsonl` (écrit par le bilan : `cloture_pct` = `fav_cloture`
+    EXACT du bilan). Permet à l'onglet « Mouvements » d'afficher la MÊME clôture que
+    le bilan (référence ouverture→clôture) pour les actifs de la Sélection, au lieu
+    de re-dériver depuis l'émission (référence différente → chiffre divergent que le
+    fondateur verrait comme une erreur). Retourne {(date_iso, actif): (call, cloture_fav)}.
+    {} si absent (zéro invention — l'appelant retombe alors sur realized favorable)."""
+    out: Dict[Tuple[str, str], Tuple[Optional[str], Optional[float]]] = {}
+    if not sortie_timing_path.exists():
+        return out
+    try:
+        lines = sortie_timing_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(r, dict):
+            continue
+        d, a = r.get("date"), r.get("actif")
+        if not d or not a:
+            continue
+        cp = r.get("cloture_pct")
+        out[(str(d), str(a))] = (
+            (str(r.get("call")) if r.get("call") in ("LONG", "SHORT") else None),
+            (round(float(cp), 2) if isinstance(cp, (int, float)) else None),
+        )
+    return out
 
 
 def variations_24h_significatives(
@@ -2160,6 +2282,11 @@ def variations_24h_significatives(
     prix/raison absents → None."""
     if not measures_log_path.exists():
         return []
+    # Clôture favorable telle qu'affichée par le bilan (par date+actif), pour la
+    # Sélection — afin que la colonne « % clôture » MATCHE le bilan (zéro divergence).
+    # On lit les constantes de chemin via le module (et non les valeurs par défaut
+    # liées au def-time) pour rester monkeypatchable en test.
+    cloture_bilan = load_cloture_favorable_bilan(SORTIE_TIMING_LOG)
     # Dédup par (actif, échéance) : on garde le dernier enregistrement.
     records: Dict[Tuple[str, str], dict] = {}
     for line in measures_log_path.read_text(encoding="utf-8").splitlines():
@@ -2193,6 +2320,7 @@ def variations_24h_significatives(
         sens_move = "LONG" if rp > 0 else "SHORT"   # hausse → LONG, baisse → SHORT
         # Joué ou non : présent dans le top 3 du jour d'émission.
         joue, call = False, r.get("conclusion")
+        call = str(call) if call in ("LONG", "SHORT") else None
         if bdate is not None:
             if bdate not in sel_cache:
                 sel_cache[bdate] = load_selection_map(bdate, decision_log_dir)
@@ -2204,13 +2332,32 @@ def variations_24h_significatives(
                 raison = cause_news_high_dir(actif, bdate, sens_move, None, events_path)
             except Exception:  # noqa: BLE001 — best-effort
                 raison = None
+        # % FAVORABLE au call (même convention que le suivi/bilan : + = sens du call).
+        # 12h/18h : relevés persistés (zéro re-dérivation). Clôture : realized brut
+        # converti en favorable (signe du call). Max : max_gain_pct du measures-log
+        # (« — » tant que les anciens records ne le portent pas — zéro invention).
+        perf_12h, perf_18h = load_perf_intraday_favorable(
+            ech, actif, call,
+            tracking_dir=SUIVI_TRACKING_DIR, snapshot_dir=SUIVI_SNAPSHOT_DIR,
+        )
+        sign = _call_sign(call)
+        # % clôture favorable : on PRÉFÈRE la valeur exacte du bilan (réf.
+        # ouverture→clôture, persistée dans sortie-timing-log) si elle existe ET que
+        # son call concorde → la page affiche le MÊME chiffre que le bilan. Sinon
+        # (hors Sélection / historique sans bilan) : realized brut converti favorable.
+        cb_call, cb_val = cloture_bilan.get((ech.isoformat(), actif), (None, None))
+        if cb_val is not None and cb_call == call:
+            perf_cloture_fav = cb_val
+        else:
+            perf_cloture_fav = round(rp * sign, 2) if sign is not None else None
+        mg = r.get("max_gain_pct")
+        max_jour = round(float(mg), 2) if isinstance(mg, (int, float)) else None
         out.append(Variation24h(
             jour=ech, actif=actif,
-            sens="hausse" if rp > 0 else "baisse",
-            prix_depart=(r.get("prix_emission") if isinstance(r.get("prix_emission"), (int, float)) else None),
-            prix_sortie=(r.get("prix_echeance") if isinstance(r.get("prix_echeance"), (int, float)) else None),
-            variation_pct=round(rp, 2),
-            joue=joue, call=(str(call) if call in ("LONG", "SHORT") else None),
+            prix_entree=(r.get("prix_emission") if isinstance(r.get("prix_emission"), (int, float)) else None),
+            perf_12h=perf_12h, perf_18h=perf_18h,
+            perf_cloture_fav=perf_cloture_fav, max_jour=max_jour,
+            joue=joue, call=call,
             raison=raison,
         ))
     out.sort(key=lambda v: (v.jour, v.actif), reverse=True)  # récent → ancien
@@ -2218,35 +2365,50 @@ def variations_24h_significatives(
 
 
 def render_variations_24h(variations: List[Variation24h], now: Optional[datetime] = None) -> str:
-    """Markdown : un seul grand tableau des variations 24h > 1 % (récent → ancien)."""
+    """Markdown : un seul grand tableau des mouvements 24h > 1 % (récent → ancien).
+
+    Colonnes enrichies (demande fondateur 25/06) : prix d'entrée, trajectoire du
+    call en séance (% favorable 12h / 18h / clôture) et MAX du jour. Mêmes chiffres
+    que le Bilan du jour (sources réutilisées : relevés suivi + measures-log)."""
     now = now or datetime.now(PARIS_TZ)
     JJ = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
-    L: List[str] = ["# Variations 24h de nos actifs (mouvements de plus de 1 %)", ""]
+    L: List[str] = ["# Mouvements de marché 24h de nos actifs (plus de 1 %)", ""]
     L.append(f"_Généré : {horodatage_fr(now)} (Europe/Paris) · du plus récent au plus ancien._")
     L.append("")
     L.append(
-        "_Toutes les variations 24h de nos 12 actifs dépassant 1 % (en valeur "
-        "absolue). « Joué » = l'actif était dans le top 3 du jour (avec notre call). "
-        "« Raison » = la news cohérente avec le sens du mouvement (« — » si non tracée)._"
+        "_Tous les mouvements 24h de nos 12 actifs dépassant 1 % (en valeur absolue). "
+        "« Call » = notre direction (LONG / SHORT). « Prix d'entrée » = cours à "
+        "l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance "
+        "(`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan "
+        "du jour. « Max du jour » = meilleur gain favorable atteint. « Joué » = "
+        "l'actif était dans le top 3 du jour. « — » = point non relevé (zéro "
+        "invention : les jours sans relevé 12h/18h restent vides)._"
     )
     L.append("")
     if not variations:
-        L.append("Aucune variation 24h de plus de 1 % enregistrée pour l'instant.")
+        L.append("Aucun mouvement 24h de plus de 1 % enregistré pour l'instant.")
         L.append("")
         return "\n".join(L)
-    L.append("| Jour | Actif | Sens | Prix départ | Prix sortie | Variation | Joué | Raison du mouvement |")
-    L.append("|---|---|---|---|---|---|---|---|")
+    L.append(
+        "| Jour | Actif | Call | Prix d'entrée | % 12h | % 18h | % clôture "
+        "| Max du jour | Joué | Raison du mouvement |"
+    )
+    L.append("|---|---|---|---|---|---|---|---|---|---|")
 
     def _fp(v: Optional[float]) -> str:
         return f"{v:.4g}" if isinstance(v, (int, float)) else "—"
 
+    def _pct(v: Optional[float]) -> str:
+        return f"{v:+.2f}%" if isinstance(v, (int, float)) else "—"
+
     for v in variations:
         jour = f"{JJ[v.jour.weekday()]} {v.jour.strftime('%d/%m')}"
-        sens = "↑ hausse" if v.sens == "hausse" else "↓ baisse"
-        joue = (f"Oui · {v.call}" if (v.joue and v.call) else "Oui" if v.joue else "Non")
+        call = v.call or "—"
+        joue = "Oui" if v.joue else "Non"
         L.append(
-            f"| {jour} | {v.actif} | {sens} | {_fp(v.prix_depart)} | {_fp(v.prix_sortie)} | "
-            f"{v.variation_pct:+.2f}% | {joue} | {v.raison or '—'} |"
+            f"| {jour} | {v.actif} | {call} | {_fp(v.prix_entree)} | "
+            f"{_pct(v.perf_12h)} | {_pct(v.perf_18h)} | {_pct(v.perf_cloture_fav)} | "
+            f"{_pct(v.max_jour)} | {joue} | {v.raison or '—'} |"
         )
     L.append("")
     return "\n".join(L)
@@ -2278,10 +2440,14 @@ __all__ = [
     "compute_gros_moves_autres",
     "compute_apprentissage_jour",
     "reason_non_selection",
-    # Onglet « Variations 24h » (> 1 %).
+    # Onglet « Mouvements de marché » (variations 24h > 1 %).
     "Variation24h",
     "variations_24h_significatives",
     "render_variations_24h",
     "write_variations_24h",
+    "load_perf_intraday_favorable",
+    "load_cloture_favorable_bilan",
     "VARIATIONS_24H_FILE",
+    "SUIVI_TRACKING_DIR",
+    "SUIVI_SNAPSHOT_DIR",
 ]

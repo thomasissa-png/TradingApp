@@ -245,8 +245,11 @@ def test_build_suivi_section_news_refondue(env):
     assert "### 🚨 Grosses actualités depuis 7h" in md
     # Le champ news_fraiches reste alimenté (snapshot dedup) mais non rendu.
     assert "Brent rallies on OPEC cut talk" not in md
-    # Aucune mention monétaire (WIN RATE ONLY).
-    for tok in ("€", "$", "gain", "perte"):
+    # Aucune mention MONÉTAIRE (WIN RATE ONLY). « gain » / « perte » = amplitude
+    # directionnelle, autorisée depuis la décision fondateur 24/06 (« max gain » =
+    # % vers la cible turbo > 1 %, jamais un montant). Seuls les vrais marqueurs
+    # monétaires restent interdits.
+    for tok in ("€", "$", "rendement", "p&l", "expectancy", "equity"):
         assert tok not in md.lower()
 
 

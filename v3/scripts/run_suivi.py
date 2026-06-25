@@ -131,6 +131,11 @@ class SuiviLigne:
     # Reco d'ACTION turbo (🟢 Laisse courir / 🟡 Sécurise / 🔴 Coupe / ⚪ Tiens) —
     # remplace le « Vendre / Pas vendre » binaire (fondateur 24/06).
     action: str = "—"
+    # Conviction = NOTE SIGNÉE du scoring 7h pour cette cellule 24h (score_pm1,
+    # fallback score_pond — MÊME priorité que le Bilan du jour, source unique). Sert
+    # à relier la force de conviction à la performance réalisée (fondateur 25/06).
+    # None si le decision-log du jour ne porte pas de score pour cette cellule.
+    conviction: Optional[float] = None
 
 
 @dataclass
@@ -1400,18 +1405,24 @@ def build_suivi(
     # VRAIE raison du call (drivers du score 7h) pour les positions de la Sélection —
     # même source unique que le bilan jour/semaine (journaliste.drivers_du_call). On
     # explique « pourquoi on tient » chaque position, jamais une news lambda.
-    selected_lignes = [li for li in rapport.lignes if li.selection]
-    if selected_lignes:
-        try:
-            from bilan_jour import load_conviction_records  # noqa: PLC0415
-            conv = load_conviction_records(date_j, decision_log_dir)
-            for li in selected_lignes:
-                rec = conv.get((li.actif, "24h")) or {}
+    # Note signée de conviction (score 7h) pour CHAQUE position 24h, pas seulement
+    # la Sélection — Thomas veut relier la force du signal à la performance réalisée
+    # dans « Positions du matin vs ouverture » (fondateur 25/06). Même source unique
+    # que le Bilan (load_conviction_records + score_pm1) → mêmes chiffres partout.
+    try:
+        from bilan_jour import load_conviction_records  # noqa: PLC0415
+        conv = load_conviction_records(date_j, decision_log_dir)
+        for li in rapport.lignes:
+            rec = conv.get((li.actif, "24h")) or {}
+            li.conviction = conviction_signee(rec)
+            # VRAIE raison du call (drivers du score 7h) UNIQUEMENT pour les
+            # positions de la Sélection (« pourquoi on tient » — comme jour/semaine).
+            if li.selection:
                 drivers = J.drivers_du_call(rec, li.call)
                 if drivers:
                     li.raison_call = " + ".join(drivers)
-        except Exception as e:  # noqa: BLE001 — best-effort, jamais bloquant
-            logger.warning("build_suivi: raison_call KO (non bloquant) : %s", e)
+    except Exception as e:  # noqa: BLE001 — best-effort, jamais bloquant
+        logger.warning("build_suivi: conviction/raison_call KO (non bloquant) : %s", e)
 
     # PARTIE B — actus FRAÎCHES du jour (récolte RSS légère, best-effort, zéro DeepSeek).
     # Dédup contre : (1) le Contexte 7h affiché ci-dessus, (2) les titres frais déjà
@@ -1465,6 +1476,29 @@ def _fmt_fav(v: Optional[float]) -> str:
     return _fmt_pct(v)
 
 
+def conviction_signee(rec: dict) -> Optional[float]:
+    """Note signée de conviction d'un record decision-log : `score_pm1` prioritaire,
+    fallback `score_pond` (MÊME priorité que le Bilan du jour, ligne 813 bilan_jour
+    = source unique, zéro re-dérivation). None si aucun score numérique."""
+    if not isinstance(rec, dict):
+        return None
+    for cle in ("score_pm1", "score_pond"):
+        v = rec.get(cle)
+        if isinstance(v, (int, float)):
+            return float(v)
+    return None
+
+
+def _fmt_conviction(call: str, score: Optional[float]) -> str:
+    """Conviction affichée = `{CALL} {score signé}` (ex. `SHORT -10.74`,
+    `LONG +3.24`) — relie la force du signal 7h à la performance (fondateur 25/06).
+    `—` (zéro invention) si le score n'est pas disponible pour la cellule."""
+    if not isinstance(score, (int, float)):
+        return "—"
+    c = (call or "").strip().upper()
+    return f"{c} {score:+.2f}" if c in ("LONG", "SHORT") else f"{score:+.2f}"
+
+
 def _render_selection_table(r: SuiviRapport) -> List[str]:
     """Tableau de PROGRESSION focalisé « Sélection du jour » (top ≤3), en tête.
 
@@ -1497,9 +1531,10 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
         "| <span class=\"c-full\">% vs ouv. 18h</span><span class=\"c-short\">% 18h</span> "
         "| <span class=\"c-full\">Max gain jour</span><span class=\"c-short\">Max</span> "
         "| <span class=\"c-full\">Gagné &gt; 1 % ?</span><span class=\"c-short\">&gt;1%</span> "
-        "| Action |"
+        "| Action "
+        "| <span class=\"c-full\">Conviction</span><span class=\"c-short\">Conv.</span> |"
     )
-    L.append("|---|---|---|---|---|---|---|")
+    L.append("|---|---|---|---|---|---|---|---|")
     for li in selection:
         if is_12h:
             # Au 12h : colonne 12h = favorable courant, colonne 18h = vide.
@@ -1512,16 +1547,21 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
         # Max gain du jour atteint (1h ∪ courant) + statut vs cible turbo > 1 %.
         col_max = _fmt_pct(li.max_gain_pct)
         col_statut = statut_max_gain(li.max_gain_pct)
+        # Conviction = note signée du signal 7h (même source que « Positions vs
+        # ouverture » → chiffres identiques pour un actif présent dans les deux).
+        col_conv = _fmt_conviction(li.call, li.conviction)
         L.append(
             f"| {li.actif} | {li.call} | {col_12} | {col_18} | "
-            f"{col_max} | {col_statut} | **{li.action}** |"
+            f"{col_max} | {col_statut} | **{li.action}** | {col_conv} |"
         )
     L.append("")
     # FIX 4 (fondateur 23/06) — légende courte : 1 phrase, détail replié.
     L.append(
         "_% 12h / 18h = évolution du call ; Max gain = meilleur % atteint depuis "
         "l'entrée (> 1 % = gagné). **Action** : 🟢 laisse courir · 🟡 sécurise (gain "
-        "qui reflue sous la moitié du pic) · 🔴 coupe (pari cassé) · ⚪ tiens._"
+        "qui reflue sous la moitié du pic) · 🔴 coupe (pari cassé) · ⚪ tiens. "
+        "**Conviction** = note signée du signal à 7h (plus c'est fort, plus le pari "
+        "est tranché)._"
     )
     L.append("")
     # Pourquoi on tient ces positions : la VRAIE raison du call (drivers du score à
@@ -1593,33 +1633,63 @@ def _render_markdown(r: SuiviRapport) -> str:
     # reco de vente hors paris). La colonne % est le % FAVORABLE signé par le call
     # (`+` = va dans notre sens, `−` = contre) — MÊME convention que la table Sélection,
     # plus jamais de signes opposés pour le même actif.
+    # Colonnes RICHES communes (fondateur 25/06) : ce panorama porte désormais les
+    # MÊMES colonnes que le Top 3 (Max gain du jour, Gagné>1%, Action) + Conviction
+    # (note signée 7h), pour relier la force du signal à la performance réalisée. Les
+    # valeurs sont les MÊMES objets `SuiviLigne` que le Top 3 → chiffres identiques
+    # à l'actif près (aucune re-dérivation : `max_gain_pct`, `action`, `conviction`).
+    # En-têtes double-libellé (CSS .c-full / .c-short) comme la table Sélection. NB :
+    # l'en-tête contient « Max gain » → le rendu HTML n'a PAS le droit de masquer ces
+    # colonnes (exemption build_html, autre périmètre).
+    _MAX_TH = ("| <span class=\"c-full\">Max gain du jour</span>"
+               "<span class=\"c-short\">Max</span> ")
+    _WIN_TH = ("| <span class=\"c-full\">Gagné &gt; 1 % ?</span>"
+               "<span class=\"c-short\">&gt;1%</span> ")
+    _CONV_TH = ("| <span class=\"c-full\">Conviction</span>"
+                "<span class=\"c-short\">Conv.</span> ")
     if h == REPORT_12H:
         L.append(
-            f"| Actif | Call 7h | Ouverture | Prix {h} | % favorable | Statut |"
+            f"| Actif | Call 7h | Ouverture | Prix {h} | % favorable "
+            f"{_MAX_TH}{_WIN_TH}| Action {_CONV_TH}| Statut |"
         )
-        L.append("|---|---|---|---|---|---|")
+        L.append("|---|---|---|---|---|---|---|---|---|---|")
         if not r.lignes:
-            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | |")
+            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | | | | |")
         for li in r.lignes:
             L.append(
                 f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | "
                 f"{_fmt_price(li.prix_courant)} | {_fmt_fav(li.fav_now)} | "
+                f"{_fmt_pct(li.max_gain_pct)} | {statut_max_gain(li.max_gain_pct)} | "
+                f"**{li.action}** | {_fmt_conviction(li.call, li.conviction)} | "
                 f"{li.statut} |"
             )
     else:
         L.append(
-            f"| Actif | Call 7h | Ouverture | Prix {h} | % favorable | Δ précédent | "
+            f"| Actif | Call 7h | Ouverture | Prix {h} | % favorable "
+            f"{_MAX_TH}{_WIN_TH}| Action {_CONV_TH}| Δ précédent | "
             f"Tendance | Statut |"
         )
-        L.append("|---|---|---|---|---|---|---|---|")
+        L.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
         if not r.lignes:
-            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | | |")
+            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | | | | | | |")
         for li in r.lignes:
             L.append(
                 f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | "
                 f"{_fmt_price(li.prix_courant)} | {_fmt_fav(li.fav_now)} | "
+                f"{_fmt_pct(li.max_gain_pct)} | {statut_max_gain(li.max_gain_pct)} | "
+                f"**{li.action}** | {_fmt_conviction(li.call, li.conviction)} | "
                 f"{_fmt_points(li.delta_vs_prec)} | {li.tendance} | {li.statut} |"
             )
+    L.append("")
+    # Légende des colonnes communes (1 phrase, cohérente avec le Top 3) : Max gain =
+    # meilleur % atteint depuis l'entrée (> 1 % = gagné) ; Action 🟢 laisse courir /
+    # 🟡 sécurise / 🔴 coupe / ⚪ tiens ; Conviction = note signée du signal 7h.
+    L.append(
+        "_Max gain = meilleur % atteint depuis l'entrée (> 1 % = gagné). "
+        "**Action** : 🟢 laisse courir · 🟡 sécurise · 🔴 coupe · ⚪ tiens. "
+        "**Conviction** = note signée du signal à 7h (plus c'est fort, plus le pari "
+        "est tranché)._"
+    )
     L.append("")
 
     # FIX 2a/2c (fondateur 23/06) — section news CENTRÉE sur les paris : la VRAIE

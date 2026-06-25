@@ -374,8 +374,10 @@ def test_variations_24h_filtre_tri_et_prix(tmp_path: Path):
         measures_log_path=log, decision_log_dir=tmp_path / "none", events_path=tmp_path / "noevents.md",
     )
     assert [v.actif for v in vs] == ["Or", "S&P 500"]          # récent → ancien, > 1 %, 24h only
-    assert vs[0].sens == "baisse" and vs[0].prix_depart == 4500.0 and vs[0].prix_sortie == 4311.0
-    assert vs[1].sens == "hausse" and vs[1].variation_pct == 2.0
+    # Or SHORT -4.2 brut → clôture FAVORABLE +4.2 ; prix d'entrée = émission.
+    assert vs[0].prix_entree == 4500.0 and vs[0].perf_cloture_fav == 4.2
+    # S&P LONG +2.0 brut → clôture favorable +2.0.
+    assert vs[1].perf_cloture_fav == 2.0
     assert all(v.joue is False for v in vs)                    # aucune sélection fournie
 
 
@@ -396,9 +398,11 @@ def test_variations_24h_joue_via_selection(tmp_path: Path):
 
 
 def test_render_variations_24h_colonnes():
-    v = bj.Variation24h(jour=date(2026, 6, 18), actif="Or", sens="baisse",
-                        prix_depart=4500.0, prix_sortie=4311.0, variation_pct=-4.2,
-                        joue=True, call="SHORT", raison="Fed hawkish")
+    v = bj.Variation24h(jour=date(2026, 6, 18), actif="Or", prix_entree=4500.0,
+                        perf_12h=0.55, perf_18h=2.10, perf_cloture_fav=4.2,
+                        max_jour=4.38, joue=True, call="SHORT", raison="Fed hawkish")
     md = bj.render_variations_24h([v])
-    assert "| Jour | Actif | Sens | Prix départ | Prix sortie | Variation | Joué | Raison du mouvement |" in md
-    assert "Or | ↓ baisse | 4500 | 4311 | -4.20% | Oui · SHORT | Fed hawkish" in md
+    assert ("| Jour | Actif | Call | Prix d'entrée | % 12h | % 18h | % clôture "
+            "| Max du jour | Joué | Raison du mouvement |") in md
+    assert ("Or | SHORT | 4500 | +0.55% | +2.10% | +4.20% | +4.38% | Oui | "
+            "Fed hawkish") in md

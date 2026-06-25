@@ -101,23 +101,24 @@ def test_synthese_garde_sous_table_insuffisant_separee():
 # ===========================================================================
 
 def test_top3_present_en_tete():
-    """Refonte S9 vague 3 : « ## 🎯 Décision du jour » en tête (encart Sélection +
-    tableau À jouer 24h fusionnés, I11), le panorama « Synthèse des décisions »
-    plus bas (décision fondateur 12/06), puis « Top swing (7j / 1m) » (ex-« Top
-    convictions multi-horizons », I10) APRÈS le panorama."""
+    """La tête « ## 🎯 Aujourd'hui » ouvre le bulletin (paris du jour + tableau À
+    jouer 24h), le panorama « Synthèse des décisions » plus bas, puis les sélections
+    de fond « 📈 Swing 7j » / « 🗓️ Positions 1 mois » APRÈS le panorama.
+    [Couper le gras 25/06] Le bloc verbeux « Top swing (7j / 1m) » a été supprimé."""
     res = sa.score_actif("test", _fiche(quant_poids=10), _vals(1.0))
     b = sa.render_bulletin([res], {}, NOW, "h", "ok")
-    assert "## 🎯 Décision du jour" in b
-    # Le tableau À jouer est désormais un sous-bloc ### de Décision du jour.
+    assert "## 🎯 Aujourd'hui" in b
+    # Le tableau À jouer est un sous-bloc ### de la tête « Aujourd'hui ».
     assert "### À jouer aujourd'hui (24h)" in b
-    assert "## Top swing (7j / 1m)" in b
-    assert b.index("## 🎯 Décision du jour") < b.index("## Synthèse des décisions")
-    assert b.index("## Synthèse des décisions") < b.index("## Top swing (7j / 1m)")
+    assert "## 📈 Swing 7j (max 3)" in b
+    assert b.index("## 🎯 Aujourd'hui") < b.index("## Synthèse des décisions")
+    assert b.index("## Synthèse des décisions") < b.index("## 📈 Swing 7j (max 3)")
     # L'ancien titre ## de section « À jouer » a disparu (devenu sous-bloc ###).
     assert "## 🎯 À jouer aujourd'hui (24h)" not in b
-    # Les anciens titres exacts ont disparu (absorbé / renommé).
+    # Les blocs verbeux supprimés (couper le gras 25/06) ne reviennent pas.
     assert "## 🎯 Top 3 convictions du jour" not in b
-    assert "## 🎯 Top convictions multi-horizons" not in b
+    assert "## Top swing (7j / 1m)" not in b
+    assert "Top convictions multi-horizons" not in b
 
 
 def test_top3_ne_contient_que_des_cellules_normales():
@@ -417,16 +418,16 @@ def _actif_24h(nom: str, score_24h: float, confidence: str = "normale") -> "sa.A
 
 
 def test_a_jouer_present_et_24h_seulement():
-    """Le tableau « À jouer aujourd'hui (24h) » (sous-bloc ### de « ## 🎯 Décision
-    du jour » depuis la fusion S9 vague 3) est en tête, avant le panorama et le
-    Top swing, et porte les colonnes attendues."""
+    """Le tableau « À jouer aujourd'hui (24h) » (sous-bloc ### de « ## 🎯 Aujourd'hui »)
+    est en tête, avant le panorama et les sélections de fond, et porte les colonnes
+    attendues."""
     r = _actif_24h("Fort", 8.0)
     b = sa.render_bulletin([r], {}, NOW, "h", "ok")
-    assert "## 🎯 Décision du jour" in b
+    assert "## 🎯 Aujourd'hui" in b
     assert "### À jouer aujourd'hui (24h)" in b
     assert "| Actif | Direction | Note | Conviction | Drapeaux | Porté par | Prix de réf. |" in b
     assert "**Jouables**" in b and "**À éviter**" in b
-    assert b.index("### À jouer aujourd'hui (24h)") < b.index("## Top swing (7j / 1m)")
+    assert b.index("### À jouer aujourd'hui (24h)") < b.index("## 📈 Swing 7j (max 3)")
 
 
 def test_a_jouer_tri_note_decroissante():
@@ -653,15 +654,15 @@ def test_metadata_en_pied_pas_en_tete():
     r = _actif_24h("Fort", 8.0)
     b = sa.render_bulletin([r], {}, NOW, "abcd1234", "fraîcheur OK")
     # En-tête : Généré, PAS de « Fraîcheur » (OK → masquée), ni Analyste/Hash.
-    # Refonte S9 vague 3 : la 1re section du jour est « ## 🎯 Décision du jour ».
-    tete = b.split("## 🎯 Décision du jour")[0]
+    # La 1re section du jour est « ## 🎯 Aujourd'hui ».
+    tete = b.split("## 🎯 Aujourd'hui")[0]
     assert "- Généré" in tete
     assert "Fraîcheur" not in tete
     assert "Analyste version" not in tete
     assert "Fiches hash" not in tete
     # Pied : section --- + métadonnées techniques.
     assert "_Analyste version : v3.0.0 · Fiches hash : abcd1234_" in b
-    assert b.index("_Analyste version") > b.index("## 🎯 Décision du jour")
+    assert b.index("_Analyste version") > b.index("## 🎯 Aujourd'hui")
 
 
 # ===========================================================================

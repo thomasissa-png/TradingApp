@@ -168,14 +168,14 @@ def test_surveillance_block_liste_contre_momentum():
 
 
 def test_surveillance_block_apparait_avant_flips():
-    """Ordre (refonte S9 vague 3, I14) : « Cellules à surveiller » remonte JUSTE
-    après « Décision du jour », donc AVANT la Synthèse. Elle reste avant « Flips
-    vs veille » puis « Détail par actif ». La table '## Matrice' a été fusionnée
-    dans '## Synthèse des décisions' (#4.2)."""
+    """Ordre (I14) : « Cellules à surveiller » remonte JUSTE après la tête « 🎯
+    Aujourd'hui », donc AVANT la Synthèse. Elle reste avant « Flips vs veille » puis
+    « Détail par actif ». La table '## Matrice' a été fusionnée dans '## Synthèse des
+    décisions' (#4.2)."""
     fiche = _fiche()
     res = sa.score_actif("test", fiche, _vals(1.0, 1.0))
     bulletin = sa.render_bulletin([res], {}, NOW, "h", "ok")
-    idx_decision = bulletin.index("## 🎯 Décision du jour")
+    idx_decision = bulletin.index("## 🎯 Aujourd'hui")
     idx_synthese = bulletin.index("## Synthèse des décisions")
     idx_surveillance = bulletin.index("## ⚠️ Cellules à surveiller")
     idx_flips = bulletin.index("## Flips vs veille")

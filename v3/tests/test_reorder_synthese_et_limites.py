@@ -82,15 +82,14 @@ def test_synthese_apparait_avant_le_briefing(tmp_path: Path):
 
 
 def test_top3_reste_en_premiere_position(tmp_path: Path):
-    """Le bloc « Décision du jour » (fusion S9 vague 3 : encart Sélection + tableau
-    À jouer 24h) reste tout en haut, avant la Synthèse ET avant le Briefing
-    (remplace l'ancien « Top 3 convictions »). Même intention : l'actionnable du
+    """La tête « 🎯 Aujourd'hui » (paris du jour + tableau À jouer 24h) reste tout en
+    haut, avant la Synthèse ET avant le Briefing. Même intention : l'actionnable du
     jour ouvre le bulletin."""
     p = _write_bulletin(tmp_path)
     rb.insert_briefing_after_synthese(p, _BRIEFING_MD)
     b = p.read_text(encoding="utf-8")
-    i_top = b.index("## 🎯 Décision du jour")
-    # Le tableau « À jouer » est désormais un sous-bloc ### de Décision du jour.
+    i_top = b.index("## 🎯 Aujourd'hui")
+    # Le tableau « À jouer » est un sous-bloc ### de la tête « Aujourd'hui ».
     assert "### À jouer aujourd'hui (24h)" in b
     assert i_top < b.index("## Synthèse des décisions")
     assert i_top < b.index("## Briefing du jour")

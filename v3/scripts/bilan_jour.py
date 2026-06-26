@@ -216,8 +216,9 @@ def load_conviction_records(
 def load_selection_map(
     bulletin_date: date,
     decision_log_dir: Path = DECISION_LOG_DIR,
+    field: str = "selection_du_jour",
 ) -> Dict[Tuple[str, str], bool]:
-    """Mappe (actif, horizon) -> `selection_du_jour` pour le bulletin du jour.
+    """Mappe (actif, horizon) -> `<field>` pour le bulletin du jour.
 
     Étage 1c (décision fondateur 12/06) — la « Sélection du jour » devient un
     objet MESURÉ : on lit le champ shadow `selection_du_jour` des records du
@@ -225,6 +226,12 @@ def load_selection_map(
     les cellules explicitement `selection_du_jour: true` sont retenues (toute
     autre — false OU champ absent, anciens logs — est NON sélectionnée : zéro
     invention, dégradation propre). N'altère NI score NI win rate global.
+
+    POINT DE BRANCHEMENT MESURE COMPARÉE (panel 3 experts 25/06) : `field` permet
+    de lire EN PARALLÈLE le champ de la sélection SHADOW « haute-conviction »
+    (`field="selection_shadow_hc"`) avec la MÊME mécanique. La sélection RÉELLE
+    (`selection_du_jour`) reste l'objet mesuré par défaut ; le shadow est mesuré à
+    part (win rate shadow vs réel) SANS jamais changer la sélection affichée.
     """
     result: Dict[Tuple[str, str], bool] = {}
     if not decision_log_dir.exists():
@@ -252,7 +259,7 @@ def load_selection_map(
                         continue
                     # Champ absent (anciens logs) → False (dégradation propre).
                     result[(str(actif), str(horizon))] = bool(
-                        rec.get("selection_du_jour", False)
+                        rec.get(field, False)
                     )
         except OSError as e:
             logger.warning("decision-log illisible %s : %s", fp, e)

@@ -2899,6 +2899,202 @@ def compute_selection_du_jour(
     return retenues, ecartees
 
 
+# ---------------------------------------------------------------------------
+# RÈGLE DE SÉLECTION « HAUTE-CONVICTION » en SHADOW PUR (panel 3 experts
+# 2026-06-25, reco n°2). OBJECTIF : MESURER (win rate) si une sélection
+# alternative aurait fait mieux que la sélection RÉELLE sur le cas où la
+# couverture TOTALE est plombée par des sources MORTES (panne réseau / trou
+# structurel) alors que les critères VIVANTS pointent franchement dans un sens.
+#
+# GARDE-FOUS ABSOLUS (non négociables) :
+#   - SHADOW PUR : ne touche NI `selection_du_jour` réel, NI score, NI conclusion,
+#     NI la tête bulletin. Lecture seule sur `results`. Écrit UNIQUEMENT le champ
+#     decision-log `selection_shadow_hc` (+ motif). On MESURE, on ne cutover pas.
+#   - PAS d'override news (quant maître, décision 20/06) : la news ne SÉLECTIONNE
+#     jamais ; elle sert seulement de garde-fou « pas de ↯ » (news non
+#     contredisante), exactement comme la sélection réelle.
+#   - WIN RATE ONLY : aucune métrique de gain.
+#   - ZÉRO INVENTION : donnée absente → cellule non éligible (jamais comblée).
+# ---------------------------------------------------------------------------
+
+# Seuil |note| « très forte » pour la règle shadow haute-conviction. Plus strict
+# que le seuil de conviction « forte » de la sélection réelle (≈0.6) : la règle ne
+# débloque une cellule à couverture totale FAIBLE que si le quant est hors-norme.
+# Aligné sur SELECTION_VETO_QUANT_FORT (≥ 8.0 = conviction quant exceptionnelle qui
+# a historiquement battu les news ponctuelles). PARAMÉTRABLE (mesure avant d'agir).
+SHADOW_HC_NOTE_MIN: float = 8.0
+# Couverture MINIMALE sur les critères VIVANTS (n/a EXCLUS du dénominateur ;
+# `reporte=True` compte comme vivant). PARAMÉTRABLE. 0.70 = parmi les critères
+# qu'on a PU évaluer ce cycle, ≥70 % du poids vivant est couvert et concordant.
+SHADOW_HC_COVERAGE_VIVANTS_MIN: float = 0.70
+
+
+def compute_couverture_vivants(criteres: List["CritereResult"]) -> float:
+    """Couverture calculée sur les seuls critères VIVANTS (panel 3 experts 25/06).
+
+    Différence avec `compute_coverage` : un critère n/a (source morte / panne sans
+    valeur reportée) est EXCLU DU DÉNOMINATEUR au lieu de plomber la couverture.
+    On mesure : « parmi les critères qu'on a PU évaluer ce cycle, quelle part du
+    poids est couverte ? ». But MESURE — repérer le cas cacao 25/06 (couverture
+    totale 41 % à cause de 2 sources mortes, mais les critères vivants unanimes).
+
+    Définition « vivant » = non-gate, hors momentum_prix_ (comme `compute_coverage`),
+    ET valeur_norm non-None (le `reporte=True` a une valeur_norm → compte vivant).
+    Un critère n/a (valeur_norm None) ne compte ni au numérateur ni au
+    dénominateur (il est ABSENT du calcul, pas « non couvert »).
+
+    Numérateur  = Σ |poids| des critères vivants (== covered, par construction).
+    Dénominateur = Σ |poids| des critères vivants.
+    → vaut donc 1.0 dès qu'au moins un critère est vivant. Ce n'est PAS l'usage :
+    la règle shadow compare ce dénominateur vivant au poids TOTAL de la fiche pour
+    juger si « assez de poids vivant » subsiste (cf. compute_selection_shadow_hc).
+    Conservé séparément pour lisibilité/test. Retourne ∈ [0, 1] (1.0 si aucun
+    critère évaluable — convention identique à compute_coverage).
+    """
+    non_gate = [
+        c for c in criteres
+        if not c.is_gate and not c.cle_courante.startswith("momentum_prix_")
+    ]
+    vivants = [c for c in non_gate if c.valeur_norm is not None]
+    if not vivants:
+        return 1.0
+    total_vivant = sum(abs(c.poids) for c in vivants)
+    if total_vivant <= 0:
+        return 1.0
+    # Par construction tous les vivants sont couverts → 1.0 ; on garde la formule
+    # explicite pour rester robuste à une future notion de « vivant mais douteux ».
+    couvert_vivant = sum(abs(c.poids) for c in vivants if c.valeur_norm is not None)
+    return couvert_vivant / total_vivant
+
+
+def couverture_vivants_part(criteres: List["CritereResult"]) -> float:
+    """Part du poids TOTAL de la fiche qui est portée par des critères VIVANTS.
+
+    = Σ|poids vivants| / Σ|poids non-gate total|. C'est la VRAIE métrique de la
+    règle shadow : sur le cacao 25/06, deux sources mortes (poids 11 + 9) font
+    chuter cette part à ~0.59 alors que les critères vivants (momentum, position,
+    FX, spread) sont unanimes. La règle shadow exige que la couverture SUR LES
+    VIVANTS (compute_couverture_vivants) soit franche ET qu'il reste assez de poids
+    vivant pour que la décision ne tienne pas à un seul critère survivant.
+
+    Sert de garde-fou « pas de coquille vide » : 1 critère vivant poids 2 sur une
+    fiche de poids 55 = part 0.04 → on NE sélectionne pas (sinon on parierait sur
+    presque rien). Retourne ∈ [0, 1] (0.0 si aucun critère).
+    """
+    non_gate = [
+        c for c in criteres
+        if not c.is_gate and not c.cle_courante.startswith("momentum_prix_")
+    ]
+    if not non_gate:
+        return 0.0
+    total = sum(abs(c.poids) for c in non_gate)
+    if total <= 0:
+        return 0.0
+    vivant = sum(abs(c.poids) for c in non_gate if c.valeur_norm is not None)
+    return vivant / total
+
+
+# Part MINIMALE du poids total porté par des critères vivants pour qu'une cellule
+# soit éligible en shadow (garde-fou « pas de coquille vide » : on ne parie pas sur
+# un unique critère survivant). PARAMÉTRABLE. 0.40 = au moins 40 % du poids de la
+# fiche reste vivant (aligné sur COVERAGE_MIN, le plancher de suffisance existant).
+SHADOW_HC_VIVANT_PART_MIN: float = 0.40
+
+
+def compute_selection_shadow_hc(
+    results: List["ActifResult"],
+    now: Optional[datetime] = None,
+    note_min: float = SHADOW_HC_NOTE_MIN,
+    cov_vivants_min: float = SHADOW_HC_COVERAGE_VIVANTS_MIN,
+    vivant_part_min: float = SHADOW_HC_VIVANT_PART_MIN,
+) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+    """Sélection SHADOW « haute-conviction » sur l'horizon 24h (MESURE PURE).
+
+    Éligible si TOUTES ces conditions (paramétrables) :
+      (1) |note 24h| ≥ `note_min` (quant très fort) ;
+      (2) couverture SUR LES CRITÈRES VIVANTS ≥ `cov_vivants_min` (n/a exclus ;
+          `reporte=True` compte comme vivant) ;
+      (3) part du poids vivant ≥ `vivant_part_min` (garde-fou anti coquille vide) ;
+      (4) PAS de ↯ : aucune news high fraîche ne CONTREDIT le call
+          (`_feed_news_contredit_call` == False ; PAS d'override news, quant maître).
+
+    NE TOUCHE RIEN du réel : lecture seule, retourne juste la sélection shadow + un
+    motif d'inéligibilité par cellule directionnelle écartée (pour le decision-log /
+    la mesure comparée). Tri |note| décroissant, top SELECTION_MAX. Best-effort :
+    toute exception interne → cellule ignorée (jamais de crash du bulletin).
+
+    Retourne (selection, motifs) :
+      - selection : liste de dicts {fiche_key, actif, direction, note,
+        couverture_vivants, vivant_part, coverage_totale} (≤ SELECTION_MAX) ;
+      - motifs    : {fiche_key: motif} pour les cellules directionnelles NON prises
+        (« note < seuil », « couverture vivants < seuil », « poids vivant < seuil »,
+        « news à contre-sens (↯) », « hors top 3 »).
+    """
+    H = "24h"
+    candidates: List[Dict[str, Any]] = []
+    motifs: Dict[str, str] = {}
+    for r in results:
+        conc = r.conclusions.get(H, "")
+        if conc not in ("LONG", "SHORT"):
+            continue
+        try:
+            note = r.scores.get(H, 0.0)
+            cov_vivants = compute_couverture_vivants(r.criteres)
+            vivant_part = couverture_vivants_part(r.criteres)
+            # (1) |note| très forte.
+            if abs(note) < note_min:
+                motifs[r.fiche_key] = "note < seuil shadow"
+                continue
+            # (4) PAS de ↯ (news non contredisante). Quant maître : la news ne
+            # sélectionne pas, elle ne fait que disqualifier si elle contredit.
+            if _feed_news_contredit_call(r, H, now):
+                motifs[r.fiche_key] = "news à contre-sens (↯)"
+                continue
+            # (3) garde-fou « pas de coquille vide ».
+            if vivant_part < vivant_part_min:
+                motifs[r.fiche_key] = "poids vivant insuffisant"
+                continue
+            # (2) couverture sur les VIVANTS suffisante.
+            if cov_vivants < cov_vivants_min:
+                motifs[r.fiche_key] = "couverture vivants < seuil"
+                continue
+            candidates.append({
+                "fiche_key": r.fiche_key,
+                "actif": r.nom,
+                "direction": conc,
+                "note": note,
+                "couverture_vivants": round(cov_vivants, 3),
+                "vivant_part": round(vivant_part, 3),
+                "coverage_totale": round(r.coverage, 3),
+            })
+        except Exception:  # noqa: BLE001 — best-effort, jamais de crash mesure
+            continue
+
+    candidates.sort(key=lambda d: (-abs(d["note"]), d["actif"]))
+    retenues = candidates[:SELECTION_MAX]
+    for c in candidates[SELECTION_MAX:]:
+        motifs[c["fiche_key"]] = "hors top 3 (shadow)"
+    return retenues, motifs
+
+
+def selection_shadow_hc_map(
+    results: List["ActifResult"],
+    now: Optional[datetime] = None,
+) -> Tuple[set, Dict[str, str]]:
+    """Sélection shadow haute-conviction pour le DECISION-LOG (best-effort).
+
+    Retourne (selection_keys, motifs) à la manière de `selection_du_jour_map`, mais
+    pour la règle SHADOW. Toute exception → (set(), {}) (jamais de crash bulletin).
+    SHADOW PUR : aucun effet sur la sélection réelle ni sur le rendu.
+    """
+    try:
+        picks, motifs = compute_selection_shadow_hc(results, now=now)
+        keys = {p["fiche_key"] for p in picks}
+        return keys, motifs
+    except Exception:  # noqa: BLE001 — best-effort
+        return set(), {}
+
+
 def _catalyseurs_j0_high(now: datetime) -> List[Dict[str, Any]]:
     """Événements à impact `high` du calendrier tombant AUJOURD'HUI (J0).
 
@@ -5169,6 +5365,11 @@ def build_decision_log_records(
     # run_weekly traquent les paris AFFICHÉS. L'ancienne `compute_selection_du_jour`
     # (dédup famille macro + veto « tape ») est RETIRÉE de cette chaîne d'écriture.
     _selection_keys, _motif_exclusion = selection_du_jour_map(results, now=now)
+    # SHADOW PUR (panel 3 experts 25/06, reco n°2) — règle de sélection
+    # « haute-conviction » MESURÉE EN PARALLÈLE, sans toucher la sélection réelle
+    # ci-dessus. Champ decision-log dédié `selection_shadow_hc` (+ motif). Aucun
+    # effet sur le score, la conclusion, la tête bulletin ou `selection_du_jour`.
+    _shadow_hc_keys, _shadow_hc_motifs = selection_shadow_hc_map(results, now=now)
     shadow_capteurs = shadow_capteurs or {}
     records: List[Dict[str, Any]] = []
     bulletin_date = now.strftime("%Y-%m-%d")
@@ -5519,6 +5720,15 @@ def build_decision_log_records(
                 motif = _motif_exclusion.get(r.fiche_key)
                 if motif:
                     selection_extra["selection_motif_exclusion"] = motif
+                # --- SHADOW PUR — sélection « haute-conviction » (mesure only) ----
+                # NE remplace PAS `selection_du_jour` : champ séparé tracé pour la
+                # mesure comparée (win rate shadow vs réel). Aucun impact rendu.
+                selection_extra["selection_shadow_hc"] = bool(
+                    r.fiche_key in _shadow_hc_keys
+                )
+                _shadow_motif = _shadow_hc_motifs.get(r.fiche_key)
+                if _shadow_motif:
+                    selection_extra["selection_shadow_hc_motif"] = _shadow_motif
                 cap = shadow_capteurs.get(r.fiche_key, {})
                 selection_extra["shadow_retour_j1"] = cap.get("shadow_retour_j1")
                 selection_extra["shadow_gap_overnight"] = cap.get(

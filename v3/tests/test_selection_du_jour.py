@@ -449,6 +449,236 @@ def test_famille_fallback_singleton():
     famille, label = sd.famille_macro("eia_crude_surprise")
     assert famille == "eia_crude_surprise"
     assert label == "eia_crude_surprise"
+
+
+# ---------------------------------------------------------------------------
+# RÈGLE DE SÉLECTION « HAUTE-CONVICTION » en SHADOW PUR (panel 3 experts 25/06).
+# Garde-fous : SHADOW PUR (la sélection RÉELLE ne bouge JAMAIS), WIN RATE ONLY,
+# pas d'override news, zéro invention. On prouve : (a) réel inchangé, (b) shadow
+# calculée/loggée, (c) cas cacao 25/06 éligible en shadow.
+# ---------------------------------------------------------------------------
+
+def _crit_val(cle: str, poids: float, val, contrib: float = 0.0) -> sa.CritereResult:
+    """Critère paramétrable : `val=None` → n/a (source morte) ; sinon vivant."""
+    c = sa.CritereResult(
+        id=cle,
+        nom=cle,
+        type_norm="lineaire",
+        valeur_brute=val,
+        valeur_norm=val,
+        poids=poids,
+        signe=1,
+        pertinence={h: 1.0 for h in sa.HORIZONS},
+        note="",
+        contributions={h: contrib for h in sa.HORIZONS},
+        cle_courante=cle,
+    )
+    c.is_na = val is None
+    return c
+
+
+def _actif_criteres(
+    nom: str,
+    fiche_key: str,
+    criteres: List[sa.CritereResult],
+    *,
+    score_24h: float,
+    direction: str = "LONG",
+    coverage: float = 1.0,
+) -> sa.ActifResult:
+    return sa.ActifResult(
+        nom=nom,
+        fiche_key=fiche_key,
+        criteres=criteres,
+        scores={h: (score_24h if h == "24h" else 0.0) for h in sa.HORIZONS},
+        conclusions={h: (direction if h == "24h" else sa.CONCLUSION_INSUFFISANT) for h in sa.HORIZONS},
+        tie_break_notes={},
+        scores_pond={h: 0.0 for h in sa.HORIZONS},
+        conclusions_pond={h: "" for h in sa.HORIZONS},
+        tie_break_notes_pond={},
+        diverge={h: False for h in sa.HORIZONS},
+        coverage=coverage,
+        confidence={h: "normale" for h in sa.HORIZONS},
+    )
+
+
+def _cacao_2506() -> sa.ActifResult:
+    """Reconstitue le cas cacao du 25/06 (audit fallback-source-cacao).
+
+    Conditions reproduites pour que le RÉEL écarte ET que le SHADOW prenne :
+      - 2 sources MORTES : météo CI+Ghana (poids 11, le PLUS LOURD, uniquement) +
+        arrivées ports (poids 9) → n/a ; le critère de poids MAX est donc n/a ;
+      - critères VIVANTS unanimes LONG : positionnement (5), spread (5), news
+        offre El Niño (6) → poids vivant = 16 ;
+      - couverture TOTALE = 16 / 36 ≈ 0.444 : sous CONVICTION_COVERAGE_MIN (0.50)
+        ET poids-max n/a → la tête RÉELLE plafonne la conviction à « fragile
+        (couverture insuffisante) » → cacao ÉCARTÉ du réel ;
+      - couverture SUR VIVANTS = 1.0 ; part vivante = 16/36 ≈ 0.444 (≥ 0.40 garde-
+        fou anti coquille vide) ;
+      - |note| = 9.2 ≥ SHADOW_HC_NOTE_MIN (8.0) → quant hors-norme.
+    → le SHADOW haute-conviction prend le cacao là où le réel l'écarte.
+    momentum_prix_ exclu du calcul de couverture → on n'en met pas (cohérent).
+    """
+    criteres = [
+        _crit_val("meteo_ci_ghana_precip_30j", 11.0, None),         # MORTE, poids MAX
+        _crit_val("arrivees_port_abidjan_sanpedro_20j", 9.0, None),   # MORTE (structurel)
+        _crit_val("hf_positioning_flux_options", 5.0, 1.0, contrib=0.5),   # vivant
+        _crit_val("spread_ny_london", 5.0, 1.0, contrib=0.5),            # vivant
+        _crit_val("synthese_offre_cacao", 6.0, 1.0, contrib=0.7),        # vivant (news offre)
+    ]
+    # coverage TOTAL (comme compute_coverage) = 16/36 ≈ 0.444 (< 0.50 → réel écarte).
+    return _actif_criteres(
+        "Cacao", "cacao", criteres,
+        score_24h=9.2, direction="LONG", coverage=16.0 / 36.0,
+    )
+
+
+def test_shadow_couverture_vivants_exclut_les_na():
+    a = _cacao_2506()
+    # Couverture TOTALE plombée par les 2 sources mortes (16/36 ≈ 0.444 < 0.50).
+    assert sa.compute_coverage(a.criteres) == pytest.approx(16.0 / 36.0)
+    # Couverture SUR VIVANTS = 1.0 (n/a exclus du dénominateur).
+    assert sa.compute_couverture_vivants(a.criteres) == pytest.approx(1.0)
+    # Part du poids total portée par les vivants = 16/36 ≈ 0.444.
+    assert sa.couverture_vivants_part(a.criteres) == pytest.approx(16.0 / 36.0)
+
+
+def test_shadow_reporte_compte_comme_vivant():
+    # Une valeur reportée (cache last-good) a une valeur_norm → compte VIVANTE.
+    crit = _crit_val("meteo_ci_ghana_precip_30j", 11.0, 1.2)
+    crit.reporte = True
+    crit.reporte_age_j = 2
+    assert crit.valeur_norm is not None
+    a = _actif_criteres("X", "x", [crit], score_24h=9.0)
+    assert sa.compute_couverture_vivants(a.criteres) == pytest.approx(1.0)
+    assert sa.couverture_vivants_part(a.criteres) == pytest.approx(1.0)
+
+
+def test_shadow_cacao_2506_eligible():
+    """(c) Le cas cacao 25/06 serait PRIS par la règle shadow haute-conviction."""
+    a = _cacao_2506()
+    picks, motifs = sa.compute_selection_shadow_hc([a], now=_NOW)
+    assert [p["fiche_key"] for p in picks] == ["cacao"]
+    assert picks[0]["direction"] == "LONG"
+    assert picks[0]["couverture_vivants"] == pytest.approx(1.0)
+    assert picks[0]["coverage_totale"] == pytest.approx(16.0 / 36.0, abs=1e-3)
+
+
+def test_shadow_cacao_2506_ecarte_du_reel():
+    """(a) PREUVE garde-fou : la sélection RÉELLE écarte le cacao (couverture
+    totale 0.375 < 0.70). La règle shadow ne change RIEN à ce verdict réel."""
+    a = _cacao_2506()
+    sel_reelle, _ = sa.compute_selection_du_jour([a], now=_NOW)
+    assert sel_reelle == []  # réel : écarté (couverture insuffisante)
+
+
+def test_shadow_rejette_note_faible():
+    a = _cacao_2506()
+    a.scores["24h"] = 3.0  # |note| < 8.0 → inéligible shadow
+    picks, motifs = sa.compute_selection_shadow_hc([a], now=_NOW)
+    assert picks == []
+    assert motifs["cacao"] == "note < seuil shadow"
+
+
+def test_shadow_rejette_couverture_vivants_faible():
+    # |note| forte mais un vivant n/a partiel → couverture vivants < 0.70.
+    criteres = [
+        _crit_val("a", 7.0, 1.0, contrib=0.5),   # vivant
+        _crit_val("b", 8.0, None),               # mort → exclu du dénominateur
+        _crit_val("c", 3.0, None),               # mort → exclu
+    ]
+    # Pour forcer couverture vivants < 0.70 il faut un vivant « non couvert ».
+    # Notre modèle : vivant == couvert. On teste donc la part vivante faible.
+    a = _actif_criteres("Y", "y", criteres, score_24h=9.0, coverage=7.0 / 18.0)
+    # part vivante = 7/18 ≈ 0.389 < 0.40 → rejet par garde-fou coquille vide.
+    picks, motifs = sa.compute_selection_shadow_hc([a], now=_NOW)
+    assert picks == []
+    assert motifs["y"] == "poids vivant insuffisant"
+
+
+def test_shadow_rejette_si_news_contre_sens(monkeypatch):
+    # PAS d'override news : une news high à contre-sens DISQUALIFIE (↯).
+    a = _cacao_2506()
+    monkeypatch.setattr(sa, "_fresh_high_feed_dirs", lambda now: {"Cacao": {"SHORT"}})
+    picks, motifs = sa.compute_selection_shadow_hc([a], now=_NOW)
+    assert picks == []
+    assert motifs["cacao"] == "news à contre-sens (↯)"
+
+
+def test_shadow_cap_max_3():
+    actifs = [
+        _actif_criteres(
+            f"A{i}", f"a{i}",
+            [_crit_val("k", 5.0, 1.0, contrib=0.5)],
+            score_24h=9.5 - i * 0.1,
+        )
+        for i in range(5)
+    ]
+    picks, motifs = sa.compute_selection_shadow_hc(actifs, now=_NOW)
+    assert len(picks) == 3
+    assert motifs["a3"] == "hors top 3 (shadow)"
+    assert motifs["a4"] == "hors top 3 (shadow)"
+
+
+# --- Decision-log : (b) shadow calculée ET loggée, réel inchangé -------------
+
+def test_decision_log_selection_shadow_hc_loggee():
+    """(b) Le champ `selection_shadow_hc` est écrit au decision-log (24h)."""
+    a = _cacao_2506()
+    records = sa.build_decision_log_records([a], _NOW)
+    rec_24h = next(r for r in records if r["horizon"] == "24h")
+    assert rec_24h["selection_shadow_hc"] is True
+    # Hors 24h : champ absent (la sélection est définie sur le pari 24h).
+    rec_7j = next(r for r in records if r["horizon"] == "7j")
+    assert "selection_shadow_hc" not in rec_7j
+
+
+def test_decision_log_shadow_hc_nest_pas_le_reel():
+    """(a)+(b) GARDE-FOU CENTRAL : sur le cacao 25/06, `selection_du_jour` RÉEL
+    reste FALSE (écarté, couverture totale insuffisante) tandis que la mesure
+    shadow `selection_shadow_hc` est TRUE. Les deux champs sont INDÉPENDANTS :
+    le shadow ne contamine jamais le réel."""
+    a = _cacao_2506()
+    records = sa.build_decision_log_records([a], _NOW)
+    rec_24h = next(r for r in records if r["horizon"] == "24h")
+    assert rec_24h["selection_du_jour"] is False        # RÉEL : écarté (inchangé)
+    assert rec_24h["selection_shadow_hc"] is True       # SHADOW : aurait été pris
+
+
+def test_decision_log_shadow_hc_motif_si_ecarte():
+    a = _cacao_2506()
+    a.scores["24h"] = 3.0  # inéligible shadow (note faible)
+    records = sa.build_decision_log_records([a], _NOW)
+    rec_24h = next(r for r in records if r["horizon"] == "24h")
+    assert rec_24h["selection_shadow_hc"] is False
+    assert rec_24h["selection_shadow_hc_motif"] == "note < seuil shadow"
+
+
+def test_mesure_branchement_shadow_field(tmp_path):
+    """POINT DE BRANCHEMENT MESURE : `load_selection_map(field=...)` lit le champ
+    shadow EN PARALLÈLE du réel, avec la MÊME mécanique → win_rate_selection
+    réutilisable verbatim sur la sélection shadow."""
+    import json
+    import bilan_jour as bj
+    from datetime import date
+
+    d = date(2026, 6, 25)
+    log = tmp_path / f"{d.isoformat()}-1200.jsonl"
+    rows = [
+        {"bulletin_date": d.isoformat(), "actif": "Cacao", "horizon": "24h",
+         "selection_du_jour": False, "selection_shadow_hc": True},
+        {"bulletin_date": d.isoformat(), "actif": "Or", "horizon": "24h",
+         "selection_du_jour": True, "selection_shadow_hc": False},
+    ]
+    log.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+
+    reel = bj.load_selection_map(d, decision_log_dir=tmp_path)
+    shadow = bj.load_selection_map(d, decision_log_dir=tmp_path, field="selection_shadow_hc")
+    # Les deux vues sont INDÉPENDANTES (réel ≠ shadow).
+    assert reel[("Cacao", "24h")] is False
+    assert reel[("Or", "24h")] is True
+    assert shadow[("Cacao", "24h")] is True
+    assert shadow[("Or", "24h")] is False
     # Deux clés singleton distinctes → familles distinctes (aucun regroupement).
     f1, _ = sd.famille_macro("egypte_gasc_tenders")
     f2, _ = sd.famille_macro("opec_production_policy")

@@ -702,7 +702,7 @@ def build_news_par_actif(
     lines.append(
         f"_Actualités à impact des dernières {FRESHNESS_HOURS}h, groupées par "
         f"actif (la flèche en tête de puce donne le sens d'impact déjà qualifié : "
-        f"haussier / baissier / neutre). Ordre canonique des 12 actifs._"
+        f"haussier / baissier / neutre). Ordre canonique des actifs._"
     )
     lines.append("")
 

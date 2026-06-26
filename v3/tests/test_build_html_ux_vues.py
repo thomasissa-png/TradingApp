@@ -72,9 +72,12 @@ def test_performance_encart_chauffe_dates_reelles():
     section = html.split('id="history-view"')[1].split("</section>")[0]
     assert "winrate-warmup" in section
     # Dates/règles RÉELLES (SELECTION-RULE / cutover momentum), zéro invention.
-    assert "11 juin 2026" in section      # reset 12 actifs (ère v2)
+    assert "11 juin 2026" in section      # reset moteur ère v2
     assert "8 août 2026" in section        # J+60 = point de contrôle
-    assert "12 actifs" in section
+    # Formulation agnostique du nombre d'actifs : le reset 11 juin concerne le
+    # moteur, et les actifs ajoutés depuis (cutover 26/06) démarrent aussi à zéro
+    # (zéro invention : on ne prétend pas que les 15 ont été reset le 11 juin).
+    assert "remis à zéro" in section and "démarrent" in section
     assert "70" in section and "15" in section  # WR tradable ≥ 70% / N ≥ 15
 
 

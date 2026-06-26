@@ -4627,7 +4627,7 @@ def build_comment_lire_block(flags_present: set) -> List[str]:
 
     out.append("### À jouer aujourd'hui (24h)")
     out.append(
-        "_Les 12 cellules à 24h (horizon de trade). Dans « Jouables », les "
+        "_Toutes les cellules à 24h (horizon de trade), une par actif. Dans « Jouables », les "
         "convictions fortes sont triées par force de note (|note| décroissante), "
         "puis viennent les autres lignes jouables. Les drapeaux de prudence "
         "(◧ ⚠️ ↯ ⇄ …) sont AFFICHÉS dans la colonne « Drapeaux » comme "

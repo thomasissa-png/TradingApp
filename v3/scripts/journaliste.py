@@ -2537,7 +2537,7 @@ def _winrate_status(k: Optional[CellKPI]) -> str:
 
 
 def _all_cells(fiches: Dict[str, dict]) -> List[Tuple[str, str, str]]:
-    """Liste exhaustive (fiche_key, nom_affiché, horizon) — 12 actifs × 3 horizons.
+    """Liste exhaustive (fiche_key, nom_affiché, horizon) — tous les actifs × 3 horizons.
 
     Garantit que TOUTES les cellules sont visibles (dont le 1m, souvent absent
     des mesures car échéance lointaine), triées par nom d'actif puis horizon.
@@ -2802,7 +2802,7 @@ def render_performance(
     """Vue humaine du win rate (win-rate-only, zéro P&L).
 
     Tableau propre groupé par horizon (24h → 7j → 1m), trié par win rate
-    décroissant, avec les 12 actifs × 3 horizons (36 cellules) TOUJOURS
+    décroissant, avec tous les actifs × 3 horizons TOUJOURS
     visibles. Brier / Taux_brut / Alertes / LONG-SHORT retirés de l'affichage
     (conservés dans les logs). La logique de mesure est inchangée.
     """

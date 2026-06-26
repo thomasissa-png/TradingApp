@@ -2370,7 +2370,7 @@ def render_variations_24h(variations: List[Variation24h], now: Optional[datetime
     L.append(f"_Généré : {horodatage_fr(now)} (Europe/Paris) · du plus récent au plus ancien._")
     L.append("")
     L.append(
-        "_Tous les mouvements 24h de nos 12 actifs dépassant 1 % (en valeur absolue). "
+        "_Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). "
         "« Call » = notre direction (LONG / SHORT). « Prix d'entrée » = cours à "
         "l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance "
         "(`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan "

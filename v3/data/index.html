@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Today Trade · Le sens du marché</title>
-<meta name="description" content="Positionnement directionnel sur 12 marchés, 3 fois par jour. Win rate en mesure. Système en validation.">
-<!-- Favicon : triangle blanc sur carré bleu (identité Today Trade, thème clair S10). -->
+<meta name="description" content="Positionnement directionnel sur 15 marchés, 3 fois par jour. Win rate en mesure. Système en validation.">
+<!-- Favicon : mark Today Trade (ligne de tendance + point de conviction) sur carré arrondi dégradé bleu, thème clair S10. -->
 <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjM2I4MmY2Ii8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMWQ0ZWQ4Ii8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0idXJsKCNnKSIvPjxwb2x5bGluZSBwb2ludHM9IjYuNSwyMyAxMywxNi41IDE5LjUsMTEuNSIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjIuNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBmaWxsPSJub25lIi8+PGxpbmUgeDE9IjE5LjUiIHkxPSIxMS41IiB4Mj0iMjUuNSIgeTI9IjciIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIyLjYiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxjaXJjbGUgY3g9IjI1LjUiIGN5PSI3IiByPSIyLjgiIGZpbGw9IiNmZmYiLz48L3N2Zz4=">
 <!-- Open Graph : aperçu propre quand le lien est partagé (WhatsApp, LinkedIn). -->
 <meta property="og:title" content="Today Trade · Le sens du marché">
-<meta property="og:description" content="Positionnement directionnel sur 12 marchés, 3 fois par jour. Win rate en mesure. Système en validation.">
+<meta property="og:description" content="Positionnement directionnel sur 15 marchés, 3 fois par jour. Win rate en mesure. Système en validation.">
 <meta property="og:type" content="website">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
@@ -910,7 +910,7 @@
           </p>
           <div class="hero-stats" role="list" aria-label="Chiffres clés">
             <div class="hero-stat" role="listitem">
-              <div class="hs-value">12</div>
+              <div class="hs-value">15</div>
               <div class="hs-label">Actifs couverts<br>(indices, métaux, changes, matières)</div>
             </div>
             <div class="hero-stat" role="listitem">
@@ -944,7 +944,7 @@
         <p class="lead">Ce qui marche : le win rate par actif et par horizon (le taux de bonnes directions), puis le détail décision par décision.</p>
         <p class="history-intro">Deux mesures : le <strong>Win rate</strong> (sur les paris conclus) et le <strong>WR tradable</strong> (VRAI / VRAI+FAUSSE+non-conclusif, qui inclut les jours sous seuil où une position aurait quand même été prise, donc toujours ≤ Win rate). <strong>⏳ trop peu (N/15)</strong> = il faut au moins 15 paris indépendants par cellule pour qu'un chiffre soit fiable ; en dessous, le taux affiché ne veut encore rien dire.</p>
         <div class="winrate-warmup" role="note">
-          <strong>Tout est en chauffe.</strong> Les 12 actifs ont été remis à zéro le <strong>11 juin 2026</strong> (passage en ère v2 du moteur). La mesure ouverture→clôture, 1 décision notée par jour, tourne depuis le 9 juin. Premier point de contrôle : le <strong>8 août 2026</strong>, une cellule 24h se trade alors uniquement si son WR tradable ≥&nbsp;70&nbsp;% sur ≥&nbsp;15 paris (règle de sélection gravée, mode test jusque-là).
+          <strong>Tout est en chauffe.</strong> Le moteur a été remis à zéro le <strong>11 juin 2026</strong> (passage en ère v2) ; les actifs ajoutés depuis démarrent eux aussi de zéro. La mesure ouverture→clôture, 1 décision notée par jour, tourne depuis le 9 juin. Premier point de contrôle : le <strong>8 août 2026</strong>, une cellule 24h se trade alors uniquement si son WR tradable ≥&nbsp;70&nbsp;% sur ≥&nbsp;15 paris (règle de sélection gravée, mode test jusque-là).
         </div>
         <div id="history-winrate"></div>
         <details class="fold-section" id="history-ab-fold">
@@ -989,7 +989,7 @@
         <p id="variations-empty" hidden></p>
       </section>
       <p class="gen-meta" aria-label="Date de génération de la page">
-        Page générée le <time datetime="2026-06-26T18:35:32Z">26 juin 2026 · 18h35 (UTC)</time>
+        Page générée le <time datetime="2026-06-26T18:35:36Z">26 juin 2026 · 18h35 (UTC)</time>
       </p>
     </div>
   </main>
@@ -1004,7 +1004,7 @@
               </a>
               <p class="footer-tagline">Le sens du marché</p>
               <p class="footer-blurb">
-                Positionnement directionnel sur 12 marchés, trois fois par jour,
+                Positionnement directionnel sur 15 marchés, trois fois par jour,
                 à 24 heures, 7 jours et 1 mois. Vous lisez, vous décidez.
               </p>
               <span class="footer-badge">En validation, mise en service prévue le 08/08/2026</span>
@@ -1019,7 +1019,7 @@
             <div class="footer-col footer-col-about">
               <h3 class="footer-h">Le principe</h3>
               <ul class="footer-list">
-                <li>12 marchés suivis (indices, métaux, énergie, devises, agricoles)</li>
+                <li>15 marchés suivis (indices, métaux, énergie, devises, agricoles)</li>
                 <li>3 bulletins par jour : 7h, 12h, 18h (heure de Paris)</li>
                 <li>Une direction tranchée : hausse (LONG) ou baisse (SHORT)</li>
                 <li>Seule mesure : le win rate, le taux de bonnes directions</li>

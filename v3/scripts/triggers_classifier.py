@@ -70,7 +70,7 @@ TRIGGERS_YML = ROOT / "config" / "triggers-and-windows.yml"
 # Les tickers sont matchés exactement (entre parenthèses ou délimiteurs).
 # Les alias matchent en substring case/accent-insensible sur le champ `cours`.
 TICKER_TO_ACTIF: Dict[str, Tuple[Set[str], Set[str]]] = {
-    "cac_40": (
+    "cac40": (
         {"^FCHI", "CAC40"},
         {"cac 40", "cac40"},
     ),
@@ -119,6 +119,20 @@ TICKER_TO_ACTIF: Dict[str, Tuple[Set[str], Set[str]]] = {
         {"ZW=F", "WHEAT"},
         {"wheat", "ble"},
     ),
+    # Nouveaux actifs 2026-06-26 — clé interne == f.stem de la fiche (anti-piège CAC).
+    "usdjpy": (
+        {"USDJPY=X", "JPY=X", "USDJPY", "USD/JPY"},
+        {"usd/jpy", "usdjpy", "usd jpy", "yen", "japanese yen", "boj",
+         "bank of japan"},
+    ),
+    "coton": (
+        {"CT=F", "COTTON", "COTN"},
+        {"cotton", "coton", "cotlook"},
+    ),
+    "sucre": (
+        {"SB=F", "SUGAR", "CANE"},
+        {"sugar", "sucre", "ethanol", "unica"},
+    ),
 }
 
 
@@ -128,7 +142,7 @@ TICKER_TO_ACTIF: Dict[str, Tuple[Set[str], Set[str]]] = {
 # Utilisé par le routage IA-first : pour un event qui a un `impacts[]` contenant
 # {asset:"BRENT",...}, on sait que c'est l'actif `petrole` du YAML.
 IA_ASSET_TO_ACTIF: Dict[str, str] = {
-    "CAC40":   "cac_40",
+    "CAC40":   "cac40",
     "SP500":   "sp500",
     "NASDAQ":  "nasdaq",
     "EURUSD":  "eurusd",
@@ -140,6 +154,10 @@ IA_ASSET_TO_ACTIF: Dict[str, str] = {
     "COFFEE":  "cafe",
     "COCOA":   "cacao",
     "WHEAT":   "ble",
+    # Nouveaux actifs 2026-06-26 (ids IA fermés → clé interne fiche).
+    "USDJPY":  "usdjpy",
+    "COTTON":  "coton",
+    "SUGAR":   "sucre",
 }
 
 
@@ -723,7 +741,7 @@ def is_fresh_for_override(ev: dict, now: Optional[datetime] = None) -> bool:
 # - `strict_actif` : si True, l'event DOIT cibler l'actif via `cours` ou alias ;
 #   les domain_hints seuls ne suffisent pas.
 CRITERION_SCOPE: Dict[Tuple[str, str], Dict[str, Any]] = {
-    ("cac_40", "tension_politique_fr"): {
+    ("cac40", "tension_politique_fr"): {
         "categories": {"geopolitical", "central_bank_subtle", "regulatory", "macro"},
         "domain_hints": {"france", "lecornu", "matignon", "assemblee", "elysee",
                          "gouvernement francais", "loi de finances", "budget france"},

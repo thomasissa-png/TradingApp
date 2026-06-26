@@ -53,6 +53,8 @@ TRADABLE_ASSETS: Tuple[str, ...] = (
     "CAC40", "SP500", "NASDAQ", "EURUSD",
     "BRENT", "VIX", "GOLD", "SILVER", "COPPER",
     "COFFEE", "COCOA", "WHEAT",
+    # Nouveaux actifs 2026-06-26.
+    "USDJPY", "COTTON", "SUGAR",
 )
 _ASSETS_SET = set(TRADABLE_ASSETS)
 
@@ -136,7 +138,7 @@ actifs parmi la liste FERMÉE sont impactés, et DANS QUEL SENS. Tu retournes
 UNIQUEMENT un JSON strict.
 
 ACTIFS TRADABLES (liste FERMÉE — n'utilise QUE ces ids, sinon n'inclus pas l'actif) :
-CAC40, SP500, NASDAQ, EURUSD, BRENT, VIX, GOLD, SILVER, COPPER, COFFEE, COCOA, WHEAT
+CAC40, SP500, NASDAQ, EURUSD, BRENT, VIX, GOLD, SILVER, COPPER, COFFEE, COCOA, WHEAT, USDJPY, COTTON, SUGAR
 
 SCHEMA :
 {

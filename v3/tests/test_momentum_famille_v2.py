@@ -132,13 +132,18 @@ def test_a9_vix_sans_momentum():
     assert "momentum_prix_20j_vix" not in cc.TWELVE_SYMBOLS
 
 
-def test_famille_complete_11_actifs():
-    """La famille couvre exactement 11 actifs (12 fiches - VIX exclu)."""
+def test_famille_complete_14_actifs():
+    """La famille couvre exactement 14 actifs (15 fiches - VIX exclu).
+
+    MAJ 2026-06-26 : ajout de usdjpy / coton / sucre (nouveaux actifs, momentum
+    7j/20j câblé). VIX reste exclu (mean-reverting, A9). Passé de 11 à 14.
+    """
     crits = _momentum_criteres()
     stems = {stem for stem, _ in crits}
     attendus = {
         "cacao", "cafe", "ble", "cuivre", "petrole", "or", "argent",
         "eurusd", "sp500", "nasdaq", "cac40",
+        "usdjpy", "coton", "sucre",
     }
     assert stems == attendus, f"Famille momentum: {stems} != {attendus}"
     assert "vix" not in stems

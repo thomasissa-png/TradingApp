@@ -1,0 +1,160 @@
+# USD/JPY — fiche de positionnement v1
+# Conclusion LONG = USD/JPY monte (dollar se renforce, yen faiblit).
+# Ticker Twelve natif : USD/JPY (forex natif, validé).
+# Famille fx — actif continu (coté 24h/5j, angle mort overnight corrigé en amont).
+# Source de vérité : v3/audit/nouveaux-actifs-fiches-2026-06-25.md (panel 3 experts, note 8/10).
+actif: "USD/JPY"
+ticker_principal: "USD/JPY"
+famille: "fx"
+news_zone: "US + JP"
+version: 1
+seuils_reussite_pct:
+  "24h": 0.3
+  "7j": 1.0
+  "1m": 2.5
+
+criteres:
+  # CRITÈRE DOMINANT — différentiel taux courts US-JP (2 ans).
+  # Source : FRED DGS2 (2Y US, daily) − proxy FRED IRGTLT01JPM156N (JP long terme,
+  # mensuel ≈10Y). FRED ne publie pas de série quotidienne du JGB 2Y → proxy mensuel
+  # assumé en attendant un fetcher BOJ stats dédié. Dégradation visible (pertinence
+  # 24h volontairement basse). cle câblée dans FRED_SPREADS sous diff_taux_2y_us_jp.
+  - id: 1
+    nom: "Écart de taux courts US − Japon (2 ans)"
+    source: "FRED DGS2 (2Y US) − proxy FRED IRGTLT01JPM156N (JP mensuel ≈10Y) [PROXY MENSUEL]"
+    cle_courante: "diff_taux_2y_us_jp"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # direct : spread s'élargit (Fed hawkish / BoJ dovish) => LONG USD/JPY
+    poids: 11
+    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 1.0 }
+    effet_long: "Spread s'élargit (Fed hawkish / BoJ dovish)"
+    effet_short: "Spread se resserre (BoJ hawkish / Fed pivot)"
+
+  # Tendance du dollar (DXY proxy FRED DTWEXBGS — déjà câblé, clé macro partagée).
+  # dxy_trend_20j est une clé MACRO TRANSVERSALE (cf. blé/eurusd), pas un critère
+  # propre à l'actif → réutilisation légitime (cf. appendice audit L023).
+  - id: 2
+    nom: "Tendance du dollar (20 jours)"
+    source: "FRED DTWEXBGS (déjà câblé — FRED_SERIES_SIMPLE)"
+    cle_courante: "dxy_trend_20j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # direct : DXY monte => LONG USD/JPY
+    poids: 9
+    pertinence: { "24h": 0.7, "7j": 1.0, "1m": 0.8 }
+    effet_long: "DXY monte (dollar fort)"
+    effet_short: "DXY baisse (dollar faible)"
+
+  # Tendance 7 jours USD/JPY — momentum court (Twelve natif USD/JPY).
+  - id: 3
+    nom: "Tendance de l'USD/JPY (7 jours)"
+    source: "Twelve Data USD/JPY (natif forex)"
+    cle_courante: "momentum_prix_7j_usdjpy"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 6
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.2 }
+    effet_long: "USD/JPY en tendance haussière (z>+1)"
+    effet_short: "USD/JPY en tendance baissière (z<-1)"
+
+  # Tendance 20 jours USD/JPY — momentum moyen terme.
+  - id: 4
+    nom: "Tendance de l'USD/JPY (20 jours)"
+    source: "Twelve Data USD/JPY (natif forex)"
+    cle_courante: "momentum_prix_20j_usdjpy"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }
+    effet_long: "USD/JPY en tendance haussière (z>+1)"
+    effet_short: "USD/JPY en tendance baissière (z<-1)"
+
+  # Positionnement CFTC JPY (non-commercials nets).
+  # CFTC : "JAPANESE YEN - CHICAGO MERCANTILE EXCHANGE". Ajouté à CFTC_MARKETS.
+  # Signe -1 (lecture directe) : nets LONG JPY = spéculateurs achètent le yen =
+  # USD/JPY baisse => SHORT.
+  - id: 5
+    nom: "Positionnement des gros spéculateurs (yen)"
+    source: "CFTC Socrata jun7-fc8e — JAPANESE YEN - CHICAGO MERCANTILE EXCHANGE"
+    cle_courante: "cftc_cot_jpy_nets"
+    normalisation: "zscore"
+    zscore_window: 252
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : nets LONG JPY extreme => USD/JPY baisse => SHORT
+    poids: 6
+    pertinence: { "24h": 0.2, "7j": 0.6, "1m": 1.0 }
+    effet_long: "Nets SHORT JPY extreme (squeeze à venir, yen s'apprécie)"
+    effet_short: "Nets LONG JPY extreme (yen acheté, USD/JPY sous pression)"
+
+  # Différentiel taux longs US-JP (10 ans). FRED DGS10 − IRGTLT01JPM156N (mensuel JP).
+  - id: 6
+    nom: "Écart de taux longs US − Japon (10 ans)"
+    source: "FRED DGS10 (US 10Y, daily) − FRED IRGTLT01JPM156N (JP long-term, mensuel)"
+    cle_courante: "diff_taux_10y_us_jp"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # direct : spread s'élargit => LONG USD/JPY
+    poids: 5
+    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 1.0 }
+    effet_long: "Spread s'élargit (10Y US >> JP)"
+    effet_short: "Spread se resserre (BoJ relève / Fed baisse)"
+
+  # Sentiment risque (VIX) — USD/JPY proxy risque. CBOE VIX déjà lu dans le run.
+  # Nouvelle cle_courante vix_risk_usdjpy (évite L023 — ne pas réutiliser
+  # niveau_vix_absolu de vix.yml). Signe -1 : VIX monte (risk-off) => yen
+  # s'apprécie => USD/JPY baisse.
+  - id: 7
+    nom: "Niveau de volatilité implicite (VIX — stress marché)"
+    source: "CBOE VIX CSV (déjà câblé — nouvelle cle_courante)"
+    cle_courante: "vix_risk_usdjpy"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : VIX monte (risk-off) => yen s'apprécie => USD/JPY baisse
+    poids: 5
+    pertinence: { "24h": 0.8, "7j": 0.6, "1m": 0.3 }
+    effet_long: "VIX baisse (risk-on, carry JPY actif)"
+    effet_short: "VIX monte (risk-off, fuite vers le yen)"
+
+  # Politique BoJ / intervention — critère news-driven (triplet DeepSeek).
+  # Pas de source API quotidienne du taux cible BoJ ; les interventions verbales/
+  # physiques sont capturées via events-log. Signe -1 : BoJ hawkish (+1 triplet)
+  # => USD/JPY BAISSE => SHORT.
+  - id: 8
+    nom: "Politique BoJ et risque d'intervention (verbal / physique)"
+    source: "events-log (news IA DeepSeek — triplet)"
+    cle_courante: "boj_intervention_risk"
+    normalisation: "triplet"    # +1 BoJ hawkish/intervention / 0 / -1 BoJ dovish
+    cap: 1.0
+    signe: -1                   # inversé : BoJ hawkish => USD/JPY BAISSE => SHORT
+    poids: 5
+    pertinence: { "24h": 1.0, "7j": 0.8, "1m": 0.4 }
+    effet_long: "BoJ dovish / aucune intervention (carry actif)"
+    effet_short: "BoJ hawkish / intervention verbale ou physique"
+
+  # GATE — drapeau hors score. Clé partagée gate_regime_extreme (convention de
+  # TOUTES les fiches) : le gate est résolu PAR ACTIF via fiche_key dans
+  # _resolve_gate (asset-aware depuis 16/06), pas par la clé. Aligné sur les 12
+  # fiches existantes pour cohérence (leçon CAC : une seule clé partout).
+  - id: 9
+    nom: "Drapeau : événement de marché majeur imminent"
+    source: "events-log + calendrier"
+    cle_courante: "gate_regime_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "FOMC <24h OU réunion BoJ <24h OU NFP US ce vendredi OU CPI US <24h"

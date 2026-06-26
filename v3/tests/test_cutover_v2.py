@@ -124,8 +124,13 @@ def test_registre_reel_contient_les_actifs_reset():
     assert reg.get("^GSPC") == date(2026, 6, 11)  # sp500
     assert reg.get("^FCHI") == date(2026, 6, 11)  # cac40
     assert reg.get("^VIX") == date(2026, 6, 11)   # vix
-    # Total : 12 actifs au registre (8 continus au 17/06 + 4 non continus au 11/06).
-    assert len(reg) == 12
+    # 3 NOUVEAUX actifs (S10, 2026-06-26) : introduction, warm-up à zéro au 26/06
+    # (pas un reset des 12 existants — ce sont de nouvelles cellules).
+    assert reg.get("USD/JPY") == date(2026, 6, 26)  # usdjpy
+    assert reg.get("COTN") == date(2026, 6, 26)     # coton
+    assert reg.get("CANE") == date(2026, 6, 26)     # sucre
+    # Total : 15 actifs au registre (12 ère v1/v2 + 3 nouveaux au 26/06).
+    assert len(reg) == 15
 
 
 def test_ref_changed_for_ticker():

@@ -132,6 +132,12 @@ EARLY_SIGNAL_FEEDS = [
     ("gnews_ecb_policy",       "https://news.google.com/rss/search?q=%22ECB+minutes%22+OR+%22Lagarde+speech%22+OR+%22Eurozone+GDP%22+OR+%22EU+trade+balance%22&hl=en-US&gl=US&ceid=US:en", 3600),
     ("gnews_silver_industrial","https://news.google.com/rss/search?q=silver+demand+OR+%22solar+panels%22+OR+%22photovoltaic+silver%22+OR+%22silver+mining+strike%22&hl=en-US&gl=US&ceid=US:en", 3600),
     ("gnews_gold_cb",          "https://news.google.com/rss/search?q=%22central+bank+gold%22+OR+%22gold+reserves%22+OR+%22PBoC+gold%22+OR+WGC+gold&hl=en-US&gl=US&ceid=US:en", 3600),
+    # Nouveaux actifs 2026-06-26 — flux dédiés (alignés sur les flux niche existants
+    # gnews_copper/cocoa). boj_news (EARLY_SIGNAL ci-dessous) couvre déjà la politique
+    # BoJ ; ces flux ajoutent le yen/USD-JPY, le coton et le sucre spécifiquement.
+    ("gnews_usdjpy",  "https://news.google.com/rss/search?q=yen+OR+%22USD%2FJPY%22+OR+%22Bank+of+Japan%22+OR+BoJ+OR+%22yen+intervention%22+OR+%22Ministry+of+Finance+Japan%22+OR+%22carry+trade%22&hl=en-US&gl=US&ceid=US:en", 3600),
+    ("gnews_sugar",   "https://news.google.com/rss/search?q=%22sugar+prices%22+OR+%22raw+sugar%22+OR+%22Brazil+ethanol%22+OR+UNICA+OR+%22India+sugar+export%22+OR+%22Centre-South+Brazil%22+OR+%22ICE+sugar%22&hl=en-US&gl=US&ceid=US:en", 3600),
+    ("gnews_cotton",  "https://news.google.com/rss/search?q=%22cotton+prices%22+OR+%22USDA+cotton%22+OR+%22Texas+cotton+drought%22+OR+%22India+cotton%22+OR+%22China+cotton+imports%22+OR+%22ICE+cotton%22+OR+Cotlook&hl=en-US&gl=US&ceid=US:en", 3600),
 ]
 
 # ============================================================
@@ -207,6 +213,7 @@ SOURCE_WEIGHTS = {
     "gnews_coffee": 0.8, "gnews_cocoa": 0.8, "gnews_cocoa_supply": 0.9, "gnews_wheat": 0.8,
     "gnews_copper": 0.8, "gnews_cac40": 0.8, "gnews_nasdaq": 0.8, "gnews_vix": 0.8,
     "gnews_ecb_policy": 0.8, "gnews_silver_industrial": 0.8, "gnews_gold_cb": 0.8,
+    "gnews_usdjpy": 0.8, "gnews_sugar": 0.8, "gnews_cotton": 0.8,  # nouveaux actifs 2026-06-26
     # Sources structurées (agrégateurs API) — bruit élevé mais couverture large
     "gnews": 0.7, "newsapi": 0.7,
 }

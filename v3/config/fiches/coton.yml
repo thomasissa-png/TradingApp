@@ -1,0 +1,153 @@
+# Coton (COTN) — fiche de positionnement v1
+# Ticker Twelve : COTN (ETC WisdomTree Cotton, LSE/USD) — trace les futures ICE Cotton No. 2.
+# Conclusion LONG = coton monte.
+# Source de vérité : v3/audit/nouveaux-actifs-fiches-2026-06-25.md (panel 3 experts, note 7/10).
+actif: "Coton"
+ticker_principal: "COTN"
+famille: "agri-softs"
+news_zone: "US + IN + CN"
+version: 1
+seuils_reussite_pct:
+  "24h": 1.0
+  "7j": 3.5
+  "1m": 8.0
+
+criteres:
+  # Météo ceinture coton Texas — driver offre US #1 (~55 % production US).
+  # Open-Meteo lat=33.5, lon=-101.9 (Lubbock TX). zscore_abs : sécheresse OU pluies
+  # excessives = haussier (même logique symétrique que cacao/blé, fix signe 18/06).
+  - id: 1
+    nom: "Météo ceinture coton Texas (sécheresse OU excès)"
+    source: "Open-Meteo lat=33.5, lon=-101.9 (Lubbock TX)"
+    cle_courante: "meteo_texas_cotton_precip"
+    normalisation: "zscore_abs"
+    zscore_window: 60
+    zscore_div: 2
+    zscore_centre: 0.0
+    cap: 1.0
+    signe: 1                     # +1 : écart à la normale => HAUSSIER
+    poids: 9
+    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 1.0 }
+    effet_long: "Sécheresse West Texas OU pluies excessives (qualité dégradée)"
+    effet_short: "Précipitations proches de la normale"
+
+  # Météo Inde Gujarat — driver offre Inde (2e producteur mondial).
+  # Open-Meteo lat=22.3, lon=72.6 (Gujarat). zscore_abs — mousson faible OU excès.
+  - id: 2
+    nom: "Météo Inde Gujarat (mousson coton — sécheresse OU excès)"
+    source: "Open-Meteo lat=22.3, lon=72.6 (Gujarat)"
+    cle_courante: "meteo_inde_gujarat_coton"
+    normalisation: "zscore_abs"
+    zscore_window: 60
+    zscore_div: 2
+    zscore_centre: 0.0
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.2, "7j": 0.8, "1m": 1.0 }
+    effet_long: "Mousson déficitaire OU excès Gujarat (offre indienne menacée)"
+    effet_short: "Mousson normale (offre Inde sécurisée)"
+
+  # COT coton ICE — positionnement spéculatif.
+  # CFTC : "COTTON NO. 2 - ICE FUTURES U.S.". Ajouté à CFTC_MARKETS.
+  - id: 3
+    nom: "Positionnement des gros spéculateurs (coton ICE)"
+    source: "CFTC Socrata jun7-fc8e — COTTON NO. 2 - ICE FUTURES U.S."
+    cle_courante: "cftc_cot_cotton"
+    normalisation: "zscore"
+    zscore_window: 252
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : nets SHORT extreme => LONG (squeeze spéculatif)
+    poids: 7
+    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 1.0 }
+    effet_long: "Nets SHORT extreme (squeeze à venir)"
+    effet_short: "Nets LONG extreme (positions chargées)"
+
+  # Tendance prix COTN (20 jours) — Twelve natif.
+  - id: 4
+    nom: "Tendance du coton COTN (20 jours)"
+    source: "Twelve Data COTN (ETC LSE/USD)"
+    cle_courante: "momentum_prix_20j_coton"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 6
+    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }
+    effet_long: "COTN en tendance haussière (z>+1)"
+    effet_short: "COTN en tendance baissière (z<-1)"
+
+  # Tendance prix COTN (7 jours).
+  - id: 5
+    nom: "Tendance du coton COTN (7 jours)"
+    source: "Twelve Data COTN (ETC LSE/USD)"
+    cle_courante: "momentum_prix_7j_coton"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 6
+    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 0.2 }
+    effet_long: "COTN en tendance haussière (z>+1)"
+    effet_short: "COTN en tendance baissière (z<-1)"
+
+  # Tendance du dollar (clé macro partagée dxy_trend_20j, FRED DTWEXBGS déjà câblé).
+  # Signe -1 : dollar fort = coton plus cher pour acheteurs non-USD => demande comprimée.
+  - id: 6
+    nom: "Tendance du dollar (20 jours)"
+    source: "FRED DTWEXBGS (déjà câblé — FRED_SERIES_SIMPLE)"
+    cle_courante: "dxy_trend_20j"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : DXY monte => demande non-USD comprimée => baissier
+    poids: 5
+    pertinence: { "24h": 0.3, "7j": 0.7, "1m": 0.8 }
+    effet_long: "DXY baisse (coton moins cher en devises étrangères)"
+    effet_short: "DXY monte (demande non-USD comprimée)"
+
+  # Demande Chine — news-driven (triplet DeepSeek).
+  # Imports GACC Chine = mensuels, pas d'API gratuite.
+  - id: 7
+    nom: "Demande chinoise coton (commandes et imports)"
+    source: "events-log (news IA DeepSeek — triplet)"
+    cle_courante: "demande_chine_coton"
+    normalisation: "triplet"    # +1 commandes élevées / 0 / -1 annulations/baisse
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.5, "7j": 0.9, "1m": 0.7 }
+    effet_long: "Chine commandes fortes (achat spot actif)"
+    effet_short: "Chine annule / réduit les achats"
+
+  # USDA NASS CropProgress coton — statut cultures US.
+  # Accessible via USDA NASS QuickStats API (clé USDA_API_KEY requise — chantier
+  # data P2). Sans clé : critère ⚠️ MANUEL (v3/data/manual/) → résolu en n/a propre
+  # tant que la clé/le fichier manuel est absent (zéro invention). cf. blé id=4.
+  - id: 8
+    nom: "État des cultures coton US (bon / excellent)"
+    source: "USDA NASS QuickStats API (USDA_API_KEY requise — ⚠️ manuel sans clé ; v3/data/manual/)"
+    cle_courante: "nass_crop_progress_cotton"
+    normalisation: "zscore"
+    zscore_window: 5            # même semaine 5 ans (cohérent blé id=4)
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                   # inversé : <50% bon/excellent => mauvaise récolte => LONG
+    poids: 6
+    pertinence: { "24h": 0.2, "7j": 0.9, "1m": 0.8 }
+    effet_long: "< 50% bon/excellent (récolte dégradée)"
+    effet_short: "> 70% bon/excellent (récolte saine)"
+
+  # GATE — drapeau hors score. Clé partagée gate_regime_extreme (résolu par actif
+  # via fiche_key, asset-aware). Aligné sur les 12 fiches existantes.
+  - id: 9
+    nom: "Drapeau : événement de marché majeur imminent"
+    source: "events-log + calendrier"
+    cle_courante: "gate_regime_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "USDA WASDE <7j OU CropProgress coton <48h OU saison récolte US (sept-nov)"

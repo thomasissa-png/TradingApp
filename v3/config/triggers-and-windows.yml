@@ -13,7 +13,7 @@
 # - Fenêtres d'activation en **CET** par défaut
 # - Hors fenêtre : poids effectif = 0, contribution = 0 (pas n/a, vraiment 0)
 
-cac_40:
+cac40:
   tension_politique_fr:
     type: triplet
     long_keywords:
@@ -377,6 +377,86 @@ ble:
       hors_fenetre: "poids effectif = 0 (saison morte décembre-mars)"
 
 # ============================================================
+# NOUVEAUX ACTIFS 2026-06-26 (USD/JPY, Coton, Sucre)
+# Clé d'actif == f.stem de la fiche (anti-piège CAC). Clé de triplet ==
+# cle_courante du critère news-driven dans la fiche.
+# ============================================================
+
+usdjpy:
+  boj_intervention_risk:
+    type: triplet
+    long_keywords:   # LONG USD/JPY : BoJ dovish / pas d'intervention (carry actif)
+      - "BoJ dovish"
+      - "Bank of Japan holds"
+      - "BoJ maintains rates"
+      - "ultra-loose policy"
+      - "no intervention"
+      - "yen carry trade resumes"
+    short_keywords:  # SHORT USD/JPY : BoJ hawkish / intervention (yen s'apprécie)
+      - "BoJ hike"
+      - "Bank of Japan raises"
+      - "BoJ hawkish"
+      - "yen intervention"
+      - "Ministry of Finance intervention"
+      - "MOF intervention"
+      - "verbal intervention yen"
+      - "YCC exit"
+      - "carry trade unwind"
+    horizon_lookback_jours: 7
+
+coton:
+  demande_chine_coton:
+    type: triplet
+    long_keywords:   # LONG coton : demande chinoise forte
+      - "China cotton imports rise"
+      - "China cotton orders"
+      - "Chine achète coton"
+      - "strong textile demand China"
+      - "China spot buying cotton"
+    short_keywords:  # SHORT coton : demande chinoise faible / annulations
+      - "China cancels cotton"
+      - "China cotton cancellations"
+      - "annulations coton Chine"
+      - "weak textile demand"
+      - "China cotton imports fall"
+    horizon_lookback_jours: 14
+
+sucre:
+  prod_inde_thai_sucre:
+    type: triplet
+    long_keywords:   # LONG sucre : restriction export Inde / mauvaise récolte
+      - "India sugar export ban"
+      - "India sugar export restriction"
+      - "ISMA lower output"
+      - "Thailand sugar production falls"
+      - "Inde restriction sucre"
+      - "sugar shortage"
+    short_keywords:  # SHORT sucre : Inde lève les restrictions / abondance
+      - "India lifts sugar export"
+      - "India allows sugar exports"
+      - "ISMA higher output"
+      - "Thailand sugar bumper crop"
+      - "sugar surplus"
+    horizon_lookback_jours: 14
+
+  exports_bresil_sucre:
+    type: triplet
+    long_keywords:   # LONG sucre : recul exports Brésil (offre mondiale resserrée)
+      - "Brazil sugar exports fall"
+      - "UNICA lower crush"
+      - "Brazil sugar output drops"
+      - "port delays Brazil sugar"
+      - "recul exports sucre Brésil"
+    short_keywords:  # SHORT sucre : exports Brésil accélèrent (offre abondante)
+      - "Brazil sugar exports surge"
+      - "UNICA higher crush"
+      - "Brazil sugar output rises"
+      - "record Brazil sugar exports"
+    horizon_lookback_jours: 14
+
+# ============================================================
 # CHANGELOG
 # ============================================================
 # v1 (2026-05-27) — Création. 11 triplets binaires + 7 critères à fenêtre d'activation.
+# 2026-06-26 — Renommage cac_40 → cac40 (fix routage news, clé == f.stem fiche).
+#              Ajout 3 actifs (usdjpy/coton/sucre) : 4 triplets news-driven.

@@ -1,0 +1,152 @@
+# Sucre (CANE) — fiche de positionnement v1
+# Ticker Twelve : CANE (Teucrium Sugar Fund, NYSE/USD) — ETF de futures sucre #11 (ICE).
+# Conclusion LONG = sucre monte.
+# Source de vérité : v3/audit/nouveaux-actifs-fiches-2026-06-25.md (panel 3 experts, note 7/10).
+actif: "Sucre"
+ticker_principal: "CANE"
+famille: "agri-softs"
+news_zone: "BR + IN + TH"
+version: 1
+seuils_reussite_pct:
+  "24h": 1.2
+  "7j": 4.0
+  "1m": 9.0
+
+criteres:
+  # Météo Brésil Centre-Sud (canne) — driver offre #1 mondial (~40 % offre mondiale).
+  # Open-Meteo lat=-21.2, lon=-48.1 (Ribeirão Preto SP). zscore_abs : sécheresse OU
+  # excès de pluie (pourriture) = haussier.
+  - id: 1
+    nom: "Météo Brésil Centre-Sud — canne à sucre (sécheresse OU excès)"
+    source: "Open-Meteo lat=-21.2, lon=-48.1 (Ribeirão Preto SP)"
+    cle_courante: "meteo_bresil_canne_sucre"
+    normalisation: "zscore_abs"
+    zscore_window: 60
+    zscore_div: 2
+    zscore_centre: 0.0
+    cap: 1.0
+    signe: 1
+    poids: 10
+    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 1.0 }
+    effet_long: "Sécheresse OU excès de pluie (rendements dégradés)"
+    effet_short: "Conditions normales (récolte en ligne)"
+
+  # Attractivité éthanol Brésil — proxy Brent (XBR/USD, Twelve natif déjà câblé).
+  # Brent monte => éthanol attractif => le Brésil mouline moins de sucre => HAUSSIER.
+  # Proxy documenté (prix éthanol ESALQ payant, BR) — non inventé. Nouvelle clé
+  # (signe/logique inversés vs pétrole.yml, cf. appendice audit L023).
+  - id: 2
+    nom: "Attractivité relative éthanol Brésil (proxy Brent/sucre)"
+    source: "Twelve Data XBR/USD (Brent natif, déjà câblé pour pétrole) — proxy éthanol"
+    cle_courante: "brent_ethanol_proxy_sucre"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # direct : Brent monte => éthanol attractif => moins de sucre => HAUSSIER
+    poids: 7
+    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 1.0 }
+    effet_long: "Brent monte (éthanol plus attractif que le sucre)"
+    effet_short: "Brent baisse (usines reviennent au sucre)"
+
+  # USD/BRL — parité sucrière (Twelve USD/BRL, déjà câblé pour café).
+  # Lecture alignée café.yml : USD/BRL baisse (réal fort) => moins de pression à
+  # exporter => haussier sucre. Signe -1. Nouvelle clé (pertinences propres au sucre).
+  - id: 3
+    nom: "Taux de change dollar / réal brésilien"
+    source: "Twelve Data USD/BRL (déjà câblé — café.yml cle usd_brl)"
+    cle_courante: "usd_brl_sucre"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : USD/BRL baisse (réal fort) => haussier sucre
+    poids: 6
+    pertinence: { "24h": 0.4, "7j": 0.8, "1m": 0.9 }
+    effet_long: "Réal fort (USD/BRL baisse) — marges export réduites"
+    effet_short: "Réal faible (USD/BRL monte) — pression export Brésil"
+
+  # COT sucre ICE — positionnement spéculatif.
+  # CFTC : "SUGAR NO. 11 - ICE FUTURES U.S.". Ajouté à CFTC_MARKETS.
+  - id: 4
+    nom: "Positionnement des gros spéculateurs (sucre ICE No. 11)"
+    source: "CFTC Socrata jun7-fc8e — SUGAR NO. 11 - ICE FUTURES U.S."
+    cle_courante: "cftc_cot_sugar"
+    normalisation: "zscore"
+    zscore_window: 252
+    zscore_div: 2
+    cap: 1.0
+    signe: -1                    # inversé : nets SHORT extreme => LONG (squeeze)
+    poids: 6
+    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 1.0 }
+    effet_long: "Nets SHORT extreme (squeeze à venir)"
+    effet_short: "Nets LONG extreme (positions chargées)"
+
+  # Tendance CANE (20 jours) — Twelve natif.
+  - id: 5
+    nom: "Tendance du sucre CANE (20 jours)"
+    source: "Twelve Data CANE (NYSE/USD)"
+    cle_courante: "momentum_prix_20j_sucre"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 6
+    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }
+    effet_long: "CANE en tendance haussière (z>+1)"
+    effet_short: "CANE en tendance baissière (z<-1)"
+
+  # Tendance CANE (7 jours).
+  - id: 6
+    nom: "Tendance du sucre CANE (7 jours)"
+    source: "Twelve Data CANE (NYSE/USD)"
+    cle_courante: "momentum_prix_7j_sucre"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 6
+    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 0.2 }
+    effet_long: "CANE en tendance haussière (z>+1)"
+    effet_short: "CANE en tendance baissière (z<-1)"
+
+  # Production Inde/Thaïlande — news-driven (triplet DeepSeek).
+  # ISMA (Inde) / OCSB (Thaïlande) non disponibles en API gratuite.
+  - id: 7
+    nom: "Production et exports Inde + Thaïlande (restrictions / abondance)"
+    source: "events-log (news IA DeepSeek — triplet)"
+    cle_courante: "prod_inde_thai_sucre"
+    normalisation: "triplet"    # +1 restriction export / pénurie / 0 / -1 abondance
+    cap: 1.0
+    signe: 1
+    poids: 5
+    pertinence: { "24h": 0.6, "7j": 0.9, "1m": 0.7 }
+    effet_long: "Restriction export Inde OU mauvaise récolte Thaïlande"
+    effet_short: "Inde lève les restrictions / bonne récolte Thaïlande"
+
+  # Exports Brésil (UNICA/MAPA) — news-driven (triplet DeepSeek).
+  # UNICA bi-mensuel, pas d'API temps réel. Baisse exports => offre mondiale réduite
+  # => haussier.
+  - id: 8
+    nom: "Rythme des exports sucre Brésil (UNICA / ports)"
+    source: "events-log (news IA DeepSeek — triplet)"
+    cle_courante: "exports_bresil_sucre"
+    normalisation: "triplet"    # +1 recul exports / 0 / -1 accélération exports
+    cap: 1.0
+    signe: 1                     # baisse exports Brésil => offre mondiale réduite => HAUSSIER
+    poids: 4
+    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 0.8 }
+    effet_long: "Recul exports Brésil (offre mondiale resserrée)"
+    effet_short: "Exports Brésil accélèrent (offre abondante)"
+
+  # GATE — drapeau hors score. Clé partagée gate_regime_extreme (résolu par actif
+  # via fiche_key, asset-aware). Aligné sur les 12 fiches existantes.
+  - id: 9
+    nom: "Drapeau : événement de marché majeur imminent"
+    source: "events-log + calendrier"
+    cle_courante: "gate_regime_extreme"
+    normalisation: "gate"
+    pertinence: { "24h": 1.0, "7j": 1.0, "1m": 1.0 }
+    effet_short: "UNICA bi-mensuel <48h OU annonce ISMA quota export OU récolte Brésil début/fin campagne (avr/nov)"

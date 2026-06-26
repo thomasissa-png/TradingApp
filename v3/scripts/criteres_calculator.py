@@ -640,6 +640,10 @@ CFTC_MARKETS = {
     "cftc_cot_coffee":      "COFFEE C - ICE FUTURES U.S.",
     "cftc_cot_eur_nets":    "EURO FX - CHICAGO MERCANTILE EXCHANGE",
     "cftc_cot_vix_nets":    "VIX FUTURES - CBOE FUTURES EXCHANGE",
+    # Nouveaux actifs 2026-06-26 (noms exacts vérifiés sur Socrata jun7-fc8e) :
+    "cftc_cot_jpy_nets":    "JAPANESE YEN - CHICAGO MERCANTILE EXCHANGE",   # USD/JPY
+    "cftc_cot_cotton":      "COTTON NO. 2 - ICE FUTURES U.S.",             # Coton
+    "cftc_cot_sugar":       "SUGAR NO. 11 - ICE FUTURES U.S.",            # Sucre
 }
 
 
@@ -782,6 +786,20 @@ FRED_SPREADS = {
     # (≈ Bund) est en revanche publié par l'ECB Data Portal API (gratuit, sans clé)
     # via la courbe AAA zone euro → câblé hors FRED_SPREADS (cf. ECB_* + handler
     # dédié _handle_diff_2y_us_de). On ne mappe donc PAS ici differentiel_taux_2y_us_de.
+    #
+    # ── USD/JPY (nouvel actif 2026-06-26) ──
+    # Différentiel de taux US − Japon. La série Japon retenue est
+    # IRLTLT01JPM156N (OECD « long-term government bond yield », Japon, ≈ 10Y,
+    # MENSUELLE) : id VÉRIFIÉ sur FRED (le draft d'audit citait IRGTLT01JPM156N qui
+    # est un 404 — corrigé). Même famille de série que l'Allemagne (IRLTLT01DEM156N)
+    # et la France (IRLTLT01FRM156N) déjà câblées. fetch_fred_spread fait le
+    # forward-fill (LOCF) de la série JP mensuelle sur la grille US quotidienne.
+    "diff_taux_10y_us_jp": ("DGS10", "IRLTLT01JPM156N"),
+    # 2Y US − JP : FRED ne publie PAS de série quotidienne du JGB 2Y. PROXY MENSUEL
+    # assumé = DGS2 (2Y US, daily) − IRLTLT01JPM156N (JP ≈10Y mensuel). Dégradation
+    # documentée (cf. fiche usdjpy.yml id=1, pertinence 24h volontairement basse).
+    # Un fetcher BOJ stats dédié (JGB 2Y quotidien) reste un chantier futur.
+    "diff_taux_2y_us_jp":  ("DGS2", "IRLTLT01JPM156N"),  # [PROXY : JP 10Y mensuel, pas 2Y]
 }
 
 # ── ECB Data Portal API (gratuit, sans clé) — Bund 2 ans (proxy AAA euro) ──
@@ -1530,6 +1548,10 @@ METEO_CRITERIA = {
     "meteo_australie_dryland":      (-33.0, 147.0, 60),  # NSW/VIC wheatbelt — blé
     "meteo_bresil_minas_gerais":    (-19.9, -43.9, 60),  # Minas Gerais — café arabica
     "noaa_drought_midwest_plains":  (39.0, -98.0, 60),   # US Plains (KS) — blé HRW/SRW
+    # Nouveaux actifs 2026-06-26 (coords du draft d'audit, zscore_abs côté fiche) :
+    "meteo_texas_cotton_precip":    (33.5, -101.9, 60),  # Lubbock TX — coton US
+    "meteo_inde_gujarat_coton":     (22.3, 72.6, 60),    # Gujarat — coton Inde
+    "meteo_bresil_canne_sucre":     (-21.2, -48.1, 60),  # Ribeirão Preto SP — canne à sucre
 }
 
 
@@ -1732,6 +1754,7 @@ TWELVE_SYMBOLS = {
     # Twelve est blacklisté → fallback yfinance bloqué CI. Pas d'entrée Twelve ici.
     "vix_risk_off_proxy":    "^VIX",
     "niveau_vix_absolu":     "^VIX",
+    "vix_risk_usdjpy":       "^VIX",         # USD/JPY (2026-06-26) — nouvelle clé, signe -1 côté fiche (L023, ne réutilise pas niveau_vix_absolu)
     "vix_regime":            "^VIX",         # mapping non-monotone
     "vxn_regime":            "^VXN",         # yfinance (Nasdaq vol index)
     "v2x_regime":            "^STOXX50EVOL", # VSTOXX — Twelve gratuit ne l'expose pas
@@ -1815,6 +1838,22 @@ TWELVE_SYMBOLS = {
     "momentum_prix_7j_sp500":   "SPY",
     "momentum_prix_7j_nasdaq":  "QQQ",
     "momentum_prix_7j_cac40":   "^FCHI",
+    # Nouveaux actifs 2026-06-26 — momentum 20j/7j. USD/JPY via USDJPY=X (mappé
+    # USD/JPY natif Twelve dans market_data) ; coton/sucre via COTN/CANE (passthrough
+    # Twelve). Branche dédiée `momentum_prix_*j_` du dispatcher (variation puis
+    # z-score de la série de rendements). Donnée absente → None = n/a propre.
+    "momentum_prix_20j_usdjpy": "USDJPY=X",
+    "momentum_prix_7j_usdjpy":  "USDJPY=X",
+    "momentum_prix_20j_coton":  "COTN",
+    "momentum_prix_7j_coton":   "COTN",
+    "momentum_prix_20j_sucre":  "CANE",
+    "momentum_prix_7j_sucre":   "CANE",
+    # Sucre — nouvelles clés réutilisant des SOURCES déjà câblées (L023 : nouvelle
+    # clé, signe/pertinence propres au sucre). brent_ethanol_proxy_sucre via BZ=F
+    # (mappé XBR/USD natif Twelve, comme pétrole) ; usd_brl_sucre via USDBRL=X
+    # (mappé USD/BRL, comme café). z-score mono-symbole (dispatcher standard).
+    "brent_ethanol_proxy_sucre": "BZ=F",
+    "usd_brl_sucre":             "USDBRL=X",
     # --- Term structure brent (front + M2 indispo plan Grow → n/a explicite) ---
     "brent_term_structure_m1m2": ("BZ=F", "BZ=F"),
     # --- Flux ETF (proxy : variation de prix 5j) ---
@@ -2113,12 +2152,18 @@ _GATE_KEYWORDS = {
     "cacao": ("harmattan", "icco", "eudr"),
     "ble": ("wasde", "mer noire", "black sea", "corridor"),
     "vix": ("fomc", "cpi", "nfp", "ecb"),
+    # Nouveaux actifs 2026-06-26.
+    "usdjpy": ("boj", "bank of japan", "intervention", "fomc", "nfp", "cpi", "yen"),
+    "coton": ("wasde", "usda", "drought", "sécheresse", "xinjiang", "cotlook"),
+    "sucre": ("unica", "isma", "ethanol", "export ban", "drought", "sécheresse"),
 }
 # id actif IA (extractor) → clé de fiche
 _IA_TO_FICHE = {
     "BRENT": "petrole", "GOLD": "or", "SILVER": "argent", "CAC40": "cac40",
     "SP500": "sp500", "NASDAQ": "nasdaq", "EURUSD": "eurusd", "COPPER": "cuivre",
     "COFFEE": "cafe", "COCOA": "cacao", "WHEAT": "ble", "VIX": "vix",
+    # Nouveaux actifs 2026-06-26.
+    "USDJPY": "usdjpy", "COTTON": "coton", "SUGAR": "sucre",
 }
 
 

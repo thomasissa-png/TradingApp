@@ -29,7 +29,7 @@ import extractor as ex  # noqa: E402
 
 REPORT = ROOT / "data" / "test-extraction-report.md"
 IA_TO_ACTIF = {
-    "CAC40": "cac_40", "SP500": "sp500", "NASDAQ": "nasdaq", "EURUSD": "eurusd",
+    "CAC40": "cac40", "SP500": "sp500", "NASDAQ": "nasdaq", "EURUSD": "eurusd",
     "BRENT": "petrole", "VIX": "vix", "GOLD": "or", "SILVER": "argent",
     "COPPER": "cuivre", "COFFEE": "cafe", "COCOA": "cacao", "WHEAT": "ble",
 }

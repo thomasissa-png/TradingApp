@@ -15,7 +15,7 @@ Ce que ce fichier prouve :
   porte le net (`source_track="ia_synthese"`, val signée) ; l'AUTRE est
   keyword-only et vaut 0 en l'absence de news dédiée.
 - Non-régression : les actifs MONO-créneau news IA (or, argent, cafe, ble,
-  cac_40, nasdaq, vix) portent toujours le net sur leur unique créneau.
+  cac40, nasdaq, vix) portent toujours le net sur leur unique créneau.
 """
 
 from __future__ import annotations
@@ -114,7 +114,7 @@ MONO_CRENEAU = [
     ("argent", "demande_photovoltaique_et_mining_strikes"),
     ("cafe", "maladies_cabosses"),
     ("ble", "geopol_mer_noire"),
-    ("cac_40", "tension_politique_fr"),
+    ("cac40", "tension_politique_fr"),
     ("nasdaq", "sentiment_ia_megacaps"),
     ("vix", "tension_geopolitique_active"),
 ]

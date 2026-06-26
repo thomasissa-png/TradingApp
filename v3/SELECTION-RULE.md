@@ -310,3 +310,13 @@ règle, NI le kill-criterion.
 **Correctif (sémantique de mesure, scopé aux continus).** Référence du 24h des continus = **prix d'ÉMISSION 7h** (le moment où Thomas lit et peut agir ; un continu cote en continu à 7h ⇒ prix live valide), alignement **L021** (« mesurer depuis le point d'exécution réel »). Les **non-continus** (indices cash CAC 9h / S&P-Nasdaq 15h30, VIX) restent mesurés depuis l'**ouverture de marché** (fermés à 7h ⇒ un prix de 7h serait un prix de nuit). Implémenté dans `journaliste._resolve_prix_reference` (group-aware via `mesure_ouverture.actif_group`).
 
 **Reset : 8 continus au 2026-06-17** (or `GC=F`, argent `SI=F`, pétrole `BZ=F`, cuivre `HG=F`, cacao `CC=F`, café `KC=F`, blé `ZW=F`, EUR/USD `EUR=X`). `ref_changed` avance au **1er bulletin sous la nouvelle sémantique = 2026-06-17** (`ref-changed.json`, append-only, justification CHANGELOG). **4e reset des continus — coût assumé, VRAI défaut corrigé (dit honnêtement)** : le WR tradable des continus mesuré sous l'ancienne sémantique n'était pas comparable (il cachait des pertes). Les non-continus (`^GSPC`, `^IXIC`, `^FCHI`, `^VIX`) gardent leur `ref_changed` 2026-06-11. La règle de sélection (WR tradable ≥ 70 % / N ≥ 15, 24h-only) reste **inchangée** ; **aucun poids ni seuil de fiche n'est touché**. Test-verrou : `tests/test_verrou_l027_mesure_continu.py`.
+
+---
+
+## Addendum — 2026-06-26 : 3 nouveaux actifs (USD/JPY, Coton, Sucre) entrent en shadow
+
+> Append-only. La règle gravée (WR tradable ≥ 70 % / N ≥ 15, 24h-only, à J+60) reste **inchangée**. Cet addendum ne fait qu'**élargir l'univers** de 12 à 15 cellules.
+
+**Ajout.** USD/JPY (`USD/JPY`, fx, continu), Coton (`COTN`, agri-softs, continu) et Sucre (`CANE`, agri-softs, continu) sont introduits en mode shadow. Les 3 sont des actifs **continus** : leur référence de mesure 24h est le **prix d'émission 7h** (alignement L027/L021, comme les autres continus). Fiches `config/fiches/{usdjpy,coton,sucre}.yml`.
+
+**Reset / warm-up.** Ce ne sont PAS des resets : ce sont des **introductions**. Les 12 actifs existants ne sont **pas touchés** (historique et `ref_changed` préservés, zéro reset). Les 3 nouvelles cellules entrent dans `ref-changed.json` (clés = `ticker_principal` : `USD/JPY`, `COTN`, `CANE`) avec `ref_changed = 2026-06-26` → warm-up à zéro, seules les observations datées >= 26/06 comptent. La règle de sélection s'évalue pour elles à partir du 26/06 (N≥15 / WR≥70 % à leur propre J+60). **Aucun poids ni seuil de fiche n'est touché.** Critères sans source publique gratuite = n/a propre ou triplet news (zéro invention).

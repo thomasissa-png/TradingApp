@@ -207,6 +207,12 @@ _TICKER_MAP: dict[str, tuple[str, dict]] = {
     "CC=F": ("CC1", {"type": "commodities"}),    # Cocoa
     "KC=F": ("KC1", {"type": "commodities"}),    # Coffee
     "SB=F": ("SB1", {"type": "commodities"}),    # Sugar
+    # Nouveaux actifs 2026-06-26 — ETC/ETF tracant les futures softs, cotés en USD.
+    # ticker_principal des fiches = COTN / CANE (Twelve natif, cf. audit) ; on les
+    # mappe ici en passthrough pour que market_data les route vers Twelve (pas vers
+    # le fallback yfinance bloqué CI). Donnée absente côté Twelve → None = n/a propre.
+    "COTN": ("COTN", {}),   # WisdomTree Cotton ETC (futures ICE Cotton No. 2) — Coton
+    "CANE": ("CANE", {}),   # Teucrium Sugar Fund (futures ICE Sugar No. 11) — Sucre
     "OJ=F": ("JO1", {"type": "commodities"}),    # Orange Juice
     # Livestock
     "LE=F": ("LC1", {"type": "commodities"}),    # Live Cattle

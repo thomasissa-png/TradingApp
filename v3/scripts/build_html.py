@@ -791,14 +791,14 @@ def render_html(
   main h1, main h2, main h3 {{ color: var(--text); }}
   main h1 {{
     font-size: 28px; font-weight: 800; letter-spacing: -0.02em;
-    border-bottom: 2px solid var(--border); padding-bottom: 12px; margin-top: 8px;
+    border-bottom: 2px solid var(--border); padding-bottom: 14px; margin-top: 16px;
     line-height: 1.25;
   }}
   /* H2 : repère d'accent à gauche (barre verticale) qui donne une identité à
      chaque section sans alourdir — l'œil retrouve les sections d'un coup. */
   main h2 {{
     font-size: 21px; font-weight: 700; letter-spacing: -0.01em;
-    margin-top: 42px; padding: 2px 0 8px 14px; position: relative;
+    margin-top: 36px; padding: 4px 0 10px 14px; position: relative;
     border-bottom: 1px solid var(--border); scroll-margin-top: 104px;
   }}
   main h2::before {{
@@ -806,7 +806,7 @@ def render_html(
     width: 4px; border-radius: 3px;
     background: linear-gradient(var(--accent), var(--accent-strong));
   }}
-  main h3 {{ font-size: 16.5px; font-weight: 700; margin-top: 26px; scroll-margin-top: 104px; }}
+  main h3 {{ font-size: 16.5px; font-weight: 700; margin-top: 20px; scroll-margin-top: 104px; }}
   main p {{ margin: 11px 0; }}
   /* Paragraphe d'accroche (premier paragraphe d'une vue, sous le H1) : un peu
      plus grand, posé, pour inviter à la lecture. */
@@ -821,14 +821,14 @@ def render_html(
     border: 1px solid var(--border);
     border-left: 3px solid var(--accent);
     border-radius: 10px;
-    padding: 16px 20px;
+    padding: 16px 24px;
     margin: 18px 0 8px;
     box-shadow: var(--shadow-sm);
   }}
   .decision-selection > h3:first-child {{ margin-top: 0; }}
   .decision-selection .table-wrap {{ margin-bottom: 0; }}
   @media (max-width: 640px) {{
-    .decision-selection {{ padding: 12px 12px; border-radius: 6px; }}
+    .decision-selection {{ padding: 12px 16px; border-radius: 6px; }}
   }}
   /* Wrapper de table pour scroll horizontal mobile propre. [Point #2] Indice de
      scroll : une ombre dégradée sur le bord droit signale qu'on peut faire
@@ -837,7 +837,7 @@ def render_html(
   .table-wrap {{
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    margin: 16px 0;
+    margin: 20px 0;
     border: 1px solid var(--border);
     border-radius: 8px;
     box-shadow: var(--shadow-sm);
@@ -853,7 +853,7 @@ def render_html(
   main table {{ border-collapse: collapse; margin: 0; font-size: 13.5px; width: 100%; }}
   main table th, main table td {{
     border-bottom: 1px solid var(--border);
-    padding: 10px 13px; text-align: left;
+    padding: 10px 16px; text-align: left;
     vertical-align: top;
   }}
   main table th {{
@@ -1050,11 +1050,11 @@ def render_html(
   }}
   /* Vue Aujourd'hui : un groupe replié par jour, chaque rapport en sous-bloc */
   .today-day {{
-    border: 1px solid var(--border); border-radius: 10px; margin: 0 0 18px 0;
+    border: 1px solid var(--border); border-radius: 10px; margin: 0 0 24px 0;
     background: var(--bg-panel); overflow: hidden; box-shadow: var(--shadow-sm);
   }}
   .today-day > summary {{
-    cursor: pointer; padding: 12px 16px; font-weight: 600; font-size: 15px;
+    cursor: pointer; padding: 14px 20px; font-weight: 600; font-size: 15px;
     color: var(--text); list-style: none; user-select: none;
     display: flex; align-items: center; gap: 10px;
   }}
@@ -1069,7 +1069,7 @@ def render_html(
   }}
   .today-report {{ border-top: 1px solid var(--border); }}
   .today-report > summary {{
-    cursor: pointer; padding: 10px 16px 10px 32px; font-weight: 600; font-size: 13.5px;
+    cursor: pointer; padding: 12px 20px 12px 32px; font-weight: 600; font-size: 13.5px;
     color: var(--accent); list-style: none; user-select: none;
     display: flex; align-items: center; gap: 8px;
   }}
@@ -1079,7 +1079,7 @@ def render_html(
     color: var(--text-muted);
   }}
   .today-report[open] > summary::before {{ transform: rotate(90deg); }}
-  .today-report .report-body {{ padding: 4px 18px 16px 32px; }}
+  .today-report .report-body {{ padding: 16px 24px 24px 28px; }}
   .today-report .report-tag {{
     font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
     padding: 2px 7px; border-radius: 10px; background: var(--accent-bg); color: var(--accent);
@@ -1160,6 +1160,7 @@ def render_html(
        le contenu déborde sous un footer mal placé (bug iOS Safari 25/06). */
     .layout {{ display: block; min-height: 0; }}
     main {{ width: 100%; }}
+    .content-inner {{ padding: 20px 16px 40px; }}
     .page-hero {{ padding: 32px 16px 28px; }}
     .hero-stats {{ gap: 8px; }}
     .hero-stat {{ padding: 10px 14px; min-width: 0; flex: 1; }}
@@ -1225,7 +1226,7 @@ def render_html(
        « % vs ouv. 12h ». */
     .selection-progression, .bilan-perf-table {{ font-size: 12px; }}
     .selection-progression th, .selection-progression td,
-    .bilan-perf-table th, .bilan-perf-table td {{ padding: 7px 6px; }}
+    .bilan-perf-table th, .bilan-perf-table td {{ padding: 7px 10px; }}
     /* [Fondateur 24/06] On ne MASQUE plus aucune colonne de ces tables : les
        colonnes clés (% 12h, % 18h, Max gain, Gagné > 1 %) sont à GAUCHE donc
        visibles d'emblée ; si la largeur dépasse, la table scrolle horizontalement

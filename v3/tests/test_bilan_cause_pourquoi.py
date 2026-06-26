@@ -407,3 +407,64 @@ def test_render_variations_24h_colonnes():
             "| Max du jour | Joué | Raison du mouvement |") in md
     assert ("Or | SHORT | -7.50 | 4500 | +0.55% | +2.10% | +4.20% | +4.38% | Oui | "
             "Fed hawkish") in md
+
+
+# ===========================================================================
+# POURQUOI le marché a fait l'inverse (pari perdant) — enrichissement 26/06
+# ===========================================================================
+
+DJ2 = date(2026, 6, 26)
+
+
+def _measure_perdant(actif, call, delta):
+    """Mesure perdante mock : outcome FAUSSE, delta contre le call."""
+    from journaliste import OUTCOME_FAUSSE  # noqa: PLC0415
+    return NS(cell=NS(actif_name=actif), outcome=OUTCOME_FAUSSE, delta_pct=delta)
+
+
+def test_post_mortem_cause_adverse_news_medium(tmp_path: Path):
+    """Pari perdant : le bilan dit POURQUOI le marché a fait l'inverse, même via une
+    news MEDIUM cohérente avec le mouvement adverse (Argent SHORT, marché monté)."""
+    p = tmp_path / "events-log.md"
+    p.write_text(
+        HEADER
+        + "<!-- batch 2026-06-26T09:00:00Z : 1 events -->\n"
+        + _row_dir("2026-06-26", "Silver rallies on industrial demand", "SILVER", "LONG", "medium", "s1"),
+        encoding="utf-8",
+    )
+    meas = [_measure("Argent", "SHORT", 3.62, 0.6)]
+    perf = bj.compute_perf_top3(meas, {("Argent", "24h"): True}, {}, date_j=DJ2, events_path=p)
+    bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
+    bilan.perf_top3 = perf
+    bilan.measures_24h = [_measure_perdant("Argent", "SHORT", 3.62)]
+    joined = "\n".join(bj._points_faibles_jour(bilan))
+    assert "Le marché a monté sur : Silver rallies on industrial demand" in joined
+
+
+def test_post_mortem_divergence_sans_catalyseur(tmp_path: Path):
+    """Pari perdant SANS news adverse → le bilan explique la DIVERGENCE (le marché
+    n'a pas suivi le signal), au lieu du laconique « a fait l'inverse »."""
+    p = tmp_path / "events-log.md"
+    p.write_text(HEADER + "<!-- batch 2026-06-26T09:00:00Z : 0 events -->\n", encoding="utf-8")
+    meas = [_measure("Argent", "SHORT", 3.62, 0.6)]
+    perf = bj.compute_perf_top3(meas, {("Argent", "24h"): True}, {}, date_j=DJ2, events_path=p)
+    bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
+    bilan.perf_top3 = perf
+    bilan.measures_24h = [_measure_perdant("Argent", "SHORT", 3.62)]
+    joined = "\n".join(bj._points_faibles_jour(bilan))
+    assert "sans catalyseur news identifié" in joined
+    assert "divergence" in joined.lower()
+
+
+def test_learning_contresens_sans_cause_explique_le_recit():
+    """Learning contre-sens SANS cause tracée → explique que le récit n'a pas tenu
+    (au lieu du laconique « Driver à réexaminer » seul)."""
+    bilan = bj.BilanJour(date_j=DJ, now=datetime(2026, 6, 18, 22, 15))
+    bilan.gros_moves_autres = [
+        bj.GrosMoveAutre(
+            actif="Cacao", call="LONG", mouvement_pct=-2.62, direction_juste=False,
+            raison_non_select="couverture insuffisante", apprentissage="x", cause_move=None,
+        )
+    ]
+    joined = "\n".join(bj._learnings_jour(bilan))
+    assert "récit haussier n'a pas tenu" in joined

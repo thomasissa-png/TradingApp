@@ -532,11 +532,13 @@ def _events_high_actif_apres(
     date_j: date,
     apres_heure_paris: Optional[int],
     events_path: Optional[Path] = None,
+    materialites: Tuple[str, ...] = ("high",),
 ) -> List[dict]:
-    """Events high sur `actif_label`, ingérés le jour J (et après `apres_heure_paris`).
+    """Events sur `actif_label`, ingérés le jour J (et après `apres_heure_paris`).
 
     Lecture seule de l'events-log (parser briefing, horodatage de batch). Filtre :
-    - matérialité == high ;
+    - matérialité ∈ `materialites` (par défaut high seul ; ("high","medium") pour
+      élargir un post-mortem quand aucune news high n'explique le mouvement) ;
     - actif principal de l'event == actif_label (mapping IA, cf. briefing) ;
     - ingéré le jour `date_j` ; si `apres_heure_paris` fourni, ingéré APRÈS cette
       heure (Paris). Un event sans horodatage d'ingestion lisible est EXCLU (zéro
@@ -559,7 +561,7 @@ def _events_high_actif_apres(
 
     out: List[dict] = []
     for ev in events:
-        if (ev.get("materiality", "") or "").lower() != "high":
+        if (ev.get("materiality", "") or "").lower() not in materialites:
             continue
         ts = ev.get("ingest_ts")
         if not isinstance(ts, datetime):
@@ -635,16 +637,19 @@ def cause_news_high_dir(
     sens: str,
     apres_heure_paris: Optional[int] = None,
     events_path: Optional[Path] = None,
+    materialites: Tuple[str, ...] = ("high",),
 ) -> Optional[str]:
-    """News high la plus fraîche sur `actif_label` dont l'impact IA va dans le sens
+    """News la plus fraîche sur `actif_label` dont l'impact IA va dans le sens
     `sens` (LONG/SHORT). Garantit la COHÉRENCE direction news ↔ contexte d'affichage :
     - pro-call (sens = notre call) → « pourquoi on a pris/gagné ce pari » (sections 1 & 3) ;
     - contre-call (sens = inverse du call) → « ce qui nous a battus » (post-mortem section 4).
+    `materialites` : par défaut high seul ; ("high","medium") élargit un post-mortem
+    quand aucune news high n'explique le mouvement adverse.
     None si aucune news cohérente (zéro invention : pas de titre à contre-sens affiché)."""
     sens = (sens or "").upper()
     if sens not in ("LONG", "SHORT"):
         return None
-    for ev in _events_high_actif_apres(actif_label, date_j, apres_heure_paris, events_path):
+    for ev in _events_high_actif_apres(actif_label, date_j, apres_heure_paris, events_path, materialites):
         if _event_dir_pour_actif(ev, actif_label) == sens:
             resume = _resume_news(ev)
             if resume:
@@ -679,6 +684,10 @@ class PerfTop3Ligne:
     # l'heure du pic) ou None si non identifiée (zéro invention). Renseigné SEULEMENT
     # quand le pic a reflué avant la clôture (sinon pas de repli à expliquer).
     cause_repli: Optional[str] = None
+    # POURQUOI le marché a fait l'inverse (pari perdant) : news cohérente avec le
+    # mouvement ADVERSE sur la journée (high puis medium). None si aucun catalyseur
+    # news → le bilan dira « divergence, sans catalyseur » (zéro invention).
+    cause_adverse: Optional[str] = None
     # VRAIE raison du call (drivers dominants du score à l'émission, decision-log) —
     # « pourquoi on a pris ce pari ». Aligné avec le bilan semaine. None si non tracé.
     raison_call: Optional[str] = None
@@ -809,6 +818,19 @@ def compute_perf_top3(
                 cause_repli = cause_news_high_dir(
                     actif, date_j, opp, _PIC_HEURE_PARIS.get(pic_heure), events_path
                 )
+        # POURQUOI le marché a fait l'inverse (post-mortem d'un pari perdant) : news
+        # cohérente avec le mouvement ADVERSE sur TOUTE la journée (high d'abord,
+        # puis medium si rien). Indépendant du repli (couvre aussi un pari qui n'a
+        # JAMAIS été en notre faveur, type Argent +3.62 %). None → divergence sans
+        # catalyseur (le bilan le dit honnêtement, zéro invention).
+        cause_adverse = None
+        opp_jour = "SHORT" if call == "LONG" else "LONG" if call == "SHORT" else None
+        if opp_jour and date_j is not None:
+            cause_adverse = cause_news_high_dir(actif, date_j, opp_jour, None, events_path)
+            if not cause_adverse:
+                cause_adverse = cause_news_high_dir(
+                    actif, date_j, opp_jour, None, events_path, materialites=("high", "medium")
+                )
         # VRAIE raison du call = drivers dominants du score (decision-log), comme le
         # bilan semaine. Source unique journaliste.drivers_du_call. None si non tracé.
         raison_call = None
@@ -840,6 +862,7 @@ def compute_perf_top3(
             pic_valeur=(round(pic_valeur, 2) if pic_valeur is not None else None),
             pic_heure=pic_heure, points_manquants=manquants, verdict=verdict,
             vendre_reco=vendre_map.get(actif), cause_repli=cause_repli,
+            cause_adverse=cause_adverse,
             raison_call=raison_call,
             max_gain_pct=(round(mg, 2) if isinstance(mg, (int, float)) else None),
             score_conviction=score_conv,
@@ -967,6 +990,10 @@ def compute_gros_moves_autres(
         cause_move = None
         if date_j is not None and sens_move:
             cause_move = cause_news_high_dir(actif, date_j, sens_move, None, events_path)
+            if cause_move is None:
+                cause_move = cause_news_high_dir(
+                    actif, date_j, sens_move, None, events_path, materialites=("high", "medium")
+                )
         if cause_move is None and rec is not None and sens_move:
             from journaliste import drivers_du_call  # noqa: PLC0415
             drv = drivers_du_call(rec, sens_move)
@@ -1801,9 +1828,17 @@ def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
             continue
         ligne = f"{p.actif} {p.call} ({_fmt_pct(delta_by.get(p.actif))}) raté"
         if p.raison_call:
-            ligne += f" : on a suivi {p.raison_call}, le marché a fait l'inverse"
+            ligne += f" : on a suivi {p.raison_call}"
         else:
             ligne += " : call à contre-sens du marché"
+        # POURQUOI le marché est parti dans l'autre sens (le manque signalé par le
+        # fondateur). SHORT perdant → marché monté ; LONG perdant → marché reculé.
+        sens_marche = "monté" if p.call == "SHORT" else "reculé" if p.call == "LONG" else "bougé"
+        if p.cause_adverse:
+            ligne += f". Le marché a {sens_marche} sur : {p.cause_adverse}"
+        else:
+            ligne += (f". Le marché a {sens_marche} sans catalyseur news identifié : "
+                      "il n'a pas suivi notre signal (divergence quant ↔ marché)")
         if p.cause_repli:
             ligne += f" ({p.cause_repli})"
         pts.append(ligne + ".")
@@ -1849,12 +1884,22 @@ def _learnings_jour(bilan: "BilanJour") -> List[str]:
             break
 
     # News Trader — call à CONTRE-SENS d'un gros move : le driver nous a trompés.
+    # POURQUOI (exigence fondateur) : si un catalyseur du mouvement adverse est tracé
+    # → on le nomme ; sinon on explique honnêtement la divergence (le récit qui
+    # portait notre call n'a pas tenu, sans catalyseur news), zéro invention.
     for g in bilan.gros_moves_autres:
         if g.direction_juste is False:
-            cause = f", porté par {g.cause_move}" if g.cause_move else ""
+            if g.cause_move:
+                detail = f", porté par {g.cause_move}. Driver à réexaminer."
+            else:
+                recit = "haussier" if g.call == "LONG" else "baissier" if g.call == "SHORT" else "directionnel"
+                detail = (
+                    f" sans catalyseur news : notre récit {recit} n'a pas tenu, le marché "
+                    "a fait l'inverse du signal. Driver à réexaminer (pondérer ce moteur)."
+                )
             out.append(
                 f"💡 News Trader : call à contre-sens sur {g.actif} "
-                f"({_fmt_pct(g.mouvement_pct)} contre nous{cause}). Driver à réexaminer."
+                f"({_fmt_pct(g.mouvement_pct)} contre nous){detail}"
             )
             break
 

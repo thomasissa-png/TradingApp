@@ -400,9 +400,10 @@ def test_variations_24h_joue_via_selection(tmp_path: Path):
 def test_render_variations_24h_colonnes():
     v = bj.Variation24h(jour=date(2026, 6, 18), actif="Or", prix_entree=4500.0,
                         perf_12h=0.55, perf_18h=2.10, perf_cloture_fav=4.2,
-                        max_jour=4.38, joue=True, call="SHORT", raison="Fed hawkish")
+                        max_jour=4.38, joue=True, call="SHORT", raison="Fed hawkish",
+                        conviction=-7.5)
     md = bj.render_variations_24h([v])
-    assert ("| Jour | Actif | Call | Prix d'entrée | % 12h | % 18h | % clôture "
+    assert ("| Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture "
             "| Max du jour | Joué | Raison du mouvement |") in md
-    assert ("Or | SHORT | 4500 | +0.55% | +2.10% | +4.20% | +4.38% | Oui | "
+    assert ("Or | SHORT | -7.50 | 4500 | +0.55% | +2.10% | +4.20% | +4.38% | Oui | "
             "Fed hawkish") in md

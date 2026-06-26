@@ -687,6 +687,9 @@ class PerfTop3Ligne:
     max_gain_pct: Optional[float] = None
     # |score| de conviction (decision-log) pour classer Top 1 / Top 3. None si absent.
     score_conviction: Optional[float] = None
+    # Note de conviction SIGNÉE (score_pm1 → score_pond), affichée dans le tableau —
+    # MÊME source que le Suivi (conviction_signee) : « +3.24 », « -9.51 ». None si absent.
+    score_conviction_signe: Optional[float] = None
 
 
 def _verdict_sortie(
@@ -810,6 +813,7 @@ def compute_perf_top3(
         # bilan semaine. Source unique journaliste.drivers_du_call. None si non tracé.
         raison_call = None
         score_conv = None
+        score_conv_signe = None
         if conviction_records is not None:
             from journaliste import drivers_du_call  # noqa: PLC0415
             rec = conviction_records.get((actif, "24h")) or {}
@@ -822,6 +826,7 @@ def compute_perf_top3(
                 sc = rec.get("score_pond")
             if isinstance(sc, (int, float)):
                 score_conv = abs(float(sc))
+                score_conv_signe = float(sc)
         # Max gain du jour (high/low). Repli sur le pic des relevés si la mesure ne
         # l'a pas fourni (high/low indisponible) — plancher honnête, jamais inventé.
         mg = getattr(m, "max_gain_pct", None)
@@ -838,6 +843,7 @@ def compute_perf_top3(
             raison_call=raison_call,
             max_gain_pct=(round(mg, 2) if isinstance(mg, (int, float)) else None),
             score_conviction=score_conv,
+            score_conviction_signe=(round(score_conv_signe, 2) if score_conv_signe is not None else None),
         ))
     out.sort(key=lambda x: x.actif)
     return out
@@ -1575,20 +1581,22 @@ def _render_intraday_table(bilan: "BilanJour") -> List[str]:
     L.append(
         "| Actif "
         "| <span class=\"c-full\">Call 7h</span><span class=\"c-short\">Call</span> "
+        "| <span class=\"c-full\">Conviction</span><span class=\"c-short\">Conv.</span> "
         "| <span class=\"c-full\">% fav. 12h</span><span class=\"c-short\">12h</span> "
         "| <span class=\"c-full\">% fav. 18h</span><span class=\"c-short\">18h</span> "
         "| <span class=\"c-full\">% fav. clôture</span><span class=\"c-short\">Clôt.</span> "
         "| <span class=\"c-full\">Max gain jour</span><span class=\"c-short\">Max</span> "
         "| Gagné >1% |"
     )
-    L.append("|---|---|---|---|---|---|---|")
+    L.append("|---|---|---|---|---|---|---|---|")
     for p in bilan.perf_top3:
         if isinstance(p.max_gain_pct, (int, float)):
             g = "✅" if gagnant_max_gain(p.max_gain_pct) else "❌"
         else:
             g = "⚪"
+        conv = f"{p.score_conviction_signe:+.2f}" if p.score_conviction_signe is not None else "—"
         L.append(
-            f"| {p.actif} | {p.call} | {_fmt_fav_cell(p.fav_12h)} | "
+            f"| {p.actif} | {p.call} | {conv} | {_fmt_fav_cell(p.fav_12h)} | "
             f"{_fmt_fav_cell(p.fav_18h)} | {_fmt_fav_cell(p.fav_cloture)} | "
             f"{_fmt_fav_cell(p.max_gain_pct)} | {g} |"
         )
@@ -1735,8 +1743,8 @@ def _render_jour_selection(bilan: "BilanJour") -> List[str]:
     # 7 colonnes (Raison sortie en sous-liste) : sous le seuil « table dense » de la
     # page → AUCUNE colonne masquée sur mobile (fondateur 24/06 : 12h/18h/Max gain
     # doivent rester visibles sur téléphone).
-    L.append("| Actif | Call | 12h | 18h | 22h | Max gain jour | Gagné >1% |")
-    L.append("|---|---|---|---|---|---|---|")
+    L.append("| Actif | Call | Conviction | 12h | 18h | 22h | Max gain jour | Gagné >1% |")
+    L.append("|---|---|---|---|---|---|---|---|")
     # Top 1 en tête (conviction max), puis le reste de la sélection.
     perf_ordered = sorted(
         perf,
@@ -1748,8 +1756,9 @@ def _render_jour_selection(bilan: "BilanJour") -> List[str]:
             g = "⚪"
         else:
             g = "✅" if gagnant_max_gain(p.max_gain_pct) else "❌"
+        conv = f"{p.score_conviction_signe:+.2f}" if p.score_conviction_signe is not None else "—"
         L.append(
-            f"| {p.actif} | {p.call} | {_fmt_fav_cell(p.fav_12h)} | "
+            f"| {p.actif} | {p.call} | {conv} | {_fmt_fav_cell(p.fav_12h)} | "
             f"{_fmt_fav_cell(p.fav_18h)} | {_fmt_fav_cell(p.fav_cloture)} | "
             f"{_fmt_fav_cell(p.max_gain_pct)} | {g} |"
         )
@@ -2147,6 +2156,8 @@ class Variation24h:
     joue: bool                     # l'actif était-il dans le top 3 du jour ?
     call: Optional[str]            # notre call (LONG/SHORT)
     raison: Optional[str]          # news cohérente avec le sens du mouvement (ou None)
+    conviction: Optional[float] = None  # note de conviction SIGNÉE 24h (score_pm1 →
+    #                                     score_pond), MÊME source que Suivi/Bilan.
 
 
 def _call_sign(call: Optional[str]) -> Optional[int]:
@@ -2299,6 +2310,7 @@ def variations_24h_significatives(
         records[(str(r.get("actif")), str(r.get("echeance")))] = r
 
     sel_cache: Dict[date, Dict[Tuple[str, str], bool]] = {}
+    conv_cache: Dict[date, Dict[Tuple[str, str], dict]] = {}
     out: List[Variation24h] = []
     for r in records.values():
         try:
@@ -2319,6 +2331,18 @@ def variations_24h_significatives(
             if bdate not in sel_cache:
                 sel_cache[bdate] = load_selection_map(bdate, decision_log_dir)
             joue = bool(sel_cache[bdate].get((actif, "24h"), False))
+        # Note de conviction signée (decision-log du jour d'émission) — MÊME source
+        # que le Suivi/Bilan (score_pm1 → score_pond). None si non tracée.
+        conviction = None
+        if bdate is not None:
+            if bdate not in conv_cache:
+                conv_cache[bdate] = load_conviction_records(bdate, decision_log_dir)
+            crec = conv_cache[bdate].get((actif, "24h")) or {}
+            csc = crec.get("score_pm1")
+            if not isinstance(csc, (int, float)):
+                csc = crec.get("score_pond")
+            if isinstance(csc, (int, float)):
+                conviction = round(float(csc), 2)
         # Raison du mouvement : news high COHÉRENTE avec le sens du mouvement.
         raison = None
         if bdate is not None:
@@ -2353,6 +2377,7 @@ def variations_24h_significatives(
             perf_cloture_fav=perf_cloture_fav, max_jour=max_jour,
             joue=joue, call=call,
             raison=raison,
+            conviction=conviction,
         ))
     out.sort(key=lambda v: (v.jour, v.actif), reverse=True)  # récent → ancien
     return out
@@ -2384,10 +2409,10 @@ def render_variations_24h(variations: List[Variation24h], now: Optional[datetime
         L.append("")
         return "\n".join(L)
     L.append(
-        "| Jour | Actif | Call | Prix d'entrée | % 12h | % 18h | % clôture "
+        "| Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture "
         "| Max du jour | Joué | Raison du mouvement |"
     )
-    L.append("|---|---|---|---|---|---|---|---|---|---|")
+    L.append("|---|---|---|---|---|---|---|---|---|---|---|")
 
     def _fp(v: Optional[float]) -> str:
         return f"{v:.4g}" if isinstance(v, (int, float)) else "—"
@@ -2399,8 +2424,9 @@ def render_variations_24h(variations: List[Variation24h], now: Optional[datetime
         jour = f"{JJ[v.jour.weekday()]} {v.jour.strftime('%d/%m')}"
         call = v.call or "—"
         joue = "Oui" if v.joue else "Non"
+        conv = f"{v.conviction:+.2f}" if isinstance(v.conviction, (int, float)) else "—"
         L.append(
-            f"| {jour} | {v.actif} | {call} | {_fp(v.prix_entree)} | "
+            f"| {jour} | {v.actif} | {call} | {conv} | {_fp(v.prix_entree)} | "
             f"{_pct(v.perf_12h)} | {_pct(v.perf_18h)} | {_pct(v.perf_cloture_fav)} | "
             f"{_pct(v.max_jour)} | {joue} | {v.raison or '—'} |"
         )

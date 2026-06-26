@@ -267,18 +267,18 @@ def test_section1_winrate_top1_top3_sur_max_gain():
                          score_conviction=16.0),
     ]
     md = "\n".join(bj._render_jour_selection(b))
-    # 7 colonnes (Raison en sous-liste) → pas de masquage mobile des colonnes clés.
-    assert "| Actif | Call | 12h | 18h | 22h | Max gain jour | Gagné >1% |" in md
+    # 8 colonnes (Raison en sous-liste) avec Conviction → pas de masquage mobile.
+    assert "| Actif | Call | Conviction | 12h | 18h | 22h | Max gain jour | Gagné >1% |" in md
     assert "| Raison |" not in md          # la raison n'est plus une colonne
     assert "**Pourquoi ces paris (signal à 7h) :**" in md  # ...mais une sous-liste
     # Top 1 = Or (conviction max) et il a RATÉ (max gain 0.33% < 1%).
     assert "**Top 1** (Or) : ❌ raté" in md
     # Top 3 : seul Cacao > 1% → 1/3.
     assert "**Top 3** : 1/3 = 33%" in md
-    # Or affiché en tête (Top 1), max gain 0.33% → ❌.
-    assert "| Or | SHORT | -0.10% | -0.10% | +0.04% | +0.33% | ❌ |" in md
+    # Or affiché en tête (Top 1), max gain 0.33% → ❌. Conviction non tracée → « — ».
+    assert "| Or | SHORT | — | -0.10% | -0.10% | +0.04% | +0.33% | ❌ |" in md
     # Cacao gagné (1.40% > 1%).
-    assert "| Cacao | LONG | -0.52% | -0.52% | +0.91% | +1.40% | ✅ |" in md
+    assert "| Cacao | LONG | — | -0.52% | -0.52% | +0.91% | +1.40% | ✅ |" in md
 
 
 def test_win_rate_max_gain_exclut_non_mesurable():

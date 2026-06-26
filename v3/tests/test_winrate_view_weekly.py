@@ -224,9 +224,10 @@ def test_weekly_contenu_tableau_et_colonne_nouveaux_paris():
     # 2 mesures Or 24h échues dans la semaine → 2 nouveaux paris.
     bloc_24h = out.split("### 24 heures")[1].split("###")[0]
     ligne_or = next(l for l in bloc_24h.splitlines() if l.startswith("| Or "))
-    # Colonnes : Actif | Win rate | WR ≥ 0,5 % | WR tradable | Paris | Nouveaux | Non notés | Statut
-    # (WR ≥ 0,5 % + WR tradable insérés → « Nouveaux paris » est en index 6).
-    assert ligne_or.split("|")[6].strip() == "2"
+    # Colonnes : Actif | Conviction moy. | Win rate | WR ≥ 0,5 % | WR tradable | Paris | Nouveaux | Non notés | Statut
+    # (« Conviction moy. » insérée après Actif → « Nouveaux paris » est en index 7).
+    assert "Conviction moy." in out
+    assert ligne_or.split("|")[7].strip() == "2"
 
 
 def test_weekly_nouveaux_paris_zero_hors_semaine():
@@ -236,8 +237,8 @@ def test_weekly_nouveaux_paris_zero_hors_semaine():
     out = jr.render_weekly_winrate(_kpis_from(ms), ms, NOW, fiches=FICHES)
     bloc_24h = out.split("### 24 heures")[1].split("###")[0]
     ligne_or = next(l for l in bloc_24h.splitlines() if l.startswith("| Or "))
-    # « Nouveaux paris » en index 6 (WR ≥ 0,5 % + WR tradable insérés).
-    assert ligne_or.split("|")[6].strip() == "0"
+    # « Nouveaux paris » en index 7 (« Conviction moy. » insérée après Actif).
+    assert ligne_or.split("|")[7].strip() == "0"
 
 
 def test_weekly_zero_argent():

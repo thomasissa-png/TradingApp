@@ -3095,6 +3095,68 @@ def selection_shadow_hc_map(
         return set(), {}
 
 
+# ---------------------------------------------------------------------------
+# PLANCHER DE CONVICTION — SHADOW (panel 3 experts, 26/06 ; cas Café +0.21).
+# OBJECTIF : MESURER (win rate) ce qu'on gagnerait à RETIRER de la sélection
+# RÉELLE les paris dont la conviction COMPARABLE (note normalisée ∈ ~[-1,+1],
+# `compute_note_normalisee`) est trop proche du neutre — typiquement un 3ᵉ pari
+# news-dominé qui « remplit le slot » alors que la doctrine dit « moins de 3 est
+# normal ». On ne SÉLECTIONNE jamais en plus : on ne fait que DROPPER, et on
+# trace au decision-log si le pari droppé aurait gagné ou perdu.
+#
+# GARDE-FOUS (identiques au shadow haute-conviction) :
+#   - SHADOW PUR : ne touche NI la sélection réelle, NI score, NI conclusion, NI
+#     tête bulletin. Lecture seule. Écrit UNIQUEMENT des champs decision-log.
+#   - WIN RATE ONLY · ZÉRO INVENTION : note normalisée absente → on NE droppe pas
+#     (prudence : on ne retire jamais un pari qu'on ne sait pas juger).
+# Plancher PARAMÉTRABLE (mesure avant d'agir). 0.30 = en-dessous, l'intensité est
+# trop proche de 0 pour un pari « forte conviction » au sens comparable.
+SELECTION_FLOOR_NOTE_NORM_MIN: float = 0.30
+
+
+def selection_floor_shadow_map(
+    results: List["ActifResult"],
+    selection_keys: set,
+    now: Optional[datetime] = None,
+    note_norm_min: float = SELECTION_FLOOR_NOTE_NORM_MIN,
+) -> Tuple[set, set, Dict[str, float]]:
+    """Plancher de conviction SHADOW sur la sélection RÉELLE 24h (MESURE PURE).
+
+    Retourne (kept, dropped, notes_norm) :
+      - kept       : fiche_keys de la sélection réelle dont |note_norm 24h| ≥ plancher
+      - dropped    : fiche_keys de la sélection réelle SOUS le plancher (mesurés)
+      - notes_norm : {fiche_key: note_norm 24h} pour les paris sélectionnés jugeables
+
+    SHADOW PUR : ne modifie NI la sélection réelle NI le score. Best-effort : toute
+    anomalie → (selection_keys, set(), {}) (on ne droppe rien par défaut).
+    """
+    H = "24h"
+    kept: set = set()
+    dropped: set = set()
+    notes: Dict[str, float] = {}
+    try:
+        by_key = {r.fiche_key: r for r in results}
+        for k in selection_keys:
+            r = by_key.get(k)
+            note_brute = r.scores.get(H) if r is not None else None
+            nn = (
+                compute_note_normalisee(r.criteres, note_brute, H)
+                if (r is not None and note_brute is not None)
+                else None
+            )
+            if nn is None:
+                kept.add(k)  # prudence : on ne droppe pas un pari non jugeable
+                continue
+            notes[k] = round(float(nn), 4)
+            if abs(float(nn)) >= note_norm_min:
+                kept.add(k)
+            else:
+                dropped.add(k)
+        return kept, dropped, notes
+    except Exception:  # noqa: BLE001 — best-effort
+        return set(selection_keys), set(), {}
+
+
 def _catalyseurs_j0_high(now: datetime) -> List[Dict[str, Any]]:
     """Événements à impact `high` du calendrier tombant AUJOURD'HUI (J0).
 
@@ -5370,6 +5432,12 @@ def build_decision_log_records(
     # ci-dessus. Champ decision-log dédié `selection_shadow_hc` (+ motif). Aucun
     # effet sur le score, la conclusion, la tête bulletin ou `selection_du_jour`.
     _shadow_hc_keys, _shadow_hc_motifs = selection_shadow_hc_map(results, now=now)
+    # SHADOW PUR (panel 3 experts 26/06, cas Café +0.21) — PLANCHER DE CONVICTION
+    # mesuré sur la sélection RÉELLE : on trace, par pari sélectionné, sa note
+    # NORMALISÉE et s'il passerait un plancher comparable. MESURE only, aucun effet.
+    _floor_kept, _floor_dropped, _floor_norm = selection_floor_shadow_map(
+        results, _selection_keys, now=now
+    )
     shadow_capteurs = shadow_capteurs or {}
     records: List[Dict[str, Any]] = []
     bulletin_date = now.strftime("%Y-%m-%d")
@@ -5729,6 +5797,21 @@ def build_decision_log_records(
                 _shadow_motif = _shadow_hc_motifs.get(r.fiche_key)
                 if _shadow_motif:
                     selection_extra["selection_shadow_hc_motif"] = _shadow_motif
+                # --- SHADOW PUR — PLANCHER DE CONVICTION (mesure only) -----------
+                # Tracé UNIQUEMENT pour les paris de la sélection RÉELLE : passerait
+                # -il le plancher de conviction comparable ? + sa note normalisée.
+                # Sert à mesurer combien de paris « faibles » (type Café +0.21) on
+                # écarterait et s'ils gagnent moins. Zéro effet sélection/score.
+                if r.fiche_key in _selection_keys:
+                    selection_extra["selection_floor_shadow_kept"] = bool(
+                        r.fiche_key in _floor_kept
+                    )
+                    if r.fiche_key in _floor_dropped:
+                        selection_extra["selection_floor_dropped"] = True
+                    if r.fiche_key in _floor_norm:
+                        selection_extra["selection_floor_note_norm"] = _floor_norm[
+                            r.fiche_key
+                        ]
                 cap = shadow_capteurs.get(r.fiche_key, {})
                 selection_extra["shadow_retour_j1"] = cap.get("shadow_retour_j1")
                 selection_extra["shadow_gap_overnight"] = cap.get(

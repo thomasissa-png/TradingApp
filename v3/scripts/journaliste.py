@@ -1151,6 +1151,10 @@ class Measure:
     # absent (cas pré-instrumentation). Persisté dans measures-log pour permettre
     # le suivi séparé news/quant PAR HORIZON sans recalcul à la volée.
     ratio_news: Optional[float] = None
+    # Note de conviction SIGNÉE à l'émission (score_pm1 → score_pond) pour cette
+    # cellule (actif×horizon). MÊME source que Suivi/Bilan. Additif, zéro impact
+    # mesure. None si decision-log d'émission introuvable (zéro invention).
+    conviction: Optional[float] = None
     # C7 LOT 6 — Mesure flip vs continuation :
     # is_flip = True si la conclusion (actif×horizon) a CHANGÉ vs le bulletin
     # immédiatement précédent (même cellule). False = continuation. None = pas
@@ -1841,6 +1845,59 @@ def load_ratio_news_map(
     return result
 
 
+def load_conviction_map(
+    bulletin_date: date,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+) -> Dict[Tuple[str, str], float]:
+    """Note de conviction SIGNÉE par cellule (actif, horizon) à l'émission.
+
+    Jumeau de `load_ratio_news_map` : même balayage du decision-log de la date
+    d'émission (dernier run du jour gagne), mais remonte la conviction signée
+    `score_pm1` (fallback `score_pond`) — MÊME source que le Suivi/Bilan. Sert à
+    afficher la conviction moyenne par cellule dans le bilan hebdo.
+
+    Best-effort, zéro invention : decision-log absent / illisible / score absent →
+    la cellule n'apparaît pas (Measure gardera `conviction=None`). Additif (mesure
+    only), aucun impact scoring.
+    """
+    result: Dict[Tuple[str, str], float] = {}
+    if not decision_log_dir.exists():
+        return result
+    prefix = bulletin_date.isoformat()
+    files = sorted(decision_log_dir.glob(f"{prefix}-*.jsonl"))
+    if not files:
+        return result
+    for fp in files:
+        try:
+            with fp.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(rec, dict):
+                        continue
+                    if rec.get("bulletin_date") != prefix:
+                        continue
+                    actif = rec.get("actif")
+                    horizon = rec.get("horizon")
+                    if not actif or horizon not in HORIZONS:
+                        continue
+                    sc = rec.get("score_pm1")
+                    if isinstance(sc, bool) or not isinstance(sc, (int, float)):
+                        sc = rec.get("score_pond")
+                    if isinstance(sc, bool) or not isinstance(sc, (int, float)):
+                        continue
+                    result[(str(actif), str(horizon))] = float(sc)
+        except OSError as e:
+            logger.warning("decision-log illisible (conviction) %s : %s", fp, e)
+            continue
+    return result
+
+
 def _extract_price_dated(raw: Any) -> Tuple[Optional[float], Optional[date]]:
     """Normalise un retour `fetch_price` hétérogène en (prix, date_du_tick).
 
@@ -2145,6 +2202,12 @@ def measure(
             bdate,
             decision_log_dir=sys.modules[__name__].DECISION_LOG_DIR,
         )
+        # Conviction signée par cellule à l'émission (additif, mesure-only) — pour
+        # la colonne « Conviction moy. » du bilan hebdo.
+        conviction_map = load_conviction_map(
+            bdate,
+            decision_log_dir=sys.modules[__name__].DECISION_LOG_DIR,
+        )
         for cell in cells:
             # On résout d'abord la fiche → le GROUPE de marché de l'actif, car
             # l'échéance 24h est désormais calculée PAR MARCHÉ (fix Juneteenth :
@@ -2230,6 +2293,8 @@ def measure(
             # ratio_news quantifié (additif, None si decision-log d'émission
             # introuvable ou champ absent — zéro invention).
             m.ratio_news = ratio_news_map.get((cell.actif_name, cell.horizon))
+            # Conviction signée à l'émission (additif, None si decision-log absent).
+            m.conviction = conviction_map.get((cell.actif_name, cell.horizon))
             # C7 LOT 6 — Tag is_flip (None si pas de bulletin précédent).
             m.is_flip = _compute_is_flip(cell, bpath)
             measures.append(m)
@@ -2913,6 +2978,15 @@ def render_weekly_winrate(
         if monday <= m.echeance <= sunday:
             new_bets[(m.fiche_key, m.horizon)] = new_bets.get((m.fiche_key, m.horizon), 0) + 1
 
+    # Conviction MOYENNE signée par cellule (actif, horizon), cumulée comme le win
+    # rate : moyenne des notes de conviction à l'émission (decision-log). Additif,
+    # zéro impact mesure. None partout → colonne « — » (zéro invention).
+    conv_acc: Dict[Tuple[str, str], List[float]] = {}
+    for m in measures:
+        if isinstance(m.conviction, bool) or not isinstance(m.conviction, (int, float)):
+            continue
+        conv_acc.setdefault((m.fiche_key, m.horizon), []).append(float(m.conviction))
+
     # L023 — on ré-associe via la CLÉ STABLE portée par chaque row (fiche_key),
     # plus par round-trip via le nom d'affichage (qui casse si un actif est
     # renommé). Plus de mapping name_to_key fragile : new_bets est déjà clé par
@@ -2939,20 +3013,22 @@ def render_weekly_winrate(
         lines.append(f"### {horizon_labels.get(h, h)}")
         lines.append("")
         lines.append(
-            "| Actif | Win rate | WR ≥ 0,5 % | WR tradable | Paris (réels) | Nouveaux paris (semaine) | Non notés | Statut |"
+            "| Actif | Conviction moy. | Win rate | WR ≥ 0,5 % | WR tradable | Paris (réels) | Nouveaux paris (semaine) | Non notés | Statut |"
         )
-        lines.append("|---|---|---|---|---|---|---|---|")
+        lines.append("|---|---|---|---|---|---|---|---|---|")
         for r in h_rows:
             wr = "—" if r["win_rate"] is None else f"{r['win_rate']:.1f}%"
             wr_sig = "—" if r["wr_signif"] is None else f"{r['wr_signif']:.1f}%"
             wr_trad = "—" if r["wr_tradable"] is None else f"{r['wr_tradable']:.1f}%"
             fk = r.get("fiche_key")  # L023 — clé stable, robuste au renommage
             nb_new = new_bets.get((fk, r["horizon"]), 0) if fk else 0
+            cs = conv_acc.get((fk, r["horizon"])) if fk else None
+            conv = f"{sum(cs) / len(cs):+.2f}" if cs else "—"
             # Lot C — indicateur « vrais paris » : N (régimes=Y) à côté de N.
             n_reg = r.get("n_regimes", 0)
             paris = f"{r['n_eff']} (régimes={n_reg})" if n_reg else f"{r['n_eff']}"
             lines.append(
-                f"| {r['nom']} | {wr} | {wr_sig} | {wr_trad} | {paris} | {nb_new} | "
+                f"| {r['nom']} | {conv} | {wr} | {wr_sig} | {wr_trad} | {paris} | {nb_new} | "
                 f"{r['non_notes']} | {r['statut']} |"
             )
     lines.append("")
@@ -3329,6 +3405,7 @@ def measure_to_record(m: Measure) -> Dict[str, Any]:
         # suivre le win-rate news SÉPARÉ du quant, par horizon, sans recalcul.
         "news_driven": m.news_driven,
         "ratio_news": m.ratio_news,
+        "conviction": m.conviction,
         # Refonte CA-M4/M5 — provenance du prix de référence ("ouverture" cible,
         # "emission" fallback, None si indispo). Permet de vérifier en audit que
         # le 24h post-refonte utilise bien l'ouverture, pas le prix à 7h.

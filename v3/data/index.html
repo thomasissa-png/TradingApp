@@ -421,6 +421,9 @@
   .decision-selection .table-wrap { margin-bottom: 0; }
   @media (max-width: 640px) {
     .decision-selection { padding: 12px 16px; border-radius: 6px; }
+    /* Mobile : on garde un retrait net sans manger trop de largeur (écran ~390px). */
+    .day-tabs { padding: 0 14px; }
+    .day-panel { padding: 2px 16px 20px 16px; }
   }
   /* Wrapper de table pour scroll horizontal mobile propre. [Point #2] Indice de
      scroll : une ombre dégradée sur le bord droit signale qu'on peut faire
@@ -625,8 +628,14 @@
   }
   /* Vues Aujourd'hui / Bilan semaine / Historique */
   .history-intro { color: var(--text-muted); margin: 4px 0 18px 0; }
-  /* Vue jour : menu d'onglets (Briefing par défaut + Suivi/Bilan), 1 rapport à la fois. */
-  .day-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 16px 0; }
+  /* Vue jour : menu d'onglets (Briefing par défaut + Suivi/Bilan), 1 rapport à la fois.
+     [Fix espacement 26/06] .day-tabs et .day-panel sont enfants directs de la carte
+     .today-day (sans padding) : on leur donne le même retrait que le summary (20px)
+     et un padding de lecture confortable (24px) pour que le contenu ne colle JAMAIS
+     aux bords. C'est CE conteneur (vue accueil/jour), pas .report-body, que lit le
+     fondateur — le correctif précédent visait le mauvais sélecteur. */
+  .day-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 16px 0; padding: 0 20px; }
+  .day-panel { padding: 2px 24px 24px 24px; }
   .day-tab {
     font: inherit; font-size: 12.5px; padding: 5px 12px;
     border: 1px solid var(--border); border-radius: 999px;
@@ -989,7 +998,7 @@
         <p id="variations-empty" hidden></p>
       </section>
       <p class="gen-meta" aria-label="Date de génération de la page">
-        Page générée le <time datetime="2026-06-26T18:35:36Z">26 juin 2026 · 18h35 (UTC)</time>
+        Page générée le <time datetime="2026-06-26T19:47:06Z">26 juin 2026 · 19h47 (UTC)</time>
       </p>
     </div>
   </main>

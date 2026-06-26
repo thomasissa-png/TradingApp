@@ -212,19 +212,25 @@ def test_html_contient_favicon_data_uri():
     # le favicon est dans le <head>, avant le </head>
     head = html.split("</head>", 1)[0]
     assert 'rel="icon"' in head
-    # aucun "<svg" brut dans le document (le SVG est en base64).
-    assert "<svg" not in html
-    # le favicon DÉCODÉ contient bien le SVG chandelier vert/rouge
+    # le favicon (data-URI) est en base64 : les navigateurs refusent un SVG
+    # avec des `<` bruts dans un data:image/svg+xml. On vérifie donc l'absence
+    # de "<svg" DANS le data-URI du favicon (et non dans tout le document : le
+    # logo de marque header/footer est, lui, légitimement en SVG inline — S10).
     import base64 as _b64
     import re as _re
+    _fav = _re.search(r'href="(data:image/svg\+xml;base64,[^"]+)"', html)
+    assert _fav, "favicon data-URI introuvable"
+    assert "<svg" not in _fav.group(1)
+    # le favicon DÉCODÉ contient le mark « Today Trade » : ligne de tendance
+    # blanche sur carré arrondi dégradé bleu (refonte logo S10).
     _m = _re.search(r'href="data:image/svg\+xml;base64,([^"]+)"', html)
     assert _m, "favicon base64 introuvable"
     _svg = _b64.b64decode(_m.group(1)).decode("utf-8")
     assert "<svg" in _svg
-    # Refonte S10 (thème clair TradingApp) : favicon = triangle blanc sur carré
-    # bleu accent, remplace l'ancien chandelier vert/rouge (outil interne).
-    assert "#2563eb" in _svg and "#ffffff" in _svg
-    assert "polygon" in _svg
+    assert "#1d4ed8" in _svg and "#fff" in _svg
+    assert "polyline" in _svg
+    # le mark de marque (header) est bien un SVG inline dégradé bleu.
+    assert 'class="brand-mark"' in html and "url(#ttg-h)" in html
     # page toujours bien formée
     assert html.startswith("<!DOCTYPE html>")
     assert html.rstrip().endswith("</html>")

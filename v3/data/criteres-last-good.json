@@ -1,0 +1,132 @@
+{
+  "balance_commerciale_ez": {
+    "date": "2026-06-26",
+    "valeur": -1004.5,
+    "valeur_normalisee": -0.6903957604646677,
+    "valeur_ponderee": -0.6903957604646677
+  },
+  "caixin_pmi_manuf": {
+    "date": "2026-06-26",
+    "valeur_normalisee": 0.0
+  },
+  "cftc_cot_coffee": {
+    "date": "2026-06-26",
+    "valeur": 4710.0,
+    "valeur_normalisee": -0.6178580667322232,
+    "valeur_ponderee": -0.6178580667322232
+  },
+  "cftc_cot_copper_nets": {
+    "date": "2026-06-26",
+    "valeur": 75887.0,
+    "valeur_normalisee": 1.0,
+    "valeur_ponderee": 1.0
+  },
+  "cftc_cot_crude_nets": {
+    "date": "2026-06-26",
+    "valeur": 49344.0,
+    "valeur_normalisee": 0.509749552836747,
+    "valeur_ponderee": 0.509749552836747
+  },
+  "cftc_cot_eur_nets": {
+    "date": "2026-06-26",
+    "valeur": 2176.0,
+    "valeur_normalisee": -0.40666106272625974,
+    "valeur_ponderee": -0.40666106272625974
+  },
+  "cftc_cot_nets": {
+    "date": "2026-06-26",
+    "valeur": 174385.0,
+    "valeur_normalisee": -0.21280652149528007,
+    "valeur_ponderee": -0.21280652149528007
+  },
+  "cftc_cot_silver": {
+    "date": "2026-06-26",
+    "valeur": 23563.0,
+    "valeur_normalisee": -0.21505943525506258,
+    "valeur_ponderee": -0.21505943525506258
+  },
+  "cftc_cot_vix_nets": {
+    "date": "2026-06-26",
+    "valeur": -66739.0,
+    "valeur_normalisee": -0.27614381922396297,
+    "valeur_ponderee": -0.27614381922396297
+  },
+  "cftc_cot_wheat": {
+    "date": "2026-06-26",
+    "valeur": -60900.0,
+    "valeur_normalisee": -0.23900680005286748,
+    "valeur_ponderee": -0.23900680005286748
+  },
+  "cushing_stocks": {
+    "date": "2026-06-26",
+    "valeur": 18957.0,
+    "valeur_normalisee": -0.8758656777574757,
+    "valeur_ponderee": -0.8758656777574757
+  },
+  "differentiel_taux_10y_us_bund": {
+    "date": "2026-06-26",
+    "valeur": 1.3635000000000002,
+    "valeur_normalisee": -0.18529118294414254,
+    "valeur_ponderee": -0.18529118294414254
+  },
+  "differentiel_taux_2y_us_de": {
+    "date": "2026-06-26",
+    "valeur": 1.6238150811000005,
+    "valeur_normalisee": 0.8786502529562769,
+    "valeur_ponderee": 0.8786502529562769
+  },
+  "eia_crude_surprise": {
+    "date": "2026-06-26",
+    "valeur": 412134.0,
+    "valeur_normalisee": -0.6231169994857738,
+    "valeur_ponderee": -0.6231169994857738
+  },
+  "hf_positioning_flux_options": {
+    "date": "2026-06-26",
+    "valeur": -28076.0,
+    "valeur_normalisee": -0.8426598550925855,
+    "valeur_ponderee": -0.8426598550925855
+  },
+  "hy_credit_spread": {
+    "date": "2026-06-26",
+    "valeur": 2.76,
+    "valeur_normalisee": -0.20124034377299807,
+    "valeur_ponderee": -0.20124034377299807
+  },
+  "meteo_australie_dryland": {
+    "date": "2026-06-26",
+    "valeur": 0.09232738978566674,
+    "valeur_normalisee": 0.04616369489283337,
+    "valeur_ponderee": 0.04616369489283337
+  },
+  "meteo_bresil_minas_gerais": {
+    "date": "2026-06-26",
+    "valeur": -0.33647484859011906,
+    "valeur_normalisee": 0.16823742429505953,
+    "valeur_ponderee": 0.16823742429505953
+  },
+  "meteo_vietnam_robusta": {
+    "date": "2026-06-26",
+    "valeur": 0.021972853390831847,
+    "valeur_normalisee": 0.010986426695415923,
+    "valeur_ponderee": 0.010986426695415923
+  },
+  "noaa_drought_midwest_plains": {
+    "date": "2026-06-26",
+    "valeur": 0.4644223238694607,
+    "valeur_normalisee": 0.23221116193473035,
+    "valeur_ponderee": 0.23221116193473035
+  },
+  "shiller_cape_fwd_pe": {
+    "date": "2026-06-26",
+    "valeur": 41.0,
+    "valeur_normalisee": 1.0,
+    "valeur_ponderee": 1.0
+  },
+  "taux_10y_us_reels_tips": {
+    "date": "2026-06-26",
+    "valeur": 2.23,
+    "valeur_normalisee": 0.8172082690646745,
+    "valeur_ponderee": 0.8172082690646745
+  }
+}

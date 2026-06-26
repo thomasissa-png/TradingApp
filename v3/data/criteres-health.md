@@ -1,6 +1,6 @@
 # Santé des critères
 
-_Cycle : 2026-06-25 05:23 UTC_
+_Cycle : 2026-06-26 05:23 UTC_
 
 **Synthèse** : 37 motifs de skip distincts, 56 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 

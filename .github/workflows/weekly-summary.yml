@@ -131,6 +131,9 @@ jobs:
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           LOG_LEVEL: INFO
+          # Levier B (post-mortem) : piste externe pour les pertes inexpliquées
+          # (RSS Google News, sans clé). Best-effort, ne bloque jamais le rapport.
+          BILAN_POST_MORTEM_EXTERNE: "1"
         run: python v3/scripts/run_weekly.py
 
       # Reconstruit index.html pour que le NOUVEAU bilan semaine soit visible

@@ -1926,7 +1926,7 @@ def _segments_signes(bilan: BilanSemaine) -> Tuple[List[str], List[str]]:
             # Échec de tendance : on ajoute le POURQUOI cross-asset/externe (même
             # cascade que les paris perdants) sur le dernier jour de la phase ratée.
             if p <= 0 and s.jours:
-                pourquoi = _pourquoi_cascade(t.actif, s.jours[-1], bilan)
+                pourquoi = _pourquoi_cascade(t.actif, s.jours[-1], bilan, call=s.direction)
                 if pourquoi and "divergence quant" not in pourquoi:
                     libelle += f" — {pourquoi}"
             (gagnants if p > 0 else perdants).append(libelle)
@@ -2026,7 +2026,7 @@ def _points_forts(bilan: BilanSemaine) -> List[str]:
 
 def _pourquoi_cascade(
     actif: str, bulletin_date: date, bilan: "BilanSemaine",
-    cause_contra: Optional[str] = None,
+    cause_contra: Optional[str] = None, call: Optional[str] = None,
 ) -> str:
     """POURQUOI réel d'un échec, MÊME cascade que le bilan quotidien (zéro invention) :
     a. news propre à contre-sens (déjà passée en argument via cause_contra) ;
@@ -2044,6 +2044,24 @@ def _pourquoi_cascade(
         cross = None
     if cross:
         return cross  # ex. « porté par le complexe métaux précieux (Or +2.10%)… »
+    # c. DRIVER MINORITAIRE (déterministe, NOS données) : un facteur de notre propre
+    #    analyse qui pointait À L'INVERSE de notre call (sous-pondéré) et que le marché
+    #    a suivi. Ex. Pétrole SHORT raté → « Tension géopolitique au Moyen-Orient »
+    #    (haussier) qu'on avait sous-pesé. C'est un vrai pourquoi, pas une divergence.
+    try:
+        from bilan_jour import load_conviction_records  # noqa: PLC0415
+        from journaliste import drivers_du_call  # noqa: PLC0415
+        rec = (load_conviction_records(bulletin_date) or {}).get((actif, "24h")) or {}
+        # Le call vient du pick/segment (le decision-log ne porte pas "conclusion") ;
+        # fallback sur le champ rec si jamais fourni.
+        _call = (call or str(rec.get("conclusion") or "")).upper()
+        opp = "LONG" if _call == "SHORT" else "SHORT" if _call == "LONG" else None
+        contra = drivers_du_call(rec, opp) if opp else []
+        if contra:
+            return f"le marché a suivi un facteur qu'on avait sous-pondéré : {contra[0]}"
+    except Exception:  # noqa: BLE001 — best-effort, decision-log absent → on continue
+        pass
+    # d. piste externe best-effort (None hors réseau / sans feedparser — OK).
     try:
         ext = cause_externe_news(actif, bulletin_date)
     except Exception:  # noqa: BLE001 — best-effort, None hors réseau
@@ -2097,7 +2115,7 @@ def _points_faibles(bilan: BilanSemaine) -> List[str]:
                 f"{p.cause_contra} l'a contre-pied. News possiblement sous-pondérée au scoring."
             )
         else:  # CAS C bis : quant solide raté → MÊME cascade de POURQUOI que le quotidien
-            pourquoi = _pourquoi_cascade(p.actif, p.bulletin_date, bilan)
+            pourquoi = _pourquoi_cascade(p.actif, p.bulletin_date, bilan, call=p.call)
             pts.append(
                 f"{tete} raté : signal quant solide (aucun drapeau). Pourquoi : "
                 f"{pourquoi}. À revoir si le pattern se répète."

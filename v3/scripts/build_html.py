@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -226,11 +226,21 @@ def build_weeklies_payload(weekly_dir: Path = BILAN_SEMAINE_DIR) -> List[Dict[st
             continue
         md = _read_md(p)
         rng = RE_WEEK_RANGE.search(md)
+        sunday_iso = rng.group(2) if rng else ""
+        # Le menu date le bilan au SAMEDI (jour de génération réel), pas au dimanche
+        # (fin de plage ISO). Fondateur 27/06. Samedi = dimanche − 1 j (best-effort).
+        saturday_iso = sunday_iso
+        if sunday_iso:
+            try:
+                saturday_iso = (date.fromisoformat(sunday_iso) - timedelta(days=1)).isoformat()
+            except ValueError:
+                saturday_iso = sunday_iso
         rows.append({
             "_key": (int(m.group(1)), int(m.group(2))),
             "id": f"weekly-{p.stem}",
             "label": f"Semaine {m.group(1)}-S{m.group(2)}",
-            "sunday": rng.group(2) if rng else "",
+            "sunday": sunday_iso,
+            "saturday": saturday_iso,
             "filename": p.name,
             "markdown": md,
         })
@@ -378,8 +388,9 @@ def render_html(
         weekly_js = _entries_to_js([weekly], ["id", "label", "filename"]) + "[0]"
     else:
         weekly_js = "null"
-    # Tous les bilans de semaine (pour le menu historique : datés au dimanche).
-    weeklies_js = _entries_to_js(weeklies or [], ["id", "label", "sunday", "filename"])
+    # Tous les bilans de semaine (pour le menu historique : datés au SAMEDI, jour
+    # de génération réel — pas au dimanche, fin de plage ISO).
+    weeklies_js = _entries_to_js(weeklies or [], ["id", "label", "sunday", "saturday", "filename"])
 
     # Historique : mesures unitaires + résumé Taux/Brier par cellule (page
     # autonome → tout est sérialisé en JS, aucun fetch au runtime).
@@ -1754,7 +1765,7 @@ function renderList(activeDate) {{
   // « (bilan) ») pour les retrouver facilement, en ligne avec les jours.
   const entries = [];
   days.forEach(d => entries.push({{ kind: 'day', date: d.date }}));
-  (WEEKLIES || []).forEach(w => {{ if (w.sunday) entries.push({{ kind: 'week', date: w.sunday, weekly: w }}); }});
+  (WEEKLIES || []).forEach(w => {{ const wd = w.saturday || w.sunday; if (wd) entries.push({{ kind: 'week', date: wd, weekly: w }}); }});
   entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (a.kind === 'week' ? -1 : 1)));
   entries.forEach(en => {{
     const li = document.createElement('li');

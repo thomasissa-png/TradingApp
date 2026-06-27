@@ -1429,8 +1429,11 @@ def _render_picks_par_jour(picks: List["PickSemaine"], L: List[str]) -> None:
                        -(abs(p.score) if isinstance(p.score, (int, float)) else -1.0),
                        p.actif),
     )
-    L.append("| Jour | Actif | Call | Conviction | % 12h | % 18h | Max | Variation actif | Résultat | Raison |")
-    L.append("|---|---|---|---|---|---|---|---|---|---|")
+    # [Relecture 27/06] Raison SORTIE du tableau (comme le bilan quotidien) : avec
+    # Conviction/12h/18h/Max ajoutées, garder la longue liste de drivers en colonne
+    # rendait chaque ligne géante. Tableau compact ici, « pourquoi » en sous-liste.
+    L.append("| Jour | Actif | Call | Conviction | % 12h | % 18h | Max | Variation actif | Résultat |")
+    L.append("|---|---|---|---|---|---|---|---|---|")
     for p in rows:
         jour = f"{JJ[p.bulletin_date.weekday()]} {p.bulletin_date.day}"
         glyph = "✅" if p.vrai else ("❌" if p.outcome in ("FAUSSE", "FAUX") else "⚪")
@@ -1440,9 +1443,18 @@ def _render_picks_par_jour(picks: List["PickSemaine"], L: List[str]) -> None:
             f"| {jour} | {p.actif} | {p.call} | {_fmt_conviction(p.conviction_signee)} | "
             f"{_fmt_pct_quotidien(p.perf_12h)} | {_fmt_pct_quotidien(p.perf_18h)} | "
             f"{_fmt_pct_quotidien(p.max_gain_pct)} | {_fmt_signed_pct(p.realized_pct)} | "
-            f"{glyph} | {_raison_pick(p)} |"
+            f"{glyph} |"
         )
     L.append("")
+    # « Pourquoi » en sous-liste (drivers du signal 7h), tableau gardé étroit.
+    avec_raison = [p for p in rows if _raison_pick(p) and _raison_pick(p) != "—"]
+    if avec_raison:
+        L.append("**Pourquoi ces paris (signal 7h) :**")
+        L.append("")
+        for p in avec_raison:
+            jour = f"{JJ[p.bulletin_date.weekday()]} {p.bulletin_date.day}"
+            L.append(f"- **{p.actif}** ({jour}, {p.call}) : {_raison_pick(p)}")
+        L.append("")
 
 
 def _drivers_reels(rec: dict, call: str) -> List[str]:

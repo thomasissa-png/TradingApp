@@ -998,7 +998,7 @@
         <p id="variations-empty" hidden></p>
       </section>
       <p class="gen-meta" aria-label="Date de génération de la page">
-        Page générée le <time datetime="2026-06-27T08:09:44Z">27 juin 2026 · 08h09 (UTC)</time>
+        Page générée le <time datetime="2026-06-27T13:17:05Z">27 juin 2026 · 13h17 (UTC)</time>
       </p>
     </div>
   </main>
@@ -4076,9 +4076,251 @@ Aucune alerte de sortie.
 
 `}
 ];   // suivis 12h/18h + bilans du jour (22h), plus récent d'abord
-const WEEKLY = null;     // bilan de semaine le plus récent (ou null)
-const WEEKLIES = [
+const WEEKLY = [
+{...{"id": "weekly-2026-S26", "label": "Semaine 2026-S26", "filename": "2026-S26.md"}, markdown: `# Bilan semaine · 2026-S26 (2026-06-22 → 2026-06-28)
 
+- Généré : 27 juin 2026, 15h13 (samedi matin, Paris)
+- WIN RATE ONLY · aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.
+- WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) · inclut les jours sous seuil où une position aurait quand même été prise (toujours ≤ Win rate).
+
+## 1. Performance des 24h sélectionnés (la semaine)
+
+> Nos paris 24h de la semaine, triés PAR JOUR. **Top 1** = le meilleur pari de chaque jour (1 par jour de bourse, ~5/semaine) ; **Top 3** = les trois retenus. **Variation actif** = mouvement RÉEL de l'actif sur 24h (monte → +, baisse → −) ; le ✅/❌ dit si notre call (LONG/SHORT) était dans le bon sens. Win rate = % de calls justes · ampleur = % moyen favorable (jamais d'euros).
+
+### Top 1 du jour (le meilleur pari, 1 par jour)
+
+Win rate : **66.7%** (2/3 jugés) · WR ≥ 0,5 % : **33.3%** (1/3) · ampleur moyenne : **+2,1 %**.
+
+| Jour | Actif | Call | Variation actif | Résultat | Raison |
+|---|---|---|---|---|---|
+| mar 23 | EUR/USD | SHORT | -0,4 % | ✅ | Écart de taux courts US − Allemagne (2 ans) + Tendance du dollar (20 jours) + Taux de change dollar / yen (signal de risque) + Tendance de l'EUR/USD (7 jours) + Tendance de l'EUR/USD (20 jours) |
+| mer 24 | Argent | SHORT | -7,9 % | ✅ | Taux d'intérêt réels US (10 ans) + Tendance de l'argent (20 jours) + Mouvement de l'or (5 jours) + Flux vers les fonds argent (5 jours) + Tendance de l'argent (7 jours) |
+| jeu 25 | Pétrole (Brent) | SHORT | +2,1 % | ❌ | Stocks de brut US : surprise hebdomadaire + Tension géopolitique au Moyen-Orient + Tendance du pétrole Brent (20 jours) |
+
+### Top 3 du jour
+
+Win rate : **85.7%** (6/7 jugés) · WR ≥ 0,5 % : **71.4%** (5/7) · ampleur moyenne : **+5,2 %**.
+
+| Jour | Actif | Call | Variation actif | Résultat | Raison |
+|---|---|---|---|---|---|
+| mar 23 | EUR/USD | SHORT | -0,4 % | ✅ | Écart de taux courts US − Allemagne (2 ans) + Tendance du dollar (20 jours) + Taux de change dollar / yen (signal de risque) + Tendance de l'EUR/USD (7 jours) + Tendance de l'EUR/USD (20 jours) |
+| mar 23 | Or | SHORT | -2,4 % | ✅ | Taux d'intérêt réels US (10 ans) + Tendance du dollar (20 jours) + Tension géopolitique mondiale + Tendance de l'or (20 jours) + Indice de peur des marchés (VIX) + Tendance de l'or (7 jours) |
+| mar 23 | Cacao | LONG | +13,6 % | ✅ | Maladies des cabosses (impact récolte) + Météo Côte d'Ivoire + Ghana (pluies, 30 jours) + Positionnement spéculatif + options cacao (ICE) + Tendance du cacao (20 jours) + Tendance du cacao (7 jours) |
+| mer 24 | Argent | SHORT | -7,9 % | ✅ | Taux d'intérêt réels US (10 ans) + Tendance de l'argent (20 jours) + Mouvement de l'or (5 jours) + Flux vers les fonds argent (5 jours) + Tendance de l'argent (7 jours) |
+| mer 24 | Cacao | LONG | +13,0 % | ✅ | Maladies des cabosses (impact récolte) + Météo Côte d'Ivoire + Ghana (pluies, 30 jours) + Positionnement spéculatif + options cacao (ICE) + Tendance du cacao (20 jours) + Tendance du cacao (7 jours) |
+| jeu 25 | Pétrole (Brent) | SHORT | +2,1 % | ❌ | Stocks de brut US : surprise hebdomadaire + Tension géopolitique au Moyen-Orient + Tendance du pétrole Brent (20 jours) |
+| jeu 25 | Argent | SHORT | -1,5 % | ✅ | Taux d'intérêt réels US (10 ans) + Mouvement de l'or (5 jours) + Flux vers les fonds argent (5 jours) + Tendance de l'argent (20 jours) + Tendance de l'argent (7 jours) |
+
+### Sortie : a-t-on clôturé au bon moment ? (vs 12h / 18h)
+
+Sur 8 position(s) jugée(s) cette semaine : **5 bien tenue(s)** · **3 clôturée(s) trop tard** (gain rendu après le pic) · **0 trop tôt** (sortie aurait coupé un gain qui montait encore).
+
+- Café (Arabica) (mer) clôturé trop tard : pic +1,1 % à 18h, rendu à +0,7 %.
+- Café (Arabica) (jeu) clôturé trop tard : pic +1,6 % à 12h, rendu à -0,1 %.
+- Pétrole (Brent) (ven) clôturé trop tard : pic +2,5 % à 18h, rendu à +1,7 %.
+
+## 2. Performance par tendance 7 jours, par actif
+
+> Une ligne par phase de direction 7j constante. À chaque bascule (LONG vers SHORT ou l'inverse) commence une nouvelle phase. Perf = mouvement dans le sens de la tendance, du prix d'émission du jour de prise au dernier prix de la phase. **Raison** = le(s) critère(s) qui ont VRAIMENT déclenché l'orientation (drivers dominants du score à l'émission, decision-log), pas une news lambda ; « — » si non tracé. ✅ gagnant · ❌ perdant · ⚪ négligeable.
+
+| Actif | Tendance | Période | Perf (sens tendance) | Résultat | Raison |
+|---|---|---|---|---|---|
+| **Argent** | SHORT (en cours) | mar→ven | +9,2 % | ✅ | Taux d'intérêt réels US (10 ans) + Tendance de l'argent (7 jours) + Mouvement de l'or (5 jours) |
+| **Blé** | SHORT | mar | +1,4 % | ✅ | Tensions géopolitiques en mer Noire + Tendance du dollar (20 jours) |
+|  | LONG (en cours) | mer→ven | +0,4 % | ⚪ | bascule LONG : Tensions géopolitiques en mer Noire + Écart à la normale des précipitations — plaines céréalières US (sécheresse OU excès) + Positionnement des gros spéculateurs (blé) |
+| **CAC 40** | SHORT (en cours) | mar→ven | -0,4 % | ⚪ | Flux vers les fonds actions France (5 jours) + Écart de taux France − Allemagne (10 ans) |
+| **Cacao** | LONG (en cours) | mar→ven | +13,6 % | ✅ | Météo Côte d'Ivoire + Ghana (pluies, 30 jours) + Positionnement spéculatif + options cacao (ICE) + Tendance du cacao (7 jours) + Réglementation UE anti-déforestation (impact supply) + Maladies des cabosses (impact récolte) |
+| **Café (Arabica)** | LONG (en cours) | mar→ven | +3,5 % | ✅ | Positionnement des gros spéculateurs (café) + Maladies du caféier (rouille et cabosses) + Météo Brésil — écart à la normale (sécheresse OU excès, Minas Gerais) + Tendance du café Arabica (20 jours) |
+| **Cuivre** | SHORT (en cours) | mar→ven | +3,6 % | ✅ | Tendance du cuivre (7 jours) + Positionnement des gros spéculateurs (cuivre) + Tendance du dollar (20 jours) + Grèves minières (Chili / Pérou) + Tendance du cuivre (20 jours) + Plans de construction et infrastructures US-Chine |
+| **EUR/USD** | SHORT (en cours) | mar→ven | +0,4 % | ⚪ | Écart de taux courts US − Allemagne (2 ans) + Tendance du dollar (20 jours) + Tendance de l'EUR/USD (7 jours) + Taux de change dollar / yen (signal de risque) |
+| **Nasdaq** | SHORT (en cours) | mar→ven | +3,0 % | ✅ | Taux d'intérêt réels US (10 ans) |
+| **Or** | SHORT (en cours) | mar→ven | +2,3 % | ✅ | Taux d'intérêt réels US (10 ans) + Tendance du dollar (20 jours) + Tendance de l'or (7 jours) |
+| **Pétrole (Brent)** | SHORT (en cours) | mar→ven | +3,3 % | ✅ | Tendance du pétrole Brent (7 jours) + Positionnement des gros spéculateurs (pétrole) + Tendance du dollar (20 jours) + Tendance du pétrole Brent (20 jours) |
+| **S&P 500** | SHORT (en cours) | mar→ven | +1,5 % | ✅ | Taux d'intérêt réels US (10 ans) + Tendance du dollar (20 jours) |
+| **VIX** | SHORT (en cours) | mar→ven | -3,0 % | ❌ | Structure des prix : VIX court vs VIX 3 mois |
+
+## 3. Ce qu'on a bien fait cette semaine
+
+- Cacao LONG (24h) : +13,6 % dans le bon sens. Pris sur : Maladies des cabosses (impact récolte) + Météo Côte d'Ivoire + Ghana (pluies, 30 jours) + Positionnement spéculatif + options cacao (ICE) + Tendance du cacao (20 jours) + Tendance du cacao (7 jours). Catalyseur confirmant : Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP.
+- Or SHORT (24h) : +2,4 % dans le bon sens. Pris sur : Taux d'intérêt réels US (10 ans) + Tendance du dollar (20 jours) + Tension géopolitique mondiale + Tendance de l'or (20 jours) + Indice de peur des marchés (VIX) + Tendance de l'or (7 jours). Catalyseur confirmant : Hawkish Fed stance outweighs peace deal relief, causing gold selloff.
+- Argent SHORT (24h) : +7,9 % dans le bon sens. Pris sur : Taux d'intérêt réels US (10 ans) + Tendance de l'argent (20 jours) + Mouvement de l'or (5 jours) + Flux vers les fonds argent (5 jours) + Tendance de l'argent (7 jours).
+- Cacao LONG (24h) : +13,0 % dans le bon sens. Pris sur : Maladies des cabosses (impact récolte) + Météo Côte d'Ivoire + Ghana (pluies, 30 jours) + Positionnement spéculatif + options cacao (ICE) + Tendance du cacao (20 jours) + Tendance du cacao (7 jours). Catalyseur confirmant : Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP.
+- Argent SHORT (24h) : +1,5 % dans le bon sens. Pris sur : Taux d'intérêt réels US (10 ans) + Mouvement de l'or (5 jours) + Flux vers les fonds argent (5 jours) + Tendance de l'argent (20 jours) + Tendance de l'argent (7 jours).
+- Tendance Argent SHORT (mar→ven) : +9,2 % dans le bon sens. Pris sur : Taux d'intérêt réels US (10 ans) + Tendance de l'argent (7 jours) + Mouvement de l'or (5 jours).
+- Tendance Blé SHORT (mar) : +1,4 % dans le bon sens. Pris sur : Tensions géopolitiques en mer Noire + Tendance du dollar (20 jours).
+- Tendance Cacao LONG (mar→ven) : +13,6 % dans le bon sens. Pris sur : Météo Côte d'Ivoire + Ghana (pluies, 30 jours) + Positionnement spéculatif + options cacao (ICE) + Tendance du cacao (7 jours) + Réglementation UE anti-déforestation (impact supply) + Maladies des cabosses (impact récolte). Catalyseur confirmant : Cocoa prices surge due to West African crop concerns.
+
+## 4. Ce qu'on doit améliorer
+
+- Pétrole (Brent) SHORT (+2,1 %) raté : signal quant solide (aucun drapeau), cause non identifiée (aucune news high tracée). À revoir si le pattern se répète.
+- Échecs de tendance 7j : VIX SHORT (mar→ven) -3,0 % · le mouvement est allé contre la direction tenue sur la phase.
+- Opportunités ratées (mouvement 24h de plus de 1 % dans le bon sens, hors top 3) : Argent SHORT -9,2 % (mer) · bon call NON classé dans le top 3 ce jour-là (conviction/score inférieurs) : opportunité ratée ; Cacao LONG +5,5 % (ven) · bon call NON classé dans le top 3 ce jour-là (conviction/score inférieurs) : opportunité ratée ; Cuivre SHORT -3,6 % (mer) · bon call NON classé dans le top 3 ce jour-là (conviction/score inférieurs) : opportunité ratée ; Café (Arabica) LONG +3,5 % (mer) · bon call NON classé dans le top 3 ce jour-là (conviction/score inférieurs) : opportunité ratée ; Pétrole (Brent) SHORT -3,3 % (mer) · bon call NON classé dans le top 3 ce jour-là (conviction/score inférieurs) : opportunité ratée.
+
+## 5. Les learnings de la semaine
+
+> Synthèse actionnable et déterministe, dérivée des sections 1 à 4. Chaque learning repose sur un seuil chiffré franchi (jamais d'interprétation libre).
+
+- Cadre de lecture : avec ~8 paris/semaine, AUCUN chiffre ci-dessous n'est significatif seul (un win rate hebdo de 30 à 80 % reste compatible avec 50 % réel). Ces learnings ORIENTENT la semaine ; on ne bascule une piste en règle de fond qu'après ~50 paris cumulés (≈ 10 semaines) — chaque piste ci-dessous précise son déclencheur chiffré.
+- On a raté 9 mouvement(s) de plus de 1 % hors top 3, dont 8/9 (89%) bons calls sous-classés : revoir le classement — mais ne remonter que les signaux SOLIDES (multi-critère ou portés par une news), jamais les mono-critère / coin-flip, qui restent exclus à raison même quand ils gagnent.
+- Calls cette semaine : quant-pur 86% (7).
+
+## 6. Ajustements proposés (à valider Thomas)
+
+Aucun changement de RÈGLE proposé cette semaine — et c'est cohérent avec les learnings ci-dessus : ceux-ci ORIENTENT (ils se confirment sur plusieurs semaines avant de devenir une règle), mais une proposition formelle n'est déclenchée que lorsqu'une cellule franchit le seuil statistique (assez de paris indépendants ET borne de confiance sous le seuil). Tant qu'aucune ne l'a franchi, on applique les learnings à la main et on continue de mesurer avant de toucher au moteur.
+
+<details class="weekly-annex">
+<summary>Annexe technique · détail de mesure (replié)</summary>
+
+> Info de CONTRÔLE (traçabilité), pas des décisions. Le détail win rate par cellule (24h/7j/1m) vit sur la page **Performance**. Rappel warm-up : le 7j n'est significatif que vers ~début octobre 2026 (1 pari indépendant/semaine -> N_eff>=15 en ~15 semaines), le 1m pas avant 6 mois — le Manager se concentre sur le 24h.
+
+### Win rate par conviction
+
+| Conviction | N paris | Win rate | Interprétation |
+|---|---|---|---|
+| Forte (|score| ≥ seuil, 0 drapeau ◧/⇆/↯/~) | 0 | — (N insuffisant) | attendre N ≥ 3 |
+| Faible (quasi-neutre, mono-critère, coin-flip) | 0 | — (N insuffisant) | attendre N ≥ 3 |
+
+### Cellules : ce qui marche / ce qui décroche
+
+Aucune cellule notable : ni porteuse (≥ 65% sur N_eff ≥ 5), ni sous le seuil de détection (N_eff ≥ 10 ET borne basse < 50 %). Tout est encore en chauffe.
+
+### Justesse des news vs quant (informatif)
+
+> Mesure SÉPARÉE de la justesse des calls *dominés par les news* (\`ratio_news\` > 50 % à l'émission) vs les calls *quant-purs*, par horizon. Informatif uniquement · n'alimente aucune proposition. Garde-fou : N < 15 ⇒ « en chauffe », jamais présenté comme significatif.
+
+| Horizon | News-driven | Quant-pures |
+|---|---|---|
+| 24h | — (0 jugé) | 61% [N=31] |
+| 7j | — (0 jugé) | — (0 jugé) |
+| 1m | — (0 jugé) | — (0 jugé) |
+
+> Rapport détaillé (semaine par semaine, verdict) : \`v3/audit/news-winrate-mesure.md\`.
+
+</details>
+`}
+][0];     // bilan de semaine le plus récent (ou null)
+const WEEKLIES = [
+{...{"id": "weekly-2026-S26", "label": "Semaine 2026-S26", "sunday": "2026-06-28", "filename": "2026-S26.md"}, markdown: `# Bilan semaine · 2026-S26 (2026-06-22 → 2026-06-28)
+
+- Généré : 27 juin 2026, 15h13 (samedi matin, Paris)
+- WIN RATE ONLY · aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.
+- WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) · inclut les jours sous seuil où une position aurait quand même été prise (toujours ≤ Win rate).
+
+## 1. Performance des 24h sélectionnés (la semaine)
+
+> Nos paris 24h de la semaine, triés PAR JOUR. **Top 1** = le meilleur pari de chaque jour (1 par jour de bourse, ~5/semaine) ; **Top 3** = les trois retenus. **Variation actif** = mouvement RÉEL de l'actif sur 24h (monte → +, baisse → −) ; le ✅/❌ dit si notre call (LONG/SHORT) était dans le bon sens. Win rate = % de calls justes · ampleur = % moyen favorable (jamais d'euros).
+
+### Top 1 du jour (le meilleur pari, 1 par jour)
+
+Win rate : **66.7%** (2/3 jugés) · WR ≥ 0,5 % : **33.3%** (1/3) · ampleur moyenne : **+2,1 %**.
+
+| Jour | Actif | Call | Variation actif | Résultat | Raison |
+|---|---|---|---|---|---|
+| mar 23 | EUR/USD | SHORT | -0,4 % | ✅ | Écart de taux courts US − Allemagne (2 ans) + Tendance du dollar (20 jours) + Taux de change dollar / yen (signal de risque) + Tendance de l'EUR/USD (7 jours) + Tendance de l'EUR/USD (20 jours) |
+| mer 24 | Argent | SHORT | -7,9 % | ✅ | Taux d'intérêt réels US (10 ans) + Tendance de l'argent (20 jours) + Mouvement de l'or (5 jours) + Flux vers les fonds argent (5 jours) + Tendance de l'argent (7 jours) |
+| jeu 25 | Pétrole (Brent) | SHORT | +2,1 % | ❌ | Stocks de brut US : surprise hebdomadaire + Tension géopolitique au Moyen-Orient + Tendance du pétrole Brent (20 jours) |
+
+### Top 3 du jour
+
+Win rate : **85.7%** (6/7 jugés) · WR ≥ 0,5 % : **71.4%** (5/7) · ampleur moyenne : **+5,2 %**.
+
+| Jour | Actif | Call | Variation actif | Résultat | Raison |
+|---|---|---|---|---|---|
+| mar 23 | EUR/USD | SHORT | -0,4 % | ✅ | Écart de taux courts US − Allemagne (2 ans) + Tendance du dollar (20 jours) + Taux de change dollar / yen (signal de risque) + Tendance de l'EUR/USD (7 jours) + Tendance de l'EUR/USD (20 jours) |
+| mar 23 | Or | SHORT | -2,4 % | ✅ | Taux d'intérêt réels US (10 ans) + Tendance du dollar (20 jours) + Tension géopolitique mondiale + Tendance de l'or (20 jours) + Indice de peur des marchés (VIX) + Tendance de l'or (7 jours) |
+| mar 23 | Cacao | LONG | +13,6 % | ✅ | Maladies des cabosses (impact récolte) + Météo Côte d'Ivoire + Ghana (pluies, 30 jours) + Positionnement spéculatif + options cacao (ICE) + Tendance du cacao (20 jours) + Tendance du cacao (7 jours) |
+| mer 24 | Argent | SHORT | -7,9 % | ✅ | Taux d'intérêt réels US (10 ans) + Tendance de l'argent (20 jours) + Mouvement de l'or (5 jours) + Flux vers les fonds argent (5 jours) + Tendance de l'argent (7 jours) |
+| mer 24 | Cacao | LONG | +13,0 % | ✅ | Maladies des cabosses (impact récolte) + Météo Côte d'Ivoire + Ghana (pluies, 30 jours) + Positionnement spéculatif + options cacao (ICE) + Tendance du cacao (20 jours) + Tendance du cacao (7 jours) |
+| jeu 25 | Pétrole (Brent) | SHORT | +2,1 % | ❌ | Stocks de brut US : surprise hebdomadaire + Tension géopolitique au Moyen-Orient + Tendance du pétrole Brent (20 jours) |
+| jeu 25 | Argent | SHORT | -1,5 % | ✅ | Taux d'intérêt réels US (10 ans) + Mouvement de l'or (5 jours) + Flux vers les fonds argent (5 jours) + Tendance de l'argent (20 jours) + Tendance de l'argent (7 jours) |
+
+### Sortie : a-t-on clôturé au bon moment ? (vs 12h / 18h)
+
+Sur 8 position(s) jugée(s) cette semaine : **5 bien tenue(s)** · **3 clôturée(s) trop tard** (gain rendu après le pic) · **0 trop tôt** (sortie aurait coupé un gain qui montait encore).
+
+- Café (Arabica) (mer) clôturé trop tard : pic +1,1 % à 18h, rendu à +0,7 %.
+- Café (Arabica) (jeu) clôturé trop tard : pic +1,6 % à 12h, rendu à -0,1 %.
+- Pétrole (Brent) (ven) clôturé trop tard : pic +2,5 % à 18h, rendu à +1,7 %.
+
+## 2. Performance par tendance 7 jours, par actif
+
+> Une ligne par phase de direction 7j constante. À chaque bascule (LONG vers SHORT ou l'inverse) commence une nouvelle phase. Perf = mouvement dans le sens de la tendance, du prix d'émission du jour de prise au dernier prix de la phase. **Raison** = le(s) critère(s) qui ont VRAIMENT déclenché l'orientation (drivers dominants du score à l'émission, decision-log), pas une news lambda ; « — » si non tracé. ✅ gagnant · ❌ perdant · ⚪ négligeable.
+
+| Actif | Tendance | Période | Perf (sens tendance) | Résultat | Raison |
+|---|---|---|---|---|---|
+| **Argent** | SHORT (en cours) | mar→ven | +9,2 % | ✅ | Taux d'intérêt réels US (10 ans) + Tendance de l'argent (7 jours) + Mouvement de l'or (5 jours) |
+| **Blé** | SHORT | mar | +1,4 % | ✅ | Tensions géopolitiques en mer Noire + Tendance du dollar (20 jours) |
+|  | LONG (en cours) | mer→ven | +0,4 % | ⚪ | bascule LONG : Tensions géopolitiques en mer Noire + Écart à la normale des précipitations — plaines céréalières US (sécheresse OU excès) + Positionnement des gros spéculateurs (blé) |
+| **CAC 40** | SHORT (en cours) | mar→ven | -0,4 % | ⚪ | Flux vers les fonds actions France (5 jours) + Écart de taux France − Allemagne (10 ans) |
+| **Cacao** | LONG (en cours) | mar→ven | +13,6 % | ✅ | Météo Côte d'Ivoire + Ghana (pluies, 30 jours) + Positionnement spéculatif + options cacao (ICE) + Tendance du cacao (7 jours) + Réglementation UE anti-déforestation (impact supply) + Maladies des cabosses (impact récolte) |
+| **Café (Arabica)** | LONG (en cours) | mar→ven | +3,5 % | ✅ | Positionnement des gros spéculateurs (café) + Maladies du caféier (rouille et cabosses) + Météo Brésil — écart à la normale (sécheresse OU excès, Minas Gerais) + Tendance du café Arabica (20 jours) |
+| **Cuivre** | SHORT (en cours) | mar→ven | +3,6 % | ✅ | Tendance du cuivre (7 jours) + Positionnement des gros spéculateurs (cuivre) + Tendance du dollar (20 jours) + Grèves minières (Chili / Pérou) + Tendance du cuivre (20 jours) + Plans de construction et infrastructures US-Chine |
+| **EUR/USD** | SHORT (en cours) | mar→ven | +0,4 % | ⚪ | Écart de taux courts US − Allemagne (2 ans) + Tendance du dollar (20 jours) + Tendance de l'EUR/USD (7 jours) + Taux de change dollar / yen (signal de risque) |
+| **Nasdaq** | SHORT (en cours) | mar→ven | +3,0 % | ✅ | Taux d'intérêt réels US (10 ans) |
+| **Or** | SHORT (en cours) | mar→ven | +2,3 % | ✅ | Taux d'intérêt réels US (10 ans) + Tendance du dollar (20 jours) + Tendance de l'or (7 jours) |
+| **Pétrole (Brent)** | SHORT (en cours) | mar→ven | +3,3 % | ✅ | Tendance du pétrole Brent (7 jours) + Positionnement des gros spéculateurs (pétrole) + Tendance du dollar (20 jours) + Tendance du pétrole Brent (20 jours) |
+| **S&P 500** | SHORT (en cours) | mar→ven | +1,5 % | ✅ | Taux d'intérêt réels US (10 ans) + Tendance du dollar (20 jours) |
+| **VIX** | SHORT (en cours) | mar→ven | -3,0 % | ❌ | Structure des prix : VIX court vs VIX 3 mois |
+
+## 3. Ce qu'on a bien fait cette semaine
+
+- Cacao LONG (24h) : +13,6 % dans le bon sens. Pris sur : Maladies des cabosses (impact récolte) + Météo Côte d'Ivoire + Ghana (pluies, 30 jours) + Positionnement spéculatif + options cacao (ICE) + Tendance du cacao (20 jours) + Tendance du cacao (7 jours). Catalyseur confirmant : Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP.
+- Or SHORT (24h) : +2,4 % dans le bon sens. Pris sur : Taux d'intérêt réels US (10 ans) + Tendance du dollar (20 jours) + Tension géopolitique mondiale + Tendance de l'or (20 jours) + Indice de peur des marchés (VIX) + Tendance de l'or (7 jours). Catalyseur confirmant : Hawkish Fed stance outweighs peace deal relief, causing gold selloff.
+- Argent SHORT (24h) : +7,9 % dans le bon sens. Pris sur : Taux d'intérêt réels US (10 ans) + Tendance de l'argent (20 jours) + Mouvement de l'or (5 jours) + Flux vers les fonds argent (5 jours) + Tendance de l'argent (7 jours).
+- Cacao LONG (24h) : +13,0 % dans le bon sens. Pris sur : Maladies des cabosses (impact récolte) + Météo Côte d'Ivoire + Ghana (pluies, 30 jours) + Positionnement spéculatif + options cacao (ICE) + Tendance du cacao (20 jours) + Tendance du cacao (7 jours). Catalyseur confirmant : Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP.
+- Argent SHORT (24h) : +1,5 % dans le bon sens. Pris sur : Taux d'intérêt réels US (10 ans) + Mouvement de l'or (5 jours) + Flux vers les fonds argent (5 jours) + Tendance de l'argent (20 jours) + Tendance de l'argent (7 jours).
+- Tendance Argent SHORT (mar→ven) : +9,2 % dans le bon sens. Pris sur : Taux d'intérêt réels US (10 ans) + Tendance de l'argent (7 jours) + Mouvement de l'or (5 jours).
+- Tendance Blé SHORT (mar) : +1,4 % dans le bon sens. Pris sur : Tensions géopolitiques en mer Noire + Tendance du dollar (20 jours).
+- Tendance Cacao LONG (mar→ven) : +13,6 % dans le bon sens. Pris sur : Météo Côte d'Ivoire + Ghana (pluies, 30 jours) + Positionnement spéculatif + options cacao (ICE) + Tendance du cacao (7 jours) + Réglementation UE anti-déforestation (impact supply) + Maladies des cabosses (impact récolte). Catalyseur confirmant : Cocoa prices surge due to West African crop concerns.
+
+## 4. Ce qu'on doit améliorer
+
+- Pétrole (Brent) SHORT (+2,1 %) raté : signal quant solide (aucun drapeau), cause non identifiée (aucune news high tracée). À revoir si le pattern se répète.
+- Échecs de tendance 7j : VIX SHORT (mar→ven) -3,0 % · le mouvement est allé contre la direction tenue sur la phase.
+- Opportunités ratées (mouvement 24h de plus de 1 % dans le bon sens, hors top 3) : Argent SHORT -9,2 % (mer) · bon call NON classé dans le top 3 ce jour-là (conviction/score inférieurs) : opportunité ratée ; Cacao LONG +5,5 % (ven) · bon call NON classé dans le top 3 ce jour-là (conviction/score inférieurs) : opportunité ratée ; Cuivre SHORT -3,6 % (mer) · bon call NON classé dans le top 3 ce jour-là (conviction/score inférieurs) : opportunité ratée ; Café (Arabica) LONG +3,5 % (mer) · bon call NON classé dans le top 3 ce jour-là (conviction/score inférieurs) : opportunité ratée ; Pétrole (Brent) SHORT -3,3 % (mer) · bon call NON classé dans le top 3 ce jour-là (conviction/score inférieurs) : opportunité ratée.
+
+## 5. Les learnings de la semaine
+
+> Synthèse actionnable et déterministe, dérivée des sections 1 à 4. Chaque learning repose sur un seuil chiffré franchi (jamais d'interprétation libre).
+
+- Cadre de lecture : avec ~8 paris/semaine, AUCUN chiffre ci-dessous n'est significatif seul (un win rate hebdo de 30 à 80 % reste compatible avec 50 % réel). Ces learnings ORIENTENT la semaine ; on ne bascule une piste en règle de fond qu'après ~50 paris cumulés (≈ 10 semaines) — chaque piste ci-dessous précise son déclencheur chiffré.
+- On a raté 9 mouvement(s) de plus de 1 % hors top 3, dont 8/9 (89%) bons calls sous-classés : revoir le classement — mais ne remonter que les signaux SOLIDES (multi-critère ou portés par une news), jamais les mono-critère / coin-flip, qui restent exclus à raison même quand ils gagnent.
+- Calls cette semaine : quant-pur 86% (7).
+
+## 6. Ajustements proposés (à valider Thomas)
+
+Aucun changement de RÈGLE proposé cette semaine — et c'est cohérent avec les learnings ci-dessus : ceux-ci ORIENTENT (ils se confirment sur plusieurs semaines avant de devenir une règle), mais une proposition formelle n'est déclenchée que lorsqu'une cellule franchit le seuil statistique (assez de paris indépendants ET borne de confiance sous le seuil). Tant qu'aucune ne l'a franchi, on applique les learnings à la main et on continue de mesurer avant de toucher au moteur.
+
+<details class="weekly-annex">
+<summary>Annexe technique · détail de mesure (replié)</summary>
+
+> Info de CONTRÔLE (traçabilité), pas des décisions. Le détail win rate par cellule (24h/7j/1m) vit sur la page **Performance**. Rappel warm-up : le 7j n'est significatif que vers ~début octobre 2026 (1 pari indépendant/semaine -> N_eff>=15 en ~15 semaines), le 1m pas avant 6 mois — le Manager se concentre sur le 24h.
+
+### Win rate par conviction
+
+| Conviction | N paris | Win rate | Interprétation |
+|---|---|---|---|
+| Forte (|score| ≥ seuil, 0 drapeau ◧/⇆/↯/~) | 0 | — (N insuffisant) | attendre N ≥ 3 |
+| Faible (quasi-neutre, mono-critère, coin-flip) | 0 | — (N insuffisant) | attendre N ≥ 3 |
+
+### Cellules : ce qui marche / ce qui décroche
+
+Aucune cellule notable : ni porteuse (≥ 65% sur N_eff ≥ 5), ni sous le seuil de détection (N_eff ≥ 10 ET borne basse < 50 %). Tout est encore en chauffe.
+
+### Justesse des news vs quant (informatif)
+
+> Mesure SÉPARÉE de la justesse des calls *dominés par les news* (\`ratio_news\` > 50 % à l'émission) vs les calls *quant-purs*, par horizon. Informatif uniquement · n'alimente aucune proposition. Garde-fou : N < 15 ⇒ « en chauffe », jamais présenté comme significatif.
+
+| Horizon | News-driven | Quant-pures |
+|---|---|---|
+| 24h | — (0 jugé) | 61% [N=31] |
+| 7j | — (0 jugé) | — (0 jugé) |
+| 1m | — (0 jugé) | — (0 jugé) |
+
+> Rapport détaillé (semaine par semaine, verdict) : \`v3/audit/news-winrate-mesure.md\`.
+
+</details>
+`}
 ]; // tous les bilans de semaine (datés au dimanche, pour le menu)
 const MEASURES = [{"bulletin_date": "2026-06-23", "bulletin_id": "2026-06-23-07h", "fiche_key": "argent", "actif": "Argent", "horizon": "24h", "conclusion": "SHORT", "score": -6.09, "outcome": "VRAI", "realized_pct": -9.218407214539646, "max_gain_pct": null, "prix_emission": 62.29753, "prix_echeance": 56.55469, "is_flip": null, "echeance": "2026-06-24", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-23", "bulletin_id": "2026-06-23-07h", "fiche_key": "ble", "actif": "Blé", "horizon": "24h", "conclusion": "SHORT", "score": -7.07, "outcome": "VRAI", "realized_pct": -1.0126069711293741, "max_gain_pct": null, "prix_emission": 592.79663, "prix_echeance": 586.79393, "is_flip": null, "echeance": "2026-06-24", "news_driven": true, "ratio_news": 9.53147942872003, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-23", "bulletin_id": "2026-06-23-07h", "fiche_key": "cac40", "actif": "CAC 40", "horizon": "24h", "conclusion": "SHORT", "score": -2.27, "outcome": "non-conclusive", "realized_pct": 0.37499507372543023, "max_gain_pct": null, "prix_emission": 8400.11035, "prix_echeance": 8431.61035, "is_flip": null, "echeance": "2026-06-24", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "ouverture", "system_version": "v2"}, {"bulletin_date": "2026-06-23", "bulletin_id": "2026-06-23-07h", "fiche_key": "cacao", "actif": "Cacao", "horizon": "24h", "conclusion": "LONG", "score": 7.73, "outcome": "VRAI", "realized_pct": 13.546117050132626, "max_gain_pct": null, "prix_emission": 4620.95948, "prix_echeance": 5246.92006, "is_flip": null, "echeance": "2026-06-24", "news_driven": true, "ratio_news": 0.8723211973966501, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-23", "bulletin_id": "2026-06-23-07h", "fiche_key": "cafe", "actif": "Café (Arabica)", "horizon": "24h", "conclusion": "LONG", "score": 2.01, "outcome": "VRAI", "realized_pct": 3.4701536750893602, "max_gain_pct": null, "prix_emission": 267.10575, "prix_echeance": 276.37473, "is_flip": null, "echeance": "2026-06-24", "news_driven": true, "ratio_news": 2.272216016123782, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-23", "bulletin_id": "2026-06-23-07h", "fiche_key": "cuivre", "actif": "Cuivre", "horizon": "24h", "conclusion": "SHORT", "score": -9.87, "outcome": "VRAI", "realized_pct": -3.5935190760304323, "max_gain_pct": null, "prix_emission": 6.21146, "prix_echeance": 5.98825, "is_flip": null, "echeance": "2026-06-24", "news_driven": true, "ratio_news": 0.9459831582970487, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-23", "bulletin_id": "2026-06-23-07h", "fiche_key": "eurusd", "actif": "EUR/USD", "horizon": "24h", "conclusion": "SHORT", "score": -15.97, "outcome": "VRAI", "realized_pct": -0.39656832705945416, "max_gain_pct": null, "prix_emission": 1.1423, "prix_echeance": 1.13777, "is_flip": null, "echeance": "2026-06-24", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-23", "bulletin_id": "2026-06-23-07h", "fiche_key": "nasdaq", "actif": "Nasdaq", "horizon": "24h", "conclusion": "LONG", "score": 0.2, "outcome": "FAUSSE", "realized_pct": -2.9523715675475386, "max_gain_pct": null, "prix_emission": 738.049988, "prix_echeance": 716.26001, "is_flip": null, "echeance": "2026-06-24", "news_driven": true, "ratio_news": 14.11568053097334, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-23", "bulletin_id": "2026-06-23-07h", "fiche_key": "or", "actif": "Or", "horizon": "24h", "conclusion": "SHORT", "score": -16.69, "outcome": "VRAI", "realized_pct": -2.345475719133389, "max_gain_pct": null, "prix_emission": 4112.68764, "prix_echeance": 4016.22555, "is_flip": null, "echeance": "2026-06-24", "news_driven": false, "ratio_news": 0.31514593813896075, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-23", "bulletin_id": "2026-06-23-07h", "fiche_key": "petrole", "actif": "Pétrole (Brent)", "horizon": "24h", "conclusion": "SHORT", "score": -1.86, "outcome": "VRAI", "realized_pct": -3.3298979831450346, "max_gain_pct": null, "prix_emission": 76.654, "prix_echeance": 74.1015, "is_flip": null, "echeance": "2026-06-24", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-23", "bulletin_id": "2026-06-23-07h", "fiche_key": "sp500", "actif": "S&P 500", "horizon": "24h", "conclusion": "LONG", "score": 2.05, "outcome": "FAUSSE", "realized_pct": -1.4925145758886524, "max_gain_pct": null, "prix_emission": 744.38, "prix_echeance": 733.27002, "is_flip": null, "echeance": "2026-06-24", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-23", "bulletin_id": "2026-06-23-07h", "fiche_key": "vix", "actif": "VIX", "horizon": "24h", "conclusion": "SHORT", "score": -0.73, "outcome": "FAUSSE", "realized_pct": 3.021978021978023, "max_gain_pct": null, "prix_emission": 21.84, "prix_echeance": 22.5, "is_flip": null, "echeance": "2026-06-24", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-24", "bulletin_id": "2026-06-24-07h", "fiche_key": "argent", "actif": "Argent", "horizon": "24h", "conclusion": "SHORT", "score": -7.49, "outcome": "VRAI", "realized_pct": -7.923311281804726, "max_gain_pct": null, "prix_emission": 61.42129, "prix_echeance": 56.55469, "is_flip": false, "echeance": "2026-06-25", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-24", "bulletin_id": "2026-06-24-07h", "fiche_key": "ble", "actif": "Blé", "horizon": "24h", "conclusion": "SHORT", "score": -1.1, "outcome": "non-conclusive", "realized_pct": 0.3905812267602794, "max_gain_pct": null, "prix_emission": 584.51094, "prix_echeance": 586.79393, "is_flip": false, "echeance": "2026-06-25", "news_driven": true, "ratio_news": 5.322641791240963, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-24", "bulletin_id": "2026-06-24-07h", "fiche_key": "cac40", "actif": "CAC 40", "horizon": "24h", "conclusion": "SHORT", "score": -1.38, "outcome": "FAUSSE", "realized_pct": 1.0898399588996224, "max_gain_pct": null, "prix_emission": 8340.70996, "prix_echeance": 8431.61035, "is_flip": false, "echeance": "2026-06-25", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "ouverture", "system_version": "v2"}, {"bulletin_date": "2026-06-24", "bulletin_id": "2026-06-24-07h", "fiche_key": "cacao", "actif": "Cacao", "horizon": "24h", "conclusion": "LONG", "score": 8.03, "outcome": "VRAI", "realized_pct": 12.982545674237064, "max_gain_pct": null, "prix_emission": 4644.0094164, "prix_echeance": 5246.92006, "is_flip": false, "echeance": "2026-06-25", "news_driven": true, "ratio_news": 0.8133360898599885, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-24", "bulletin_id": "2026-06-24-07h", "fiche_key": "cafe", "actif": "Café (Arabica)", "horizon": "24h", "conclusion": "LONG", "score": 2.65, "outcome": "non-conclusive", "realized_pct": 0.12033579518566362, "max_gain_pct": null, "prix_emission": 276.042552, "prix_echeance": 276.37473, "is_flip": false, "echeance": "2026-06-25", "news_driven": true, "ratio_news": 2.153615244472118, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-24", "bulletin_id": "2026-06-24-07h", "fiche_key": "cuivre", "actif": "Cuivre", "horizon": "24h", "conclusion": "SHORT", "score": -9.82, "outcome": "VRAI", "realized_pct": -2.0979078143469367, "max_gain_pct": null, "prix_emission": 6.11657, "prix_echeance": 5.98825, "is_flip": false, "echeance": "2026-06-25", "news_driven": true, "ratio_news": 0.9559865159156871, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-24", "bulletin_id": "2026-06-24-07h", "fiche_key": "eurusd", "actif": "EUR/USD", "horizon": "24h", "conclusion": "SHORT", "score": -16.45, "outcome": "non-conclusive", "realized_pct": 0.09853516913737827, "max_gain_pct": null, "prix_emission": 1.13665, "prix_echeance": 1.13777, "is_flip": false, "echeance": "2026-06-25", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-24", "bulletin_id": "2026-06-24-07h", "fiche_key": "nasdaq", "actif": "Nasdaq", "horizon": "24h", "conclusion": "SHORT", "score": -8.17, "outcome": "non-conclusive", "realized_pct": 0.3840102482338085, "max_gain_pct": null, "prix_emission": 713.52002, "prix_echeance": 716.26001, "is_flip": true, "echeance": "2026-06-25", "news_driven": true, "ratio_news": 1.578462758152628, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-24", "bulletin_id": "2026-06-24-07h", "fiche_key": "or", "actif": "Or", "horizon": "24h", "conclusion": "SHORT", "score": -19.21, "outcome": "VRAI", "realized_pct": -1.353468131062922, "max_gain_pct": null, "prix_emission": 4071.3297, "prix_echeance": 4016.22555, "is_flip": false, "echeance": "2026-06-25", "news_driven": false, "ratio_news": 0.26297226628684917, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-24", "bulletin_id": "2026-06-24-07h", "fiche_key": "petrole", "actif": "Pétrole (Brent)", "horizon": "24h", "conclusion": "SHORT", "score": -1.75, "outcome": "VRAI", "realized_pct": -3.2148856411022004, "max_gain_pct": null, "prix_emission": 76.56291, "prix_echeance": 74.1015, "is_flip": false, "echeance": "2026-06-25", "news_driven": true, "ratio_news": 4.159104708091734, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-24", "bulletin_id": "2026-06-24-07h", "fiche_key": "sp500", "actif": "S&P 500", "horizon": "24h", "conclusion": "LONG", "score": 0.56, "outcome": "non-conclusive", "realized_pct": -0.05451497415772205, "max_gain_pct": null, "prix_emission": 733.66998, "prix_echeance": 733.27002, "is_flip": false, "echeance": "2026-06-25", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-24", "bulletin_id": "2026-06-24-07h", "fiche_key": "vix", "actif": "VIX", "horizon": "24h", "conclusion": "SHORT", "score": -1.09, "outcome": "non-conclusive", "realized_pct": -2.1739130434782608, "max_gain_pct": null, "prix_emission": 23.0, "prix_echeance": 22.5, "is_flip": false, "echeance": "2026-06-25", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-25", "bulletin_id": "2026-06-25-07h", "fiche_key": "argent", "actif": "Argent", "horizon": "24h", "conclusion": "SHORT", "score": -10.74, "outcome": "VRAI", "realized_pct": -1.5213215212832076, "max_gain_pct": null, "prix_emission": 57.42836, "prix_echeance": 56.55469, "is_flip": false, "echeance": "2026-06-26", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-25", "bulletin_id": "2026-06-25-07h", "fiche_key": "ble", "actif": "Blé", "horizon": "24h", "conclusion": "SHORT", "score": -0.52, "outcome": "non-conclusive", "realized_pct": 0.060814686596768766, "max_gain_pct": null, "prix_emission": 586.43729, "prix_echeance": 586.79393, "is_flip": false, "echeance": "2026-06-26", "news_driven": true, "ratio_news": 10.512539378883412, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-25", "bulletin_id": "2026-06-25-07h", "fiche_key": "cac40", "actif": "CAC 40", "horizon": "24h", "conclusion": "SHORT", "score": -2.1, "outcome": "FAUSSE", "realized_pct": 0.5499990905123433, "max_gain_pct": null, "prix_emission": 8385.49023, "prix_echeance": 8431.61035, "is_flip": false, "echeance": "2026-06-26", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "ouverture", "system_version": "v2"}, {"bulletin_date": "2026-06-25", "bulletin_id": "2026-06-25-07h", "fiche_key": "cacao", "actif": "Cacao", "horizon": "24h", "conclusion": "LONG", "score": 7.83, "outcome": "VRAI", "realized_pct": 5.460423547090999, "max_gain_pct": null, "prix_emission": 4975.25032, "prix_echeance": 5246.92006, "is_flip": false, "echeance": "2026-06-26", "news_driven": true, "ratio_news": 0.8514803191608117, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-25", "bulletin_id": "2026-06-25-07h", "fiche_key": "cafe", "actif": "Café (Arabica)", "horizon": "24h", "conclusion": "LONG", "score": 3.24, "outcome": "non-conclusive", "realized_pct": -0.28493551139509143, "max_gain_pct": null, "prix_emission": 277.16447, "prix_echeance": 276.37473, "is_flip": false, "echeance": "2026-06-26", "news_driven": true, "ratio_news": 1.677255338386277, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-25", "bulletin_id": "2026-06-25-07h", "fiche_key": "cuivre", "actif": "Cuivre", "horizon": "24h", "conclusion": "SHORT", "score": -6.3, "outcome": "non-conclusive", "realized_pct": -0.18718288918373416, "max_gain_pct": null, "prix_emission": 5.99948, "prix_echeance": 5.98825, "is_flip": false, "echeance": "2026-06-26", "news_driven": false, "ratio_news": 0.14547511718388165, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-25", "bulletin_id": "2026-06-25-07h", "fiche_key": "eurusd", "actif": "EUR/USD", "horizon": "24h", "conclusion": "SHORT", "score": -15.12, "outcome": "non-conclusive", "realized_pct": 0.11438929316214741, "max_gain_pct": null, "prix_emission": 1.13647, "prix_echeance": 1.13777, "is_flip": false, "echeance": "2026-06-26", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-25", "bulletin_id": "2026-06-25-07h", "fiche_key": "nasdaq", "actif": "Nasdaq", "horizon": "24h", "conclusion": "SHORT", "score": -7.44, "outcome": "FAUSSE", "realized_pct": 0.7922561670630244, "max_gain_pct": null, "prix_emission": 710.63, "prix_echeance": 716.26001, "is_flip": false, "echeance": "2026-06-26", "news_driven": true, "ratio_news": 2.04871121326818, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-25", "bulletin_id": "2026-06-25-07h", "fiche_key": "or", "actif": "Or", "horizon": "24h", "conclusion": "SHORT", "score": -15.6, "outcome": "FAUSSE", "realized_pct": 0.550222932060706, "max_gain_pct": null, "prix_emission": 3994.24828, "prix_echeance": 4016.22555, "is_flip": false, "echeance": "2026-06-26", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-25", "bulletin_id": "2026-06-25-07h", "fiche_key": "petrole", "actif": "Pétrole (Brent)", "horizon": "24h", "conclusion": "SHORT", "score": -13.63, "outcome": "FAUSSE", "realized_pct": 2.1039041207254296, "max_gain_pct": null, "prix_emission": 72.5746, "prix_echeance": 74.1015, "is_flip": false, "echeance": "2026-06-26", "news_driven": true, "ratio_news": 0.6972586357793914, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-25", "bulletin_id": "2026-06-25-07h", "fiche_key": "sp500", "actif": "S&P 500", "horizon": "24h", "conclusion": "LONG", "score": 0.82, "outcome": "non-conclusive", "realized_pct": 0.025918453046585632, "max_gain_pct": null, "prix_emission": 733.080017, "prix_echeance": 733.27002, "is_flip": false, "echeance": "2026-06-26", "news_driven": false, "ratio_news": 0.0, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-25", "bulletin_id": "2026-06-25-07h", "fiche_key": "vix", "actif": "VIX", "horizon": "24h", "conclusion": "SHORT", "score": -0.2, "outcome": "non-conclusive", "realized_pct": -1.5317286652078836, "max_gain_pct": null, "prix_emission": 22.85, "prix_echeance": 22.5, "is_flip": false, "echeance": "2026-06-26", "news_driven": true, "ratio_news": 3.25225919653571, "prix_reference_source": "emission", "system_version": "v2"}, {"bulletin_date": "2026-06-26", "bulletin_id": "2026-06-26-07h", "fiche_key": "argent", "actif": "Argent", "horizon": "24h", "conclusion": "SHORT", "score": -9.51, "outcome": "FAUSSE", "realized_pct": 3.617282051009956, "max_gain_pct": 1.4433, "prix_emission": 56.5419, "prix_echeance": 58.58718, "is_flip": null, "echeance": "2026-06-29", "news_driven": null, "ratio_news": null, "prix_reference_source": "emission", "system_version": null}, {"bulletin_date": "2026-06-26", "bulletin_id": "2026-06-26-07h", "fiche_key": "ble", "actif": "Blé", "horizon": "24h", "conclusion": "SHORT", "score": -0.45, "outcome": "VRAI", "realized_pct": -1.5802259576884277, "max_gain_pct": 2.1676, "prix_emission": 586.79393, "prix_echeance": 577.52126, "is_flip": null, "echeance": "2026-06-29", "news_driven": null, "ratio_news": null, "prix_reference_source": "emission", "system_version": null}, {"bulletin_date": "2026-06-26", "bulletin_id": "2026-06-26-07h", "fiche_key": "cac40", "actif": "CAC 40", "horizon": "24h", "conclusion": "SHORT", "score": -1.7, "outcome": "VRAI", "realized_pct": -0.5543452325213445, "max_gain_pct": 1.0554, "prix_emission": 8431.61035, "prix_echeance": 8384.87012, "is_flip": null, "echeance": "2026-06-29", "news_driven": null, "ratio_news": null, "prix_reference_source": "ouverture", "system_version": null}, {"bulletin_date": "2026-06-26", "bulletin_id": "2026-06-26-07h", "fiche_key": "cacao", "actif": "Cacao", "horizon": "24h", "conclusion": "LONG", "score": 8.91, "outcome": "FAUSSE", "realized_pct": -2.6222286298754955, "max_gain_pct": 1.0946, "prix_emission": 5246.92006, "prix_echeance": 5109.33382, "is_flip": null, "echeance": "2026-06-29", "news_driven": null, "ratio_news": null, "prix_reference_source": "emission", "system_version": null}, {"bulletin_date": "2026-06-26", "bulletin_id": "2026-06-26-07h", "fiche_key": "cafe", "actif": "Café (Arabica)", "horizon": "24h", "conclusion": "LONG", "score": 3.24, "outcome": "non-conclusive", "realized_pct": -0.8280214330738469, "max_gain_pct": 0.7164, "prix_emission": 276.37473, "prix_echeance": 274.086288, "is_flip": null, "echeance": "2026-06-29", "news_driven": null, "ratio_news": null, "prix_reference_source": "emission", "system_version": null}, {"bulletin_date": "2026-06-26", "bulletin_id": "2026-06-26-07h", "fiche_key": "cuivre", "actif": "Cuivre", "horizon": "24h", "conclusion": "SHORT", "score": -0.4, "outcome": "FAUSSE", "realized_pct": 2.2420573623345765, "max_gain_pct": 0.4921, "prix_emission": 5.98825, "prix_echeance": 6.12251, "is_flip": null, "echeance": "2026-06-29", "news_driven": null, "ratio_news": null, "prix_reference_source": "emission", "system_version": null}, {"bulletin_date": "2026-06-26", "bulletin_id": "2026-06-26-07h", "fiche_key": "eurusd", "actif": "EUR/USD", "horizon": "24h", "conclusion": "SHORT", "score": -13.06, "outcome": "non-conclusive", "realized_pct": 0.09579975215108354, "max_gain_pct": 0.2057, "prix_emission": 1.13779, "prix_echeance": 1.13888, "is_flip": null, "echeance": "2026-06-29", "news_driven": null, "ratio_news": null, "prix_reference_source": "emission", "system_version": null}, {"bulletin_date": "2026-06-26", "bulletin_id": "2026-06-26-07h", "fiche_key": "nasdaq", "actif": "Nasdaq", "horizon": "24h", "conclusion": "SHORT", "score": -1.9, "outcome": "VRAI", "realized_pct": -1.348673647157817, "max_gain_pct": 1.8673, "prix_emission": 716.26001, "prix_echeance": 706.6, "is_flip": null, "echeance": "2026-06-29", "news_driven": null, "ratio_news": null, "prix_reference_source": "emission", "system_version": null}, {"bulletin_date": "2026-06-26", "bulletin_id": "2026-06-26-07h", "fiche_key": "or", "actif": "Or", "horizon": "24h", "conclusion": "SHORT", "score": -13.0, "outcome": "FAUSSE", "realized_pct": 1.2762578139919207, "max_gain_pct": 0.8088, "prix_emission": 4016.54818, "prix_echeance": 4067.80969, "is_flip": null, "echeance": "2026-06-29", "news_driven": null, "ratio_news": null, "prix_reference_source": "emission", "system_version": null}, {"bulletin_date": "2026-06-26", "bulletin_id": "2026-06-26-07h", "fiche_key": "petrole", "actif": "Pétrole (Brent)", "horizon": "24h", "conclusion": "SHORT", "score": -7.2, "outcome": "VRAI", "realized_pct": -1.7444721092015738, "max_gain_pct": 2.9481, "prix_emission": 74.1015, "prix_echeance": 72.80882, "is_flip": null, "echeance": "2026-06-29", "news_driven": null, "ratio_news": null, "prix_reference_source": "emission", "system_version": null}, {"bulletin_date": "2026-06-26", "bulletin_id": "2026-06-26-07h", "fiche_key": "sp500", "actif": "S&P 500", "horizon": "24h", "conclusion": "LONG", "score": 3.06, "outcome": "non-conclusive", "realized_pct": -0.2795723190755866, "max_gain_pct": 0.4405, "prix_emission": 733.27002, "prix_echeance": 731.22, "is_flip": null, "echeance": "2026-06-29", "news_driven": null, "ratio_news": null, "prix_reference_source": "emission", "system_version": null}, {"bulletin_date": "2026-06-26", "bulletin_id": "2026-06-26-07h", "fiche_key": "vix", "actif": "VIX", "horizon": "24h", "conclusion": "SHORT", "score": -0.2, "outcome": "non-conclusive", "realized_pct": 0.13333333333333838, "max_gain_pct": 0.5111, "prix_emission": 22.5, "prix_echeance": 22.53, "is_flip": null, "echeance": "2026-06-29", "news_driven": null, "ratio_news": null, "prix_reference_source": "emission", "system_version": null}];
 const PERF_AB = {"Argent|24h": {"taux": "100.0%", "brier": "0.0029"}, "Blé|24h": {"taux": "100.0%", "brier": "0.0008"}, "CAC 40|24h": {"taux": "0.0%", "brier": "0.3800"}, "Cacao|24h": {"taux": "100.0%", "brier": "0.0000"}, "Café (Arabica)|24h": {"taux": "100.0%", "brier": "0.1340"}, "Cuivre|24h": {"taux": "100.0%", "brier": "0.0000"}, "EUR/USD|24h": {"taux": "100.0%", "brier": "0.0000"}, "Nasdaq|24h": {"taux": "0.0%", "brier": "0.6278"}, "Or|24h": {"taux": "66.7%", "brier": "0.3333"}, "Pétrole (Brent)|24h": {"taux": "66.7%", "brier": "0.4294"}, "S&P 500|24h": {"taux": "0.0%", "brier": "0.4053"}, "VIX|24h": {"taux": "0.0%", "brier": "0.3010"}};

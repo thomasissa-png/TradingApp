@@ -471,6 +471,39 @@ def test_learning_contresens_sans_cause_explique_le_recit():
 
 
 # ===========================================================================
+# LEVIER driver minoritaire (déterministe) — partagé quotidien ↔ hebdo
+# ===========================================================================
+
+def test_cause_minority_driver_renvoie_le_contra():
+    rec = {"criteres": [
+        {"nom": "facteur haussier", "contrib_pond": 2.0},
+        {"nom": "facteur baissier", "contrib_pond": -3.0},
+    ]}
+    # call SHORT → driver LONG (haussier) sous-pondéré ; call LONG → l'inverse.
+    assert bj.cause_minority_driver(rec, "SHORT") is not None
+    assert bj.cause_minority_driver(rec, "LONG") is not None
+    assert bj.cause_minority_driver(rec, "SHORT") != bj.cause_minority_driver(rec, "LONG")
+    assert bj.cause_minority_driver(None, "SHORT") is None
+    assert bj.cause_minority_driver(rec, "") is None
+
+
+def test_post_mortem_daily_driver_minoritaire(tmp_path: Path):
+    """Pari perdant, ni news propre ni cross-asset → le quotidien nomme le driver
+    minoritaire (cohérence avec le bilan hebdo)."""
+    p = tmp_path / "events-log.md"
+    p.write_text(HEADER + "<!-- batch 2026-06-26T09:00:00Z : 0 events -->\n", encoding="utf-8")
+    meas = [_measure("Argent", "SHORT", 3.62, 0.6)]
+    perf = bj.compute_perf_top3(meas, {("Argent", "24h"): True}, {}, date_j=DJ2, events_path=p)
+    perf[0].cause_minoritaire = "Stocks au hub Cushing"
+    bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
+    bilan.perf_top3 = perf
+    bilan.measures_24h = [_measure_perdant("Argent", "SHORT", 3.62)]  # pas de sibling → cross None
+    joined = "\n".join(bj._points_faibles_jour(bilan))
+    assert "facteur qu'on avait sous-pondéré (Stocks au hub Cushing)" in joined
+    assert "divergence" not in joined.lower()
+
+
+# ===========================================================================
 # LEVIER A — pourquoi cross-asset depuis nos propres mouvements 24h
 # ===========================================================================
 

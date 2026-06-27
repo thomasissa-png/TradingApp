@@ -803,6 +803,23 @@ def _enrich_causes_externes(bilan: "BilanJour") -> None:
             p.cause_externe = None
 
 
+def cause_minority_driver(rec: Optional[dict], call: str) -> Optional[str]:
+    """LEVIER déterministe : le facteur de NOTRE analyse qui pointait À L'INVERSE du
+    call (sous-pondéré au scoring) et que le marché a pu suivre. Source : decision-log
+    (`drivers_du_call` sur le sens opposé). Ex. Pétrole SHORT raté → « Stocks au hub
+    Cushing » (haussier) qu'on avait sous-pesé. None si aucun driver à contre-sens
+    tracé (zéro invention). Partagé bilan quotidien ↔ bilan semaine."""
+    opp = "LONG" if call == "SHORT" else "SHORT" if call == "LONG" else None
+    if not opp:
+        return None
+    try:
+        from journaliste import drivers_du_call  # noqa: PLC0415
+        contra = drivers_du_call(rec or {}, opp)
+    except Exception:  # noqa: BLE001 — best-effort
+        return None
+    return contra[0] if contra else None
+
+
 def _fav(delta_pct: Optional[float], call: str) -> Optional[float]:
     """% directionnel signé favorable (réutilise run_suivi.fav_delta)."""
     try:
@@ -838,6 +855,9 @@ class PerfTop3Ligne:
     # gnews best-effort au post-mortem). Présentée comme « piste externe (à vérifier) »,
     # jamais une certitude. None si pas de réseau/clé ou rien trouvé (échec visible).
     cause_externe: Optional[str] = None
+    # LEVIER déterministe : driver de NOTRE analyse à contre-sens du call (sous-pondéré)
+    # que le marché a suivi (cause_minority_driver). None si aucun. Avant la divergence.
+    cause_minoritaire: Optional[str] = None
     # VRAIE raison du call (drivers dominants du score à l'émission, decision-log) —
     # « pourquoi on a pris ce pari ». Aligné avec le bilan semaine. None si non tracé.
     raison_call: Optional[str] = None
@@ -986,12 +1006,16 @@ def compute_perf_top3(
         raison_call = None
         score_conv = None
         score_conv_signe = None
+        cause_minoritaire = None
         if conviction_records is not None:
             from journaliste import drivers_du_call  # noqa: PLC0415
             rec = conviction_records.get((actif, "24h")) or {}
             drivers = drivers_du_call(rec, call)
             if drivers:
                 raison_call = " + ".join(drivers)
+            # Driver minoritaire (à contre-sens du call) — pour le « pourquoi » d'une
+            # perte quand ni news ni cross-asset n'expliquent (cf. _points_faibles_jour).
+            cause_minoritaire = cause_minority_driver(rec, call)
             # |score| = conviction (classe Top 1 / Top 3). score_pm1 prioritaire.
             sc = rec.get("score_pm1")
             if not isinstance(sc, (int, float)):
@@ -1013,6 +1037,7 @@ def compute_perf_top3(
             pic_heure=pic_heure, points_manquants=manquants, verdict=verdict,
             vendre_reco=vendre_map.get(actif), cause_repli=cause_repli,
             cause_adverse=cause_adverse,
+            cause_minoritaire=cause_minoritaire,
             raison_call=raison_call,
             max_gain_pct=(round(mg, 2) if isinstance(mg, (int, float)) else None),
             score_conviction=score_conv,
@@ -1998,6 +2023,9 @@ def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
             ligne += f". Le marché a {sens_marche} sur : {p.cause_adverse}"
         elif cross:
             ligne += f". Le marché a {sens_marche}, {cross}"
+        elif p.cause_minoritaire:
+            ligne += (f". Le marché a {sens_marche} : il a suivi un facteur qu'on avait "
+                      f"sous-pondéré ({p.cause_minoritaire})")
         elif p.cause_externe:
             ligne += f". Le marché a {sens_marche} (piste externe à vérifier : {p.cause_externe})"
         else:

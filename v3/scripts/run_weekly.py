@@ -2049,16 +2049,14 @@ def _pourquoi_cascade(
     #    a suivi. Ex. Pétrole SHORT raté → « Tension géopolitique au Moyen-Orient »
     #    (haussier) qu'on avait sous-pesé. C'est un vrai pourquoi, pas une divergence.
     try:
-        from bilan_jour import load_conviction_records  # noqa: PLC0415
-        from journaliste import drivers_du_call  # noqa: PLC0415
+        from bilan_jour import load_conviction_records, cause_minority_driver  # noqa: PLC0415
         rec = (load_conviction_records(bulletin_date) or {}).get((actif, "24h")) or {}
         # Le call vient du pick/segment (le decision-log ne porte pas "conclusion") ;
-        # fallback sur le champ rec si jamais fourni.
+        # fallback sur le champ rec si jamais fourni. Helper PARTAGÉ avec le quotidien.
         _call = (call or str(rec.get("conclusion") or "")).upper()
-        opp = "LONG" if _call == "SHORT" else "SHORT" if _call == "LONG" else None
-        contra = drivers_du_call(rec, opp) if opp else []
-        if contra:
-            return f"le marché a suivi un facteur qu'on avait sous-pondéré : {contra[0]}"
+        mino = cause_minority_driver(rec, _call)
+        if mino:
+            return f"le marché a suivi un facteur qu'on avait sous-pondéré : {mino}"
     except Exception:  # noqa: BLE001 — best-effort, decision-log absent → on continue
         pass
     # d. piste externe best-effort (None hors réseau / sans feedparser — OK).

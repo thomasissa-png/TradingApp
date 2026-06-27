@@ -24,6 +24,7 @@ from __future__ import annotations
 import glob
 import json
 import logging
+import os
 import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -657,6 +658,151 @@ def cause_news_high_dir(
     return None
 
 
+# ---------------------------------------------------------------------------
+# LEVIER A — POURQUOI cross-asset, depuis NOS PROPRES mouvements 24h (réf. 27/06)
+# ---------------------------------------------------------------------------
+# Un pari perdant SANS news propre s'explique souvent par un mouvement MACRO/
+# corrélé qu'on suit déjà (le dollar via EUR/USD, le complexe métaux, les indices).
+# On le nomme à partir des mouvements 24h RÉELS du jour — DÉTERMINISTE, zéro
+# invention, zéro appel externe. On ne retient qu'une référence ayant bougé dans
+# le MÊME sens que l'actif (corrélation directionnelle) et d'au moins _CROSS_MIN_PCT.
+_CROSS_MIN_PCT: float = 0.3
+_REFS_CROSS_ASSET: Dict[str, List[Tuple[str, str]]] = {
+    "Argent": [("Or", "le complexe métaux précieux"), ("EUR/USD", "le dollar")],
+    "Or": [("Argent", "le complexe métaux précieux"), ("EUR/USD", "le dollar")],
+    "Cuivre": [("EUR/USD", "le dollar")],
+    "Nasdaq": [("S&P 500", "les indices US")],
+    "S&P 500": [("Nasdaq", "les indices US")],
+    "CAC 40": [("S&P 500", "les indices actions")],
+    "Pétrole (Brent)": [("EUR/USD", "le dollar")],
+    "Café (Arabica)": [("EUR/USD", "le dollar")],
+    "Cacao": [("EUR/USD", "le dollar")],
+    "Blé": [("EUR/USD", "le dollar")],
+    "Coton": [("EUR/USD", "le dollar")],
+    "Sucre": [("EUR/USD", "le dollar")],
+}
+
+
+def cause_cross_asset(actif: str, moves_by_actif: Dict[str, float]) -> Optional[str]:
+    """LEVIER A : explique un mouvement adverse par les actifs CORRÉLÉS ayant bougé
+    dans le MÊME sens ce jour (mouvements 24h réels `delta_pct`). Déterministe, zéro
+    invention, zéro appel externe. None si aucune référence corrélée n'a bougé assez.
+
+    Exemple (Argent SHORT perdant, argent monté) : si l'Or a monté ET EUR/USD a monté
+    (dollar plus faible) → « porté par le complexe métaux précieux (Or +2.10 %), le
+    dollar (EUR/USD +0.80 % — dollar plus faible) ». Notre driver taux réels s'est
+    fait dépasser par le complexe métaux / le repli du dollar : c'est ÇA le pourquoi.
+    """
+    self_move = moves_by_actif.get(actif)
+    if not isinstance(self_move, (int, float)) or self_move == 0:
+        return None
+    parts: List[str] = []
+    for ref_actif, label in _REFS_CROSS_ASSET.get(actif, []):
+        mv = moves_by_actif.get(ref_actif)
+        if not isinstance(mv, (int, float)) or mv == 0:
+            continue
+        if (mv > 0) != (self_move > 0):  # corrélation directionnelle requise
+            continue
+        if abs(mv) < _CROSS_MIN_PCT:
+            continue
+        annot = ""
+        if ref_actif == "EUR/USD":
+            annot = " — dollar plus faible" if mv > 0 else " — dollar plus fort"
+        parts.append(f"{label} ({ref_actif} {mv:+.2f}%{annot})")
+    if not parts:
+        return None
+    return "porté par " + ", ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# LEVIER B — piste EXTERNE best-effort (Google News RSS, SANS clé API)
+# ---------------------------------------------------------------------------
+# Dernier recours quand NI news propre NI cross-asset n'expliquent un pari perdant :
+# on va chercher le titre de news RÉEL le plus frais sur l'actif (RSS Google News).
+# Présenté comme « piste externe à vérifier », JAMAIS une certitude (zéro invention :
+# on cite un vrai titre, on ne fabrique rien). Best-effort : réseau absent / 0
+# résultat → None (échec visible). OPT-IN via env BILAN_POST_MORTEM_EXTERNE=1 :
+# OFF par défaut (tests déterministes, pas de réseau), ON dans le cron.
+_RSS_QUERY_POST_MORTEM: Dict[str, str] = {
+    "Argent": "silver+price", "Or": "gold+price", "Cuivre": "copper+price",
+    "Pétrole (Brent)": "brent+crude+oil+price", "Nasdaq": "nasdaq+stocks",
+    "S&P 500": "S%26P+500+index", "CAC 40": "CAC+40+bourse",
+    "VIX": "stock+market+volatility+VIX", "EUR/USD": "euro+dollar+exchange+rate",
+    "USD/JPY": "dollar+yen+exchange+rate", "Café (Arabica)": "arabica+coffee+price",
+    "Cacao": "cocoa+price", "Blé": "wheat+price", "Coton": "cotton+price",
+    "Sucre": "sugar+price",
+}
+
+
+def _rss_items(url: str) -> list:
+    """Fetch RSS (Google News) — indirection lazy qui isole la dépendance
+    feedparser/news_collector du reste du module (et reste patchable en test sans
+    importer news_collector). Best-effort à l'appelant (peut lever : réseau/dép.)."""
+    from news_collector import _fetch_rss  # noqa: PLC0415
+    return _fetch_rss("post_mortem", url) or []
+
+
+def cause_externe_news(actif: str, date_j: Optional[date], max_age_days: int = 4) -> Optional[str]:
+    """LEVIER B : titre de news réel le plus frais sur `actif` autour de `date_j`
+    (Google News RSS, sans clé). Best-effort, zéro invention : réseau KO / 0 résultat
+    / titre vide → None. Le titre est nettoyé de tout montant (strip_monetaire)."""
+    query = _RSS_QUERY_POST_MORTEM.get(actif)
+    if not query or date_j is None:
+        return None
+    try:
+        import briefing as B  # noqa: PLC0415 — strip_monetaire (sans dépendance lourde)
+    except Exception:  # noqa: BLE001
+        return None
+    url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+    try:
+        items = _rss_items(url)
+    except Exception:  # noqa: BLE001 — best-effort, jamais bloquant
+        return None
+    proches = []
+    for it in items:
+        pub = getattr(it, "published", None)
+        if pub is None:
+            continue
+        try:
+            if abs((pub.date() - date_j).days) > max_age_days:
+                continue
+        except Exception:  # noqa: BLE001
+            continue
+        proches.append(it)
+    proches.sort(key=lambda it: it.published, reverse=True)
+    pool = proches or items
+    if not pool:
+        return None
+    titre = B.strip_monetaire((getattr(pool[0], "title", "") or "").strip())
+    if not titre:
+        return None
+    return titre[:140].rstrip()
+
+
+def _enrich_causes_externes(bilan: "BilanJour") -> None:
+    """LEVIER B (opt-in) : pour chaque pari PERDANT du Top 3 SANS cause interne ni
+    cross-asset, attache une piste externe (`cause_externe`). Gardé par env
+    BILAN_POST_MORTEM_EXTERNE=1 (OFF par défaut → tests déterministes, pas de
+    réseau). Best-effort : toute anomalie est silencieuse (le bilan reste valide)."""
+    if os.environ.get("BILAN_POST_MORTEM_EXTERNE", "0") != "1":
+        return
+    try:
+        from journaliste import OUTCOME_FAUSSE  # noqa: PLC0415
+        out_by = {m.cell.actif_name: m.outcome for m in bilan.measures_24h}
+        delta_by = {m.cell.actif_name: m.delta_pct for m in bilan.measures_24h}
+    except Exception:  # noqa: BLE001
+        return
+    for p in bilan.perf_top3:
+        if out_by.get(p.actif) != OUTCOME_FAUSSE:
+            continue
+        if p.cause_adverse or cause_cross_asset(p.actif, delta_by):
+            continue  # déjà expliqué par news propre ou cross-asset
+        try:
+            p.cause_externe = cause_externe_news(p.actif, bilan.date_j)
+        except Exception:  # noqa: BLE001
+            p.cause_externe = None
+
+
 def _fav(delta_pct: Optional[float], call: str) -> Optional[float]:
     """% directionnel signé favorable (réutilise run_suivi.fav_delta)."""
     try:
@@ -688,6 +834,10 @@ class PerfTop3Ligne:
     # mouvement ADVERSE sur la journée (high puis medium). None si aucun catalyseur
     # news → le bilan dira « divergence, sans catalyseur » (zéro invention).
     cause_adverse: Optional[str] = None
+    # LEVIER B — piste EXTERNE (titre de news réel le plus frais sur l'actif, fetch
+    # gnews best-effort au post-mortem). Présentée comme « piste externe (à vérifier) »,
+    # jamais une certitude. None si pas de réseau/clé ou rien trouvé (échec visible).
+    cause_externe: Optional[str] = None
     # VRAIE raison du call (drivers dominants du score à l'émission, decision-log) —
     # « pourquoi on a pris ce pari ». Aligné avec le bilan semaine. None si non tracé.
     raison_call: Optional[str] = None
@@ -1407,6 +1557,10 @@ def build_bilan_jour(
     # n'a pas les relevés intraday 12h/18h). Best-effort, jamais bloquant.
     persist_sortie_timing(date_j, bilan.perf_top3)
 
+    # LEVIER B (opt-in) — piste externe pour les pertes inexpliquées, AVANT le rendu
+    # (best-effort, gardé par env ; ne touche rien d'autre que cause_externe).
+    _enrich_causes_externes(bilan)
+
     bilan.close_approx_tickers = approx_tickers
     bilan.markdown = _render_markdown(bilan, fiches)
     return bilan
@@ -1831,11 +1985,21 @@ def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
             ligne += f" : on a suivi {p.raison_call}"
         else:
             ligne += " : call à contre-sens du marché"
-        # POURQUOI le marché est parti dans l'autre sens (le manque signalé par le
-        # fondateur). SHORT perdant → marché monté ; LONG perdant → marché reculé.
+        # POURQUOI le marché est parti dans l'autre sens (manque signalé par le
+        # fondateur 27/06). Cascade de qualité, du plus fiable au dernier recours :
+        #   1) news propre cohérente avec le mouvement adverse (high/medium) ;
+        #   2) LEVIER A — cross-asset déterministe (dollar/complexe corrélé) ;
+        #   3) LEVIER B — piste externe gnews (réel, à vérifier) ;
+        #   4) divergence honnête (le marché n'a pas suivi notre signal).
+        # SHORT perdant → marché monté ; LONG perdant → marché reculé.
         sens_marche = "monté" if p.call == "SHORT" else "reculé" if p.call == "LONG" else "bougé"
+        cross = cause_cross_asset(p.actif, delta_by)
         if p.cause_adverse:
             ligne += f". Le marché a {sens_marche} sur : {p.cause_adverse}"
+        elif cross:
+            ligne += f". Le marché a {sens_marche}, {cross}"
+        elif p.cause_externe:
+            ligne += f". Le marché a {sens_marche} (piste externe à vérifier : {p.cause_externe})"
         else:
             ligne += (f". Le marché a {sens_marche} sans catalyseur news identifié : "
                       "il n'a pas suivi notre signal (divergence quant ↔ marché)")

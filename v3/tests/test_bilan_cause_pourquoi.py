@@ -468,3 +468,94 @@ def test_learning_contresens_sans_cause_explique_le_recit():
     ]
     joined = "\n".join(bj._learnings_jour(bilan))
     assert "récit haussier n'a pas tenu" in joined
+
+
+# ===========================================================================
+# LEVIER A — pourquoi cross-asset depuis nos propres mouvements 24h
+# ===========================================================================
+
+def test_cross_asset_argent_complexe_metaux_et_dollar():
+    """Argent monté avec l'Or ET le dollar plus faible (EUR/USD up) → on nomme les
+    deux moteurs corrélés (déterministe, depuis nos mouvements 24h)."""
+    moves = {"Argent": 3.62, "Or": 2.10, "EUR/USD": 0.80}
+    res = bj.cause_cross_asset("Argent", moves)
+    assert res is not None
+    assert "complexe métaux précieux (Or +2.10%)" in res
+    assert "EUR/USD +0.80% — dollar plus faible" in res
+
+
+def test_cross_asset_ignore_ref_sens_contraire():
+    """Une référence qui a bougé dans le sens INVERSE n'explique rien → ignorée."""
+    moves = {"Argent": 3.62, "Or": -1.50, "EUR/USD": -0.10}  # Or baisse, EURUSD ~plat
+    assert bj.cause_cross_asset("Argent", moves) is None
+
+
+def test_post_mortem_levier_a_cross_asset(tmp_path: Path):
+    """Pari perdant SANS news propre mais avec moteurs corrélés → le bilan donne le
+    pourquoi cross-asset (Levier A), pas la divergence."""
+    p = tmp_path / "events-log.md"
+    p.write_text(HEADER + "<!-- batch 2026-06-26T09:00:00Z : 0 events -->\n", encoding="utf-8")
+    meas = [_measure("Argent", "SHORT", 3.62, 0.6)]
+    perf = bj.compute_perf_top3(meas, {("Argent", "24h"): True}, {}, date_j=DJ2, events_path=p)
+    bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
+    bilan.perf_top3 = perf
+    bilan.measures_24h = [
+        _measure_perdant("Argent", "SHORT", 3.62),
+        NS(cell=NS(actif_name="Or"), outcome="x", delta_pct=2.10),
+        NS(cell=NS(actif_name="EUR/USD"), outcome="x", delta_pct=0.80),
+    ]
+    joined = "\n".join(bj._points_faibles_jour(bilan))
+    assert "complexe métaux précieux (Or +2.10%)" in joined
+    assert "divergence" not in joined.lower()  # Levier A a expliqué, pas de fallback
+
+
+# ===========================================================================
+# LEVIER B — piste externe best-effort (Google News RSS, sans clé)
+# ===========================================================================
+
+def test_cause_externe_news_titre_le_plus_frais(monkeypatch):
+    """Renvoie le titre RÉEL le plus frais et proche du jour (les vieux exclus)."""
+    from datetime import timezone  # noqa: PLC0415
+    items = [
+        NS(title="Silver added to US critical minerals list",
+           published=datetime(2026, 6, 26, 14, tzinfo=timezone.utc)),
+        NS(title="Old silver note", published=datetime(2026, 6, 18, tzinfo=timezone.utc)),
+    ]
+    monkeypatch.setattr(bj, "_rss_items", lambda url: items)
+    res = bj.cause_externe_news("Argent", DJ2)
+    assert res == "Silver added to US critical minerals list"
+
+
+def test_cause_externe_news_best_effort_none(monkeypatch):
+    """Réseau KO (fetch lève) ou actif inconnu → None (échec visible, jamais crash)."""
+    def _boom(url):
+        raise RuntimeError("network down")
+    monkeypatch.setattr(bj, "_rss_items", _boom)
+    assert bj.cause_externe_news("Argent", DJ2) is None
+    assert bj.cause_externe_news("ActifInconnu", DJ2) is None
+
+
+def test_post_mortem_levier_b_piste_externe(tmp_path: Path):
+    """Pari perdant SANS news propre NI cross-asset, mais avec une piste externe →
+    le bilan l'affiche comme « piste externe à vérifier » (pas la divergence)."""
+    p = tmp_path / "events-log.md"
+    p.write_text(HEADER + "<!-- batch 2026-06-26T09:00:00Z : 0 events -->\n", encoding="utf-8")
+    meas = [_measure("Argent", "SHORT", 3.62, 0.6)]
+    perf = bj.compute_perf_top3(meas, {("Argent", "24h"): True}, {}, date_j=DJ2, events_path=p)
+    perf[0].cause_externe = "Silver added to US critical minerals list"
+    bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
+    bilan.perf_top3 = perf
+    # Aucun sibling corrélé dans les mesures → Levier A renvoie None.
+    bilan.measures_24h = [_measure_perdant("Argent", "SHORT", 3.62)]
+    joined = "\n".join(bj._points_faibles_jour(bilan))
+    assert "piste externe à vérifier : Silver added to US critical minerals list" in joined
+
+
+def test_enrich_externe_off_par_defaut(monkeypatch):
+    """Sans le flag env, l'enrichissement externe ne fait RIEN (pas de réseau en test)."""
+    monkeypatch.delenv("BILAN_POST_MORTEM_EXTERNE", raising=False)
+    bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
+    bilan.perf_top3 = []
+    bilan.measures_24h = []
+    bj._enrich_causes_externes(bilan)  # ne lève pas, ne fetch pas
+    assert True

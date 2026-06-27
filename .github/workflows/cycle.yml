@@ -348,6 +348,9 @@ jobs:
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           LOG_LEVEL: INFO
+          # Levier B (post-mortem) : active la piste externe (RSS Google News, sans
+          # clé) pour les pertes inexpliquées. Best-effort, ne bloque jamais le bilan.
+          BILAN_POST_MORTEM_EXTERNE: "1"
         run: python v3/scripts/run_bilan.py
 
       # La page est régénérée à CHAQUE créneau actif (pas seulement 7h) : un

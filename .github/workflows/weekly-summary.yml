@@ -98,7 +98,11 @@ jobs:
             echo "Samedi + déclenchement ${GITHUB_EVENT_NAME} (VPS, 1 tir/créneau) → run R5."
             exit 0
           fi
-          last=$(git log -1 --format=%ct --grep="bilan semaine" 2>/dev/null || echo 0)
+          # Anti-doublon : ne matcher QUE le VRAI commit weekly ("chore(weekly): …"),
+          # pas n'importe quel commit mentionnant "bilan semaine" (doc/fix/feature) —
+          # sinon un commit sans rapport poussé <2h avant le run du samedi faisait
+          # SKIPPER le bilan (bug 27/06 : "fix(page): …bilan semaine = samedi…").
+          last=$(git log -1 --format=%ct --grep="chore(weekly)" 2>/dev/null || echo 0)
           now=$(date +%s)
           if [ "${last:-0}" -gt 0 ] && [ $((now - last)) -lt 7200 ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"

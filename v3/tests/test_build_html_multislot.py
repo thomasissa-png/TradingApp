@@ -173,9 +173,10 @@ def test_html_header_gate_pas_flip():
 
 
 def test_html_message_semaine_avec_date():
-    """P1-G : le message « bilan semaine » vide indique quand il sera disponible."""
+    """P1-G : le message « bilan semaine » vide indique quand il sera disponible
+    (cadence RÉELLE = samedi matin, cf. weekly-summary.yml cron `* * 6`)."""
     html = _render_sample_html()
-    assert "dimanche" in html
+    assert "samedi" in html
 
 
 def test_html_metadonnees_debug_repliees():

@@ -2647,7 +2647,7 @@ function buildWeekView(weekly) {{
   if (!weekly) {{
     content.innerHTML = '';
     if (titleEl) titleEl.hidden = true;
-    if (empty) {{ empty.hidden = false; empty.textContent = 'Aucun bilan de semaine pour le moment : le premier est généré le dimanche suivant (18h), puis chaque dimanche.'; }}
+    if (empty) {{ empty.hidden = false; empty.textContent = 'Aucun bilan de semaine pour le moment : le premier est généré le samedi suivant (matin), puis chaque samedi.'; }}
     return;
   }}
   if (empty) empty.hidden = true;

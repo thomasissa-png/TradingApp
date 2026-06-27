@@ -122,6 +122,9 @@ class BilanSemaine:
     detail_24h: List["Detail24hActif"] = field(default_factory=list)  # grille 24h/actif (S9)
     mouvements_rates: List["MouvementRate"] = field(default_factory=list)  # wins ratés (S9)
     sortie_timing: Optional["SortieTimingSemaine"] = None  # agrégat trop tôt/tard (vs 12h/18h)
+    # {bulletin_date: {actif: realized_pct}} — mouvements 24h réels par JOUR D'ÉMISSION,
+    # pour le post-mortem cross-asset déterministe (section 4, même levier que le quotidien).
+    moves_by_jour: Dict[date, Dict[str, float]] = field(default_factory=dict)
     markdown: str = ""
 
 
@@ -451,6 +454,11 @@ class PickSemaine:
     cause_contra: Optional[str] = None   # news high À CONTRE-SENS de notre call (ce qui nous a battus)
     evenement_programme: Optional[str] = None  # nom de l'événement calendaire majeur (ou None)
     famille: Optional[str] = None        # famille granulaire de la fiche (ex. métaux-précieux)
+    # Colonnes alignées sur le bilan QUOTIDIEN (mêmes sources, zéro nouveau calcul) :
+    conviction_signee: Optional[float] = None  # note signée (score_pm1 sinon score_pond)
+    perf_12h: Optional[float] = None     # % favorable 12h (load_perf_intraday_favorable)
+    perf_18h: Optional[float] = None     # % favorable 18h (idem)
+    max_gain_pct: Optional[float] = None  # max gain jour (champ measures-log de la cellule)
 
     @property
     def vrai(self) -> bool:
@@ -538,6 +546,7 @@ def _enrich_picks_semaine(
     from journaliste import iso_week_bounds, OUTCOME_VRAI, OUTCOME_FAUSSE  # noqa: PLC0415
     from bilan_jour import (  # noqa: PLC0415
         load_selection_map, load_conviction_records, cause_news_high_dir,
+        load_perf_intraday_favorable, SUIVI_TRACKING_DIR, SUIVI_SNAPSHOT_DIR,
     )
     from datetime import timedelta  # noqa: PLC0415
 
@@ -568,12 +577,17 @@ def _enrich_picks_semaine(
             ech = date.fromisoformat(str(r.get("echeance")))
         except (TypeError, ValueError):
             continue
-        if not (monday <= ech <= sunday):
-            continue
+        # On groupe par JOUR D'ÉMISSION (bulletin_date), pas par échéance : le call
+        # du vendredi est tenu sur le week-end (échéance = lundi suivant, HORS semaine
+        # ISO) alors que son résultat intraday vendredi est connu. Filtrer par échéance
+        # faisait disparaître le vendredi des tableaux. Le verdict VRAI/FAUSSE et le
+        # max gain restent lus depuis CE record measures (échéance lundi incluse).
         try:
             bdate = date.fromisoformat(str(r.get("bulletin_date")))
         except (TypeError, ValueError):
             bdate = ech - timedelta(days=1)
+        if not (monday <= bdate <= sunday):
+            continue
         actif = str(r.get("actif"))
         if bdate not in sel_cache:
             sel_cache[bdate] = load_selection_map(bdate, decision_log_dir)
@@ -606,6 +620,22 @@ def _enrich_picks_semaine(
         fiche_key = r.get("fiche_key")
         # Événement programmé majeur entre la prise (bdate) et l'échéance (ech).
         evt = _evenement_programme(fiche_key, bdate, ech)
+        # Colonnes alignées sur le bilan QUOTIDIEN — mêmes sources, zéro recalcul.
+        # Conviction signée : score_pm1 prioritaire (déjà signé ±1), sinon score_pond.
+        conv_signee = (rec.get("score_pm1") if isinstance(rec.get("score_pm1"), (int, float))
+                       else rec.get("score_pond") if isinstance(rec.get("score_pond"), (int, float))
+                       else None)
+        # % 12h / % 18h favorables (jour d'émission = bdate, call du measures-log).
+        try:
+            perf_12h, perf_18h = load_perf_intraday_favorable(
+                bdate, actif, str(call),
+                tracking_dir=SUIVI_TRACKING_DIR, snapshot_dir=SUIVI_SNAPSHOT_DIR,
+            )
+        except Exception:  # noqa: BLE001 — best-effort, jamais bloquant
+            perf_12h = perf_18h = None
+        # Max gain jour : champ measures-log de la cellule (déjà en main via r).
+        mg = r.get("max_gain_pct")
+        max_gain = round(float(mg), 2) if isinstance(mg, (int, float)) else None
         picks.append(PickSemaine(
             actif=actif, call=str(call), outcome=str(r.get("outcome")),
             realized_pct=round(float(rp), 2) if isinstance(rp, (int, float)) else None,
@@ -624,9 +654,57 @@ def _enrich_picks_semaine(
             cause_pro=cause_pro,
             cause_contra=cause_contra,
             evenement_programme=evt,
+            conviction_signee=(float(conv_signee) if isinstance(conv_signee, (int, float)) else None),
+            perf_12h=perf_12h,
+            perf_18h=perf_18h,
+            max_gain_pct=max_gain,
         ))
     picks.sort(key=lambda p: (p.bulletin_date, p.actif))
     return picks
+
+
+def _moves_24h_par_jour(
+    now: datetime,
+    measures_log: Path = MEASURES_LOG,
+) -> Dict[date, Dict[str, float]]:
+    """{bulletin_date: {actif: realized_pct}} pour la semaine ISO, par JOUR D'ÉMISSION.
+
+    Mouvements 24h BRUTS signés (delta réel de l'actif) de chaque jour. Sert au
+    post-mortem cross-asset déterministe (`cause_cross_asset`) : pour un pari perdant,
+    on regarde ce qu'ont fait les actifs corrélés CE jour-là. Zéro invention : un
+    record sans realized_pct exploitable est ignoré."""
+    from journaliste import iso_week_bounds  # noqa: PLC0415
+    from datetime import timedelta  # noqa: PLC0415
+
+    monday, sunday = iso_week_bounds(now)
+    out: Dict[date, Dict[str, float]] = {}
+    if not measures_log.exists():
+        return out
+    for line in measures_log.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(r, dict) or r.get("horizon") != "24h":
+            continue
+        rp = r.get("realized_pct")
+        if not isinstance(rp, (int, float)):
+            continue
+        try:
+            ech = date.fromisoformat(str(r.get("echeance")))
+        except (TypeError, ValueError):
+            continue
+        try:
+            bdate = date.fromisoformat(str(r.get("bulletin_date")))
+        except (TypeError, ValueError):
+            bdate = ech - timedelta(days=1)
+        if not (monday <= bdate <= sunday):
+            continue
+        out.setdefault(bdate, {})[str(r.get("actif"))] = round(float(rp), 2)
+    return out
 
 
 @dataclass
@@ -687,12 +765,14 @@ def mouvements_rates_semaine(
             ech = date.fromisoformat(str(r.get("echeance")))
         except (TypeError, ValueError):
             continue
-        if not (monday <= ech <= sunday):
-            continue
+        # Groupé par jour d'émission (bulletin_date), cohérent avec _enrich_picks_semaine :
+        # un mouvement raté du vendredi (échéance lundi suivant) doit rester dans la semaine.
         try:
             bdate = date.fromisoformat(str(r.get("bulletin_date")))
         except (TypeError, ValueError):
             bdate = ech - timedelta(days=1)
+        if not (monday <= bdate <= sunday):
+            continue
         actif = str(r.get("actif"))
         if bdate not in sel_cache:
             sel_cache[bdate] = load_selection_map(bdate, decision_log_dir)
@@ -1225,6 +1305,7 @@ def build_bilan_semaine(
     detail24 = detail_24h_par_actif(now)
     rates = mouvements_rates_semaine(now)
     timing = sortie_timing_semaine(now)  # agrégat trop tôt/tard (journal des bilans du jour)
+    moves_by_jour = _moves_24h_par_jour(now)  # cross-asset post-mortem (section 4)
 
     bilan = BilanSemaine(
         iso=iso, lundi=monday, dimanche=sunday, now=now, cellules=cellules,
@@ -1232,6 +1313,7 @@ def build_bilan_semaine(
         n_faible_conv=conv.n_faible, taux_faible_conv=conv.taux_faible,
         selection=sel, tendances=tend, picks=picks, edge_familles=edge_fam,
         detail_24h=detail24, mouvements_rates=rates, sortie_timing=timing,
+        moves_by_jour=moves_by_jour,
     )
 
     propositions = [p for p in build_propositions(cellules) if proposition_valide(p)]
@@ -1325,9 +1407,21 @@ def _agg_picks(picks: List["PickSemaine"]) -> Tuple[int, int, Optional[float]]:
     return nv, len(concl), amp
 
 
+def _fmt_conviction(v: Optional[float]) -> str:
+    """Conviction signée façon bilan quotidien (« +1.25 »). « — » si absente."""
+    return f"{v:+.2f}" if isinstance(v, (int, float)) else "—"
+
+
+def _fmt_pct_quotidien(v: Optional[float]) -> str:
+    """% signé façon bilan quotidien (« +1.25% »). « — » si absent (placeholder cellule)."""
+    return f"{v:+.2f}%" if isinstance(v, (int, float)) else "—"
+
+
 def _render_picks_par_jour(picks: List["PickSemaine"], L: List[str]) -> None:
-    """Table des picks triée PAR JOUR (pas par actif) : jour, actif, call, % (sens
-    du call), verdict. Au sein d'un jour, du meilleur score au moins bon."""
+    """Table des picks triée PAR JOUR (pas par actif). Colonnes alignées sur le bilan
+    QUOTIDIEN : jour, actif, call, conviction signée, % 12h, % 18h, max gain jour,
+    variation brute (sens marché), verdict, raison. Au sein d'un jour, du meilleur
+    score au moins bon."""
     JJ = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
     rows = sorted(
         picks,
@@ -1335,15 +1429,17 @@ def _render_picks_par_jour(picks: List["PickSemaine"], L: List[str]) -> None:
                        -(abs(p.score) if isinstance(p.score, (int, float)) else -1.0),
                        p.actif),
     )
-    L.append("| Jour | Actif | Call | Variation actif | Résultat | Raison |")
-    L.append("|---|---|---|---|---|---|")
+    L.append("| Jour | Actif | Call | Conviction | % 12h | % 18h | Max | Variation actif | Résultat | Raison |")
+    L.append("|---|---|---|---|---|---|---|---|---|---|")
     for p in rows:
         jour = f"{JJ[p.bulletin_date.weekday()]} {p.bulletin_date.day}"
         glyph = "✅" if p.vrai else ("❌" if p.outcome in ("FAUSSE", "FAUX") else "⚪")
         # Variation BRUTE de l'actif (monte → +, baisse → −), pas le sens du call.
         # Le ✅/❌ dit si notre call (LONG/SHORT) était dans le bon sens.
         L.append(
-            f"| {jour} | {p.actif} | {p.call} | {_fmt_signed_pct(p.realized_pct)} | "
+            f"| {jour} | {p.actif} | {p.call} | {_fmt_conviction(p.conviction_signee)} | "
+            f"{_fmt_pct_quotidien(p.perf_12h)} | {_fmt_pct_quotidien(p.perf_18h)} | "
+            f"{_fmt_pct_quotidien(p.max_gain_pct)} | {_fmt_signed_pct(p.realized_pct)} | "
             f"{glyph} | {_raison_pick(p)} |"
         )
     L.append("")
@@ -1827,6 +1923,12 @@ def _segments_signes(bilan: BilanSemaine) -> Tuple[List[str], List[str]]:
                 f"{t.actif} {s.direction} ({_fmt_jours_segment(s.jours)}) "
                 f"{_fmt_signed_pct(p)} · {cause}"
             )
+            # Échec de tendance : on ajoute le POURQUOI cross-asset/externe (même
+            # cascade que les paris perdants) sur le dernier jour de la phase ratée.
+            if p <= 0 and s.jours:
+                pourquoi = _pourquoi_cascade(t.actif, s.jours[-1], bilan)
+                if pourquoi and "divergence quant" not in pourquoi:
+                    libelle += f" — {pourquoi}"
             (gagnants if p > 0 else perdants).append(libelle)
     return gagnants, perdants
 
@@ -1922,6 +2024,35 @@ def _points_forts(bilan: BilanSemaine) -> List[str]:
     return pts[:8]
 
 
+def _pourquoi_cascade(
+    actif: str, bulletin_date: date, bilan: "BilanSemaine",
+    cause_contra: Optional[str] = None,
+) -> str:
+    """POURQUOI réel d'un échec, MÊME cascade que le bilan quotidien (zéro invention) :
+    a. news propre à contre-sens (déjà passée en argument via cause_contra) ;
+    b. cross-asset déterministe (`cause_cross_asset` sur les moves 24h du jour) ;
+    c. piste externe best-effort (`cause_externe_news`, None hors réseau — OK) ;
+    d. sinon divergence quant ↔ marché (le marché n'a pas suivi notre signal).
+    Renvoie une phrase prête à concaténer (jamais « cause non identifiée » à tort)."""
+    if cause_contra:
+        return f"{cause_contra} a dominé à contre-sens"
+    from bilan_jour import cause_cross_asset, cause_externe_news  # noqa: PLC0415
+    moves = (getattr(bilan, "moves_by_jour", None) or {}).get(bulletin_date) or {}
+    try:
+        cross = cause_cross_asset(actif, moves)
+    except Exception:  # noqa: BLE001 — best-effort
+        cross = None
+    if cross:
+        return cross  # ex. « porté par le complexe métaux précieux (Or +2.10%)… »
+    try:
+        ext = cause_externe_news(actif, bulletin_date)
+    except Exception:  # noqa: BLE001 — best-effort, None hors réseau
+        ext = None
+    if ext:
+        return f"piste externe à vérifier : {ext}"
+    return "divergence quant ↔ marché (le marché n'a pas suivi notre signal)"
+
+
 def _points_faibles(bilan: BilanSemaine) -> List[str]:
     """SECTION 4 — ce qu'on doit améliorer et POURQUOI (post-mortem causal, spec S9).
 
@@ -1965,10 +2096,11 @@ def _points_faibles(bilan: BilanSemaine) -> List[str]:
                 f"{tete} raté : signal quant solide (aucun drapeau), mais "
                 f"{p.cause_contra} l'a contre-pied. News possiblement sous-pondérée au scoring."
             )
-        else:  # CAS C bis : quant solide raté, cause non identifiée
+        else:  # CAS C bis : quant solide raté → MÊME cascade de POURQUOI que le quotidien
+            pourquoi = _pourquoi_cascade(p.actif, p.bulletin_date, bilan)
             pts.append(
-                f"{tete} raté : signal quant solide (aucun drapeau), cause non "
-                "identifiée (aucune news high tracée). À revoir si le pattern se répète."
+                f"{tete} raté : signal quant solide (aucun drapeau). Pourquoi : "
+                f"{pourquoi}. À revoir si le pattern se répète."
             )
         # Alerte événement PROGRAMMÉ (News Trader) : si une grosse échéance connue
         # au calendrier tombait ce jour-là, le pari n'aurait pas dû passer en top 3

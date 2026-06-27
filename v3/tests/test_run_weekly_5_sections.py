@@ -679,12 +679,13 @@ def test_priorite_familles_douce_si_petit_N():
 
 
 def _bilan_stub(picks, edge_familles=None, tendances=None, detail_24h=None,
-                mouvements_rates=None):
+                mouvements_rates=None, moves_by_jour=None):
     return SimpleNamespace(
         picks=picks, tendances=tendances or [], selection=None, cellules=[],
         n_forte=0, taux_forte=None, n_faible_conv=0, taux_faible_conv=None,
         edge_familles=edge_familles or [], detail_24h=detail_24h or [],
         mouvements_rates=mouvements_rates or [],
+        moves_by_jour=moves_by_jour or {},
     )
 
 
@@ -725,13 +726,31 @@ def test_section4_causal_news_ratee_et_signal_faible():
         _pick("S&P 500", "LONG", "FAUSSE", 0.62, cause_contra="Ventes au détail chinoises en baisse"),
         # CAS B : signal faible suivi à tort (quant + drapeau).
         _pick("Blé", "SHORT", "FAUSSE", 0.0, mono=True, mono_nom="Tendance du blé (20 jours)"),
-        # CAS C : quant solide raté, cause non identifiée.
+        # CAS C bis : quant solide raté, aucun corrélé tracé → cascade terminale.
         _pick("Café (Arabica)", "SHORT", "FAUSSE", 0.10),
     ]))
     blob = " ".join(faibles)
     assert "CONTRE-SENS" in blob and "Ventes au détail chinoises en baisse" in blob
     assert "signal classé FAIBLE" in blob and "Tendance du blé (20 jours)" in blob
-    assert "cause non identifiée" in blob
+    # CAS C bis sans donnée corrélée : on NOMME la divergence quant ↔ marché
+    # (le rapport ne dit plus jamais « cause non identifiée » — il qualifie l'échec).
+    assert "cause non identifiée" not in blob
+    assert "divergence quant ↔ marché" in blob
+
+
+def test_section4_pourquoi_cross_asset_nomme_le_complexe_correle():
+    """FIX fondateur S26 : un pari quant perdant SANS news propre doit nommer le
+    POURQUOI cross-asset déterministe (même levier que le bilan quotidien), pas
+    rester « cause non identifiée ». Argent SHORT perdant + Or monté → on explique."""
+    bdate = date(2026, 6, 26)
+    faibles = rw._points_faibles(_bilan_stub(
+        [_pick("Argent", "SHORT", "FAUSSE", 0.10, mv=3.6, bdate=bdate)],
+        moves_by_jour={bdate: {"Argent": 3.6, "Or": 1.28}},
+    ))
+    blob = " ".join(faibles)
+    assert "Argent SHORT" in blob
+    assert "porté par" in blob and "Or" in blob       # complexe métaux précieux nommé
+    assert "cause non identifiée" not in blob
 
 
 def test_section5_learning_news_vs_quant():
@@ -868,3 +887,66 @@ def test_render_sortie_timing_semaine_dans_section1():
     assert "Sortie : a-t-on clôturé au bon moment" in md
     assert "1 clôturée(s) trop tard" in md and "2 bien tenue(s)" in md
     assert "Argent" in md
+
+
+# --- FIX fondateur S26 : vendredi inclus + 4 colonnes quotidien dans Top 1/Top 3 ---
+
+def test_render_picks_par_jour_header_4_colonnes_quotidien():
+    """FIX 2 : le tableau Top 1/Top 3 expose les colonnes du bilan quotidien
+    (Conviction signée, % 12h, % 18h, Max) ENTRE Call et Variation, format quotidien."""
+    p = _pick("Argent", "SHORT", "FAUSSE", 0.10, mv=3.6, bdate=date(2026, 6, 19))
+    p.conviction_signee = -9.51
+    p.perf_12h, p.perf_18h = -3.26, -5.08
+    p.max_gain_pct = 1.44
+    L: list = []
+    rw._render_picks_par_jour([p], L)
+    md = "\n".join(L)
+    assert ("| Jour | Actif | Call | Conviction | % 12h | % 18h | Max | "
+            "Variation actif | Résultat | Raison |") in md
+    # Valeurs au format quotidien (signe + 2 décimales, % collé), « — » si absent.
+    assert "| -9.51 |" in md
+    assert "| -3.26% |" in md and "| -5.08% |" in md and "| +1.44% |" in md
+
+
+def test_render_picks_par_jour_max_tiret_si_absent():
+    """Zéro invention : Max gain absent (ancien record) → placeholder « — »."""
+    p = _pick("Or", "SHORT", "VRAI", 0.0, mv=2.4, bdate=date(2026, 6, 16))
+    L: list = []
+    rw._render_picks_par_jour([p], L)
+    md = "\n".join(L)
+    # 3 colonnes vides (conviction/12h/18h/max non peuplées) rendues « — ».
+    assert "| Or | SHORT | — | — | — | — |" in md
+
+
+def test_enrich_picks_inclut_vendredi_echeance_lundi(tmp_path, monkeypatch):
+    """FIX 1 : un pick émis VENDREDI (échéance lundi suivant, HORS semaine ISO) doit
+    rester dans les tableaux — on groupe par bulletin_date, pas par échéance.
+    Avant le fix, le vendredi disparaissait (filtre `monday <= echeance <= sunday`)."""
+    import bilan_jour as bj
+    ven = date(2026, 6, 19)          # vendredi, dans la semaine ISO de NOW (lun 15 → dim 21)
+    lundi_suiv = date(2026, 6, 22)   # échéance HORS semaine ISO
+    rec = {
+        "actif": "Argent", "horizon": "24h", "conclusion": "SHORT",
+        "outcome": "FAUSSE", "realized_pct": 3.6, "max_gain_pct": 1.44,
+        "echeance": lundi_suiv.isoformat(), "bulletin_date": ven.isoformat(),
+        "fiche_key": "argent",
+    }
+    log = tmp_path / "measures.jsonl"
+    log.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+
+    # Le pick était bien sélectionné ce jour-là (sinon il est filtré légitimement).
+    monkeypatch.setattr(bj, "load_selection_map",
+                        lambda d, _dir=None: {("Argent", "24h"): True})
+    monkeypatch.setattr(bj, "load_conviction_records",
+                        lambda d, _dir=None: {("Argent", "24h"): {"score_pm1": -9.51}})
+    monkeypatch.setattr(bj, "load_perf_intraday_favorable",
+                        lambda *a, **k: (-3.26, -5.08))
+
+    picks = rw._enrich_picks_semaine(NOW, measures_log=log)
+    assert len(picks) == 1
+    p = picks[0]
+    assert p.actif == "Argent" and p.bulletin_date == ven    # émis vendredi, pas exclu
+    assert p.outcome == "FAUSSE"                              # verdict lu depuis le record
+    assert p.conviction_signee == -9.51                      # conviction signée peuplée
+    assert (p.perf_12h, p.perf_18h) == (-3.26, -5.08)        # % intraday peuplés
+    assert p.max_gain_pct == 1.44                            # max gain jour peuplé

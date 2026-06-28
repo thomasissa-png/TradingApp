@@ -1759,6 +1759,10 @@ def persist_sortie_timing(
                 "categorie": categorie_sortie(p),
                 "pic_pct": p.pic_valeur, "pic_heure": p.pic_heure,
                 "cloture_pct": p.fav_cloture,
+                # Max gain du jour (high/low) calculé par le bilan quotidien : PERSISTÉ
+                # pour que le bilan HEBDO lise la MÊME valeur (le measures-log ne le
+                # porte pas toujours). Source unique quotidien ↔ hebdo.
+                "max_gain_pct": p.max_gain_pct,
             }
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -2509,6 +2513,43 @@ def load_cloture_favorable_bilan(
             (str(r.get("call")) if r.get("call") in ("LONG", "SHORT") else None),
             (round(float(cp), 2) if isinstance(cp, (int, float)) else None),
         )
+    return out
+
+
+def load_max_gain_bilan(
+    sortie_timing_path: Path = SORTIE_TIMING_LOG,
+) -> Dict[Tuple[str, str], float]:
+    """Max gain du jour tel que CALCULÉ par le Bilan du jour, par (date, actif).
+
+    Lit `sortie-timing-log.jsonl` : `max_gain_pct` (vrai high/low du jour, persisté
+    par le bilan) en priorité, sinon `pic_pct` (pic intraday observé) comme plancher.
+    Permet au bilan HEBDO d'afficher le MÊME Max que le bilan quotidien au lieu du
+    measures-log (qui ne porte pas toujours le champ). {} si absent (zéro invention)."""
+    out: Dict[Tuple[str, str], float] = {}
+    if not sortie_timing_path.exists():
+        return out
+    try:
+        lines = sortie_timing_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(r, dict):
+            continue
+        d, a = r.get("date"), r.get("actif")
+        if not d or not a:
+            continue
+        mg = r.get("max_gain_pct")
+        if not isinstance(mg, (int, float)):
+            mg = r.get("pic_pct")  # plancher : pic intraday observé
+        if isinstance(mg, (int, float)):
+            out[(str(d), str(a))] = round(float(mg), 2)
     return out
 
 

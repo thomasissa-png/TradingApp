@@ -547,10 +547,15 @@ def _enrich_picks_semaine(
     from bilan_jour import (  # noqa: PLC0415
         load_selection_map, load_conviction_records, cause_news_high_dir,
         load_perf_intraday_favorable, SUIVI_TRACKING_DIR, SUIVI_SNAPSHOT_DIR,
+        load_max_gain_bilan,
     )
     from datetime import timedelta  # noqa: PLC0415
 
     monday, sunday = iso_week_bounds(now)
+    # Max gain du jour tel que CALCULÉ par le bilan QUOTIDIEN (sortie-timing-log) —
+    # source partagée pour afficher LE MÊME Max dans le quotidien et l'hebdo (le
+    # measures-log ne porte pas toujours le champ pour les échéances passées).
+    st_max = load_max_gain_bilan()
     picks: List[PickSemaine] = []
     if not measures_log.exists():
         return picks
@@ -633,8 +638,12 @@ def _enrich_picks_semaine(
             )
         except Exception:  # noqa: BLE001 — best-effort, jamais bloquant
             perf_12h = perf_18h = None
-        # Max gain jour : champ measures-log de la cellule (déjà en main via r).
+        # Max gain jour : measures-log de la cellule, sinon le Max du bilan QUOTIDIEN
+        # (sortie-timing-log, clé jour d'émission) → même valeur que le quotidien,
+        # plus de « — » quand le quotidien l'a calculé. None seulement si vraiment rien.
         mg = r.get("max_gain_pct")
+        if not isinstance(mg, (int, float)):
+            mg = st_max.get((bdate.isoformat(), actif))
         max_gain = round(float(mg), 2) if isinstance(mg, (int, float)) else None
         picks.append(PickSemaine(
             actif=actif, call=str(call), outcome=str(r.get("outcome")),

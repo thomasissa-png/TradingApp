@@ -474,6 +474,22 @@ def test_learning_contresens_sans_cause_explique_le_recit():
 # LEVIER driver minoritaire (déterministe) — partagé quotidien ↔ hebdo
 # ===========================================================================
 
+def test_load_max_gain_bilan(tmp_path: Path):
+    """Max du jour : vrai max_gain_pct prioritaire, sinon pic_pct (plancher), sinon
+    absent (zéro invention). Source partagée quotidien ↔ hebdo."""
+    p = tmp_path / "st.jsonl"
+    p.write_text(
+        '{"date":"2026-06-24","actif":"Argent","max_gain_pct":9.24,"pic_pct":6.54}\n'
+        '{"date":"2026-06-25","actif":"Or","pic_pct":2.1}\n'
+        '{"date":"2026-06-26","actif":"VIX"}\n',
+        encoding="utf-8",
+    )
+    out = bj.load_max_gain_bilan(p)
+    assert out[("2026-06-24", "Argent")] == 9.24   # vrai max prioritaire
+    assert out[("2026-06-25", "Or")] == 2.1         # fallback pic intraday
+    assert ("2026-06-26", "VIX") not in out         # rien → absent
+
+
 def test_cause_minority_driver_renvoie_le_contra():
     rec = {"criteres": [
         {"nom": "facteur haussier", "contrib_pond": 2.0},

@@ -1,15 +1,15 @@
 {"date": "2026-06-22", "actif": "Café (Arabica)", "call": "LONG", "categorie": "sans_objet", "pic_pct": -0.54, "pic_heure": "12h", "cloture_pct": null}
 {"date": "2026-06-22", "actif": "EUR/USD", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.04, "pic_heure": "12h", "cloture_pct": null}
 {"date": "2026-06-22", "actif": "Pétrole (Brent)", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.39, "pic_heure": "12h", "cloture_pct": null}
-{"date": "2026-06-23", "actif": "Cacao", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 0.91, "pic_heure": "clôture", "cloture_pct": 0.91}
-{"date": "2026-06-23", "actif": "EUR/USD", "call": "SHORT", "categorie": "bien_tenu", "pic_pct": 0.38, "pic_heure": "clôture", "cloture_pct": 0.38}
-{"date": "2026-06-23", "actif": "Or", "call": "SHORT", "categorie": "bien_tenu", "pic_pct": 0.04, "pic_heure": "clôture", "cloture_pct": 0.04}
-{"date": "2026-06-24", "actif": "Argent", "call": "SHORT", "categorie": "bien_tenu", "pic_pct": 6.54, "pic_heure": "clôture", "cloture_pct": 6.54}
-{"date": "2026-06-24", "actif": "Cacao", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 7.26, "pic_heure": "clôture", "cloture_pct": 7.26}
-{"date": "2026-06-24", "actif": "Café (Arabica)", "call": "LONG", "categorie": "trop_tard", "pic_pct": 1.1, "pic_heure": "18h", "cloture_pct": 0.65}
-{"date": "2026-06-25", "actif": "Argent", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.33, "pic_heure": "12h", "cloture_pct": -0.8}
-{"date": "2026-06-25", "actif": "Café (Arabica)", "call": "LONG", "categorie": "trop_tard", "pic_pct": 1.56, "pic_heure": "12h", "cloture_pct": -0.11}
-{"date": "2026-06-25", "actif": "Pétrole (Brent)", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.84, "pic_heure": "12h", "cloture_pct": -4.13}
-{"date": "2026-06-26", "actif": "Argent", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -3.26, "pic_heure": "12h", "cloture_pct": -3.62}
-{"date": "2026-06-26", "actif": "Café (Arabica)", "call": "LONG", "categorie": "sans_objet", "pic_pct": -0.83, "pic_heure": "clôture", "cloture_pct": -0.83}
-{"date": "2026-06-26", "actif": "Pétrole (Brent)", "call": "SHORT", "categorie": "trop_tard", "pic_pct": 2.47, "pic_heure": "18h", "cloture_pct": 1.74}
+{"date": "2026-06-23", "actif": "Cacao", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 0.91, "pic_heure": "clôture", "cloture_pct": 0.91, "max_gain_pct": 1.63}
+{"date": "2026-06-23", "actif": "EUR/USD", "call": "SHORT", "categorie": "bien_tenu", "pic_pct": 0.38, "pic_heure": "clôture", "cloture_pct": 0.38, "max_gain_pct": 0.41}
+{"date": "2026-06-23", "actif": "Or", "call": "SHORT", "categorie": "bien_tenu", "pic_pct": 0.04, "pic_heure": "clôture", "cloture_pct": 0.04, "max_gain_pct": 0.5}
+{"date": "2026-06-24", "actif": "Argent", "call": "SHORT", "categorie": "bien_tenu", "pic_pct": 6.54, "pic_heure": "clôture", "cloture_pct": 6.54, "max_gain_pct": 9.24}
+{"date": "2026-06-24", "actif": "Cacao", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 7.26, "pic_heure": "clôture", "cloture_pct": 7.26, "max_gain_pct": 8.03}
+{"date": "2026-06-24", "actif": "Café (Arabica)", "call": "LONG", "categorie": "trop_tard", "pic_pct": 1.1, "pic_heure": "18h", "cloture_pct": 0.65, "max_gain_pct": 3.11}
+{"date": "2026-06-25", "actif": "Argent", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.33, "pic_heure": "12h", "cloture_pct": -0.8, "max_gain_pct": 1.86}
+{"date": "2026-06-25", "actif": "Café (Arabica)", "call": "LONG", "categorie": "trop_tard", "pic_pct": 1.56, "pic_heure": "12h", "cloture_pct": -0.11, "max_gain_pct": 2.12}
+{"date": "2026-06-25", "actif": "Pétrole (Brent)", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.84, "pic_heure": "12h", "cloture_pct": -4.13, "max_gain_pct": 0.43}
+{"date": "2026-06-26", "actif": "Argent", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -3.26, "pic_heure": "12h", "cloture_pct": -3.62, "max_gain_pct": 1.44}
+{"date": "2026-06-26", "actif": "Café (Arabica)", "call": "LONG", "categorie": "sans_objet", "pic_pct": -0.83, "pic_heure": "clôture", "cloture_pct": -0.83, "max_gain_pct": 0.72}
+{"date": "2026-06-26", "actif": "Pétrole (Brent)", "call": "SHORT", "categorie": "trop_tard", "pic_pct": 2.47, "pic_heure": "18h", "cloture_pct": 1.74, "max_gain_pct": 2.95}

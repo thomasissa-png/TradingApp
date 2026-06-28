@@ -1441,7 +1441,10 @@ def _render_picks_par_jour(picks: List["PickSemaine"], L: List[str]) -> None:
     # [Relecture 27/06] Raison SORTIE du tableau (comme le bilan quotidien) : avec
     # Conviction/12h/18h/Max ajoutées, garder la longue liste de drivers en colonne
     # rendait chaque ligne géante. Tableau compact ici, « pourquoi » en sous-liste.
-    L.append("| Jour | Actif | Call | Conviction | % 12h | % 18h | Max | Variation actif | Résultat |")
+    # En-tête « Max gain » (et non « Max ») : déclenche l'EXEMPTION de masquage
+    # mobile de markDenseTables (build_html) → toutes les colonnes restent visibles
+    # via scroll horizontal, aucune (Call/Conviction/% 18h) n'est cachée sur mobile.
+    L.append("| Jour | Actif | Call | Conviction | % 12h | % 18h | Max gain | Variation actif | Résultat |")
     L.append("|---|---|---|---|---|---|---|---|---|")
     for p in rows:
         jour = f"{JJ[p.bulletin_date.weekday()]} {p.bulletin_date.day}"

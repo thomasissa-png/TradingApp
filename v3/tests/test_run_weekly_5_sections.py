@@ -902,7 +902,8 @@ def test_render_picks_par_jour_header_4_colonnes_quotidien():
     rw._render_picks_par_jour([p], L)
     md = "\n".join(L)
     # Raison SORTIE du tableau (sous-liste) → header compact sans « Raison ».
-    assert ("| Jour | Actif | Call | Conviction | % 12h | % 18h | Max | "
+    # « Max gain » (et non « Max ») → exempté du masquage mobile (markDenseTables).
+    assert ("| Jour | Actif | Call | Conviction | % 12h | % 18h | Max gain | "
             "Variation actif | Résultat |") in md
     assert "| Résultat | Raison |" not in md
     assert "**Pourquoi ces paris (signal 7h) :**" in md

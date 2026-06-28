@@ -998,7 +998,7 @@
         <p id="variations-empty" hidden></p>
       </section>
       <p class="gen-meta" aria-label="Date de génération de la page">
-        Page générée le <time datetime="2026-06-28T07:08:13Z">28 juin 2026 · 07h08 (UTC)</time>
+        Page générée le <time datetime="2026-06-28T12:37:33Z">28 juin 2026 · 12h37 (UTC)</time>
       </p>
     </div>
   </main>
@@ -4079,7 +4079,7 @@ Aucune alerte de sortie.
 const WEEKLY = [
 {...{"id": "weekly-2026-S26", "label": "Semaine 2026-S26", "filename": "2026-S26.md"}, markdown: `# Bilan semaine · 2026-S26 (2026-06-22 → 2026-06-28)
 
-- Généré : 28 juin 2026, 09h07 (samedi matin, Paris)
+- Généré : 28 juin 2026, 14h35 (samedi matin, Paris)
 - WIN RATE ONLY · aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.
 - WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) · inclut les jours sous seuil où une position aurait quand même été prise (toujours ≤ Win rate).
 
@@ -4190,6 +4190,32 @@ Sur 8 position(s) jugée(s) cette semaine : **5 bien tenue(s)** · **3 clôturé
 ## 6. Ajustements proposés (à valider Thomas)
 
 Aucun changement de RÈGLE proposé cette semaine — et c'est cohérent avec les learnings ci-dessus : ceux-ci ORIENTENT (ils se confirment sur plusieurs semaines avant de devenir une règle), mais une proposition formelle n'est déclenchée que lorsqu'une cellule franchit le seuil statistique (assez de paris indépendants ET borne de confiance sous le seuil). Tant qu'aucune ne l'a franchi, on applique les learnings à la main et on continue de mesurer avant de toucher au moteur.
+
+## 7. Revue des experts
+
+> Lecture humaine du bilan par les 3 experts (Analyste, News Trader, Spéculateur), tenue à la main avec Thomas. Trace qualitative, hors moteur.
+
+### 🔬 L'Analyste
+
+Le contraste de la semaine saute aux yeux : le Top 3 sort à 78 % (7/9) quand le Top 1 plafonne à 50 % (2/4). Notre conviction la plus forte a donc fait MOINS bien que le panier élargi. Ça veut dire que le score de conviction n'est pas (encore) calibré : il classe bien l'ensemble mais sur-vend la tête de liste. Sur N=4 pour le Top 1 c'est trop court pour conclure, mais le signe est à surveiller. Verdict : on ne touche à rien, on mesure l'écart Top 1 vs Top 3 sur plusieurs semaines avant de juger.
+
+### 📰 Le News Trader
+
+Le quant pur a porté la semaine (78 % sans aucune entrée news). Les pertes ne sont pas des erreurs de tendance : ce sont des catalyseurs sous-pondérés. Pétrole : on a manqué le poids des stocks de Cushing. Argent : le complexe métaux a bougé en bloc et on l'a lu actif par actif. Sur ces cas, la direction quant était bonne mais un driver externe a inversé l'issue à court terme. Donc rien à changer côté moteur (les news restent du contexte, pas le pilote), juste à instrumenter pour voir si ces catalyseurs reviennent assez souvent pour mériter un garde-fou.
+
+### 🎲 Le Spéculateur
+
+Mon alerte de la semaine : le book n'est pas diversifié, c'est UN seul pari macro répété. 11 tendances sur 13 sont SHORT, toutes adossées au même driver (taux réels US qui montent). Si ce driver se retourne, tout le book tombe ensemble. Pire, le short VIX contredit frontalement les shorts actions : on parie à la fois sur la baisse des actions ET sur le calme. Incohérence à signaler. Côté sorties, 3 trades sur 8 sont sortis trop tard (le pic était à 18h, on a rendu du terrain après). Là encore N petit, mais le motif mérite une mesure dédiée.
+
+### ✅ Reco convergée
+
+Les 3 sont d'accord : **aucun changement de règle cette semaine** (N trop faible partout, on respecte « mesurer avant d'agir »). On instrumente 3 mesures shadow pour trancher dans quelques semaines :
+
+1. **Corrélation du book** : mesurer à quel point les paris partagent un même driver (ici 11/13 SHORT taux réels). But : savoir si on prend UN pari déguisé en plusieurs.
+2. **Sortie au pic de 18h** : comparer l'issue réelle vs une sortie systématique à 18h, pour quantifier le « sorti trop tard » (3/8 cette semaine).
+3. **Calibration Top 1 vs Top 3** : suivre l'écart de win rate semaine après semaine, pour voir si la conviction forte mérite sa place en tête.
+
+Et un signalement immédiat, hors mesure : l'**incohérence VIX** (short VIX + shorts actions) est notée comme drapeau à expliquer ou corriger côté logique de book.
 
 <details class="weekly-annex">
 <summary>Annexe technique · détail de mesure (replié)</summary>
@@ -4225,7 +4251,7 @@ Aucune cellule notable : ni porteuse (≥ 65% sur N_eff ≥ 5), ni sous le seuil
 const WEEKLIES = [
 {...{"id": "weekly-2026-S26", "label": "Semaine 2026-S26", "sunday": "2026-06-28", "saturday": "2026-06-27", "filename": "2026-S26.md"}, markdown: `# Bilan semaine · 2026-S26 (2026-06-22 → 2026-06-28)
 
-- Généré : 28 juin 2026, 09h07 (samedi matin, Paris)
+- Généré : 28 juin 2026, 14h35 (samedi matin, Paris)
 - WIN RATE ONLY · aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.
 - WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) · inclut les jours sous seuil où une position aurait quand même été prise (toujours ≤ Win rate).
 
@@ -4336,6 +4362,32 @@ Sur 8 position(s) jugée(s) cette semaine : **5 bien tenue(s)** · **3 clôturé
 ## 6. Ajustements proposés (à valider Thomas)
 
 Aucun changement de RÈGLE proposé cette semaine — et c'est cohérent avec les learnings ci-dessus : ceux-ci ORIENTENT (ils se confirment sur plusieurs semaines avant de devenir une règle), mais une proposition formelle n'est déclenchée que lorsqu'une cellule franchit le seuil statistique (assez de paris indépendants ET borne de confiance sous le seuil). Tant qu'aucune ne l'a franchi, on applique les learnings à la main et on continue de mesurer avant de toucher au moteur.
+
+## 7. Revue des experts
+
+> Lecture humaine du bilan par les 3 experts (Analyste, News Trader, Spéculateur), tenue à la main avec Thomas. Trace qualitative, hors moteur.
+
+### 🔬 L'Analyste
+
+Le contraste de la semaine saute aux yeux : le Top 3 sort à 78 % (7/9) quand le Top 1 plafonne à 50 % (2/4). Notre conviction la plus forte a donc fait MOINS bien que le panier élargi. Ça veut dire que le score de conviction n'est pas (encore) calibré : il classe bien l'ensemble mais sur-vend la tête de liste. Sur N=4 pour le Top 1 c'est trop court pour conclure, mais le signe est à surveiller. Verdict : on ne touche à rien, on mesure l'écart Top 1 vs Top 3 sur plusieurs semaines avant de juger.
+
+### 📰 Le News Trader
+
+Le quant pur a porté la semaine (78 % sans aucune entrée news). Les pertes ne sont pas des erreurs de tendance : ce sont des catalyseurs sous-pondérés. Pétrole : on a manqué le poids des stocks de Cushing. Argent : le complexe métaux a bougé en bloc et on l'a lu actif par actif. Sur ces cas, la direction quant était bonne mais un driver externe a inversé l'issue à court terme. Donc rien à changer côté moteur (les news restent du contexte, pas le pilote), juste à instrumenter pour voir si ces catalyseurs reviennent assez souvent pour mériter un garde-fou.
+
+### 🎲 Le Spéculateur
+
+Mon alerte de la semaine : le book n'est pas diversifié, c'est UN seul pari macro répété. 11 tendances sur 13 sont SHORT, toutes adossées au même driver (taux réels US qui montent). Si ce driver se retourne, tout le book tombe ensemble. Pire, le short VIX contredit frontalement les shorts actions : on parie à la fois sur la baisse des actions ET sur le calme. Incohérence à signaler. Côté sorties, 3 trades sur 8 sont sortis trop tard (le pic était à 18h, on a rendu du terrain après). Là encore N petit, mais le motif mérite une mesure dédiée.
+
+### ✅ Reco convergée
+
+Les 3 sont d'accord : **aucun changement de règle cette semaine** (N trop faible partout, on respecte « mesurer avant d'agir »). On instrumente 3 mesures shadow pour trancher dans quelques semaines :
+
+1. **Corrélation du book** : mesurer à quel point les paris partagent un même driver (ici 11/13 SHORT taux réels). But : savoir si on prend UN pari déguisé en plusieurs.
+2. **Sortie au pic de 18h** : comparer l'issue réelle vs une sortie systématique à 18h, pour quantifier le « sorti trop tard » (3/8 cette semaine).
+3. **Calibration Top 1 vs Top 3** : suivre l'écart de win rate semaine après semaine, pour voir si la conviction forte mérite sa place en tête.
+
+Et un signalement immédiat, hors mesure : l'**incohérence VIX** (short VIX + shorts actions) est notée comme drapeau à expliquer ou corriger côté logique de book.
 
 <details class="weekly-annex">
 <summary>Annexe technique · détail de mesure (replié)</summary>

@@ -395,6 +395,71 @@ def test_render_pas_de_message_indispo_si_mesure_presente(monkeypatch, tmp_path)
     assert rw._MSG_MESURE_INDISPO_SEMAINE not in bilan.markdown
 
 
+# ---------------------------------------------------------------------------
+# Section 7 — Revue des experts : note CURÉE par semaine, lue depuis
+# data/bilan-semaine/revue-experts/{ISO}.md. Embarquée si présente (avant
+# l'annexe), omise sinon (« si ça fait sens »). Survit à la régénération.
+# ---------------------------------------------------------------------------
+
+def _bilan_minimal():
+    return rw.BilanSemaine(
+        iso="2026-S26", lundi=date(2026, 6, 22), dimanche=date(2026, 6, 28), now=NOW,
+    )
+
+
+def test_revue_experts_absente_section_omise(monkeypatch, tmp_path):
+    """Pas de note curée pour la semaine -> aucune section 7 (silence propre)."""
+    monkeypatch.setattr(rw, "REVUE_EXPERTS_DIR", tmp_path / "revue-experts")
+    L = []
+    rw._render_revue_experts(_bilan_minimal(), L)
+    assert L == []
+
+
+def test_revue_experts_presente_embarquee(monkeypatch, tmp_path):
+    """Note curée présente -> section 7 avec son contenu intégral."""
+    rev = tmp_path / "revue-experts"
+    rev.mkdir()
+    (rev / "2026-S26.md").write_text(
+        "### 🔬 L'Analyste\n\nTop 1 sous le Top 3, conviction à recalibrer.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(rw, "REVUE_EXPERTS_DIR", rev)
+    L = []
+    rw._render_revue_experts(_bilan_minimal(), L)
+    md = "\n".join(L)
+    assert "## 7. Revue des experts" in md
+    assert "🔬 L'Analyste" in md
+    assert "conviction à recalibrer" in md
+
+
+def test_revue_experts_vide_section_omise(monkeypatch, tmp_path):
+    """Note présente mais vide -> pas de section 7 (rien à montrer)."""
+    rev = tmp_path / "revue-experts"
+    rev.mkdir()
+    (rev / "2026-S26.md").write_text("   \n", encoding="utf-8")
+    monkeypatch.setattr(rw, "REVUE_EXPERTS_DIR", rev)
+    L = []
+    rw._render_revue_experts(_bilan_minimal(), L)
+    assert L == []
+
+
+def test_revue_experts_placee_avant_annexe(monkeypatch, tmp_path):
+    """Si présente, la section 7 vient APRÈS la section 6 et AVANT l'annexe."""
+    _patch_full(monkeypatch, tmp_path)
+    rev = tmp_path / "revue-experts"
+    rev.mkdir()
+    # build_bilan_semaine dérive l'ISO de NOW (2026-06-21 -> 2026-S25).
+    (rev / "2026-S25.md").write_text("Revue de test.\n", encoding="utf-8")
+    monkeypatch.setattr(rw, "REVUE_EXPERTS_DIR", rev)
+    bilan = rw.build_bilan_semaine(
+        now=NOW, fiches={}, fetch_price=None, state_dir=tmp_path, persist_state=False
+    )
+    md = bilan.markdown
+    assert "## 7. Revue des experts" in md
+    assert md.index("## 6.") < md.index("## 7. Revue des experts")
+    assert md.index("## 7. Revue des experts") < md.index('<details class="weekly-annex">')
+
+
 def test_weekly_agrege_le_measures_log_peuple_par_persist_mesures_jour(tmp_path, monkeypatch):
     """Part B point 2 : ce que persist_mesures_jour (bilan du jour) ÉCRIT est bien
     LU par l'agrégation weekly (selection_semaine). Round-trip de bout en bout :

@@ -53,6 +53,7 @@ from datetime_fr import horodatage_fr  # noqa: E402 (après l'ajout au sys.path)
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
 BILAN_SEMAINE_DIR = ROOT / "data" / "bilan-semaine"
+REVUE_EXPERTS_DIR = BILAN_SEMAINE_DIR / "revue-experts"
 # Snapshots internes du Manager (persistance de la détection inter-semaines).
 # N'est PAS un fichier de config : c'est une donnée de mesure (v3/data/).
 MANAGER_STATE_DIR = BILAN_SEMAINE_DIR / ".state"
@@ -1816,6 +1817,14 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     L.append("")
 
     # ===================================================================
+    # SECTION 7 — Revue des experts (note CURÉE, écrite à la main avec Thomas,
+    # pas auto-calculée). Vit dans data/bilan-semaine/revue-experts/{ISO}.md
+    # pour survivre à la régénération déterministe du bilan. Absente → section
+    # omise (« si ça fait sens »).
+    # ===================================================================
+    _render_revue_experts(bilan, L)
+
+    # ===================================================================
     # ANNEXE TECHNIQUE — repliée par défaut (détail de mesure, pour qui veut
     # creuser). Sort les tableaux denses des sections 3/4 pour qu'elles restent
     # de l'ANALYSE. Rendu : <details> HTML (marked le laisse passer tel quel).
@@ -1823,6 +1832,31 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     _render_annexe_technique(bilan, L)
 
     return "\n".join(L)
+
+
+def _render_revue_experts(bilan: BilanSemaine, L: List[str]) -> None:
+    """Embarque la note curée des 3 experts pour la semaine, si elle existe.
+
+    La note est rédigée à la main (Analyste / News Trader / Spéculateur) et
+    stockée hors du flux déterministe pour ne pas être écrasée à la
+    régénération. Si absente, on n'affiche rien — la revue n'a lieu que
+    « si ça fait sens ».
+    """
+    note_path = REVUE_EXPERTS_DIR / f"{bilan.iso}.md"
+    if not note_path.exists():
+        return
+    contenu = note_path.read_text(encoding="utf-8").strip()
+    if not contenu:
+        return
+    L.append("## 7. Revue des experts")
+    L.append("")
+    L.append(
+        "> Lecture humaine du bilan par les 3 experts (Analyste, News Trader, "
+        "Spéculateur), tenue à la main avec Thomas. Trace qualitative, hors moteur."
+    )
+    L.append("")
+    L.append(contenu)
+    L.append("")
 
 
 def _render_annexe_technique(bilan: BilanSemaine, L: List[str]) -> None:

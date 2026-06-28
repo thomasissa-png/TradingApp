@@ -35,13 +35,14 @@ def _write_measures(path: Path, records):
     )
 
 
-def _rec(actif, call, realized, *, emis=100.0, ech_prix=None, max_gain=None):
+def _rec(actif, call, realized, *, emis=100.0, ech_prix=None, max_gain=None, bdate=None):
     return {
         "actif": actif, "horizon": "24h", "conclusion": call,
         "realized_pct": realized, "prix_emission": emis,
         "prix_echeance": ech_prix if ech_prix is not None else emis * (1 + realized / 100),
         "max_gain_pct": max_gain,
-        "echeance": ECH.isoformat(), "bulletin_date": BDATE.isoformat(),
+        "echeance": ECH.isoformat(),
+        "bulletin_date": (bdate or BDATE).isoformat(),
     }
 
 
@@ -157,17 +158,25 @@ def test_max_du_jour_absent_reste_tiret(tmp_path, monkeypatch):
 def test_coherence_avec_bilan_meme_chiffres(tmp_path, monkeypatch):
     """Cohérence : % 12h / 18h / clôture / max de la page Mouvements == ce que le
     bilan affiche (mêmes sources persistées). Reproduit Argent 24/06 (validé Thomas :
-    12h +1.99 · 18h +4.17 · clôture +6.54 · max +9.24)."""
+    12h +1.99 · 18h +4.17 · clôture +6.54 · max +9.24).
+
+    Les relevés intraday/clôture sont indexés par JOUR D'ÉMISSION (le bilan du jour
+    D revoit les calls émis D, tracés dans `{D}.json` ; l'échéance 24h tombe D+1).
+    On émet donc le 24/06 et on stocke les relevés sous 24/06 (= bdate)."""
     mlog = tmp_path / "measures-log.jsonl"
-    _write_measures(mlog, [_rec("Argent", "SHORT", -7.815992, emis=62.30, max_gain=9.24)])
+    _write_measures(mlog, [_rec(
+        "Argent", "SHORT", -7.815992, emis=62.30, max_gain=9.24, bdate=ECH,
+    )])
     tdir = tmp_path / "suivi-tracking"
     tdir.mkdir()
-    # Relevés EXACTS du tracking 24/06 (fav% signé) — la source 12h/18h du bilan.
+    # Relevés EXACTS du tracking 24/06 (fav% signé) — la source 12h/18h du bilan,
+    # stockée au JOUR D'ÉMISSION (24/06).
     (tdir / f"{ECH.isoformat()}.json").write_text(json.dumps({
         "12h": {"Argent": {"call": "SHORT", "fav_pct": 1.99}},
         "18h": {"Argent": {"call": "SHORT", "fav_pct": 4.17}},
     }), encoding="utf-8")
-    # Clôture EXACTE du bilan (sortie-timing-log, réf. ouverture→clôture = +6.54).
+    # Clôture EXACTE du bilan (sortie-timing-log, réf. ouverture→clôture = +6.54),
+    # indexée au jour d'émission (24/06).
     stl = tmp_path / "sortie-timing-log.jsonl"
     stl.write_text(json.dumps({
         "date": ECH.isoformat(), "actif": "Argent", "call": "SHORT",
@@ -202,7 +211,9 @@ def test_cloture_fallback_realized_si_pas_de_bilan(tmp_path, monkeypatch):
 def test_cloture_bilan_call_discordant_ignore(tmp_path, monkeypatch):
     """Un sortie-timing au call opposé est ignoré → fallback realized (zéro invention)."""
     mlog = tmp_path / "measures-log.jsonl"
-    _write_measures(mlog, [_rec("Argent", "SHORT", -7.82)])
+    # bdate aligné sur la clé sortie-timing (jour d'émission) pour que la jointure
+    # TROUVE l'entrée et exerce bien la logique de discordance de call.
+    _write_measures(mlog, [_rec("Argent", "SHORT", -7.82, bdate=ECH)])
     stl = tmp_path / "sortie-timing-log.jsonl"
     stl.write_text(json.dumps({
         "date": ECH.isoformat(), "actif": "Argent", "call": "LONG", "cloture_pct": 6.54,
@@ -214,3 +225,44 @@ def test_cloture_bilan_call_discordant_ignore(tmp_path, monkeypatch):
         measures_log_path=mlog, decision_log_dir=tmp_path / "dl"
     )[0]
     assert v.perf_cloture_fav == 7.82   # call discordant → réutilise realized, pas 6.54
+
+
+def test_jour_affiche_est_emission_pas_echeance(tmp_path, monkeypatch):
+    """RÉGRESSION (fondateur 28/06 : « pourquoi je vois des trades à demain 29/06 ? »).
+
+    Un call émis le VENDREDI a son échéance 24h le LUNDI (week-end). La page doit
+    l'afficher au jour d'ÉMISSION (vendredi), jamais à l'échéance (un jour futur),
+    et lire ses relevés intraday/clôture au jour d'émission (mêmes chiffres que le
+    bilan du jour), pas à l'échéance."""
+    vendredi = date(2026, 6, 26)
+    lundi = date(2026, 6, 29)  # échéance 24h (week-end) = jour FUTUR si on s'y trompe
+    rec = {
+        "actif": "Pétrole (Brent)", "horizon": "24h", "conclusion": "SHORT",
+        "realized_pct": -2.95, "prix_emission": 74.1, "max_gain_pct": 2.95,
+        "echeance": lundi.isoformat(), "bulletin_date": vendredi.isoformat(),
+    }
+    _write_measures(tmp_path / "measures-log.jsonl", [rec])
+    tdir = tmp_path / "suivi-tracking"
+    tdir.mkdir()
+    # Relevés stockés au jour d'ÉMISSION (vendredi) ; l'échéance (lundi) n'a aucun
+    # fichier (le marché n'a pas encore ouvert) → un mauvais keying donnerait « — ».
+    (tdir / f"{vendredi.isoformat()}.json").write_text(json.dumps({
+        "12h": {"Pétrole (Brent)": {"call": "SHORT", "fav_pct": 2.21}},
+        "18h": {"Pétrole (Brent)": {"call": "SHORT", "fav_pct": 2.47}},
+    }), encoding="utf-8")
+    stl = tmp_path / "sortie-timing-log.jsonl"
+    stl.write_text(json.dumps({
+        "date": vendredi.isoformat(), "actif": "Pétrole (Brent)", "call": "SHORT",
+        "cloture_pct": 1.74,
+    }) + "\n", encoding="utf-8")
+    monkeypatch.setattr(bj, "SUIVI_TRACKING_DIR", tdir)
+    monkeypatch.setattr(bj, "SUIVI_SNAPSHOT_DIR", tmp_path / "nope")
+    monkeypatch.setattr(bj, "SORTIE_TIMING_LOG", stl)
+    v = bj.variations_24h_significatives(
+        measures_log_path=tmp_path / "measures-log.jsonl", decision_log_dir=tmp_path / "dl"
+    )[0]
+    assert v.jour == vendredi          # émission, JAMAIS l'échéance lundi (futur)
+    assert v.jour != lundi
+    assert v.perf_12h == 2.21          # relevés lus au jour d'émission
+    assert v.perf_18h == 2.47
+    assert v.perf_cloture_fav == 1.74  # clôture du bilan, jour d'émission

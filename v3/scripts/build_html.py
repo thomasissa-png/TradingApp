@@ -883,6 +883,29 @@ def render_html(
   }}
   main table tbody tr:nth-child(even) {{ background: var(--row-alt); }}
   main table tbody tr:hover {{ background: var(--accent-bg); }}
+  /* ── « Mouvements de marché » : table de DONNÉES 11 colonnes ───────────────
+     Sur PC la table héritait du style générique (tout aligné à gauche, colonne
+     Raison en texte libre qui dilatait la mise en page → « pas super propre »,
+     fondateur 28/06). On en fait une vraie grille : chiffres alignés à droite en
+     chiffres tabulaires, Call/Joué centrés, Raison bornée et grisée. Scopé à la
+     vue (les autres tables ne bougent pas). Colonnes : 1 Jour · 2 Actif · 3 Call
+     · 4 Conviction · 5 Prix · 6 %12h · 7 %18h · 8 %clôture · 9 Max · 10 Joué ·
+     11 Raison. */
+  #variations-content table td, #variations-content table th {{ vertical-align: middle; }}
+  #variations-content table td:nth-child(3), #variations-content table th:nth-child(3),
+  #variations-content table td:nth-child(10), #variations-content table th:nth-child(10) {{ text-align: center; }}
+  #variations-content table td:nth-child(4), #variations-content table th:nth-child(4),
+  #variations-content table td:nth-child(5), #variations-content table th:nth-child(5),
+  #variations-content table td:nth-child(6), #variations-content table th:nth-child(6),
+  #variations-content table td:nth-child(7), #variations-content table th:nth-child(7),
+  #variations-content table td:nth-child(8), #variations-content table th:nth-child(8),
+  #variations-content table td:nth-child(9), #variations-content table th:nth-child(9) {{
+    text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }}
+  #variations-content table td:nth-child(11) {{
+    min-width: 200px; max-width: 340px; white-space: normal;
+    color: var(--text-muted); font-size: 12.5px; line-height: 1.35;
+  }}
   /* [Point #3] Raison explicative (2e ligne d'une cellule de Synthèse) : la
      LOGIQUE, pas un nom. S'enroule proprement (jamais coupée en plein mot), même
      là où les cellules passent en nowrap sur mobile. Grisée, plus petite. */
@@ -2428,6 +2451,30 @@ function showWeek(weekly) {{
   showAuxView('week-view', 'nav-week');
   history.replaceState(null, '', '#vue=semaine');
 }}
+// Document le plus récent, tous types confondus : un JOUR (briefing + bilan-jour)
+// ou un BILAN DE SEMAINE (daté au samedi). Sert l'accueil : le samedi le bilan
+// hebdo est le plus récent → il reste affiché jusqu'au prochain briefing.
+// (Fondateur 28/06 : « la homepage affiche toujours le dernier document ».)
+function latestEntry() {{
+  const entries = [];
+  listDays().forEach(d => entries.push({{ kind: 'day', date: d.date }}));
+  (WEEKLIES || []).forEach(w => {{ const wd = w.saturday || w.sunday; if (wd) entries.push({{ kind: 'week', date: wd, weekly: w }}); }});
+  if (entries.length === 0) return null;
+  // Date décroissante ; à date égale le bilan de semaine passe devant (publié le matin).
+  entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (a.kind === 'week' ? -1 : 1)));
+  return entries[0];
+}}
+function showLatest() {{
+  const en = latestEntry();
+  if (!en) {{
+    document.getElementById('bulletin-content').innerHTML = '<p>Aucun bulletin disponible.</p>';
+    const subnav = document.getElementById('subnav');
+    if (subnav) subnav.style.display = 'none';
+    return;
+  }}
+  if (en.kind === 'week') showWeek(en.weekly);
+  else selectDay(en.date);
+}}
 function showHistory() {{
   if (!HISTORY_BUILT) {{
     // Vue « Performance » fusionnée : win rate par actif en tête (résultats
@@ -2895,7 +2942,10 @@ function closeSidebarMobile() {{
   if (jm) target = jm[1];
   else if (/^\\d{{4}}-\\d{{2}}-\\d{{2}}/.test(hash)) target = hash.slice(0, 10);
   const known = days.some(d => d.date === target);
-  selectDay(known ? target : days[0].date);
+  // Lien explicite vers un jour → ce jour. Sinon (accueil / hash vide) → le
+  // document le PLUS RÉCENT, qui peut être le bilan de semaine (fondateur 28/06).
+  if (known) selectDay(target);
+  else showLatest();
 }})();
 </script>
 </body>

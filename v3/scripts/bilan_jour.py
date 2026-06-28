@@ -2599,6 +2599,13 @@ def variations_24h_significatives(
             bdate = date.fromisoformat(str(r.get("bulletin_date")))
         except (TypeError, ValueError):
             bdate = None
+        # Jour D'AFFICHAGE = jour d'émission (où la position a été prise), pas
+        # l'échéance. L'échéance 24h d'un call du vendredi tombe le lundi (week-end),
+        # ce qui l'affichait comme un trade « de demain » ET faisait pointer les
+        # jointures intraday/clôture sur le mauvais jour (relevés du jour suivant, ou
+        # inexistants). On aligne TOUT sur le jour d'émission → mêmes chiffres que le
+        # Bilan du jour. Fallback `ech` si bulletin_date absent (anciens records).
+        jour_aff = bdate if bdate is not None else ech
         actif = str(r.get("actif"))
         rp = float(r.get("realized_pct"))
         sens_move = "LONG" if rp > 0 else "SHORT"   # hausse → LONG, baisse → SHORT
@@ -2633,7 +2640,7 @@ def variations_24h_significatives(
         # converti en favorable (signe du call). Max : max_gain_pct du measures-log
         # (« — » tant que les anciens records ne le portent pas — zéro invention).
         perf_12h, perf_18h = load_perf_intraday_favorable(
-            ech, actif, call,
+            jour_aff, actif, call,
             tracking_dir=SUIVI_TRACKING_DIR, snapshot_dir=SUIVI_SNAPSHOT_DIR,
         )
         sign = _call_sign(call)
@@ -2641,7 +2648,7 @@ def variations_24h_significatives(
         # ouverture→clôture, persistée dans sortie-timing-log) si elle existe ET que
         # son call concorde → la page affiche le MÊME chiffre que le bilan. Sinon
         # (hors Sélection / historique sans bilan) : realized brut converti favorable.
-        cb_call, cb_val = cloture_bilan.get((ech.isoformat(), actif), (None, None))
+        cb_call, cb_val = cloture_bilan.get((jour_aff.isoformat(), actif), (None, None))
         if cb_val is not None and cb_call == call:
             perf_cloture_fav = cb_val
         else:
@@ -2649,7 +2656,7 @@ def variations_24h_significatives(
         mg = r.get("max_gain_pct")
         max_jour = round(float(mg), 2) if isinstance(mg, (int, float)) else None
         out.append(Variation24h(
-            jour=ech, actif=actif,
+            jour=jour_aff, actif=actif,
             prix_entree=(r.get("prix_emission") if isinstance(r.get("prix_emission"), (int, float)) else None),
             perf_12h=perf_12h, perf_18h=perf_18h,
             perf_cloture_fav=perf_cloture_fav, max_jour=max_jour,

@@ -79,4 +79,18 @@ def test_hash_route_par_jour_et_retrocompat_id():
     html = _html()
     assert "a.href = '#jour=' + encodeURIComponent(en.date);" in html
     assert "const jm = hash.match(" in html
-    assert "selectDay(known ? target : days[0].date);" in html
+    # Lien explicite vers un jour connu → ce jour ; sinon (accueil / hash vide) →
+    # le document le PLUS RÉCENT, qui peut être le bilan de semaine (fondateur 28/06).
+    assert "if (known) selectDay(target);" in html
+    assert "else showLatest();" in html
+
+
+def test_homepage_affiche_document_le_plus_recent():
+    # (Fondateur 28/06) La homepage (hash vide) affiche TOUJOURS le dernier document :
+    # un JOUR ou un BILAN DE SEMAINE (le samedi, le bilan reste affiché jusqu'au
+    # prochain briefing). showLatest() compare days + WEEKLIES par date décroissante.
+    html = _html()
+    assert "function latestEntry()" in html
+    assert "function showLatest()" in html
+    assert "if (en.kind === 'week') showWeek(en.weekly);" in html
+    assert "else selectDay(en.date);" in html

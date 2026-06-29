@@ -1,0 +1,25 @@
+{
+  "12h": {
+    "Cacao": {
+      "call": "LONG",
+      "fav_pct": -1.17,
+      "heure": "11h57",
+      "max_adv_pct": -3.5,
+      "max_fav_pct": 0.01
+    },
+    "EUR/USD": {
+      "call": "SHORT",
+      "fav_pct": -0.06,
+      "heure": "11h57",
+      "max_adv_pct": -0.17,
+      "max_fav_pct": 0.11
+    },
+    "USD/JPY": {
+      "call": "LONG",
+      "fav_pct": 0.05,
+      "heure": "11h57",
+      "max_adv_pct": -0.03,
+      "max_fav_pct": 0.05
+    }
+  }
+}

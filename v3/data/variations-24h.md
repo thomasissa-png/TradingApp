@@ -1,11 +1,18 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 29 juin 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 29 juin 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. « Max du jour » = meilleur gain favorable atteint. « Joué » = l'actif était dans le top 3 du jour. « — » = point non relevé (zéro invention : les jours sans relevé 12h/18h restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|
+| lun 29/06 | VIX | SHORT | -0.19 | 22.63 | — | — | +3.78% | +4.04% | Non | — |
+| lun 29/06 | Sucre | LONG | +0.62 | 9.625 | +0.00% | — | +1.66% | +2.18% | Non | Pluies de mousson insuffisantes en Inde, impact négatif sur la production de sucre |
+| lun 29/06 | S&P 500 | LONG | +4.63 | 729.1 | — | — | +1.62% | +1.71% | Non | — |
+| lun 29/06 | Nasdaq | SHORT | -1.98 | 705.5 | — | — | -2.61% | +0.05% | Non | — |
+| lun 29/06 | Café (Arabica) | LONG | +2.99 | 273.3 | -0.51% | — | +1.75% | +2.29% | Non | — |
+| lun 29/06 | Cacao | LONG | +8.93 | 5096 | -1.43% | -2.67% | -2.09% | +0.02% | Oui | — |
+| lun 29/06 | Blé | SHORT | -1.04 | 575.5 | +0.41% | — | +1.17% | +1.36% | Non | — |
 | ven 26/06 | Pétrole (Brent) | SHORT | -7.20 | 74.1 | +2.21% | +2.47% | +1.74% | — | Oui | — |
 | ven 26/06 | Nasdaq | SHORT | -1.90 | 716.3 | — | — | +1.50% | — | Non | SoftBank chute de 13%, SK Hynix -10% ; rout des technologiques asiatiques sur craintes du coût de l'IA |
 | ven 26/06 | Cuivre | SHORT | -0.40 | 5.988 | -1.51% | — | -2.35% | — | Non | Copper price record rally above 6.60 driven by weaker dollar and AI infrastructure demand |

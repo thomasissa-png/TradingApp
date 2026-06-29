@@ -243,6 +243,39 @@ def test_p7_news_par_actif_zero_invention(tmp_path):
     assert md.count("_aucune actualité_") >= 12
 
 
+# RÉGRESSION (fondateur 29/06) : les nouveaux actifs (cutover 26/06) n'avaient pas
+# de section dans « News par actif » → leurs news (ex. USD/JPY) tombaient dans
+# « Autres (hors univers suivi) ». Ils doivent désormais avoir leur propre section
+# et capter leurs events taggés par l'IA (COTTON / SUGAR / USDJPY).
+_LOG_NOUVEAUX = """# events-log
+
+| date | L1 | L2 | trigger | cours | latence | R | source | news_zone | category | pattern_id | impacts | materiality | reliability |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-06-29 |  | JP | Bank of Japan signals policy shift | USDJPY | intraday | 1 | gnews_usdjpy | JP | macro |  | USDJPY:LONG:160 | high | confirmed |
+| 2026-06-29 |  | US | USDA cotton acreage surprise | COTTON | intraday | 1 | gnews_cotton | US | commodity |  | COTTON:LONG:70 | high | confirmed |
+| 2026-06-29 |  | BR | Brazil ethanol mix shifts cane to sugar | SUGAR | intraday | 1 | gnews_sugar | BR | commodity |  | SUGAR:SHORT:18 | high | confirmed |
+"""
+
+
+def test_p7_nouveaux_actifs_ont_leur_section_pas_autres(tmp_path):
+    p = tmp_path / "events-log.md"
+    p.write_text(_LOG_NOUVEAUX, encoding="utf-8")
+    md = bf.build_news_par_actif(events_path=p, today=date(2026, 6, 29))
+    # Chaque nouvel actif a sa propre section dans l'ordre canonique.
+    assert "### Coton" in md
+    assert "### Sucre" in md
+    assert "### USD/JPY" in md
+    # Leurs news y sont rattachées (plus dans « Autres »).
+    assert "Bank of Japan signals policy shift" in md
+    assert "USDA cotton acreage surprise" in md
+    assert "Brazil ethanol mix shifts cane to sugar" in md
+    # Aucune news ne doit retomber dans « Autres (hors univers suivi) ».
+    assert "### Autres (hors univers suivi)" not in md
+    # Les news sont bien sous LEUR section (USD/JPY avant la suivante / la fin).
+    seg = md.split("### USD/JPY", 1)[1]
+    assert "Bank of Japan signals policy shift" in seg.split("###", 1)[0]
+
+
 # ---------------------------------------------------------------------------
 # P9 — Prix de réf. remplis depuis le live quand le stamp est absent
 # ---------------------------------------------------------------------------

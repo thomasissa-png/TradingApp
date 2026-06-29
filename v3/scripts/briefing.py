@@ -38,7 +38,7 @@ IMPACT_CATEGORIES = {
 # Fenêtre de fraîcheur : 48h
 FRESHNESS_HOURS = 48
 
-# Table ticker → actif (les 12 actifs suivis). Match souple :
+# Table ticker → actif (les 15 actifs suivis). Match souple :
 # - ticker entre parenthèses dans le champ `cours`
 # - OU nom de l'actif présent dans `cours` (insensible casse/accents)
 TICKER_TO_ACTIF: List[Tuple[str, str, List[str]]] = [
@@ -55,7 +55,12 @@ TICKER_TO_ACTIF: List[Tuple[str, str, List[str]]] = [
     ("Café", "KC=F", ["café", "cafe", "coffee"]),
     ("Cacao", "CC=F", ["cacao", "cocoa"]),
     ("Blé", "ZW=F", ["blé", "ble", "wheat"]),
+    # Nouveaux actifs (cutover 26/06) : softs + FX. Sans ces lignes, leurs news
+    # n'avaient pas de section « ### {actif} » et tombaient dans « Autres ».
+    ("Coton", "CT=F", ["coton", "cotton", "cotn"]),
+    ("Sucre", "SB=F", ["sucre", "sugar"]),
     ("EUR/USD", "EUR=X", ["eur/usd", "eurusd", "eur usd"]),
+    ("USD/JPY", "USDJPY=X", ["usd/jpy", "usdjpy", "usd jpy", "yen"]),
 ]
 
 # NB : le parsing de l'events-log se fait désormais PAR POSITION (split sur '|' +
@@ -81,6 +86,9 @@ _IA_ASSET_TO_LABEL = {
     "COFFEE": "Café",
     "COCOA": "Cacao",
     "WHEAT": "Blé",
+    "COTTON": "Coton",
+    "SUGAR": "Sucre",
+    "USDJPY": "USD/JPY",
 }
 
 # Ligne d'en-tête / séparateur à ignorer
@@ -472,7 +480,7 @@ def _puce(ev: Dict[str, str], actif_label: str = "") -> str:
 #     (_catalyseurs_j0_high, ré-utilisé depuis scoring_analyste — aucune source
 #      neuve) ;
 #   - thèmes news DOMINANTS du corpus matin = actifs portant le plus d'events
-#     à impact (materiality high>medium), dans l'ordre canonique des 12 actifs ;
+#     à impact (materiality high>medium), dans l'ordre canonique des 15 actifs ;
 #   - top 1-3 news = vrais titres de l'events-log triés par materiality puis
 #     fraîcheur, avec actif + sens d'impact déjà qualifié par DeepSeek.
 # Si pas de catalyseur / pas de news → on le DIT (« aucun », « pas d'actualité »).
@@ -517,7 +525,7 @@ def _themes_dominants(groups: Dict[str, List[Dict[str, str]]]) -> List[str]:
     déterministe, zéro invention : on ne réécrit pas un récit). On pondère par la
     matérialité (high=3, medium=2, low=1) pour qu'un actif avec 1 event `high`
     prime sur un actif avec 3 events `low`. Exclut « Autres » (hors univers).
-    Ordre de départage stable : score desc, puis ordre canonique des 12 actifs.
+    Ordre de départage stable : score desc, puis ordre canonique des 15 actifs.
     """
     ordre = [a for a, _, _ in TICKER_TO_ACTIF]
     rang_canon = {a: i for i, a in enumerate(ordre)}
@@ -671,7 +679,7 @@ def build_briefing(
 # ---------------------------------------------------------------------------
 # « News par actif » (P7) — section EN FIN de bulletin
 # ---------------------------------------------------------------------------
-# Pour chacun des 12 actifs (ordre canonique), liste les events news du corpus
+# Pour chacun des 15 actifs (ordre canonique), liste les events news du corpus
 # matin qui le concernent : date / source / titre + sens d'impact déjà qualifié
 # (↑/↓/→ via _direction_arrow_for). RÉUTILISE `group_by_actif` (events groupés
 # par actif). Actif sans news → « — aucune actualité ». ZÉRO invention : seuls de
@@ -706,7 +714,7 @@ def build_news_par_actif(
     )
     lines.append("")
 
-    # Ordre canonique des 12 actifs (dédup en préservant l'ordre).
+    # Ordre canonique des 15 actifs (dédup en préservant l'ordre).
     ordre_actifs: List[str] = []
     seen: set = set()
     for actif, _, _ in TICKER_TO_ACTIF:

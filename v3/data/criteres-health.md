@@ -1,8 +1,8 @@
 # Santé des critères
 
-_Cycle : 2026-06-26 05:23 UTC_
+_Cycle : 2026-06-29 05:23 UTC_
 
-**Synthèse** : 37 motifs de skip distincts, 56 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
+**Synthèse** : 41 motifs de skip distincts, 62 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 
 | Occurrences | Motif | Détail (cause exacte) |
 |---:|---|---|
@@ -10,21 +10,25 @@ _Cycle : 2026-06-26 05:23 UTC_
 | 4 | fresh_price_refreshed | `CC=F` |
 | 4 | fresh_price_refreshed | `KC=F` |
 | 3 | c2_std_zero | `unknown` |
+| 3 | fresh_price_refreshed | `BZ=F` |
 | 3 | fresh_price_refreshed | `HG=F` |
-| 2 | fresh_price_refreshed | `BZ=F` |
+| 2 | fresh_price_appended | `CANE` |
+| 2 | fresh_price_appended | `COTN` |
 | 2 | fresh_price_refreshed | `EUR=X` |
 | 2 | fresh_price_refreshed | `SI=F` |
 | 2 | fresh_price_refreshed | `ZW=F` |
-| 2 | Open-Meteo injoignable (récents) | `6.8,-5.3:net_error` |
 | 1 | CBOE non câblé (Put/Call sans CSV public) | `put_call_ratio_cboe_5j` |
+| 1 | CBOE non câblé (Put/Call sans CSV public) | `vix_risk_usdjpy` |
 | 1 | composite_no_subsource | `demande_pv_mining_strikes` |
 | 1 | composite_partial | `hf_positioning_flux_options` |
 | 1 | Source linéaire non programmatique | `breadth_cac_ma50` |
 | 1 | Source linéaire non programmatique | `brent_term_structure_m1m2` |
 | 1 | Source linéaire non programmatique | `fedwatch_proba` |
 | 1 | Source linéaire non programmatique | `term_structure_m1_m3` |
+| 1 | Open-Meteo injoignable (récents) | `-21.2,-48.1:net_error` |
+| 1 | Open-Meteo injoignable (récents) | `22.3,72.6:net_error` |
+| 1 | Open-Meteo injoignable (récents) | `6.8,-5.3:net_error` |
 | 1 | no_breadth_data | `breadth_cac_ma50` |
-| 1 | Aucun trigger classifié (triplet) | `tension_politique_fr` |
 | 1 | Twelve : série vide | `USDGHS=X` |
 | 1 | Twelve : série vide | `USDXOF=X` |
 | 1 | Twelve : série vide | `^STOXX50EVOL` |
@@ -37,7 +41,7 @@ _Cycle : 2026-06-26 05:23 UTC_
 | 1 | Source z-score non programmatique | `egypte_gasc_tenders` |
 | 1 | Source z-score non programmatique | `inventaires_comex_silver` |
 | 1 | Source z-score non programmatique | `inventaires_lme_shfe_5j` |
-| 1 | Source z-score non programmatique | `nass_crop_progress` |
+| 1 | Source z-score non programmatique | `nass_crop_progress_cotton` |
 | 1 | Source z-score non programmatique | `spread_arabica_robusta` |
 | 1 | Source z-score non programmatique | `spread_ny_london` |
 | 1 | Source z-score non programmatique | `spread_oat_bund_stress_ez` |
@@ -48,4 +52,4 @@ _Cycle : 2026-06-26 05:23 UTC_
 
 | N | source | symboles |
 |---:|---|---|
-| 26 | twelve_native | BZ=F, CC=F, CL=F, EUR=X, EURUSD=X, EWQ, GC=F, GLD, HG=F, HYG, KC=F, QQQ, QQQE, RSP, SI=F, SLV, SOXX, SPY, USDBRL=X, USDJPY=X, ZW=F, ^FCHI, ^GSPC, ^IXIC, ^RUT, ^VIX |
+| 29 | twelve_native | BZ=F, CANE, CC=F, CL=F, COTN, EUR=X, EURUSD=X, EWQ, GC=F, GLD, HG=F, HYG, KC=F, QQQ, QQQE, RSP, SI=F, SLV, SOXX, SPY, USD/JPY, USDBRL=X, USDJPY=X, ZW=F, ^FCHI, ^GSPC, ^IXIC, ^RUT, ^VIX |

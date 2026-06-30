@@ -1624,20 +1624,40 @@ def _enrich_net_news_label(
     """
     if label != SYNTHESE_NET_LABEL:
         return label
-    sens, titre = _dominant_news_for_actif(now).get(r.nom, ("", ""))
-    if titre and sens:
-        return f"news net {sens} : {titre}"
-    # Pas de titre événementiel exploitable : on NE retombe PLUS sur le jargon
-    # « Synthèse news (net, IA) » (fondateur : « ça n'a aucun sens »). On dérive le
-    # sens net du call (24h prioritaire) pour rester PARLANT, sinon repli neutre.
-    if not sens:
-        conc = r.conclusions.get("24h") or next(
-            (c for c in r.conclusions.values() if c in ("LONG", "SHORT")), ""
-        )
-        sens = {"LONG": "haussière", "SHORT": "baissière"}.get(conc, "")
-    if sens:
-        return f"news net {sens} (pas de titre marquant aujourd'hui)"
+    # Le SENS vient du NET réel des contributions news (source de vérité), JAMAIS
+    # d'un titre isolé ni du call (fondateur 30/06 : « news net baissière » affiché
+    # sur un cacao LONG dont la news nette était +3.20 → incohérent). On ne cite un
+    # titre QUE s'il concorde avec le net (sinon il contredirait le score affiché).
+    net_sens = _net_news_contrib_sens(r)
+    headline_sens, titre = _dominant_news_for_actif(now).get(r.nom, ("", ""))
+    if net_sens:
+        if titre and headline_sens == net_sens:
+            return f"news net {net_sens} : {titre}"
+        return f"news net {net_sens} (pas de titre représentatif aujourd'hui)"
+    # Aucune contribution news mesurable → on N'INVENTE PAS de sens depuis le call.
     return "contexte news (synthèse du flux)"
+
+
+def _net_news_contrib_sens(r: "ActifResult") -> str:
+    """Sens NET des news pour l'actif = signe de la somme des contributions des
+    critères news (source_track ia*/keyword), 24h prioritaire puis 7j/1m. SOURCE DE
+    VÉRITÉ du label « news net … » : ce que la news pèse VRAIMENT dans le score, pas
+    un titre isolé. Retourne 'haussière' / 'baissière' / '' (aucune news)."""
+    for h in ("24h", "7j", "1m"):
+        s = 0.0
+        for c in r.criteres:
+            if getattr(c, "is_gate", False) or getattr(c, "is_na", False):
+                continue
+            st = getattr(c, "source_track", "") or ""
+            if st.startswith("ia") or st == "keyword":
+                v = c.contributions.get(h)
+                if isinstance(v, (int, float)):
+                    s += v
+        if s > 0:
+            return "haussière"
+        if s < 0:
+            return "baissière"
+    return ""
 
 
 def _feed_news_contredit_call(

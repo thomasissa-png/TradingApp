@@ -183,7 +183,9 @@ def test_titre_long_tronque_proprement(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_fallback_sans_titre_sens_haussier(monkeypatch):
-    """Sens net connu (direction IA LONG) mais titre vide → « news net haussière »."""
+    """Titre vide MAIS contribution news +6 → le sens vient de la CONTRIBUTION
+    (haussière), pas d'un titre ni du call (fix 30/06). Suffixe « pas de titre
+    représentatif » plutôt que d'afficher un titre vide ou inventer le sens."""
     _patch_events(monkeypatch, [
         _ev("2026-06-22", "commodity", "   ", "COCOA:LONG:high", "high"),
     ])
@@ -194,8 +196,30 @@ def test_fallback_sans_titre_sens_haussier(monkeypatch):
     ]
     r = _actif("Cacao", crit, {h: +6.0}, {h: "LONG"})
     raison = sa.select_paris_du_jour([r], NOW)[0]["raison"]
-    assert raison == "news net haussière"
+    assert "news net haussière" in raison
     assert sa.SYNTHESE_NET_LABEL not in raison
+
+
+def test_cacao_3006_titre_baissier_isole_ne_contredit_pas_le_net(monkeypatch):
+    """RÉGRESSION (fondateur 30/06) : cacao LONG, news NETTE haussière (+3.2), mais le
+    titre dominant du corpus est BAISSIER (« offre abondante »). Le label doit dire
+    « haussière » (le NET, source de vérité) et NE PAS afficher le titre baissier
+    (sinon « news net baissière » sur un LONG → l'incohérence signalée)."""
+    _patch_events(monkeypatch, [
+        _ev("2026-06-29", "commodity",
+            "Offre mondiale de cacao plus abondante, pression sur les prix",
+            "COCOA:SHORT:high", "medium"),
+    ])
+    h = "24h"
+    crit = [
+        _crit("Maladies cabosses", "maladies_cabosses_cacao", {h: +3.2},
+              source_track="ia_synthese"),
+    ]
+    r = _actif("Cacao", crit, {h: +3.2}, {h: "LONG"})
+    raison = sa.select_paris_du_jour([r], NOW)[0]["raison"]
+    assert "haussière" in raison                       # le NET haussier mène
+    assert "baissière" not in raison                   # plus jamais l'inverse
+    assert "abondante" not in raison                   # le titre baissier n'est PAS cité
 
 
 def test_fallback_sens_baissier(monkeypatch):
@@ -215,9 +239,10 @@ def test_fallback_sens_baissier(monkeypatch):
     assert "Demande chinoise de cuivre en net repli" in raison
 
 
-def test_fallback_sens_indetermine_garde_libelle(monkeypatch):
-    """Aucune news exploitable pour l'actif (corpus vide) → libellé d'origine
-    conservé (dégradation sûre, jamais de crash, jamais d'invention)."""
+def test_fallback_corpus_vide_sens_vient_de_la_contribution(monkeypatch):
+    """Corpus de news vide (aucun titre) MAIS la contribution news vaut +6 : le sens
+    vient de la CONTRIBUTION réelle (haussière), il n'est PAS perdu (fix 30/06). On
+    n'affiche plus le jargon « Synthèse news (net, IA) » ni un sens inventé du call."""
     _patch_events(monkeypatch, [])  # corpus vide
     h = "24h"
     crit = [
@@ -226,7 +251,8 @@ def test_fallback_sens_indetermine_garde_libelle(monkeypatch):
     ]
     r = _actif("Cacao", crit, {h: +6.0}, {h: "LONG"})
     raison = sa.select_paris_du_jour([r], NOW)[0]["raison"]
-    assert raison == sa.SYNTHESE_NET_LABEL  # inchangé faute de news exploitable
+    assert "news net haussière" in raison
+    assert sa.SYNTHESE_NET_LABEL not in raison
 
 
 def test_news_neutre_ne_porte_pas_de_sens(monkeypatch):

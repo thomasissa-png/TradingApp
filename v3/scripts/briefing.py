@@ -555,9 +555,19 @@ def _top_news_lignes(
         if (ev.get("materiality", "") or "").lower() in ("high", "medium")
     ]
     forts = _dedup_news_in_actif(_sort_by_materiality_then_date(forts))
+    # Diversité du TOP (fondateur 30/06) : au plus 1 ligne par actif. Sans ça, 3
+    # dépêches d'agences différentes sur le MÊME événement (ex. « yen au plus bas
+    # depuis 1986 ») passent la dédup titre+source et remplissent le top en triple.
+    # Le détail par actif (plus bas) garde toutes les news ; ici on veut la VARIÉTÉ.
     lignes: List[str] = []
-    for ev in forts[:max_news]:
+    vus_actifs: set = set()
+    for ev in forts:
+        if len(lignes) >= max_news:
+            break
         actif = _primary_actif_from_event(ev) or "Marché"
+        if actif in vus_actifs:
+            continue  # déjà une news de cet actif dans le top → on diversifie
+        vus_actifs.add(actif)
         mat = (ev.get("materiality", "") or "").strip().lower()
         arrow = _direction_arrow_for(ev, actif) if actif != "Marché" else ""
         sens = {"↑": "haussier", "↓": "baissier", "→": "neutre"}.get(arrow, "")

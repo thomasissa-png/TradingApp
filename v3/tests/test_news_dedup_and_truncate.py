@@ -99,6 +99,25 @@ def test_build_briefing_no_duplicate_news_in_section(tmp_path: Path):
 # #6b — Troncature propre du rationale (journaliste._truncate_clean)
 # ---------------------------------------------------------------------------
 
+def test_top_news_au_plus_un_par_actif():
+    """RÉGRESSION (fondateur 30/06) : 3 dépêches d'agences différentes sur le MÊME
+    événement (yen au plus bas) ont des titres distincts → la dédup titre+source ne
+    les attrape pas. Le TOP doit quand même n'en garder qu'UNE (1 ligne par actif),
+    pour la variété (le détail par actif garde tout)."""
+    def _evt(trigger):
+        return {"trigger": trigger, "source": "gnews_usdjpy", "materiality": "high",
+                "impacts": "USDJPY:LONG:high", "cours": "", "cat": "macro",
+                "date": "2026-06-30"}
+    evs = [
+        _evt("Yen au plus bas depuis 1986, risque d'intervention japonaise"),
+        _evt("Le yen japonais atteint son plus bas niveau depuis 1986"),
+        _evt("Yen chute à son plus bas niveau en 40 ans"),
+    ]
+    lignes = briefing._top_news_lignes(evs, max_news=3)
+    usdjpy = [l for l in lignes if "USD/JPY" in l]
+    assert len(usdjpy) == 1, f"attendu 1 ligne USD/JPY, eu {len(usdjpy)} : {lignes}"
+
+
 def test_short_text_not_truncated():
     """Texte sous la limite → retourné intact, sans ellipse."""
     txt = "Le prix a déjà baissé de 15% sur 20 jours."

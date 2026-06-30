@@ -2300,6 +2300,32 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
         L.append("- — (aucune cellule conclusive en retournement aujourd'hui)")
     L.append("")
 
+    # Récence des news (shadow, ne change AUCUNE décision) — actifs pris à contre-pied
+    # par une news FRAÎCHE à fort impact que le net news n'avait pas encore intégrée
+    # (cas cacao 30/06 : call LONG, news « offre abondante » baissière). On mesure
+    # avant d'agir ; dégradation propre si l'events-log est illisible.
+    L.append("### Récence des news (shadow · contre-pied)")
+    try:
+        import briefing as _B  # noqa: PLC0415
+        _calls: Dict[str, str] = {}
+        for _m in bilan.measures_24h:
+            _c = str(getattr(_m.cell, "conclusion", "")).strip().upper()
+            if _c in ("LONG", "SHORT"):
+                _calls[_m.cell.actif_name] = _c
+        _events = _B.parse_events_with_ingest_ts(_B.EVENTS_LOG)
+        _contra = shadow_news_fraiche_contra_call(_calls, _events, bilan.date_j)
+    except Exception:
+        _contra = []
+    if _contra:
+        for _x in _contra:
+            L.append(
+                f"- ⚠️ {_x['actif']} : call {_x['call']}, mais news fraîche "
+                f"{_x['news_dir']} ({_x['date']}) — « {_x['titre']} »."
+            )
+    else:
+        L.append("Aucune news fraîche à fort impact à contre-pied d'un call aujourd'hui.")
+    L.append("")
+
     # FAUX à forte amplitude (erreurs prioritaires, déjà en section 3 — détail chiffré ici).
     L.append("### FAUX à forte amplitude")
     if faux_gros:
@@ -2761,6 +2787,61 @@ def write_variations_24h(path: Path = VARIATIONS_24H_FILE, **kwargs) -> Path:
     return path
 
 
+def shadow_news_fraiche_contra_call(
+    calls_by_actif: Dict[str, str],
+    events: List[Dict[str, Any]],
+    today: date,
+    fresh_jours: int = 2,
+    materialites: Tuple[str, ...] = ("high",),
+) -> List[Dict[str, Any]]:
+    """SHADOW (zéro impact décision) — récence des news : actifs où une news FRAÎCHE
+    à fort impact CONTREDIT notre call du jour.
+
+    Mesure si le moteur s'est fait prendre à contre-pied par une news récente que le
+    net news n'a pas encore intégrée (cas cacao 30/06 : call LONG, news fraîche
+    « offre abondante » baissière, alors que le net restait haussier sur du vieux
+    stock El Niño). On INSTRUMENTE, on ne change RIEN au scoring (mesurer avant d'agir).
+
+    `calls_by_actif` : {nom_actif: 'LONG'/'SHORT'} (nos calls du jour). `events` :
+    events-log parsé (briefing.parse_events). Comparaison tolérante au libellé
+    (« Pétrole (Brent) » ↔ « Pétrole »). Retourne [{actif, call, news_dir, titre,
+    date}], 1 par actif (la news contra la plus fraîche). Liste vide = rien à signaler.
+    """
+    import briefing as B  # noqa: PLC0415
+    from datetime import timedelta  # noqa: PLC0415
+
+    def _norm(s: str) -> str:
+        return (s or "").split(" (")[0].strip().lower()
+
+    calls_norm = {_norm(a): (a, c) for a, c in calls_by_actif.items()}
+    cutoff = today - timedelta(days=fresh_jours)
+    best: Dict[str, Dict[str, Any]] = {}
+    for ev in events:
+        if (ev.get("materiality", "") or "").lower() not in materialites:
+            continue
+        d = B._parse_date(ev.get("date", ""))
+        if d is None or d < cutoff or d > today:
+            continue
+        label = B._primary_actif_from_event(ev)
+        if not label:
+            continue
+        key = _norm(label)
+        if key not in calls_norm:
+            continue  # pas de pari sur cet actif → hors périmètre
+        actif_nom, call = calls_norm[key]
+        news_dir = {"↑": "LONG", "↓": "SHORT"}.get(B._direction_arrow_for(ev, label))
+        if not news_dir or news_dir == call:
+            continue  # pas de sens net, ou news ALIGNÉE avec le call → rien à signaler
+        if key not in best or d > best[key]["_d"]:
+            best[key] = {
+                "_d": d, "actif": actif_nom, "call": call, "news_dir": news_dir,
+                "titre": (ev.get("trigger", "") or "").strip(), "date": d.isoformat(),
+            }
+    out = [{k: v for k, v in e.items() if k != "_d"} for e in best.values()]
+    out.sort(key=lambda x: x["actif"])
+    return out
+
+
 __all__ = [
     "BilanJour",
     "WinRateConviction",
@@ -2786,6 +2867,7 @@ __all__ = [
     "write_variations_24h",
     "load_perf_intraday_favorable",
     "load_cloture_favorable_bilan",
+    "shadow_news_fraiche_contra_call",
     "VARIATIONS_24H_FILE",
     "SUIVI_TRACKING_DIR",
     "SUIVI_SNAPSHOT_DIR",

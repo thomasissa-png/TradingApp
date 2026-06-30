@@ -387,12 +387,25 @@ jobs:
             exit 0
           fi
           git commit -m "$msg"
+          # Robustesse course-de-push (incident 30/06 : un push concurrent sur main
+          # pendant le créneau briefing a provoqué un rebase EN CONFLIT que l'ancien
+          # `git pull --rebase || true` AVALAIT, puis poussait l'état d'AVANT le
+          # snapshot → bulletin perdu SILENCIEUSEMENT, run vert trompeur).
+          # Désormais : un rebase en conflit AVORTE proprement et on retente ; si
+          # après 3 tentatives on ne peut ni rebaser ni pousser, on ÉCHOUE
+          # BRUYAMMENT (exit 1 + ::error::) → run rouge visible, jamais de perte muette.
           for i in 1 2 3; do
-            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            if ! git pull --rebase origin "${GITHUB_REF_NAME}"; then
+              echo "Rebase en conflit (tentative $i) — abort + retry (pas de push tronqué)."
+              git rebase --abort || true
+              sleep 5
+              continue
+            fi
             if git push origin HEAD:"${GITHUB_REF_NAME}"; then
               exit 0
             fi
-            echo "Push attempt $i failed, retrying..."
+            echo "Push refusé (tentative $i) — retry."
             sleep 5
           done
+          echo "::error::Commit/push échoué après 3 tentatives (conflit rebase ou push refusé) — snapshot NON publié. Re-déclencher le cycle."
           exit 1

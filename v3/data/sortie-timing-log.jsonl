@@ -16,3 +16,6 @@
 {"date": "2026-06-29", "actif": "Cacao", "call": "LONG", "categorie": "sans_objet", "pic_pct": -1.43, "pic_heure": "12h", "cloture_pct": -2.09, "max_gain_pct": 0.02}
 {"date": "2026-06-29", "actif": "EUR/USD", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.06, "pic_heure": "12h", "cloture_pct": -0.35, "max_gain_pct": 0.05}
 {"date": "2026-06-29", "actif": "USD/JPY", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 0.09, "pic_heure": "clôture", "cloture_pct": 0.09, "max_gain_pct": 0.11}
+{"date": "2026-06-30", "actif": "Argent", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -2.32, "pic_heure": "12h", "cloture_pct": -2.96, "max_gain_pct": 1.58}
+{"date": "2026-06-30", "actif": "CAC 40", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.44, "pic_heure": "clôture", "cloture_pct": -0.44, "max_gain_pct": 0.05}
+{"date": "2026-06-30", "actif": "Cacao", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 1.86, "pic_heure": "clôture", "cloture_pct": 1.86, "max_gain_pct": 5.03}

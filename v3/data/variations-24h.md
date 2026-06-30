@@ -1,11 +1,17 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 30 juin 2026, 08h09 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 30 juin 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. « Max du jour » = meilleur gain favorable atteint. « Joué » = l'actif était dans le top 3 du jour. « — » = point non relevé (zéro invention : les jours sans relevé 12h/18h restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|
+| mar 30/06 | VIX | SHORT | -0.31 | 21.77 | — | — | +2.23% | +2.76% | Non | — |
+| mar 30/06 | Nasdaq | SHORT | -1.12 | 724 | — | — | -1.65% | +0.00% | Non | SpaceX va être intégrée au Nasdaq-100 via un processus accéléré, générant une forte demande d'achat des ETF |
+| mar 30/06 | Cuivre | SHORT | +1.29 | 6.112 | -0.96% | — | -2.34% | +1.06% | Non | Activité manufacturière chinoise en juin supérieure aux attentes, portée par la demande tech et IA |
+| mar 30/06 | Café (Arabica) | LONG | +2.58 | 277.8 | +0.79% | — | +8.83% | +8.96% | Non | — |
+| mar 30/06 | Cacao | LONG | +8.25 | 4967 | +1.09% | +1.49% | +1.86% | +5.03% | Oui | El Niño menace la production de cacao en Afrique de l'Ouest |
+| mar 30/06 | Argent | SHORT | -2.88 | 57.54 | -2.32% | -3.72% | -2.96% | +1.58% | Oui | — |
 | lun 29/06 | VIX | SHORT | -0.19 | 22.63 | — | — | +3.80% | — | Non | — |
 | lun 29/06 | Sucre | LONG | +0.62 | 9.625 | +0.00% | — | +1.66% | — | Non | Pluies de mousson insuffisantes en Inde, impact négatif sur la production de sucre |
 | lun 29/06 | S&P 500 | LONG | +4.63 | 729.1 | — | — | +1.62% | — | Non | — |

@@ -1848,6 +1848,22 @@ TWELVE_SYMBOLS = {
     "momentum_prix_7j_coton":   "COTN",
     "momentum_prix_20j_sucre":  "CANE",
     "momentum_prix_7j_sucre":   "CANE",
+    # --- Tendance 3 jours (signal quant rapide du jour, ajout 30/06) : même
+    #     ticker que le 7j ; le dispatcher lit lag=3 du cle (momentum_prix_3j_).
+    "momentum_prix_3j_cacao":   "CC=F",
+    "momentum_prix_3j_cafe":    "KC=F",
+    "momentum_prix_3j_ble":     "ZW=F",
+    "momentum_prix_3j_cuivre":  "HG=F",
+    "momentum_prix_3j_petrole": "BZ=F",
+    "momentum_prix_3j_or":      "GC=F",
+    "momentum_prix_3j_argent":  "SI=F",
+    "momentum_prix_3j_eurusd":  "EUR=X",
+    "momentum_prix_3j_sp500":   "SPY",
+    "momentum_prix_3j_nasdaq":  "QQQ",
+    "momentum_prix_3j_cac40":   "^FCHI",
+    "momentum_prix_3j_usdjpy":  "USDJPY=X",
+    "momentum_prix_3j_coton":   "COTN",
+    "momentum_prix_3j_sucre":   "CANE",
     # Sucre — nouvelles clés réutilisant des SOURCES déjà câblées (L023 : nouvelle
     # clé, signe/pertinence propres au sucre). brent_ethanol_proxy_sucre via BZ=F
     # (mappé XBR/USD natif Twelve, comme pétrole) ; usd_brl_sucre via USDBRL=X

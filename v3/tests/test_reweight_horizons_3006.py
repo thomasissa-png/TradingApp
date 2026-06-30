@@ -56,6 +56,42 @@ def test_cot_positionnement_hebdo_quasi_nul_sur_24h():
             assert c["pertinence"]["24h"] <= 0.1, f"{fic} COT doit être <=0.1 sur 24h"
 
 
+def test_momentum_3j_present_et_mene_le_jour():
+    """Tendance 2-3j ajoutée (signal quant rapide) : tout actif avec un 7j a aussi
+    un 3j, et le 3j a la pertinence 24h la PLUS forte (il mène le jour)."""
+    has7j, m3 = set(), {}
+    for _, c in _criteres():
+        cle = c.get("cle_courante", "")
+        if cle.startswith("momentum_prix_7j_"):
+            has7j.add(cle.replace("momentum_prix_7j_", ""))
+        if cle.startswith("momentum_prix_3j_"):
+            m3[cle.replace("momentum_prix_3j_", "")] = c["pertinence"]["24h"]
+    assert has7j, "aucun 7j trouvé"
+    for actif in has7j:
+        assert actif in m3, f"{actif} : tendance 3j manquante"
+        assert m3[actif] == 1.0, f"{actif} : le 3j doit mener le 24h (pertinence 1.0)"
+
+
+def test_quant_domine_la_news_sur_24h_tous_actifs():
+    """Décision gravée 20/06 : le quant DOMINE la news. Vérifié sur le 24h pour
+    CHAQUE actif (capacité = poids × pertinence_24h, news = triplet, quant = reste)."""
+    import glob as _glob
+    for f in _glob.glob(str(ROOT / "config" / "fiches" / "*.yml")):
+        if os.path.basename(f).startswith("_"):
+            continue
+        d = yaml.safe_load(open(f, encoding="utf-8"))
+        news = quant = 0.0
+        for c in d.get("criteres", []):
+            if c.get("normalisation") == "gate":
+                continue
+            cap = c.get("poids", 0) * c.get("pertinence", {}).get("24h", 0)
+            if c.get("normalisation") == "triplet":
+                news += cap
+            else:
+                quant += cap
+        assert quant >= news, f"{d.get('actif')} : news ({news}) domine le quant ({quant}) sur 24h"
+
+
 def test_news_et_regime_non_demotes_sur_24h():
     """Garde-fou : on n'a PAS cassé le signal du jour — au moins un signal news
     (triplet) ou régime de risque reste fort (>=0.7) sur le 24h sur l'univers."""

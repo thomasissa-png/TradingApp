@@ -96,6 +96,23 @@ criteres:
 
   # Tendance du dollar (clé macro partagée dxy_trend_20j, FRED DTWEXBGS déjà câblé).
   # Signe -1 : dollar fort = coton plus cher pour acheteurs non-USD => demande comprimée.
+  - id: 10
+    nom: "Tendance du coton COTN (3 jours)"
+    source: "Twelve Data COTN (ETC LSE/USD)"
+    cle_courante: "momentum_prix_3j_coton"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 6
+    pertinence: { "24h": 1.0, "7j": 0.6, "1m": 0.1 }   # [3j ajout 30/06] F3a_momentum_court (mène le jour)
+    effet_long: "COTN en tendance haussière (z>+1)"
+    effet_short: "COTN en tendance baissière (z<-1)"
+
+  # Tendance du dollar (clé macro partagée dxy_trend_20j, FRED DTWEXBGS déjà câblé).
+  # Signe -1 : dollar fort = coton plus cher pour acheteurs non-USD => demande comprimée.
+
   - id: 6
     nom: "Tendance du dollar (20 jours)"
     source: "FRED DTWEXBGS (déjà câblé — FRED_SERIES_SIMPLE)"

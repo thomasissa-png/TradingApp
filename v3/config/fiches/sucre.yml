@@ -114,6 +114,23 @@ criteres:
 
   # Production Inde/Thaïlande — news-driven (triplet DeepSeek).
   # ISMA (Inde) / OCSB (Thaïlande) non disponibles en API gratuite.
+  - id: 10
+    nom: "Tendance du sucre CANE (3 jours)"
+    source: "Twelve Data CANE (NYSE/USD)"
+    cle_courante: "momentum_prix_3j_sucre"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 6
+    pertinence: { "24h": 1.0, "7j": 0.6, "1m": 0.1 }   # [3j ajout 30/06] F3a_momentum_court (mène le jour)
+    effet_long: "CANE en tendance haussière (z>+1)"
+    effet_short: "CANE en tendance baissière (z<-1)"
+
+  # Production Inde/Thaïlande — news-driven (triplet DeepSeek).
+  # ISMA (Inde) / OCSB (Thaïlande) non disponibles en API gratuite.
+
   - id: 7
     nom: "Production et exports Inde + Thaïlande (restrictions / abondance)"
     source: "events-log (news IA DeepSeek — triplet)"

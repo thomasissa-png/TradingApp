@@ -176,6 +176,24 @@ criteres:
 
   # ⚠️ GATE — sémantique non définie dans Analyste.md. Traité en DRAPEAU (n'entre pas dans le score)
   # tant que Thomas n'a pas tranché (voir SCHEMA-fiche.md § GATE). N'a pas de poids numérique.
+  - id: 14
+    nom: "Tendance du pétrole Brent (3 jours)"
+    source: "Twelve Data (XBR/USD)"
+    cle_courante: "momentum_prix_3j_petrole"
+    normalisation: "zscore"
+    zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # +1 : rendement 20j au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
+    poids: 6                     # 7→6 : prove-first concertation 10/06, promotion 6→supérieur seulement sur preuve (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06 (A3).
+    pertinence: { "24h": 1.0, "7j": 0.6, "1m": 0.1 }   # [3j ajout 30/06] F3a_momentum_court (mène le jour)
+    effet_long: "Brent en tendance haussière (z>+1)"
+    effet_short: "Brent en tendance baissière (z<-1)"
+
+
+  # ⚠️ GATE — sémantique non définie dans Analyste.md. Traité en DRAPEAU (n'entre pas dans le score)
+  # tant que Thomas n'a pas tranché (voir SCHEMA-fiche.md § GATE). N'a pas de poids numérique.
+
   - id: 11
     nom: "Drapeau : événement de marché majeur imminent"
     source: "events-log + calendrier"

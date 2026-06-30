@@ -165,6 +165,23 @@ criteres:
 
 
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 13
+    nom: "Tendance du Nasdaq (3 jours)"
+    source: "Twelve Data (proxy ETF QQQ)"
+    cle_courante: "momentum_prix_3j_nasdaq"
+    normalisation: "zscore"
+    zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # +1 : Nasdaq en tendance haussière (z>+1) = tendance suivie => LONG
+    poids: 4                     # plafond indices A8 (4-5) ; prove-first, RSI poids 2 conservé. Cf. CHANGELOG 11/06.
+    pertinence: { "24h": 1.0, "7j": 0.6, "1m": 0.1 }   # [3j ajout 30/06] F3a_momentum_court (mène le jour)
+    effet_long: "Nasdaq en tendance haussière (z>+1)"
+    effet_short: "Nasdaq en tendance baissière (z<-1)"
+
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+
   - id: 10
     nom: "Drapeau : événement de marché majeur imminent"
     source: "events-log + calendrier"

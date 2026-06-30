@@ -162,6 +162,23 @@ criteres:
 
 
   # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+  - id: 13
+    nom: "Tendance du cuivre (3 jours)"
+    source: "yfinance (Twelve ne sert pas ce future)"
+    cle_courante: "momentum_prix_3j_cuivre"
+    normalisation: "zscore"
+    zscore_window: 60            # profondeur de distribution (cohérent sox_trend_5j/dxy_trend_20j) ; "20j" du nom = horizon de tendance conceptuel
+    zscore_div: 2
+    cap: 1.0
+    signe: 1                     # +1 : rendement 20j au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
+    poids: 6                     # 8→6 : prove-first concertation 10/06, promotion 6→supérieur seulement sur preuve (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06 (A3).
+    pertinence: { "24h": 1.0, "7j": 0.6, "1m": 0.1 }   # [3j ajout 30/06] F3a_momentum_court (mène le jour)
+    effet_long: "Cuivre en tendance haussière (z>+1)"
+    effet_short: "Cuivre en tendance baissière (z<-1)"
+
+
+  # GATE — drapeau hors score (voir SCHEMA-fiche.md § GATE). Pas de poids numérique.
+
   - id: 9
     nom: "Drapeau : événement de marché majeur imminent"
     source: "events-log + calendrier"

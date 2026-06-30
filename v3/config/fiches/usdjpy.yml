@@ -66,6 +66,22 @@ criteres:
     effet_short: "USD/JPY en tendance baissière (z<-1)"
 
   # Tendance 20 jours USD/JPY — momentum moyen terme.
+  - id: 10
+    nom: "Tendance de l'USD/JPY (3 jours)"
+    source: "Twelve Data USD/JPY (natif forex)"
+    cle_courante: "momentum_prix_3j_usdjpy"
+    normalisation: "zscore"
+    zscore_window: 60
+    zscore_div: 2
+    cap: 1.0
+    signe: 1
+    poids: 6
+    pertinence: { "24h": 1.0, "7j": 0.6, "1m": 0.1 }   # [3j ajout 30/06] F3a_momentum_court (mène le jour)
+    effet_long: "USD/JPY en tendance haussière (z>+1)"
+    effet_short: "USD/JPY en tendance baissière (z<-1)"
+
+  # Tendance 20 jours USD/JPY — momentum moyen terme.
+
   - id: 4
     nom: "Tendance de l'USD/JPY (20 jours)"
     source: "Twelve Data USD/JPY (natif forex)"

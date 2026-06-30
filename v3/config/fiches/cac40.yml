@@ -35,7 +35,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : resserrement (z<-1) => LONG
     poids: 10
-    pertinence: { "24h": 0.4, "7j": 0.9, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Spread resserre vs 60j (z<-1)"
     effet_short: "Spread élargit (z>+1)"
 
@@ -49,7 +49,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 6
-    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 0.6 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "CAC out-perf >+1%"
     effet_short: "CAC under-perf >-1%"
 
@@ -68,7 +68,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 6
-    pertinence: { "24h": 0.9, "7j": 0.7, "1m": 0.4 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "Breadth >65%"
     effet_short: "Breadth <30%"
 
@@ -82,7 +82,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 5
-    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 0.7 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "Entrées >+1σ"
     effet_short: "Sorties <-1σ"
 
@@ -111,7 +111,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : RSI=30 oversold => LONG
     poids: 2
-    pertinence: { "24h": 0.8, "7j": 0.4, "1m": 0.2 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "RSI=30 oversold"
     effet_short: "RSI>75"
 
@@ -132,7 +132,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : CAC 40 en tendance haussière (z>+1) = tendance suivie => LONG
     poids: 4                     # plafond indices A8 (4-5) ; prove-first, RSI poids 2 conservé. Cf. CHANGELOG 11/06.
-    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }   # 22/06 recalibrage : 20j sert le 1 mois (retard ~10j), minoritaire sur 7j
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "CAC 40 en tendance haussière (z>+1)"
     effet_short: "CAC 40 en tendance baissière (z<-1)"
 
@@ -146,7 +146,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : CAC 40 en tendance haussière (z>+1) = tendance suivie => LONG
     poids: 4                     # plafond indices A8 (4-5) ; prove-first, RSI poids 2 conservé. Cf. CHANGELOG 11/06.
-    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 0.2 }   # 22/06 recalibrage : tendance COURTE, domine le 7j (retard ~2-3j)
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "CAC 40 en tendance haussière (z>+1)"
     effet_short: "CAC 40 en tendance baissière (z<-1)"
 

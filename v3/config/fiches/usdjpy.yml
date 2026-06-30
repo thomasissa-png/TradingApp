@@ -29,7 +29,7 @@ criteres:
     cap: 1.0
     signe: 1                     # direct : spread s'élargit (Fed hawkish / BoJ dovish) => LONG USD/JPY
     poids: 11
-    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Spread s'élargit (Fed hawkish / BoJ dovish)"
     effet_short: "Spread se resserre (BoJ hawkish / Fed pivot)"
 
@@ -46,7 +46,7 @@ criteres:
     cap: 1.0
     signe: 1                     # direct : DXY monte => LONG USD/JPY
     poids: 9
-    pertinence: { "24h": 0.7, "7j": 1.0, "1m": 0.8 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "DXY monte (dollar fort)"
     effet_short: "DXY baisse (dollar faible)"
 
@@ -61,7 +61,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 6
-    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.2 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "USD/JPY en tendance haussière (z>+1)"
     effet_short: "USD/JPY en tendance baissière (z<-1)"
 
@@ -76,7 +76,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 5
-    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "USD/JPY en tendance haussière (z>+1)"
     effet_short: "USD/JPY en tendance baissière (z<-1)"
 
@@ -94,7 +94,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : nets LONG JPY extreme => USD/JPY baisse => SHORT
     poids: 6
-    pertinence: { "24h": 0.2, "7j": 0.6, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Nets SHORT JPY extreme (squeeze à venir, yen s'apprécie)"
     effet_short: "Nets LONG JPY extreme (yen acheté, USD/JPY sous pression)"
 
@@ -109,7 +109,7 @@ criteres:
     cap: 1.0
     signe: 1                     # direct : spread s'élargit => LONG USD/JPY
     poids: 5
-    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Spread s'élargit (10Y US >> JP)"
     effet_short: "Spread se resserre (BoJ relève / Fed baisse)"
 

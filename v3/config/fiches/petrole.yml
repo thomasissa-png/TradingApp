@@ -51,7 +51,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : nets short extreme => LONG (squeeze)
     poids: 7
-    pertinence: { "24h": 0.2, "7j": 0.8, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Nets SHORT extreme (squeeze potentiel)"
     effet_short: "Nets LONG extreme (positions à déboucler)"
 
@@ -77,7 +77,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 5
-    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.8 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Backwardation > 0,5 USD (demande spot forte)"
     effet_short: "Contango > 0,5 USD (oversupply)"
 
@@ -91,7 +91,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : DXY baisse => LONG pétrole
     poids: 5
-    pertinence: { "24h": 0.3, "7j": 0.7, "1m": 0.9 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "DXY baisse (matières premières en USD favorisées)"
     effet_short: "DXY monte"
 
@@ -119,7 +119,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 4
-    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 0.7 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Spread > 5 USD (offre US lâche, Brent demand fort)"
     effet_short: "Spread < 1 USD (équilibre régional)"
 
@@ -133,7 +133,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 4
-    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }
+    pertinence: { "24h": 0.0, "7j": 0.3, "1m": 1.0 }   # [reweight 30/06] F5_fond_lent
     effet_long: "PMI > 51 (expansion demande)"
     effet_short: "PMI < 49 (contraction)"
 
@@ -155,7 +155,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : rendement 20j au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
     poids: 6                     # 7→6 : prove-first concertation 10/06, promotion 6→supérieur seulement sur preuve (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06 (A3).
-    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }   # 22/06 recalibrage : 20j sert le 1 mois (retard ~10j), minoritaire sur 7j
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Brent en tendance haussière (z>+1)"
     effet_short: "Brent en tendance baissière (z<-1)"
 
@@ -169,7 +169,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : rendement 20j au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
     poids: 6                     # 7→6 : prove-first concertation 10/06, promotion 6→supérieur seulement sur preuve (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06 (A3).
-    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 0.2 }   # 22/06 recalibrage : tendance COURTE, domine le 7j (retard ~2-3j)
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "Brent en tendance haussière (z>+1)"
     effet_short: "Brent en tendance baissière (z<-1)"
 

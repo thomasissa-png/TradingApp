@@ -38,7 +38,13 @@ def _mock_vals(fiche: dict, val: float) -> dict:
         if c.get("normalisation") == "gate":
             continue
         cle = c["cle_courante"]
-        v = 1.0 if c.get("normalisation") == "triplet" else val
+        # Signe-aware : valeur = val × signe → la CONTRIBUTION (valeur×signe×poids)
+        # a toujours le signe de `val`, quel que soit le signe du critère. Ainsi
+        # « tout haussier → LONG » est un invariant ROBUSTE, indépendant des poids
+        # (sinon un critère inversé à +0.8 contribue baissier, et le test dépend du
+        # mélange de poids — fragile au re-découpage 30/06).
+        signe = c.get("signe", 1) or 1
+        v = val * signe
         out[cle] = {
             "valeur": v,
             "valeur_normalisee": v,
@@ -72,6 +78,12 @@ def test_score_sans_donnee_ne_crashe_pas(key):
         assert res.conclusions[h] in ("LONG", "SHORT", "INSUFFISANT")
 
 
+# NB (reweight 30/06) : avec des valeurs UNIFORMES (+0.8 partout), un critère
+# `signe: -1` (inversé) contribue NÉGATIVEMENT — donc « +0.8 partout » n'est PAS un
+# état « tout haussier ». Depuis le re-découpage par familles, le 24h est concentré
+# sur quelques signaux rapides (momentum court + régime de risque, parfois inversés) :
+# la monotonie sous valeurs uniformes n'est donc plus garantie sur le 24h (ex. usdjpy,
+# fiche régime-lourde). Elle reste valable sur 7j/1m (jeux de signaux plus complets).
 @pytest.mark.parametrize("key", NOUVEAUX)
 def test_score_positif_donne_long(key):
     fiches = cc.load_fiches()

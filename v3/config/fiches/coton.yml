@@ -27,7 +27,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : écart à la normale => HAUSSIER
     poids: 9
-    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 1.0 }
+    pertinence: { "24h": 0.0, "7j": 0.3, "1m": 1.0 }   # [reweight 30/06] F5_fond_lent
     effet_long: "Sécheresse West Texas OU pluies excessives (qualité dégradée)"
     effet_short: "Précipitations proches de la normale"
 
@@ -44,7 +44,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 5
-    pertinence: { "24h": 0.2, "7j": 0.8, "1m": 1.0 }
+    pertinence: { "24h": 0.0, "7j": 0.3, "1m": 1.0 }   # [reweight 30/06] F5_fond_lent
     effet_long: "Mousson déficitaire OU excès Gujarat (offre indienne menacée)"
     effet_short: "Mousson normale (offre Inde sécurisée)"
 
@@ -60,7 +60,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : nets SHORT extreme => LONG (squeeze spéculatif)
     poids: 7
-    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Nets SHORT extreme (squeeze à venir)"
     effet_short: "Nets LONG extreme (positions chargées)"
 
@@ -75,7 +75,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 6
-    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "COTN en tendance haussière (z>+1)"
     effet_short: "COTN en tendance baissière (z<-1)"
 
@@ -90,7 +90,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 6
-    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 0.2 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "COTN en tendance haussière (z>+1)"
     effet_short: "COTN en tendance baissière (z<-1)"
 
@@ -106,7 +106,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : DXY monte => demande non-USD comprimée => baissier
     poids: 5
-    pertinence: { "24h": 0.3, "7j": 0.7, "1m": 0.8 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "DXY baisse (coton moins cher en devises étrangères)"
     effet_short: "DXY monte (demande non-USD comprimée)"
 
@@ -138,7 +138,7 @@ criteres:
     cap: 1.0
     signe: -1                   # inversé : <50% bon/excellent => mauvaise récolte => LONG
     poids: 6
-    pertinence: { "24h": 0.2, "7j": 0.9, "1m": 0.8 }
+    pertinence: { "24h": 0.0, "7j": 0.3, "1m": 1.0 }   # [reweight 30/06] F5_fond_lent
     effet_long: "< 50% bon/excellent (récolte dégradée)"
     effet_short: "> 70% bon/excellent (récolte saine)"
 

@@ -22,7 +22,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : TIPS baisse (z<-1) => LONG
     poids: 11
-    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "TIPS baisse (z<-1)"
     effet_short: "TIPS monte (z>+1)"
 
@@ -49,7 +49,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 7
-    pertinence: { "24h": 0.9, "7j": 0.9, "1m": 0.5 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "SOX hausse (z>+1)"
     effet_short: "SOX baisse (z<-1)"
 
@@ -67,7 +67,7 @@ criteres:
     cap: 1.0
     signe: 1                       # ratio EW/CW en hausse = participation large = haussier
     poids: 6                       # absorbe concentration_top7 (id=5, poids 5) — dedup audit Cowork 10/06 : même phénomène (domination méga-caps vs breadth large), corrélés inverse (-1) — concentration↑ ⇔ ratio QQQE/QQQ↓. Poids avant 6 → après 6 (= max(6,5)). Donnée secondaire (concentration top7) abandonnée car le schéma fiche ne supporte pas de source fallback → breadth primaire seule.
-    pertinence: { "24h": 0.9, "7j": 0.7, "1m": 0.4 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "QQQE/QQQ en hausse (participation large)"
     effet_short: "QQQE/QQQ en baisse (rallye méga-caps)"
 
@@ -96,7 +96,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 5
-    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 0.7 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "Entrées >+1σ"
     effet_short: "Sorties <-1σ"
 
@@ -110,7 +110,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : Russell out-perf (breadth saine) => LONG
     poids: 4
-    pertinence: { "24h": 0.5, "7j": 0.8, "1m": 0.7 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Russell out-perf (breadth saine)"
     effet_short: "Nasdaq out-perf très large"
 
@@ -124,7 +124,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : RSI=30 => LONG
     poids: 2
-    pertinence: { "24h": 0.8, "7j": 0.4, "1m": 0.2 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "RSI=30"
     effet_short: "RSI>75"
 
@@ -145,7 +145,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : Nasdaq en tendance haussière (z>+1) = tendance suivie => LONG
     poids: 4                     # plafond indices A8 (4-5) ; prove-first, RSI poids 2 conservé. Cf. CHANGELOG 11/06.
-    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }   # 22/06 recalibrage : 20j sert le 1 mois (retard ~10j), minoritaire sur 7j
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Nasdaq en tendance haussière (z>+1)"
     effet_short: "Nasdaq en tendance baissière (z<-1)"
 
@@ -159,7 +159,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : Nasdaq en tendance haussière (z>+1) = tendance suivie => LONG
     poids: 4                     # plafond indices A8 (4-5) ; prove-first, RSI poids 2 conservé. Cf. CHANGELOG 11/06.
-    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 0.2 }   # 22/06 recalibrage : tendance COURTE, domine le 7j (retard ~2-3j)
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "Nasdaq en tendance haussière (z>+1)"
     effet_short: "Nasdaq en tendance baissière (z<-1)"
 

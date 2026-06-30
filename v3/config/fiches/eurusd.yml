@@ -23,7 +23,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : se resserre (BCE+hawkish) => LONG EUR
     poids: 12
-    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Se resserre (BCE+hawkish)"
     effet_short: "S'élargit (Fed+hawkish)"
 
@@ -37,7 +37,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : se resserre => LONG EUR
     poids: 6
-    pertinence: { "24h": 0.3, "7j": 0.7, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Se resserre"
     effet_short: "S'élargit"
 
@@ -51,7 +51,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : DXY baisse (z<-1) => LONG EUR
     poids: 9
-    pertinence: { "24h": 0.7, "7j": 1.0, "1m": 0.8 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "DXY baisse (z<-1)"
     effet_short: "DXY monte (z>+1)"
 
@@ -79,7 +79,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 6
-    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 0.9 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Proba cut Fed >70%"
     effet_short: "Proba hike >70% OU aucun cut"
 
@@ -93,7 +93,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : nets SHORT extreme => LONG EUR (squeeze)
     poids: 5
-    pertinence: { "24h": 0.2, "7j": 0.6, "1m": 0.9 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Nets SHORT extreme"
     effet_short: "Nets LONG extreme"
 
@@ -107,7 +107,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : se resserre => LONG EUR
     poids: 4
-    pertinence: { "24h": 0.4, "7j": 0.7, "1m": 0.6 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Se resserre"
     effet_short: "S'élargit"
 
@@ -121,7 +121,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 3
-    pertinence: { "24h": 0.1, "7j": 0.3, "1m": 0.9 }
+    pertinence: { "24h": 0.0, "7j": 0.3, "1m": 1.0 }   # [reweight 30/06] F5_fond_lent
     effet_long: "Surplus hausse (z>+1)"
     effet_short: "Baisse/déficit (z<-1)"
 
@@ -143,7 +143,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : EUR/USD en tendance haussière (z>+1) = tendance suivie => LONG EUR
     poids: 5                     # famille A8 ; prove-first ≤6, promotion sur preuve seulement (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06.
-    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }   # 22/06 recalibrage : 20j sert le 1 mois (retard ~10j), minoritaire sur 7j
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "EUR/USD en tendance haussière (z>+1)"
     effet_short: "EUR/USD en tendance baissière (z<-1)"
 
@@ -157,7 +157,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : EUR/USD en tendance haussière (z>+1) = tendance suivie => LONG EUR
     poids: 5                     # famille A8 ; prove-first ≤6, promotion sur preuve seulement (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06.
-    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 0.2 }   # 22/06 recalibrage : tendance COURTE, domine le 7j (retard ~2-3j)
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "EUR/USD en tendance haussière (z>+1)"
     effet_short: "EUR/USD en tendance baissière (z<-1)"
 

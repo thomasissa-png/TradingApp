@@ -35,7 +35,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : taux baisse (z<-1) => LONG
     poids: 9
-    pertinence: { "24h": 0.4, "7j": 0.9, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Taux baisse (z<-1)"
     effet_short: "Taux monte (z>+1)"
 
@@ -49,7 +49,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : resserrement (z<-1) => LONG
     poids: 7
-    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.9 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Spread resserre (z<-1)"
     effet_short: "Spread élargit (z>+1)"
 
@@ -67,7 +67,7 @@ criteres:
     cap: 1.0
     signe: 1                       # ratio EW/CW en hausse = participation large = haussier
     poids: 7
-    pertinence: { "24h": 0.9, "7j": 0.8, "1m": 0.5 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "RSP/SPY en hausse (participation large)"
     effet_short: "RSP/SPY en baisse (rallye méga-caps)"
 
@@ -81,7 +81,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : DXY baisse => LONG
     poids: 5
-    pertinence: { "24h": 0.3, "7j": 0.7, "1m": 0.9 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "DXY baisse"
     effet_short: "DXY monte"
 
@@ -95,7 +95,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 5
-    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 0.7 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "Entrées >+1σ"
     effet_short: "Sorties <-1σ"
 
@@ -121,7 +121,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : valorisation basse => LONG
     poids: 4
-    pertinence: { "24h": 0.1, "7j": 0.3, "1m": 1.0 }
+    pertinence: { "24h": 0.0, "7j": 0.3, "1m": 1.0 }   # [reweight 30/06] F5_fond_lent
     effet_long: "CAPE<25 OU FwdPE<16"
     effet_short: "CAPE>35 OU FwdPE>22"
 
@@ -135,7 +135,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : RSI=30 => LONG
     poids: 2
-    pertinence: { "24h": 0.8, "7j": 0.4, "1m": 0.2 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "RSI=30"
     effet_short: "RSI>75"
 
@@ -149,7 +149,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : taux réel monte (z>+1) => pression baissière => SHORT (comme Nasdaq)
     poids: 10                    # signal taux majeur pour le S&P (≈ Nasdaq 11, sous le delta 5j à 9 et au-dessus du HY OAS à 7)
-    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 1.0 }   # aligné Nasdaq : faible 24h, fort 7j/1m
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "TIPS baisse (z<-1)"
     effet_short: "TIPS monte (z>+1)"
 
@@ -170,7 +170,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : S&P 500 en tendance haussière (z>+1) = tendance suivie => LONG
     poids: 4                     # plafond indices A8 (4-5) ; prove-first, RSI poids 2 conservé. Cf. CHANGELOG 11/06.
-    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }   # 22/06 recalibrage : 20j sert le 1 mois (retard ~10j), minoritaire sur 7j
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "S&P 500 en tendance haussière (z>+1)"
     effet_short: "S&P 500 en tendance baissière (z<-1)"
 
@@ -184,7 +184,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : S&P 500 en tendance haussière (z>+1) = tendance suivie => LONG
     poids: 4                     # plafond indices A8 (4-5) ; prove-first, RSI poids 2 conservé. Cf. CHANGELOG 11/06.
-    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 0.2 }   # 22/06 recalibrage : tendance COURTE, domine le 7j (retard ~2-3j)
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "S&P 500 en tendance haussière (z>+1)"
     effet_short: "S&P 500 en tendance baissière (z<-1)"
 

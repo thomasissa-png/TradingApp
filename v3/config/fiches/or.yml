@@ -22,7 +22,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : TIPS baisse (z<-1) => LONG
     poids: 12
-    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "TIPS baisse (z<-1)"
     effet_short: "TIPS monte (z>+1)"
 
@@ -36,7 +36,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 9
-    pertinence: { "24h": 0.1, "7j": 0.3, "1m": 1.0 }
+    pertinence: { "24h": 0.0, "7j": 0.3, "1m": 1.0 }   # [reweight 30/06] F5_fond_lent
     effet_long: "Accumulation >+1σ"
     effet_short: "Sortie/ralentissement"
 
@@ -50,7 +50,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : DXY baisse (z<-1) => LONG
     poids: 8
-    pertinence: { "24h": 0.6, "7j": 0.9, "1m": 0.8 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "DXY baisse (z<-1)"
     effet_short: "DXY monte (z>+1)"
 
@@ -64,7 +64,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : nets SHORT extreme => LONG (squeeze)
     poids: 6
-    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Nets SHORT extreme"
     effet_short: "Nets LONG extreme"
 
@@ -78,7 +78,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 5
-    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 0.7 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "Entrées >+1σ"
     effet_short: "Sorties <-1σ"
 
@@ -143,7 +143,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : rendement 20j au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
     poids: 6                     # 7→6 : prove-first concertation 10/06, promotion 6→supérieur seulement sur preuve (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06 (A3).
-    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }   # 22/06 recalibrage : 20j sert le 1 mois (retard ~10j), minoritaire sur 7j
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Or en tendance haussière (z>+1)"
     effet_short: "Or en tendance baissière (z<-1)"
 
@@ -157,7 +157,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : rendement 20j au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
     poids: 6                     # 7→6 : prove-first concertation 10/06, promotion 6→supérieur seulement sur preuve (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06 (A3).
-    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 0.2 }   # 22/06 recalibrage : tendance COURTE, domine le 7j (retard ~2-3j)
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "Or en tendance haussière (z>+1)"
     effet_short: "Or en tendance baissière (z<-1)"
 

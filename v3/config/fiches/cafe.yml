@@ -36,7 +36,7 @@ criteres:
     cap: 1.0
     signe: 1                      # +1 : norm>0 (écart à la normale) => HAUSSIER
     poids: 11
-    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 1.0 }
+    pertinence: { "24h": 0.0, "7j": 0.3, "1m": 1.0 }   # [reweight 30/06] F5_fond_lent
     effet_long: "Sécheresse persistante OU pluies excessives (écart à la normale)"
     effet_short: "Pluies normales/abondantes (proche de la climatologie)"
 
@@ -50,7 +50,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : stocks baissent (z<-1) => LONG
     poids: 9
-    pertinence: { "24h": 0.3, "7j": 0.9, "1m": 1.0 }
+    pertinence: { "24h": 0.0, "7j": 0.3, "1m": 1.0 }   # [reweight 30/06] F5_fond_lent
     effet_long: "Stocks baissent (z<-1)"
     effet_short: "Stocks montent (z>+1)"
 
@@ -64,7 +64,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : USD/BRL baisse (real fort) => LONG
     poids: 6
-    pertinence: { "24h": 0.4, "7j": 0.8, "1m": 0.9 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "USD/BRL baisse (real fort)"
     effet_short: "USD/BRL monte (real faible)"
 
@@ -78,7 +78,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : nets SHORT extreme => LONG (squeeze)
     poids: 5
-    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Nets SHORT extreme"
     effet_short: "Nets LONG extreme"
 
@@ -119,7 +119,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 4
-    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 0.7 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Se resserre (z<-1)"
     effet_short: "S'élargit (z>+1)"
 
@@ -138,7 +138,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : norm>0 (écart à la normale) => HAUSSIER
     poids: 4
-    pertinence: { "24h": 0.2, "7j": 0.6, "1m": 0.9 }
+    pertinence: { "24h": 0.0, "7j": 0.3, "1m": 1.0 }   # [reweight 30/06] F5_fond_lent
     effet_long: "Sécheresse OU excès de pluie (séchage/qualité robusta)"
     effet_short: "Pluies normales"
 
@@ -161,7 +161,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : rendement 20j au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
     poids: 6                     # 8→6 : prove-first concertation 10/06, promotion 6→supérieur seulement sur preuve (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06 (A3).
-    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }   # 22/06 recalibrage : 20j sert le 1 mois (retard ~10j), minoritaire sur 7j
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Café en tendance haussière (z>+1)"
     effet_short: "Café en tendance baissière (z<-1)"
 
@@ -175,7 +175,7 @@ criteres:
     cap: 1.0
     signe: 1                     # +1 : rendement 20j au-dessus de sa distribution récente (z>+1) = tendance haussière suivie => LONG
     poids: 6                     # 8→6 : prove-first concertation 10/06, promotion 6→supérieur seulement sur preuve (métrique FAUSSES-aux-retournements). Cf. CHANGELOG 11/06 (A3).
-    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 0.2 }   # 22/06 recalibrage : tendance COURTE, domine le 7j (retard ~2-3j)
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "Café en tendance haussière (z>+1)"
     effet_short: "Café en tendance baissière (z<-1)"
 

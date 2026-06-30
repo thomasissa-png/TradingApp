@@ -27,7 +27,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 10
-    pertinence: { "24h": 0.3, "7j": 1.0, "1m": 1.0 }
+    pertinence: { "24h": 0.0, "7j": 0.3, "1m": 1.0 }   # [reweight 30/06] F5_fond_lent
     effet_long: "Sécheresse OU excès de pluie (rendements dégradés)"
     effet_short: "Conditions normales (récolte en ligne)"
 
@@ -45,7 +45,7 @@ criteres:
     cap: 1.0
     signe: 1                     # direct : Brent monte => éthanol attractif => moins de sucre => HAUSSIER
     poids: 7
-    pertinence: { "24h": 0.3, "7j": 0.8, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Brent monte (éthanol plus attractif que le sucre)"
     effet_short: "Brent baisse (usines reviennent au sucre)"
 
@@ -62,7 +62,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : USD/BRL baisse (réal fort) => haussier sucre
     poids: 6
-    pertinence: { "24h": 0.4, "7j": 0.8, "1m": 0.9 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Réal fort (USD/BRL baisse) — marges export réduites"
     effet_short: "Réal faible (USD/BRL monte) — pression export Brésil"
 
@@ -78,7 +78,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : nets SHORT extreme => LONG (squeeze)
     poids: 6
-    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Nets SHORT extreme (squeeze à venir)"
     effet_short: "Nets LONG extreme (positions chargées)"
 
@@ -93,7 +93,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 6
-    pertinence: { "24h": 0.4, "7j": 0.3, "1m": 1.0 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "CANE en tendance haussière (z>+1)"
     effet_short: "CANE en tendance baissière (z<-1)"
 
@@ -108,7 +108,7 @@ criteres:
     cap: 1.0
     signe: 1
     poids: 6
-    pertinence: { "24h": 0.4, "7j": 1.0, "1m": 0.2 }
+    pertinence: { "24h": 0.5, "7j": 1.0, "1m": 0.3 }   # [reweight 30/06] F3b_momentum_7j
     effet_long: "CANE en tendance haussière (z>+1)"
     effet_short: "CANE en tendance baissière (z<-1)"
 

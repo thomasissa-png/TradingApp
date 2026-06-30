@@ -107,7 +107,7 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : nets SHORT extreme => LONG VIX (squeeze)
     poids: 5
-    pertinence: { "24h": 0.2, "7j": 0.7, "1m": 0.9 }
+    pertinence: { "24h": 0.1, "7j": 0.4, "1m": 1.0 }   # [reweight 30/06] F4_moyen
     effet_long: "Nets SHORT extreme"
     effet_short: "Nets LONG extreme"
 

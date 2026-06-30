@@ -138,10 +138,30 @@ def test_gros_move_mauvaise_direction():
     assert "mauvaise direction" in g.apprentissage.lower()
 
 
-def test_gros_move_sous_seuil_exclu():
-    # Mouvement < 2×seuil → pas un gros move.
-    meas = [_measure("Argent", "LONG", 1.5, 1.0)]  # 1.5 < 2.0
+def test_gros_move_sous_1pct_exclu():
+    # Barre = cible turbo 1 % (fondateur 29/06), plus 2×seuil. Sous 1 % d'amplitude
+    # (clôture ET max gain) → pas surfacé.
+    meas = [_measure("Argent", "LONG", 0.5, 1.0)]  # 0.5 % < 1 %
     assert bj.compute_gros_moves_autres(meas, {}, {}, 0.6) == []
+
+
+def test_gros_move_1pct_surface_meme_sous_2x_seuil():
+    # RÉGRESSION (fondateur 29/06 : « Café/Sucre/VIX ont bougé >1 %, où sont-ils ? »).
+    # Un mouvement de 1.5 % (sous l'ancienne barre 2×seuil=2.0) doit désormais être
+    # surfacé car il dépasse la cible turbo 1 %.
+    meas = [_measure("Sucre", "LONG", 1.5, 1.2)]  # 1.5 < 2×1.2 mais >= 1 %
+    res = bj.compute_gros_moves_autres(meas, {}, {}, 0.6)
+    assert len(res) == 1 and res[0].actif == "Sucre"
+    assert res[0].direction_juste is True
+
+
+def test_gros_move_close_plat_mais_pic_intraday_surface():
+    # Clôture ~plate mais pic intraday > 1 % (ex. Argent 29/06 : close -0.01 %, max
+    # +1.07 %) : surfacé via max_gain_pct, pas masqué.
+    m = _measure("Argent", "SHORT", -0.01, 0.8)
+    m.max_gain_pct = 1.07
+    res = bj.compute_gros_moves_autres([m], {}, {}, 0.6)
+    assert len(res) == 1 and res[0].max_gain_pct == 1.07
 
 
 def test_gros_move_tri_du_plus_gros():

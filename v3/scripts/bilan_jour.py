@@ -70,6 +70,13 @@ PARIS_TZ = ZoneInfo("Europe/Paris")
 # chiffrer une perte.
 GROS_MOVE_FACTOR = 2.0
 
+# Surfaçage d'un mouvement HORS Top 3 dans le bilan (section « Gros mouvements
+# ailleurs » + section 3). Barre = cible turbo 1 % (MÊME définition que « Gagné
+# >1% »), sur l'amplitude du jour (|clôture| OU max gain favorable). Remplace
+# l'ancienne barre 2x le seuil de réussite qui masquait des gagnants évidents
+# (VIX, Sucre, Café... fondateur 29/06 : « ils ont bougé >1 %, où sont les pourquoi ? »).
+SEUIL_MOVER_HORS_TOP3 = 1.0
+
 # CA-B2 — Marqueur de clôture EU approximative (fallback Q5).
 # Apposé sur la clôture d'un actif EU (CAC) quand on n'a PAS pu obtenir le close
 # officiel 17h30 et qu'on retombe sur le dernier prix disponible (spot 22h).
@@ -1059,6 +1066,9 @@ class GrosMoveAutre:
     # Brief B — POURQUOI le mouvement a eu lieu : news high sur l'actif ce jour
     # (résumé) ou None si non tracé (l'appelant écrit « cause non tracée »).
     cause_move: Optional[str] = None
+    # Max gain favorable du jour (cible turbo) : sert à afficher l'amplitude réelle
+    # quand la clôture est faible mais que le pic intraday a dépassé 1 %.
+    max_gain_pct: Optional[float] = None
 
 
 def reason_non_selection(
@@ -1127,17 +1137,18 @@ def compute_gros_moves_autres(
     conviction_records: Dict[Tuple[str, str], dict],
     score_fort_seuil: float,
     selection_coverage_min: float = 0.70,
-    gros_move_factor: float = GROS_MOVE_FACTOR,
+    seuil_mover: float = SEUIL_MOVER_HORS_TOP3,
     date_j: Optional[date] = None,
     events_path: Optional[Path] = None,
 ) -> List[GrosMoveAutre]:
     """Bloc 2 — Gros mouvements sur les AUTRES actifs (hors top 3).
 
-    Parmi les cellules 24h NON sélectionnées dont |mouvement vs ouverture| ≥
-    `gros_move_factor` × seuil_actif (réutilise le « gros move » existant) :
+    Parmi les cellules 24h NON sélectionnées dont l'AMPLITUDE du jour atteint
+    `seuil_mover` (= cible turbo 1 %, sur |clôture| OU max gain favorable) :
     direction du call juste ou non, raison de non-sélection (reason_non_selection),
-    apprentissage. Triés du PLUS GROS mouvement au plus petit (le plus gros = le
-    plus intéressant à jouer). Zéro invention.
+    apprentissage, et POURQUOI le mouvement. Triés du PLUS GROS au plus petit.
+    Zéro invention. (Avant : barre à 2x le seuil de réussite, qui masquait des
+    gagnants >1 % évidents - VIX, Sucre, Café - fondateur 29/06.)
     """
     out: List[GrosMoveAutre] = []
     for m in measures_24h:
@@ -1145,11 +1156,17 @@ def compute_gros_moves_autres(
         if selection_map.get((actif, m.horizon), False):
             continue  # dans le top 3 → traité au Bloc 1
         delta = m.delta_pct
-        seuil = m.seuil_pct
-        if not isinstance(delta, (int, float)) or not isinstance(seuil, (int, float)):
+        if not isinstance(delta, (int, float)):
             continue
-        if abs(delta) < gros_move_factor * seuil:
-            continue  # pas un gros move
+        mg = getattr(m, "max_gain_pct", None)
+        # Amplitude du jour = max(|clôture|, max gain favorable). Capte aussi les
+        # actifs au close ~plat mais avec un pic intraday > 1 % (ex. Argent).
+        amplitude = max(
+            abs(delta),
+            mg if isinstance(mg, (int, float)) else 0.0,
+        )
+        if amplitude < seuil_mover:
+            continue  # mouvement non notable (< cible turbo)
         call = m.cell.conclusion
         fav = _fav(delta, call)
         direction_juste = (fav > 0) if isinstance(fav, (int, float)) else None
@@ -1179,6 +1196,7 @@ def compute_gros_moves_autres(
             direction_juste=direction_juste, raison_non_select=raison,
             apprentissage=_apprentissage_gros_move(direction_juste, raison),
             cause_move=cause_move,
+            max_gain_pct=(round(mg, 2) if isinstance(mg, (int, float)) else None),
         ))
     out.sort(key=lambda x: abs(x.mouvement_pct), reverse=True)
     return out
@@ -2010,10 +2028,9 @@ def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
         if out_by.get(p.actif) != OUTCOME_FAUSSE:
             continue
         ligne = f"{p.actif} {p.call} ({_fmt_pct(delta_by.get(p.actif))}) raté"
-        if p.raison_call:
-            ligne += f" : on a suivi {p.raison_call}"
-        else:
-            ligne += " : call à contre-sens du marché"
+        # Le fondateur ne veut PAS qu'on RE-LISTE les critères suivis (déjà en
+        # section 1 « Pourquoi ces paris ») : section 3 = UNIQUEMENT le pourquoi
+        # du mouvement adverse (29/06 : « seul le pourquoi m'intéresse »).
         # POURQUOI le marché est parti dans l'autre sens (manque signalé par le
         # fondateur 27/06). Cascade de qualité, du plus fiable au dernier recours :
         #   1) news propre cohérente avec le mouvement adverse (high/medium) ;
@@ -2038,14 +2055,19 @@ def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
         if p.cause_repli:
             ligne += f" ({p.cause_repli})"
         pts.append(ligne + ".")
-    # Opportunités ratées : gros mouvement hors top 3 dans le bon sens, non sélectionné.
+    # Opportunités ratées : mouvement >= 1 % hors top 3 dans le bon sens, non
+    # sélectionné. Amplitude affichée = clôture + max gain (le pic intraday est le
+    # vrai signal quand la clôture est plate). FOCUS POURQUOI : la cause du
+    # mouvement EST le payload, pas le rappel des critères.
     for g in bilan.gros_moves_autres:
         if not g.direction_juste:
             continue
-        ligne = (f"{g.actif} {g.call} {_fmt_pct(g.mouvement_pct)} (hors top 3) : "
-                 f"opportunité ratée. Pas sélectionné car {g.raison_non_select}")
-        if g.cause_move:
-            ligne += f". Pourquoi ça a bougé : {g.cause_move}"
+        ampl = _fmt_pct(g.mouvement_pct)
+        if isinstance(g.max_gain_pct, (int, float)):
+            ampl += f", max {_fmt_pct(g.max_gain_pct)}"
+        ligne = (f"{g.actif} {g.call} ({ampl}, hors top 3, non sélectionné car "
+                 f"{g.raison_non_select})")
+        ligne += f" : {g.cause_move}" if g.cause_move else " : cause non tracée"
         pts.append(ligne + ".")
     return pts[:9]
 
@@ -2152,7 +2174,19 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     elif indispo:
         L.append(_MSG_MESURE_INDISPO)
     else:
-        L.append("Rien de net aujourd'hui : aucun pari à plus de 1 % dans le bon sens.")
+        # Honnêteté sur l'angle mort (fondateur) : si la Sélection n'a rien donné
+        # mais que des actifs HORS Top 3 ont payé > 1 %, le DIRE plutôt que « rien
+        # de net » (trompeur). Le détail + pourquoi sont en section 3.
+        gagnants_hors = [g for g in bilan.gros_moves_autres if g.direction_juste]
+        if gagnants_hors:
+            noms = ", ".join(g.actif for g in gagnants_hors[:5])
+            L.append(
+                f"Côté Sélection : rien à plus de 1 % dans le bon sens. Mais hors "
+                f"Top 3, {len(gagnants_hors)} actif(s) ont payé ({noms}) : on est "
+                f"passé à côté (le pourquoi est en section 3)."
+            )
+        else:
+            L.append("Rien de net aujourd'hui : aucun pari à plus de 1 % dans le bon sens.")
     L.append("")
 
     L.append("## 3. Ce qu'on doit améliorer aujourd'hui")          # 3. À améliorer + POURQUOI

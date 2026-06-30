@@ -456,6 +456,41 @@ def test_post_mortem_divergence_sans_catalyseur(tmp_path: Path):
     assert "divergence" in joined.lower()
 
 
+def test_section3_loser_ne_relit_pas_les_criteres_suivis():
+    """Forme section 3 (fondateur 29/06 : « seul le pourquoi m'intéresse ») : la
+    ligne d'un raté ne RE-LISTE PLUS les critères suivis (déjà en section 1), elle
+    ne donne QUE le pourquoi du mouvement adverse."""
+    bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
+    bilan.perf_top3 = [NS(
+        actif="Cacao", call="LONG",
+        raison_call="Maladies des cabosses + Tendance du cacao (20 jours)",
+        cause_adverse="prévisions de temps plus sec en Côte d'Ivoire",
+        cause_minoritaire=None, cause_externe=None, cause_repli=None,
+    )]
+    bilan.measures_24h = [_measure_perdant("Cacao", "LONG", -2.09)]
+    line = "\n".join(bj._points_faibles_jour(bilan))
+    assert "on a suivi" not in line                 # plus de rappel des critères
+    assert "Maladies des cabosses" not in line        # ni la liste de la section 1
+    assert "Le marché a reculé sur : prévisions de temps plus sec" in line
+
+
+def test_section3_mover_1pct_hors_top3_avec_pourquoi_et_max():
+    """Un gagnant hors Top 3 (> 1 %) est listé AVEC son pourquoi et son max gain
+    (grief fondateur 29/06 : Café/Sucre/VIX gagnants mais absents du bilan)."""
+    bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
+    bilan.perf_top3 = []
+    bilan.measures_24h = []
+    bilan.gros_moves_autres = [bj.GrosMoveAutre(
+        actif="Sucre", call="LONG", mouvement_pct=1.66, direction_juste=True,
+        raison_non_select="news à contre-sens (↯)", apprentissage="x",
+        cause_move="tendance quant (production Inde + Thaïlande)", max_gain_pct=1.87,
+    )]
+    line = "\n".join(bj._points_faibles_jour(bilan))
+    assert "Sucre" in line
+    assert "max +1.87%" in line                       # amplitude réelle (pic intraday)
+    assert "tendance quant (production Inde + Thaïlande)" in line  # le POURQUOI
+
+
 def test_learning_contresens_sans_cause_explique_le_recit():
     """Learning contre-sens SANS cause tracée → explique que le récit n'a pas tenu
     (au lieu du laconique « Driver à réexaminer » seul)."""

@@ -320,3 +320,18 @@ règle, NI le kill-criterion.
 **Ajout.** USD/JPY (`USD/JPY`, fx, continu), Coton (`COTN`, agri-softs, continu) et Sucre (`CANE`, agri-softs, continu) sont introduits en mode shadow. Les 3 sont des actifs **continus** : leur référence de mesure 24h est le **prix d'émission 7h** (alignement L027/L021, comme les autres continus). Fiches `config/fiches/{usdjpy,coton,sucre}.yml`.
 
 **Reset / warm-up.** Ce ne sont PAS des resets : ce sont des **introductions**. Les 12 actifs existants ne sont **pas touchés** (historique et `ref_changed` préservés, zéro reset). Les 3 nouvelles cellules entrent dans `ref-changed.json` (clés = `ticker_principal` : `USD/JPY`, `COTN`, `CANE`) avec `ref_changed = 2026-06-26` → warm-up à zéro, seules les observations datées >= 26/06 comptent. La règle de sélection s'évalue pour elles à partir du 26/06 (N≥15 / WR≥70 % à leur propre J+60). **Aucun poids ni seuil de fiche n'est touché.** Critères sans source publique gratuite = n/a propre ou triplet news (zéro invention).
+
+---
+
+## Addendum — 2026-06-30 : re-découpage des horizons par familles de vitesse + tendance 2-3j
+
+> Append-only. La règle gravée (WR tradable ≥ 70 % / N ≥ 15, 24h-only, à J+60) reste **inchangée**. Ce qui change, c'est la **pertinence par horizon** des signaux (donc le signal mesuré) → reset des compteurs N.
+
+**Défaut corrigé (fondateur 30/06, vérifié sur pièces).** Le **24h** (trade du JOUR) était piloté par des signaux **lents** (météo 30j, tendance 20 jours, positionnement COT hebdo, tendances macro 20j, fondamentaux structurés) qui ne peuvent pas bouger un prix en une séance → calls incohérents (ex. cacao LONG porté par la météo alors qu'il chutait). Le 7j et le 1m héritaient aussi de pertinences ad-hoc.
+
+**Correctif (cohérence, pas réglage sur résultats).** Re-découpage par **famille de vitesse** : un signal pèse là où sa vitesse correspond à l'horizon.
+- **24h** : signaux **rapides** uniquement (news fraîche, régime de risque, chocs, momentum court). Ajout d'un **momentum 2-3 jours** (le vrai signal du jour). Les signaux lents passent à ~0 sur le 24h (pleins sur le 1m).
+- **7j / 1m** : les signaux lents (météo, 20j, COT, macro, fondamentaux) servent ces horizons.
+- **Quant-majorité rétablie sur le 24h pour les 15 actifs** (décision gravée 20/06 : le quant domine, la news est un contexte secondaire). News/régime/chocs **non touchés** (ne pas casser le signal du jour).
+
+**Reset : les 15 cellules au 2026-06-30.** La pertinence par horizon change pour tous → `ref_changed` avancé au 2026-06-30 (`ref-changed.json`, clé `ticker_principal`). N et WR tradable repartent de zéro. **Coût assumé (fondateur) : valider jusqu'au 08/08 un quotidien piloté par des signaux lents n'a pas de sens ; mieux vaut valider le moteur corrigé.** La règle de sélection (WR ≥ 70 % / N ≥ 15, 24h-only) et **aucun poids de fiche** (seules les **pertinences par horizon** bougent) ne sont autrement modifiés. Vérif : `tests/test_reweight_horizons_3006.py` (quant domine la news sur le 24h pour les 15).

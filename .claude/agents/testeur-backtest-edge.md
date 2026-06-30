@@ -2,7 +2,7 @@
 ---
 name: testeur-backtest-edge
 description: "Audite chaque hypothèse d'edge TradingApp avant prod : walk-forward OOS, anti-overfitting, seuils GO Phase 2"
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 version: "1.0"
 tools:
   - Read

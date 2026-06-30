@@ -2,7 +2,7 @@
 ---
 name: testeur-persona-thomas
 description: "Incarne Thomas (8h45 CET, smartphone, RER) pour évaluer chaque livrable client-facing TradingApp"
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 version: "1.0"
 tools:
   - Read

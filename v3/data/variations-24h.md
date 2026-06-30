@@ -1,45 +1,45 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 29 juin 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 30 juin 2026, 08h09 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. « Max du jour » = meilleur gain favorable atteint. « Joué » = l'actif était dans le top 3 du jour. « — » = point non relevé (zéro invention : les jours sans relevé 12h/18h restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|
-| lun 29/06 | VIX | SHORT | -0.19 | 22.63 | — | — | +3.78% | +4.04% | Non | — |
-| lun 29/06 | Sucre | LONG | +0.62 | 9.625 | +0.00% | — | +1.66% | +2.18% | Non | Pluies de mousson insuffisantes en Inde, impact négatif sur la production de sucre |
-| lun 29/06 | S&P 500 | LONG | +4.63 | 729.1 | — | — | +1.62% | +1.71% | Non | — |
-| lun 29/06 | Nasdaq | SHORT | -1.98 | 705.5 | — | — | -2.61% | +0.05% | Non | — |
-| lun 29/06 | Café (Arabica) | LONG | +2.99 | 273.3 | -0.51% | — | +1.75% | +2.29% | Non | — |
-| lun 29/06 | Cacao | LONG | +8.93 | 5096 | -1.43% | -2.67% | -2.09% | +0.02% | Oui | — |
-| lun 29/06 | Blé | SHORT | -1.04 | 575.5 | +0.41% | — | +1.17% | +1.36% | Non | — |
-| ven 26/06 | Pétrole (Brent) | SHORT | -7.20 | 74.1 | +2.21% | +2.47% | +1.74% | — | Oui | — |
-| ven 26/06 | Nasdaq | SHORT | -1.90 | 716.3 | — | — | +1.50% | — | Non | SoftBank chute de 13%, SK Hynix -10% ; rout des technologiques asiatiques sur craintes du coût de l'IA |
-| ven 26/06 | Cuivre | SHORT | -0.40 | 5.988 | -1.51% | — | -2.35% | — | Non | Copper price record rally above 6.60 driven by weaker dollar and AI infrastructure demand |
-| ven 26/06 | Café (Arabica) | LONG | +3.24 | 276.4 | -1.18% | -1.25% | -0.83% | — | Oui | — |
-| ven 26/06 | Cacao | LONG | +8.91 | 5247 | -0.91% | — | -2.87% | — | Non | — |
-| ven 26/06 | Blé | SHORT | -0.45 | 586.8 | +1.49% | — | +1.93% | — | Non | — |
+| lun 29/06 | VIX | SHORT | -0.19 | 22.63 | — | — | +3.80% | — | Non | — |
+| lun 29/06 | Sucre | LONG | +0.62 | 9.625 | +0.00% | — | +1.66% | — | Non | Pluies de mousson insuffisantes en Inde, impact négatif sur la production de sucre |
+| lun 29/06 | S&P 500 | LONG | +4.63 | 729.1 | — | — | +1.62% | — | Non | — |
+| lun 29/06 | Or | SHORT | -6.25 | 4051 | +0.51% | — | +1.57% | — | Non | — |
+| lun 29/06 | Nasdaq | SHORT | -1.98 | 705.5 | — | — | -2.62% | — | Non | — |
+| lun 29/06 | Café (Arabica) | LONG | +2.99 | 273.3 | -0.51% | — | +1.64% | — | Non | — |
+| lun 29/06 | Cacao | LONG | +8.93 | 5096 | -1.43% | -2.67% | -2.09% | — | Oui | — |
+| lun 29/06 | Argent | SHORT | -0.98 | 58.23 | +1.46% | — | +1.24% | — | Non | — |
+| ven 26/06 | VIX | SHORT | -0.20 | 22.5 | — | — | +3.24% | — | Non | — |
+| ven 26/06 | S&P 500 | LONG | +3.06 | 733.3 | — | — | +1.04% | — | Non | Fed stress test approuvé, JPMorgan annonce 50 Mds de rachats, Goldman Sachs augmente son dividende |
+| ven 26/06 | Nasdaq | SHORT | -1.90 | 716.3 | — | — | -1.08% | — | Non | Micron publie des résultats exceptionnels, surpassant Nvidia dans l'IA |
+| ven 26/06 | Cuivre | SHORT | -0.40 | 5.988 | -1.51% | — | -2.07% | — | Non | Copper price record rally above 6.60 driven by weaker dollar and AI infrastructure demand |
+| ven 26/06 | Cacao | LONG | +8.91 | 5247 | -0.91% | — | -5.34% | — | Non | — |
+| ven 26/06 | Blé | SHORT | -0.45 | 586.8 | +1.49% | — | +1.97% | — | Non | — |
 | ven 26/06 | Argent | SHORT | -9.51 | 56.54 | -3.26% | -5.08% | -3.62% | — | Oui | — |
-| jeu 25/06 | Or | SHORT | -15.60 | 3994 | -0.08% | — | -1.43% | — | Non | World Gold Council survey reports central bank gold purchases averaging 1,000 tonnes per year |
-| jeu 25/06 | Cuivre | SHORT | -6.30 | 5.999 | -1.90% | — | -2.16% | — | Non | — |
-| jeu 25/06 | Café (Arabica) | LONG | +3.24 | 277.2 | +1.56% | -1.11% | -0.11% | — | Oui | — |
-| jeu 25/06 | Cacao | LONG | +7.83 | 4975 | +4.66% | — | +2.43% | — | Non | Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP |
-| jeu 25/06 | Blé | SHORT | -0.52 | 586.4 | -0.37% | — | +1.87% | — | Non | — |
-| jeu 25/06 | Argent | SHORT | -10.74 | 57.43 | -0.33% | -2.65% | -0.80% | — | Oui | — |
-| mer 24/06 | VIX | SHORT | -1.09 | 23 | — | — | +1.61% | — | Non | — |
-| mer 24/06 | Pétrole (Brent) | SHORT | -1.75 | 76.56 | +1.20% | — | +4.58% | — | Non | — |
-| mer 24/06 | Nasdaq | SHORT | -8.17 | 713.5 | — | — | +1.12% | — | Non | Vague de ventes sur les valeurs tech, doutes sur la durabilité du boom de l'IA |
+| jeu 25/06 | VIX | SHORT | -0.20 | 22.85 | — | — | +4.73% | — | Non | — |
+| jeu 25/06 | S&P 500 | LONG | +0.82 | 733.1 | — | — | +1.06% | — | Non | OpenAI et Broadcom annoncent une puce IA personnalisée, concurrence directe à Nvidia |
+| jeu 25/06 | Pétrole (Brent) | SHORT | -13.63 | 72.57 | -0.84% | -3.61% | -4.13% | — | Oui | — |
+| jeu 25/06 | Nasdaq | SHORT | -7.44 | 710.6 | — | — | -1.89% | — | Non | Micron reports gross margin jump to 84.9% from 39% a year ago, driven by memory crisis |
+| jeu 25/06 | Cuivre | SHORT | -6.30 | 5.999 | -1.90% | — | -1.88% | — | Non | — |
+| jeu 25/06 | Blé | SHORT | -0.52 | 586.4 | -0.37% | — | +1.91% | — | Non | — |
+| mer 24/06 | VIX | SHORT | -1.09 | 23 | — | — | +5.35% | — | Non | — |
+| mer 24/06 | Pétrole (Brent) | SHORT | -1.75 | 76.56 | +1.20% | — | +4.18% | — | Non | — |
+| mer 24/06 | Or | SHORT | -19.21 | 4071 | +0.82% | — | +2.05% | — | Non | Hawkish Fed stance outweighs peace deal relief, causing gold selloff |
+| mer 24/06 | Nasdaq | SHORT | -8.17 | 713.5 | — | — | -1.47% | — | Non | — |
 | mer 24/06 | Cacao | LONG | +8.03 | 4644 | -0.91% | +1.79% | +7.26% | — | Oui | Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP |
-| mer 24/06 | Blé | SHORT | -1.10 | 584.5 | -0.24% | — | +1.55% | — | Non | — |
+| mer 24/06 | Blé | SHORT | -1.10 | 584.5 | -0.24% | — | +1.59% | — | Non | — |
 | mer 24/06 | Argent | SHORT | -7.49 | 61.42 | +1.99% | +4.17% | +6.54% | — | Oui | — |
-| mar 23/06 | VIX | SHORT | -0.73 | 21.84 | — | — | -3.62% | — | Non | — |
-| mar 23/06 | S&P 500 | LONG | +2.05 | 744.4 | — | — | -2.06% | — | Non | PPI mai +1.1% vs consensus 0.7%, poussé par l'énergie |
-| mar 23/06 | Pétrole (Brent) | SHORT | -1.86 | 76.65 | -1.22% | — | +4.70% | — | Non | — |
+| mar 23/06 | Pétrole (Brent) | SHORT | -1.86 | 76.65 | -1.22% | — | +4.30% | — | Non | — |
 | mar 23/06 | Or | SHORT | -16.69 | 4113 | -0.10% | -0.10% | +0.04% | — | Oui | Hawkish Fed stance outweighs peace deal relief, causing gold selloff |
-| mar 23/06 | Nasdaq | LONG | +0.20 | 738 | — | — | -4.40% | — | Non | — |
-| mar 23/06 | Cuivre | SHORT | -9.87 | 6.211 | +0.85% | — | +1.32% | — | Non | — |
-| mar 23/06 | Café (Arabica) | LONG | +2.01 | 267.1 | +0.11% | — | +2.32% | — | Non | — |
+| mar 23/06 | Nasdaq | LONG | +0.20 | 738 | — | — | -1.90% | — | Non | — |
+| mar 23/06 | Cuivre | SHORT | -9.87 | 6.211 | +0.85% | — | +1.60% | — | Non | — |
+| mar 23/06 | Café (Arabica) | LONG | +2.01 | 267.1 | +0.11% | — | +4.00% | — | Non | — |
 | mar 23/06 | Cacao | LONG | +7.73 | 4621 | -0.52% | -0.52% | +0.91% | — | Oui | Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP |
-| mar 23/06 | Blé | SHORT | -7.07 | 592.8 | -0.81% | — | +2.92% | — | Non | — |
-| mar 23/06 | Argent | SHORT | -6.09 | 62.3 | +0.86% | — | +6.52% | — | Non | — |
+| mar 23/06 | Blé | SHORT | -7.07 | 592.8 | -0.81% | — | +2.96% | — | Non | — |
+| mar 23/06 | Argent | SHORT | -6.09 | 62.3 | +0.86% | — | +7.69% | — | Non | — |
 

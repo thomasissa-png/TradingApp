@@ -194,6 +194,45 @@ def _cell_driver_parts(criteres: List[Any], horizon: str) -> Dict[str, Tuple[flo
     return {cle: (a / somme_abs, signe) for cle, (a, signe) in par_cle.items()}
 
 
+def _cell_family_parts(
+    criteres: List[Any], horizon: str, fiche_key: str = ""
+) -> Dict[str, Tuple[float, int, str]]:
+    """Par FAMILLE macro (et non par cle) : (part de la famille dans le |score|,
+    signe NET de ses contributions, label trader).
+
+    Agrège les `cle_courante` d'une MÊME famille (`famille_macro`) : un pari dollar
+    exprimé via plusieurs critères (DXY + écart de taux) compte comme UN seul. Le
+    signe NET = signe de la somme signée des contributions de la famille (le sens
+    dans lequel la famille pousse le score de la cellule). Exclut gates / n/a.
+    """
+    somme_abs = 0.0
+    fam_net: Dict[str, float] = {}
+    fam_abs: Dict[str, float] = {}
+    fam_label: Dict[str, str] = {}
+    for c in criteres:
+        if getattr(c, "is_gate", False) or getattr(c, "is_na", False):
+            continue
+        cle = getattr(c, "cle_courante", "") or ""
+        if not cle:
+            continue
+        ctr = c.contributions.get(horizon)
+        if ctr is None:
+            continue
+        somme_abs += abs(ctr)
+        fam, label = famille_macro(cle, fiche_key)
+        fam_net[fam] = fam_net.get(fam, 0.0) + ctr
+        fam_abs[fam] = fam_abs.get(fam, 0.0) + abs(ctr)
+        fam_label.setdefault(fam, label)
+    if somme_abs <= 0.0:
+        return {}
+    out: Dict[str, Tuple[float, int, str]] = {}
+    for fam, a in fam_abs.items():
+        net = fam_net[fam]
+        signe = 1 if net > 0 else (-1 if net < 0 else 0)
+        out[fam] = (a / somme_abs, signe, fam_label[fam])
+    return out
+
+
 def compute_cell_shared_drivers(
     actif_result: Any,
     horizon: str,
@@ -335,43 +374,50 @@ def compute_selection_shared_drivers(
     cachée entre nos propres positions).
 
     `selection_cells` : liste de `(actif_result, horizon)` réellement sélectionnés.
-    Retour (même forme que `compute_shared_drivers_summary`, mais `n_actifs` compte
-    les actifs DISTINCTS de la Sélection — un même actif tenu sur 2 horizons = 1) :
-        {cle, label, direction, actifs (list triée), n_actifs}
-    Vide si aucun driver n'est partagé par ≥ 2 actifs distincts → bloc non affiché.
+
+    Regroupement par FAMILLE macro + sens RIDE/FADE (fondateur 29/06) : deux paris
+    sont « le même » s'ils profitent du MÊME mouvement du driver, même si leurs
+    CALLS sont opposés. Ex. EUR/USD SHORT et USD/JPY LONG parient tous deux sur la
+    HAUSSE du dollar → un repli du dollar les fausse ENSEMBLE. L'ancienne version
+    groupait par (cle, signe de la contribution) → elle ratait ce cas (signes de
+    contribution opposés, cles différentes dans la même famille taux/dollar).
+
+    `align = sign(score) × sign(contribution nette de la famille)` :
+      +1 = la cellule RIDE le driver (pari sur la persistance de son mouvement) ;
+      -1 = elle le FADE (pari sur son retournement). On ne fusionne jamais ride et
+      fade (sens opposés = couverture, pas concentration).
+
+    Retour : {famille, label, actifs (list triée), actifs_calls ({actif: call}),
+    n_actifs}. Vide si aucune famille n'est partagée par ≥ 2 actifs distincts.
     """
-    agg: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    agg: Dict[Tuple[str, int], Dict[str, Any]] = {}
     for r, h in selection_cells:
-        parts = _cell_driver_parts(r.criteres, h)
-        label_par_cle = {
-            (getattr(c, "cle_courante", "") or ""): c.nom for c in r.criteres
-        }
-        for cle, (part, signe) in parts.items():
-            if not cle or part < part_min or signe == 0:
+        conc = (r.conclusions.get(h) or "").upper()
+        conc_sign = 1 if conc == "LONG" else (-1 if conc == "SHORT" else 0)
+        if conc_sign == 0:
+            continue
+        fam_parts = _cell_family_parts(r.criteres, h, getattr(r, "fiche_key", ""))
+        for fam, (part, signe, label) in fam_parts.items():
+            if part < part_min or signe == 0:
                 continue
-            direction = "LONG" if signe > 0 else "SHORT"
-            key = (cle, direction)
+            align = conc_sign * signe  # +1 ride / -1 fade
             entry = agg.setdefault(
-                key,
-                {
-                    "cle": cle,
-                    "label": driver_label(cle, label_par_cle.get(cle, "")),
-                    "direction": direction,
-                    "actifs": set(),
-                },
+                (fam, align),
+                {"famille": fam, "label": label, "align": align, "actifs": {}},
             )
-            entry["actifs"].add(r.nom)
+            entry["actifs"].setdefault(r.nom, conc.capitalize() if conc else "")
     out: List[Dict[str, Any]] = []
     for entry in agg.values():
-        if len(entry["actifs"]) < DRIVER_MIN_CELLULES:
+        actifs = entry["actifs"]
+        if len(actifs) < DRIVER_MIN_CELLULES:
             continue
-        actifs_tries = sorted(entry["actifs"])
+        actifs_tries = sorted(actifs.keys())
         out.append(
             {
-                "cle": entry["cle"],
+                "famille": entry["famille"],
                 "label": entry["label"],
-                "direction": entry["direction"],
                 "actifs": actifs_tries,
+                "actifs_calls": {a: actifs[a] for a in actifs_tries},
                 "n_actifs": len(actifs_tries),
             }
         )
@@ -389,18 +435,23 @@ def build_selection_shared_drivers_block(summary: List[Dict[str, Any]]) -> List[
     lines: List[str] = [f"## {SHARED_DRIVERS_SYMBOL} Drivers macro partagés", ""]
     lines.append(
         "_Plusieurs paris de la Sélection reposent sur le MÊME driver : c'est UN "
-        "pari répété, pas N indépendants. Un retournement le fausse en bloc._"
+        "pari répété, pas N indépendants. Un retournement le fausse en bloc "
+        "(même quand les calls semblent opposés : ex. SHORT euro et LONG dollar/yen "
+        "parient le même sens du dollar)._"
     )
     lines.append("")
     for d in summary:
-        actifs = list(d["actifs"])
-        if len(actifs) > 1:
-            actifs_str = ", ".join(actifs[:-1]) + " et " + actifs[-1]
+        calls = d.get("actifs_calls") or {}
+        # Affiche chaque actif AVEC son call (ils peuvent différer : c'est tout
+        # l'intérêt — révéler le pari commun derrière des calls d'apparence opposée).
+        membres = [f"{a} ({calls.get(a, '')})".replace(" ()", "") for a in d["actifs"]]
+        if len(membres) > 1:
+            actifs_str = ", ".join(membres[:-1]) + " et " + membres[-1]
         else:
-            actifs_str = actifs[0] if actifs else "—"
+            actifs_str = membres[0] if membres else "—"
         lines.append(
             f"- {SHARED_DRIVERS_SYMBOL} **{d['label']}** : {actifs_str} "
-            f"{d['direction']} — un retournement les fausse ensemble."
+            f"parient le même sens, un retournement les fausse ensemble."
         )
     lines.append("")
     return lines

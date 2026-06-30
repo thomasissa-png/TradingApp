@@ -38,6 +38,11 @@ class _Crit:
 class _Actif:
     nom: str
     criteres: List[_Crit] = field(default_factory=list)
+    # compute_selection_shared_drivers lit la conclusion par horizon (sens du call)
+    # et, optionnellement, fiche_key (tendance propre). Défauts inoffensifs pour les
+    # tests de compute_shared_drivers_summary qui ne les lisent pas.
+    conclusions: Dict[str, str] = field(default_factory=dict)
+    fiche_key: str = ""
 
 
 def _crit(cle, contrib_all, nom="", is_gate=False, is_na=False):
@@ -169,51 +174,87 @@ def test_pas_de_bloc_si_aucun_driver():
 # ===========================================================================
 
 def test_selection_shared_drivers_signale_si_deux_paris_meme_driver():
-    """Deux paris DISTINCTS de la Sélection portés par le même driver, même
-    direction → signalé (corrélation cachée entre nos propres positions)."""
+    """Deux paris DISTINCTS de la Sélection portés par la même FAMILLE, même sens
+    → signalé (corrélation cachée entre nos propres positions)."""
     argent = _Actif("Argent", [
         _crit("taux_10y_us_reels_tips", -8.0, "Taux réels US"),
         _crit("propre_argent", -1.0),
-    ])
+    ], conclusions={"24h": "SHORT"})
     orr = _Actif("Or", [
         _crit("taux_10y_us_reels_tips", -8.0, "Taux réels US"),
         _crit("propre_or", -1.0),
-    ])
-    # Argent retenu en pari 24h, Or en swing 7j → 2 actifs distincts, même driver.
+    ], conclusions={"7j": "SHORT"})
+    # Argent retenu en pari 24h, Or en swing 7j → 2 actifs distincts, même famille.
     summary = sd.compute_selection_shared_drivers([(argent, "24h"), (orr, "7j")])
     assert len(summary) == 1
-    assert summary[0]["cle"] == "taux_10y_us_reels_tips"
-    assert summary[0]["label"] == "Taux réels US (TIPS)"
-    assert summary[0]["direction"] == "SHORT"
+    assert summary[0]["famille"] == "taux_dollar"
     assert summary[0]["actifs"] == ["Argent", "Or"]
+    assert summary[0]["actifs_calls"] == {"Argent": "Short", "Or": "Short"}
     assert summary[0]["n_actifs"] == 2
 
 
+def test_selection_shared_drivers_calls_opposes_meme_pari_dollar():
+    """RÉGRESSION (fondateur 29/06) : EUR/USD SHORT et USD/JPY LONG ont des CALLS
+    opposés mais parient le MÊME sens du dollar (famille taux_dollar) → doivent être
+    signalés ENSEMBLE. L'ancienne version (group par signe de contribution) les ratait."""
+    # Dollar en hausse : pousse EUR/USD vers le SHORT (contrib négative) et USD/JPY
+    # vers le LONG (contrib positive). Familles : dxy_trend_20j ∈ taux_dollar.
+    eurusd = _Actif("EUR/USD", [
+        _crit("differentiel_taux_2y_us_de", -8.0, "Écart taux US-DE"),
+        _crit("propre_eurusd", -1.0),
+    ], conclusions={"24h": "SHORT"})
+    usdjpy = _Actif("USD/JPY", [
+        _crit("dxy_trend_20j", +8.0, "Tendance du dollar"),
+        _crit("propre_usdjpy", +1.0),
+    ], conclusions={"24h": "LONG"})
+    summary = sd.compute_selection_shared_drivers([(eurusd, "24h"), (usdjpy, "24h")])
+    assert len(summary) == 1
+    assert summary[0]["famille"] == "taux_dollar"
+    assert summary[0]["actifs"] == ["EUR/USD", "USD/JPY"]
+    assert summary[0]["actifs_calls"] == {"EUR/USD": "Short", "USD/JPY": "Long"}
+
+
+def test_selection_shared_drivers_ride_vs_fade_non_fusionnes():
+    """Un actif qui RIDE le dollar et un autre qui le FADE = couverture, pas
+    concentration → PAS fusionnés (sens opposés du pari sur le driver)."""
+    # EUR/USD SHORT ride le dollar (dollar up, contrib SHORT alignée au call).
+    eurusd = _Actif("EUR/USD", [_crit("dxy_trend_20j", -8.0), _crit("x", -1.0)],
+                    conclusions={"24h": "SHORT"})
+    # Or LONG mais le dollar pousse SHORT (contrib négative CONTRE le call LONG) →
+    # Or parie que le dollar SE RETOURNE → fade. align opposé → groupe distinct.
+    orr = _Actif("Or", [_crit("dxy_trend_20j", -8.0), _crit("y", +9.0)],
+                 conclusions={"7j": "LONG"})
+    summary = sd.compute_selection_shared_drivers([(eurusd, "24h"), (orr, "7j")])
+    assert summary == []  # ride (EUR/USD) ≠ fade (Or) → aucun pari commun signalé
+
+
 def test_selection_shared_drivers_silencieux_si_un_seul_actif():
-    """Un même actif tenu sur 2 horizons (Or 7j + Or 1m) = 1 pari, pas une
-    corrélation cachée entre positions → AUCUN signalement."""
+    """Un même actif tenu sur 2 horizons (Or 7j + Or 1m) = 1 pari → AUCUN signalement."""
     orr = _Actif("Or", [
         _crit("taux_10y_us_reels_tips", -8.0, "Taux réels US"),
         _crit("propre_or", -1.0),
-    ])
+    ], conclusions={"7j": "SHORT", "1m": "SHORT"})
     assert sd.compute_selection_shared_drivers([(orr, "7j"), (orr, "1m")]) == []
 
 
 def test_selection_shared_drivers_silencieux_si_drivers_differents():
-    """Deux paris portés par des drivers distincts → pas de pari répété → silence."""
-    petrole = _Actif("Pétrole", [_crit("stocks_brut_us", -8.0, "Stocks brut US")])
-    cafe = _Actif("Café", [_crit("tendance_cafe", 8.0, "Tendance café")])
+    """Deux paris portés par des familles distinctes → pas de pari répété → silence."""
+    petrole = _Actif("Pétrole", [_crit("stocks_brut_us", -8.0, "Stocks brut US")],
+                     conclusions={"24h": "SHORT"})
+    cafe = _Actif("Café", [_crit("tendance_cafe", 8.0, "Tendance café")],
+                  conclusions={"7j": "LONG"})
     assert sd.compute_selection_shared_drivers([(petrole, "24h"), (cafe, "7j")]) == []
 
 
 def test_selection_shared_drivers_bloc_rendu():
-    argent = _Actif("Argent", [_crit("taux_10y_us_reels_tips", -8.0), _crit("x", -1.0)])
-    orr = _Actif("Or", [_crit("taux_10y_us_reels_tips", -8.0), _crit("y", -1.0)])
+    argent = _Actif("Argent", [_crit("taux_10y_us_reels_tips", -8.0), _crit("x", -1.0)],
+                    conclusions={"24h": "SHORT"})
+    orr = _Actif("Or", [_crit("taux_10y_us_reels_tips", -8.0), _crit("y", -1.0)],
+                 conclusions={"7j": "SHORT"})
     summary = sd.compute_selection_shared_drivers([(argent, "24h"), (orr, "7j")])
     text = "\n".join(sd.build_selection_shared_drivers_block(summary))
     assert "## ⚭ Drivers macro partagés" in text
-    assert "Taux réels US (TIPS)" in text
-    assert "Argent et Or" in text and "SHORT" in text
+    assert "Argent" in text and "Or" in text
     assert sd.build_selection_shared_drivers_block([]) == []
 
 

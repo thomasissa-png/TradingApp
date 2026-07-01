@@ -2,22 +2,22 @@
   "12h": {
     "Cacao": {
       "call": "LONG",
-      "fav_pct": 0.99,
-      "heure": "12h09",
+      "fav_pct": 0.48,
+      "heure": "12h15",
       "max_adv_pct": -0.24,
-      "max_fav_pct": 0.99
+      "max_fav_pct": 0.48
     },
     "Café (Arabica)": {
       "call": "LONG",
-      "fav_pct": 1.5,
-      "heure": "12h09",
+      "fav_pct": 2.64,
+      "heure": "12h15",
       "max_adv_pct": -0.0,
-      "max_fav_pct": 1.94
+      "max_fav_pct": 2.64
     },
     "Sucre": {
       "call": "LONG",
       "fav_pct": 0.0,
-      "heure": "12h09",
+      "heure": "12h15",
       "max_adv_pct": -0.05,
       "max_fav_pct": 0.0
     }

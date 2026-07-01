@@ -626,10 +626,13 @@ def test_conviction_signee_priorite_pm1_puis_pond():
 
 
 def test_fmt_conviction_format_call_signe():
-    assert rs._fmt_conviction("SHORT", -10.74) == "SHORT -10.74"
-    assert rs._fmt_conviction("LONG", 3.24) == "LONG +3.24"
-    # Score absent → placeholder de cellule vide (zéro invention).
-    assert rs._fmt_conviction("SHORT", None) == "—"
+    # [Fusion 30/06] Call + conviction dans une seule colonne : « DIR · note ».
+    assert rs._fmt_conviction("SHORT", -10.74) == "SHORT · -10.74"
+    assert rs._fmt_conviction("LONG", 3.24) == "LONG · +3.24"
+    # Score absent mais direction connue → on garde au moins la direction.
+    assert rs._fmt_conviction("SHORT", None) == "SHORT"
+    # Ni direction ni score → placeholder (zéro invention).
+    assert rs._fmt_conviction("", None) == "—"
 
 
 def test_positions_vs_ouverture_colonnes_riches(env):
@@ -644,10 +647,11 @@ def test_positions_vs_ouverture_colonnes_riches(env):
     assert "Max gain du jour" in panorama
     assert "Gagné" in panorama
     assert "Action" in panorama
-    assert "Conviction" in panorama
-    # Ligne Or : conviction signée affichée (SHORT -10.74), action en gras.
+    # [Fusion 30/06] la conviction est fusionnée dans la colonne « Call 7h ».
+    assert "conviction" in panorama
+    # Ligne Or : direction · conviction signée affichée (SHORT · -10.74), action en gras.
     ligne_or = next(l for l in panorama.splitlines() if l.startswith("| Or |"))
-    assert "SHORT -10.74" in ligne_or
+    assert "SHORT · -10.74" in ligne_or
     assert "**🟢" in ligne_or or "**🟡" in ligne_or or "**⚪" in ligne_or or "**🔴" in ligne_or
 
 
@@ -969,3 +973,62 @@ def test_fix2b_grosse_actu_high_hors_paris_presente(env, tmp_path, monkeypatch):
     assert "Ormuz" in bloc  # grosse actu high hors-pari présente
     # L'actu LOW non-pari n'apparaît PAS (filtre high materiality).
     assert "faible matérialité" not in md
+
+
+# ---------------------------------------------------------------------------
+# ETF US commodity (CANE/COTN) fermé à 12h (fondateur 30/06) : pas de faux 0.00 %
+# ---------------------------------------------------------------------------
+
+_BULLETIN_SUCRE = """# Bulletin 2026-06-08 07h
+
+| Actif | 24h | 7j | 1m |
+|---|---|---|---|
+| Sucre | LONG (+0.90) | LONG (+0.40) | LONG (+0.20) |
+"""
+
+
+def _env_sucre(tmp_path):
+    bdir = tmp_path / "bulletins"
+    bdir.mkdir()
+    (bdir / "bulletin-2026-06-08-07h.md").write_text(_BULLETIN_SUCRE, encoding="utf-8")
+    odir = tmp_path / "prix-ouverture"
+    odir.mkdir()
+    (odir / "2026-06-08.json").write_text(json.dumps({"CANE": 9.78}), encoding="utf-8")
+    return {"bdir": bdir, "odir": odir, "dlog": tmp_path / "dlog",
+            "sdir": tmp_path / "suivi", "fdir": tmp_path / "futures-us"}
+
+
+def _build_sucre(e, report_type, now, cur):
+    return rs.build_suivi(
+        report_type, now=now, date_j=date(2026, 6, 8),
+        bulletins_dir=e["bdir"], decision_log_dir=e["dlog"], suivi_dir=e["sdir"],
+        prix_ouverture_dir=e["odir"],
+        fiches={"sucre": _fiche("Sucre", "CANE", "softs", 0.8)},
+        fetch_price=lambda t: cur.get(t), futures_us_dir=e["fdir"],
+    )
+
+
+def test_etf_us_ferme_a_12h_pas_de_faux_zero(tmp_path):
+    """Sucre (CANE, ETF NYSE) à 12h : marché US fermé → statut d'attente, pas de
+    prix ni de faux 0.00 % (fondateur 30/06 : CANE affichait 9.785 → 9.785 = 0.00 %)."""
+    e = _env_sucre(tmp_path)
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build_sucre(e, "12h", now, {"CANE": 9.78})
+    li = _ligne(r, "Sucre")
+    assert li.us_pas_ouvert is True
+    assert li.prix_courant is None and li.ouverture is None
+    assert li.delta_pct is None
+    assert "marché US fermé" in li.statut
+    ligne_md = next(l for l in r.markdown.splitlines() if l.startswith("| Sucre |"))
+    assert "0.00%" not in ligne_md
+
+
+def test_etf_us_ouvert_a_18h_prix_normal(tmp_path):
+    """À 18h (US ouvert depuis 15h30) le même ETF reprend un relevé normal."""
+    e = _env_sucre(tmp_path)
+    now = datetime(2026, 6, 8, 18, 3, tzinfo=PARIS)
+    r = _build_sucre(e, "18h", now, {"CANE": 9.98})
+    li = _ligne(r, "Sucre")
+    assert li.us_pas_ouvert is False
+    assert li.prix_courant == pytest.approx(9.98)
+    assert li.delta_pct == pytest.approx((9.98 - 9.78) / 9.78 * 100, abs=0.01)

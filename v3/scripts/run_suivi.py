@@ -73,6 +73,15 @@ US_FUTURE_LABEL = {
 # snapshot juste avant le suivi → en pratique quelques secondes.
 FUTURE_FRESH_MAX_MIN = 30
 
+# ETF US (NYSE Arca) adossés à un sous-jacent commodity. Contrairement aux
+# FUTURES (`=F`, cotation quasi 24h sur Globex/ICE → groupe « continu » correct),
+# ces ETF ne cotent QUE pendant les heures de bourse US (ouverture 15h30 Paris).
+# À 12h Paris le marché US est fermé → le « prix 12h » = dernier close US de la
+# veille = l'ouverture → faux mouvement de 0.00 % (fondateur 30/06 : Sucre/CANE
+# affichait +0.00 %). On les traite donc comme les indices US : « marché US fermé »
+# tant que le marché US n'est pas ouvert (au 18h ils cotent → suivi normal).
+US_ETF_HOURS_TICKERS = frozenset({"CANE", "COTN"})
+
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
 # Report types reconnus (heure Paris du créneau).
@@ -1330,6 +1339,24 @@ def build_suivi(
             ))
             continue
 
+        # ETF US commodity (CANE/COTN) marché fermé (typiquement à 12h) : pas de
+        # prix frais → on n'affiche PAS un faux 0.00 % (le "prix" serait le close
+        # US de la veille). « marché US fermé » comme les indices US ; le suivi 18h
+        # (US ouvert) reprend le relevé normal. Zéro invention (fondateur 30/06).
+        us_etf_ferme = (
+            ticker in US_ETF_HOURS_TICKERS
+            and not MO.is_open_for_stamp("us", now, config)
+        )
+        if us_etf_ferme:
+            rapport.lignes.append(SuiviLigne(
+                actif=actif, call=call, ouverture=None, prix_courant=None,
+                delta_pct=None, statut="⏳ marché US fermé (ETF, ouvre 15h30)",
+                tendance="—", delta_vs_prec=None, suggestion="—", seuil_pct=seuil,
+                us_pas_ouvert=True, vendre="Pas vendre", selection=is_select,
+                fav_now=None, fav_prec=None,
+            ))
+            continue
+
         ouverture = ouvertures.get(ticker)
         # Relevé de prix via cascade COHÉRENTE avec le bilan (dernière barre 1h →
         # spot). La série 1h sert AUSSI aux excursions max ci-dessous (1 fetch).
@@ -1490,13 +1517,16 @@ def conviction_signee(rec: dict) -> Optional[float]:
 
 
 def _fmt_conviction(call: str, score: Optional[float]) -> str:
-    """Conviction affichée = `{CALL} {score signé}` (ex. `SHORT -10.74`,
-    `LONG +3.24`) — relie la force du signal 7h à la performance (fondateur 25/06).
-    `—` (zéro invention) si le score n'est pas disponible pour la cellule."""
-    if not isinstance(score, (int, float)):
-        return "—"
+    """Call + conviction fusionnés = `{CALL} · {score signé}` (ex. `SHORT · -10.74`,
+    `LONG · +3.24`) — une seule colonne relie la direction ET la force du signal 7h
+    (fondateur 30/06 : la colonne « Call » et la colonne « Conviction » répétaient la
+    direction → fusion). Si le score manque, on garde au moins la direction (`SHORT`),
+    et `—` seulement si ni direction ni score (zéro invention)."""
     c = (call or "").strip().upper()
-    return f"{c} {score:+.2f}" if c in ("LONG", "SHORT") else f"{score:+.2f}"
+    has_dir = c in ("LONG", "SHORT")
+    if not isinstance(score, (int, float)):
+        return c if has_dir else "—"
+    return f"{c} · {score:+.2f}" if has_dir else f"{score:+.2f}"
 
 
 def _render_selection_table(r: SuiviRapport) -> List[str]:
@@ -1524,17 +1554,22 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
     hour_label = "12h" if is_12h else "18h"
     # En-têtes % à double libellé : complet sur desktop, court sur mobile (CSS
     # .c-full / .c-short) pour que la colonne décision reste visible sur petit écran.
+    # [Fusion fondateur 30/06] La 1re colonne « Call » et la dernière « Conviction »
+    # répétaient la direction (SHORT … SHORT -2.88) → UNE seule colonne « Call 7h »
+    # qui porte direction + note signée. Ajout d'Ouverture + Prix (prix d'entrée
+    # manquant, fondateur 30/06). Prix {hour} = dernier prix au moment du rapport.
     L.append(
         "| Actif "
-        "| <span class=\"c-full\">Call 7h</span><span class=\"c-short\">Call</span> "
+        "| <span class=\"c-full\">Call 7h · conviction</span><span class=\"c-short\">Call</span> "
+        "| Ouverture "
+        f"| <span class=\"c-full\">Prix {hour_label}</span><span class=\"c-short\">Prix</span> "
         "| <span class=\"c-full\">% vs ouv. 12h</span><span class=\"c-short\">% 12h</span> "
         "| <span class=\"c-full\">% vs ouv. 18h</span><span class=\"c-short\">% 18h</span> "
         "| <span class=\"c-full\">Max gain jour</span><span class=\"c-short\">Max</span> "
         "| <span class=\"c-full\">Gagné &gt; 1 % ?</span><span class=\"c-short\">&gt;1%</span> "
-        "| Action "
-        "| <span class=\"c-full\">Conviction</span><span class=\"c-short\">Conv.</span> |"
+        "| Action |"
     )
-    L.append("|---|---|---|---|---|---|---|---|")
+    L.append("|---|---|---|---|---|---|---|---|---|")
     for li in selection:
         if is_12h:
             # Au 12h : colonne 12h = favorable courant, colonne 18h = vide.
@@ -1547,21 +1582,21 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
         # Max gain du jour atteint (1h ∪ courant) + statut vs cible turbo > 1 %.
         col_max = _fmt_pct(li.max_gain_pct)
         col_statut = statut_max_gain(li.max_gain_pct)
-        # Conviction = note signée du signal 7h (même source que « Positions vs
-        # ouverture » → chiffres identiques pour un actif présent dans les deux).
-        col_conv = _fmt_conviction(li.call, li.conviction)
+        # Colonne 1 fusionnée : direction + note signée du signal 7h (même source que
+        # « Positions vs ouverture » → chiffres identiques à l'actif près).
+        col_call = _fmt_conviction(li.call, li.conviction)
         L.append(
-            f"| {li.actif} | {li.call} | {col_12} | {col_18} | "
-            f"{col_max} | {col_statut} | **{li.action}** | {col_conv} |"
+            f"| {li.actif} | {col_call} | {_fmt_price(li.ouverture)} | "
+            f"{_fmt_price(li.prix_courant)} | {col_12} | {col_18} | "
+            f"{col_max} | {col_statut} | **{li.action}** |"
         )
     L.append("")
     # FIX 4 (fondateur 23/06) — légende courte : 1 phrase, détail replié.
     L.append(
-        "_% 12h / 18h = évolution du call ; Max gain = meilleur % atteint depuis "
-        "l'entrée (> 1 % = gagné). **Action** : 🟢 laisse courir · 🟡 sécurise (gain "
-        "qui reflue sous la moitié du pic) · 🔴 coupe (pari cassé) · ⚪ tiens. "
-        "**Conviction** = note signée du signal à 7h (plus c'est fort, plus le pari "
-        "est tranché)._"
+        "_Call 7h = direction · conviction (note signée du signal 7h : plus c'est fort, "
+        "plus le pari est tranché). % 12h / 18h = évolution du call ; Max gain = meilleur "
+        "% atteint depuis l'entrée (> 1 % = gagné). **Action** : 🟢 laisse courir · 🟡 "
+        "sécurise (gain qui reflue sous la moitié du pic) · 🔴 coupe (pari cassé) · ⚪ tiens._"
     )
     L.append("")
     # Pourquoi on tient ces positions : la VRAIE raison du call (drivers du score à
@@ -1645,39 +1680,42 @@ def _render_markdown(r: SuiviRapport) -> str:
                "<span class=\"c-short\">Max</span> ")
     _WIN_TH = ("| <span class=\"c-full\">Gagné &gt; 1 % ?</span>"
                "<span class=\"c-short\">&gt;1%</span> ")
-    _CONV_TH = ("| <span class=\"c-full\">Conviction</span>"
-                "<span class=\"c-short\">Conv.</span> ")
+    # [Fusion fondateur 30/06] La colonne « Conviction » est fusionnée dans la
+    # colonne « Call 7h » (direction · note signée) : plus de colonne redondante.
+    _CALL_TH = ("| <span class=\"c-full\">Call 7h · conviction</span>"
+                "<span class=\"c-short\">Call</span> ")
     if h == REPORT_12H:
         L.append(
-            f"| Actif | Call 7h | Ouverture | Prix {h} | % favorable "
-            f"{_MAX_TH}{_WIN_TH}| Action {_CONV_TH}| Statut |"
+            f"| Actif {_CALL_TH}| Ouverture | Prix {h} | % favorable "
+            f"{_MAX_TH}{_WIN_TH}| Action | Statut |"
         )
-        L.append("|---|---|---|---|---|---|---|---|---|---|")
+        L.append("|---|---|---|---|---|---|---|---|---|")
         if not r.lignes:
-            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | | | | |")
+            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | | | |")
         for li in r.lignes:
             L.append(
-                f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | "
+                f"| {li.actif} | {_fmt_conviction(li.call, li.conviction)} | "
+                f"{_fmt_price(li.ouverture)} | "
                 f"{_fmt_price(li.prix_courant)} | {_fmt_fav(li.fav_now)} | "
                 f"{_fmt_pct(li.max_gain_pct)} | {statut_max_gain(li.max_gain_pct)} | "
-                f"**{li.action}** | {_fmt_conviction(li.call, li.conviction)} | "
-                f"{li.statut} |"
+                f"**{li.action}** | {li.statut} |"
             )
     else:
         L.append(
-            f"| Actif | Call 7h | Ouverture | Prix {h} | % favorable "
-            f"{_MAX_TH}{_WIN_TH}| Action {_CONV_TH}| Δ précédent | "
+            f"| Actif {_CALL_TH}| Ouverture | Prix {h} | % favorable "
+            f"{_MAX_TH}{_WIN_TH}| Action | Δ précédent | "
             f"Tendance | Statut |"
         )
-        L.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+        L.append("|---|---|---|---|---|---|---|---|---|---|---|")
         if not r.lignes:
-            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | | | | | | |")
+            L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | | | | | |")
         for li in r.lignes:
             L.append(
-                f"| {li.actif} | {li.call} | {_fmt_price(li.ouverture)} | "
+                f"| {li.actif} | {_fmt_conviction(li.call, li.conviction)} | "
+                f"{_fmt_price(li.ouverture)} | "
                 f"{_fmt_price(li.prix_courant)} | {_fmt_fav(li.fav_now)} | "
                 f"{_fmt_pct(li.max_gain_pct)} | {statut_max_gain(li.max_gain_pct)} | "
-                f"**{li.action}** | {_fmt_conviction(li.call, li.conviction)} | "
+                f"**{li.action}** | "
                 f"{_fmt_points(li.delta_vs_prec)} | {li.tendance} | {li.statut} |"
             )
     L.append("")
@@ -1685,10 +1723,9 @@ def _render_markdown(r: SuiviRapport) -> str:
     # meilleur % atteint depuis l'entrée (> 1 % = gagné) ; Action 🟢 laisse courir /
     # 🟡 sécurise / 🔴 coupe / ⚪ tiens ; Conviction = note signée du signal 7h.
     L.append(
-        "_Max gain = meilleur % atteint depuis l'entrée (> 1 % = gagné). "
-        "**Action** : 🟢 laisse courir · 🟡 sécurise · 🔴 coupe · ⚪ tiens. "
-        "**Conviction** = note signée du signal à 7h (plus c'est fort, plus le pari "
-        "est tranché)._"
+        "_Call 7h = direction · conviction (note signée du signal 7h : plus c'est fort, "
+        "plus le pari est tranché). Max gain = meilleur % atteint depuis l'entrée "
+        "(> 1 % = gagné). **Action** : 🟢 laisse courir · 🟡 sécurise · 🔴 coupe · ⚪ tiens._"
     )
     L.append("")
 

@@ -1507,6 +1507,26 @@ _FEED_DIRS_CACHE: Dict[Any, Dict[str, set]] = {}
 _DOMINANT_NEWS_CACHE: Dict[Any, Dict[str, Tuple[str, str]]] = {}
 
 
+def _lookup_by_actif(mapping: Dict[str, Any], nom: str, default: Any) -> Any:
+    """Lookup tolérant au suffixe de variante entre le libellé IA d'un event et le
+    nom d'actif d'une fiche.
+
+    `_IA_ASSET_TO_LABEL` mappe COFFEE→« Café » et BRENT→« Pétrole », alors que les
+    fiches nomment ces actifs « Café (Arabica) » / « Pétrole (Brent) ». Sans
+    tolérance, la news dominante (libellé « Porté par ») ET le drapeau ↯ « news à
+    contre-sens » manquaient ces deux actifs (fondateur 30/06 : news café « pluies
+    au Brésil » high non affichée le matin, fondue en « pas de titre »). Match
+    direct, sinon sur le nom de base (avant « ( »). Base unique par actif → aucune
+    collision possible."""
+    if nom in mapping:
+        return mapping[nom]
+    base = nom.split(" (")[0].strip()
+    for k, v in mapping.items():
+        if k.split(" (")[0].strip() == base:
+            return v
+    return default
+
+
 def _fresh_high_feed_dirs(now: datetime) -> Dict[str, set]:
     """Carte {label_actif: set(directions IA)} des news HIGH du flux events-log
     affichées dans le bulletin du jour. UN seul parse, mémoïsé par mtime.
@@ -1629,7 +1649,9 @@ def _enrich_net_news_label(
     # sur un cacao LONG dont la news nette était +3.20 → incohérent). On ne cite un
     # titre QUE s'il concorde avec le net (sinon il contredirait le score affiché).
     net_sens = _net_news_contrib_sens(r)
-    headline_sens, titre = _dominant_news_for_actif(now).get(r.nom, ("", ""))
+    headline_sens, titre = _lookup_by_actif(
+        _dominant_news_for_actif(now), r.nom, ("", "")
+    )
     if net_sens:
         if titre and headline_sens == net_sens:
             return f"news net {net_sens} : {titre}"
@@ -1681,7 +1703,7 @@ def _feed_news_contredit_call(
     if conc not in ("LONG", "SHORT"):
         return False
     sens_oppose = "SHORT" if conc == "LONG" else "LONG"
-    return sens_oppose in _fresh_high_feed_dirs(now).get(r.nom, set())
+    return sens_oppose in _lookup_by_actif(_fresh_high_feed_dirs(now), r.nom, set())
 
 
 def _compute_cell_risk_flags(
@@ -5268,7 +5290,11 @@ def render_bulletin(
     # I14 — alertes de décision remontées juste sous « Décision du jour », avant
     # le panorama. surveillance_block est toujours présent (placeholder si vide) ;
     # _shared_block ne l'est que si ≥ 2 paris de la Sélection partagent un driver.
-    alertes_block = surveillance_block + (_shared_block if _shared_block else [])
+    # [Fondateur 30/06] Le bloc ⚭ « Drivers macro partagés » ne reste PLUS en tête :
+    # utile mais pas actionnable à la seconde où on lit la décision → il descend en
+    # ANNEXE repliée en bas de bulletin (cf. splice juste avant le pied). En tête on
+    # ne garde que « Cellules à surveiller » (surveillance_block).
+    alertes_block = surveillance_block
     # [Couper le gras — fondateur 25/06] Le bloc verbeux « ## Top swing (7j / 1m) »
     # (build_top_multi_horizons_block) est SUPPRIMÉ de l'assemblage : il faisait
     # tripler-emploi avec la synthèse 12×3, le tableau « À jouer » et les sélections
@@ -5277,6 +5303,9 @@ def render_bulletin(
     # ⚭ dans la légende : aussi si le tableau « À jouer » l'utilise (driver partagé
     # détecté localement), pas seulement quand le bloc dédié est émis.
     if SHARED_DRIVERS_SYMBOL_LOCAL in "\n".join(head_block):
+        flags_present.add(_shared_drivers.SHARED_DRIVERS_SYMBOL)
+    # ⚭ reste dans la légende quand l'annexe « Drivers macro partagés » est émise.
+    if _shared_block:
         flags_present.add(_shared_drivers.SHARED_DRIVERS_SYMBOL)
     lines = (
         lines[:_meta_end] + [""]
@@ -5393,6 +5422,24 @@ def render_bulletin(
     # filtré sur les cellules quant à forte conviction. Zéro invention : si le
     # réalisé n'est pas mesurable (warm-up / suivi-interrompu), la ligne est omise.
     lines.extend(build_audit_veille_24h(now))
+
+    # ── Annexe repliée — ⚭ Drivers macro partagés (fondateur 30/06) ──────────
+    # Descendue de la tête vers ici, repliée : l'alerte de corrélation cachée est
+    # utile mais pas actionnable dans la seconde → elle n'alourdit plus la décision.
+    if _shared_block:
+        # Réutilise la classe `weekly-annex` (déjà stylée : repliée + flèche) que
+        # le bilan emploie pour son annexe technique — cohérence visuelle.
+        lines.append('<details class="weekly-annex">')
+        lines.append(
+            f"<summary>{_shared_drivers.SHARED_DRIVERS_SYMBOL} Drivers macro "
+            "partagés (annexe)</summary>"
+        )
+        lines.append("")
+        # Le titre « ## ⚭ … » du bloc est remplacé par le <summary> → on saute les
+        # deux premières lignes (titre + blanc) pour ne pas doubler le titre.
+        lines.extend(_shared_block[2:] if len(_shared_block) > 2 else _shared_block)
+        lines.append("</details>")
+        lines.append("")
 
     # ── Pied de bulletin (bloc 4) — métadonnées techniques déplacées ─────────
     # Version Analyste + hash des fiches : debug/suivi interne, sortis de la

@@ -362,14 +362,22 @@ def _vals_tips(tips_val: float, propre_val: float = 0.1) -> dict:
 
 
 def test_integration_render_bulletin_affiche_le_bloc():
-    """Deux actifs portés par TIPS (>50%, même direction) → bloc dans le bulletin."""
+    """Deux actifs portés par TIPS (>50%, même direction) → bloc dans le bulletin.
+
+    [Fondateur 30/06] Le bloc n'est plus en tête (## …) mais en ANNEXE repliée
+    (`<details class="weekly-annex">`) en bas de bulletin."""
     a = sa.score_actif("Or", _fiche_tips("Or"), _vals_tips(0.7))
     b = sa.score_actif("Nasdaq", _fiche_tips("Nasdaq"), _vals_tips(0.7))
     bulletin = sa.render_bulletin([a, b], {}, _NOW, "h", "ok")
-    assert "## ⚭ Drivers macro partagés" in bulletin
+    # Annexe repliée, plus de titre ## en tête.
+    assert '<details class="weekly-annex">' in bulletin
+    assert "Drivers macro partagés (annexe)" in bulletin
+    assert "## ⚭ Drivers macro partagés" not in bulletin
     assert "Taux réels US (TIPS)" in bulletin
-    # Légende compacte : ⚭ présent car le bloc est émis.
+    # Légende compacte : ⚭ présent car le bloc (annexe) est émis.
     assert "⚭ driver macro partagé" in bulletin
+    # L'annexe est bien en BAS : après le détail par actif, pas dans la tête.
+    assert bulletin.index("weekly-annex") > bulletin.index("## Détail par actif")
 
 
 def test_integration_pas_de_bloc_si_un_seul_actif_porteur():
@@ -382,7 +390,8 @@ def test_integration_pas_de_bloc_si_un_seul_actif_porteur():
          "pertinence": {"24h": 1.0, "7j": 1.0, "1m": 1.0}}]}
     b = sa.score_actif("Nasdaq", fiche_b, {"propre_b": {"valeur": 0.7, "source_track": "twelvedata"}})
     bulletin = sa.render_bulletin([a, b], {}, _NOW, "h", "ok")
-    assert "## ⚭ Drivers macro partagés" not in bulletin
+    assert "Drivers macro partagés" not in bulletin
+    assert "weekly-annex" not in bulletin
     assert "⚭ driver macro partagé" not in bulletin
 
 

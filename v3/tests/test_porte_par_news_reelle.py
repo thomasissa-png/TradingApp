@@ -141,6 +141,42 @@ def test_cacao_net_news_haussier_affiche_titre_reel(monkeypatch):
     assert raison.startswith("news net haussière :")
 
 
+def test_lookup_by_actif_tolerant_variante():
+    """Le lookup matche « Café (Arabica) » sur une clé « Café » (et inversement),
+    match direct prioritaire, défaut si rien (fondateur 30/06)."""
+    m = {"Café": ("haussière", "t café"), "Cacao": ("baissière", "t cacao")}
+    assert sa._lookup_by_actif(m, "Café (Arabica)", ("", "")) == ("haussière", "t café")
+    assert sa._lookup_by_actif(m, "Cacao", ("", "")) == ("baissière", "t cacao")
+    assert sa._lookup_by_actif(m, "Inconnu", ("", "")) == ("", "")
+    # Match direct prioritaire sur le match par nom de base.
+    m2 = {"Café (Arabica)": "exact", "Café": "base"}
+    assert sa._lookup_by_actif(m2, "Café (Arabica)", None) == "exact"
+
+
+def test_cafe_arabica_variant_libelle_affiche_titre_reel(monkeypatch):
+    """RÉGRESSION fondateur 30/06 : l'event IA mappe COFFEE→« Café » mais la fiche
+    nomme l'actif « Café (Arabica) ». Sans lookup tolérant, la news dominante était
+    manquée (« pas de titre… »). Le titre pluie Brésil DOIT désormais sortir."""
+    _patch_events(monkeypatch, [
+        _ev("2026-06-22", "commodity",
+            "Pluies abondantes retardent la récolte de café au Brésil, "
+            "faisant bondir les prix de l'arabica",
+            "COFFEE:LONG:high", "high"),
+    ])
+    h = "24h"
+    crit = [
+        _crit("Synthèse news", "synthese_news_cafe", {h: +4.0},
+              source_track="ia_synthese"),
+    ]
+    r = _actif("Café (Arabica)", crit, {h: +4.0}, {h: "LONG"})
+    picks = sa.select_paris_du_jour([r], NOW)
+    assert len(picks) == 1
+    raison = picks[0]["raison"]
+    assert "haussière" in raison
+    assert "Pluies abondantes retardent la récolte" in raison
+    assert "pas de titre" not in raison
+
+
 def test_cacao_porte_par_dans_a_jouer(monkeypatch):
     """Même cas, colonne « Porté par » du bloc « À jouer aujourd'hui (24h) » :
     la cellule contient le titre réel, pas « Synthèse news (net, IA) »."""

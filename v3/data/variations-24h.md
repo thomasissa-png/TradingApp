@@ -1,11 +1,17 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 1 juillet 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 1 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. « Max du jour » = meilleur gain favorable atteint. « Joué » = l'actif était dans le top 3 du jour. « — » = point non relevé (zéro invention : les jours sans relevé 12h/18h restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|
+| mer 01/07 | Pétrole (Brent) | LONG | +0.13 | 73.2 | -0.97% | — | -2.78% | +0.48% | Non | — |
+| mer 01/07 | Or | SHORT | -6.03 | 3974 | -0.54% | — | -1.51% | +0.36% | Non | Gold overtakes US Treasuries as reserve asset; 89% of central banks expect to increase gold reserves |
+| mer 01/07 | Nasdaq | LONG | +8.71 | 735.8 | — | — | -1.40% | +0.00% | Non | — |
+| mer 01/07 | Coton | SHORT | -0.62 | 2.371 | -1.31% | — | -1.79% | +0.00% | Non | — |
+| mer 01/07 | Café (Arabica) | LONG | +8.77 | 296.6 | +2.64% | +0.65% | +5.91% | +6.69% | Oui | — |
+| mer 01/07 | Argent | SHORT | -1.92 | 57.63 | -1.13% | — | -2.69% | +0.80% | Non | — |
 | mar 30/06 | VIX | SHORT | -0.31 | 21.77 | — | — | +2.14% | — | Non | — |
 | mar 30/06 | Nasdaq | SHORT | -1.12 | 724 | — | — | -1.62% | — | Non | SpaceX va être intégrée au Nasdaq-100 via un processus accéléré, générant une forte demande d'achat des ETF |
 | mar 30/06 | Café (Arabica) | LONG | +2.58 | 277.8 | +0.79% | — | +6.76% | — | Non | — |

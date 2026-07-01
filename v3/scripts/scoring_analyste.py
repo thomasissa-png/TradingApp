@@ -2207,6 +2207,41 @@ def _max_weight_critere_is_na(r: "ActifResult") -> bool:
     return all(c.is_na for c in porteurs_max)
 
 
+# Conviction plafonnée quand les capteurs LOURDS sont morts (règle fondateur
+# 01/07, GO explicite). Un actif dont le critère de POIDS MAXIMUM est n/a, OU
+# dont AU MOINS DEUX critères de poids >= 8 sont n/a, ne peut PLUS afficher une
+# conviction PLEINE : le libellé est plafonné à « fragile (capteurs éteints) » et
+# la cellule devient INÉLIGIBLE à la Sélection. N'altère NI la direction NI la
+# note (libellé + éligibilité uniquement). Cas de référence : Blé 01/07 (stocks
+# USDA poids 11 n/a) — le capteur structurel de tête est aveugle, la conviction
+# ne peut pas être « forte » quel que soit le score.
+_CONVICTION_CAPTEURS_ETEINTS = "fragile (capteurs éteints)"
+_CAPTEUR_LOURD_POIDS_MIN: float = 8.0  # « lourd » = poids >= 8 (échelle 1-12 des fiches)
+
+
+def _capteurs_lourds_eteints(r: "ActifResult") -> bool:
+    """True si les capteurs LOURDS de la fiche sont éteints (règle 01/07) :
+      (a) le critère NON-GATE de poids MAXIMUM est n/a (réutilise
+          `_max_weight_critere_is_na`), OU
+      (b) AU MOINS DEUX critères non-gate de poids >= 8 sont n/a.
+    Gates (sans poids numérique) exclus. Best-effort : toute anomalie → False
+    (on ne plafonne jamais par erreur — libellé/éligibilité, jamais critique).
+    """
+    try:
+        if _max_weight_critere_is_na(r):
+            return True
+        lourds_na = [
+            c
+            for c in r.criteres
+            if (not c.is_gate)
+            and abs(float(c.poids)) >= _CAPTEUR_LOURD_POIDS_MIN
+            and c.is_na
+        ]
+        return len(lourds_na) >= 2
+    except Exception:  # noqa: BLE001 — best-effort
+        return False
+
+
 def _driver_dominant_is_reporte(r: "ActifResult", h: str) -> bool:
     """True si le DRIVER DOMINANT de la cellule (actif×horizon) est un critère
     dont la valeur a été REPORTÉE depuis le cache last-good.
@@ -2280,6 +2315,13 @@ def _conviction_cell(r: "ActifResult", h: str, seuil: float) -> str:
     # plafonnement. Libellé only : ni le score ni la conclusion ne changent.
     if score >= seuil and _driver_dominant_is_reporte(r, h):
         return "contestée (donnée reportée)"
+    # GARDE-FOU « capteurs lourds éteints » (règle fondateur 01/07, GO explicite) :
+    # si le critère de poids MAX de la fiche est n/a OU si >= 2 critères de poids
+    # >= 8 sont n/a, la conviction est PLAFONNÉE — elle ne peut pas être « forte »
+    # quel que soit le score. Libellé only : ni le score ni la conclusion ne
+    # changent. Cas de référence : Blé 01/07 (stocks USDA poids 11 n/a).
+    if score >= seuil and _capteurs_lourds_eteints(r):
+        return _CONVICTION_CAPTEURS_ETEINTS
     if score >= seuil:
         return "forte"
     # |score| entre NEUTRAL_BAND et seuil, sans drapeau : ancien « faible »
@@ -2518,12 +2560,110 @@ def _cell_news_a_contresens(r: "ActifResult", h: str, now: datetime) -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# Véto « news contre la tendance courte » (règle fondateur 01/07, GO explicite).
+# SÉLECTION UNIQUEMENT — ne change NI la direction NI la note d'aucune cellule.
+# Un candidat à la Sélection est ÉCARTÉ si (a) son driver dominant est un critère
+# de type news / direction-news (source_track « ia* » / « keyword ») ET (b) l'effet
+# 24h du critère « tendance 3 jours » (`momentum_prix_3j_*`) de l'actif est de
+# signe OPPOSÉ au call. Motif d'écartement : « news contre la tendance courte ».
+# Cas de référence : Cacao LONG 01/07 (news El Niño/maladies dominante, momentum
+# 3j négatif) aurait été écarté ; Café/Sucre (driver non-news) restent sélectionnés.
+# ---------------------------------------------------------------------------
+def _driver_dominant_est_news(r: "ActifResult", h: str) -> bool:
+    """True si le driver DOMINANT affiché de la cellule est un critère news /
+    direction-news. Source UNIQUE = `_top_driver` (le driver cité partout).
+    """
+    cle_dom, _nom = _top_driver(r, h)
+    if not cle_dom:
+        return False
+    for c in r.criteres:
+        if (getattr(c, "cle_courante", "") or "") == cle_dom:
+            src = getattr(c, "source_track", "") or ""
+            return src.startswith("ia") or src == "keyword"
+    return False
+
+
+def _tendance_courte_3j_contre_call(r: "ActifResult", h: str) -> bool:
+    """True si l'effet (contribution) du critère « tendance 3 jours »
+    (`momentum_prix_3j_*`) sur l'horizon `h` est de signe OPPOSÉ à la conclusion.
+
+    Absence du critère 3j, gate, n/a, effet nul → False (pas de véto : on ne
+    bloque jamais sans preuve d'opposition franche).
+    """
+    direction = r.conclusions.get(h, "")
+    if direction not in ("LONG", "SHORT"):
+        return False
+    call_sign = 1.0 if direction == "LONG" else -1.0
+    for c in r.criteres:
+        cle = getattr(c, "cle_courante", "") or ""
+        if cle.startswith("momentum_prix_3j_"):
+            if c.is_gate or c.is_na:
+                return False
+            eff = c.contributions.get(h)
+            if eff is None or eff == 0.0:
+                return False
+            return (eff * call_sign) < 0.0
+    return False
+
+
+def _cell_news_contre_tendance_courte(r: "ActifResult", h: str) -> bool:
+    """Véto point 1 : driver dominant news ET tendance 3j à contre-sens du call.
+    Best-effort : toute anomalie → False (jamais de blocage par erreur)."""
+    try:
+        return _driver_dominant_est_news(r, h) and _tendance_courte_3j_contre_call(
+            r, h
+        )
+    except Exception:  # noqa: BLE001 — best-effort
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Plancher d'INTENSITÉ à la Sélection (règle fondateur 01/07, GO explicite) —
+# « ne jamais forcer un pari faible ». L'intensité = note normalisée
+# (`compute_note_normalisee` = note ÷ Σ|poids effectif couvert|, ~[-1,+1],
+# comparable inter-actifs). Un candidat dont |intensité 24h| < ce plancher est
+# ÉCARTÉ de la Sélection. Moins de 3 paris (voire zéro) = normal (doctrine).
+#
+# CALIBRATION sur la distribution RÉELLE des decision-logs 24h depuis le 23/06
+# (7 cycles : 23/24/25/26/29/30 juin + 01/07, 12→15 actifs). Le plancher sépare
+# les paris NETS des paris MOUS :
+#   - nets gardés  (01/07) : Café +1.36, Sucre +1.02, Or −0.48 ; les jours
+#     structurés : Cacao/EUR/USD/Cuivre/Argent ~0.4→1.2.
+#   - mous écartés (01/07) : EUR/USD −0.23, CAC −0.16 ; S&P ~0.02→0.15, VIX ~0.01,
+#     Blé ~0.03→0.08 les jours plats.
+# Gap empirique du 01/07 entre le plus faible NET (Or 0.48) et le plus fort MOU
+# (EUR/USD 0.23) = [0.23 ; 0.48]. Seuil 0.30 : DANS ce gap → garde Or (0.48) et
+# écarte EUR/USD (0.23) + CAC (0.16), les 2 mous nommés par le fondateur. Valeur
+# alignée sur le plancher SHADOW mesuré depuis le 26/06 (SELECTION_FLOOR_NOTE_NORM_MIN).
+SELECTION_INTENSITE_MIN: float = 0.30
+
+
+def _intensite_sous_plancher(
+    r: "ActifResult", h: str, seuil: float = SELECTION_INTENSITE_MIN
+) -> bool:
+    """True si |intensité (note normalisée) 24h| < `seuil`. Intensité non jugeable
+    (aucun critère couvert) → False (prudence : on n'écarte jamais à l'aveugle).
+    Best-effort : toute anomalie → False."""
+    try:
+        note_brute = r.scores.get(h)
+        if note_brute is None:
+            return False
+        nn = compute_note_normalisee(r.criteres, note_brute, h)
+        if nn is None:
+            return False
+        return abs(float(nn)) < seuil
+    except Exception:  # noqa: BLE001 — best-effort
+        return False
+
+
 def select_paris_du_jour(
     results: List["ActifResult"],
     now: datetime,
     seuil_conviction: Optional[float] = None,
     limit: int = 3,
     ecartes_contresens: Optional[List[Dict[str, str]]] = None,
+    ecartes_tendance: Optional[List[Dict[str, str]]] = None,
     hors_top: Optional[List[Dict[str, str]]] = None,
 ) -> List[Dict[str, str]]:
     """Sélectionne les paris du jour DEPUIS les convictions 24h jouables.

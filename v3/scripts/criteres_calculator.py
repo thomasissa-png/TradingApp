@@ -3212,15 +3212,49 @@ def _build_critere_value_inner(
     return None
 
 
+# Champ de valeur REQUIS par chaque famille de normalisation pour qu'un report
+# last-good soit RÉELLEMENT exploitable par le scoring (scoring_analyste.normalise) :
+#   - lineaire / triplet  → consomment la valeur BRUTE `valeur` ;
+#   - zscore / zscore_abs / composite / mapping_non_monotone → consomment
+#     `valeur_normalisee` (pré-calculée en amont).
+# Une entrée cache DÉGÉNÉRÉE (ex. valeur_normalisee-only pour un critère lineaire,
+# héritée d'un placeholder « hors fenêtre » mal mémorisé) ne porte PAS le champ
+# requis : la rejouer produit une valeur 0 fantôme + « n/a (lineaire : valeur non
+# numérique) ». On la REFUSE pour tomber en n/a PROPRE (motif last_good_incompatible).
+_LAST_GOOD_NEEDS_VALEUR_BRUTE = ("lineaire", "triplet")
+_LAST_GOOD_NEEDS_NORMALISEE = ("zscore", "zscore_abs", "composite",
+                               "mapping_non_monotone")
+
+
+def _last_good_entry_exploitable(entry: dict, type_norm: Optional[str]) -> bool:
+    """L'entrée cache porte-t-elle le champ numérique requis par `type_norm` ?
+
+    lineaire/triplet exigent `valeur` (brute) ; zscore/zscore_abs/composite/
+    mapping_non_monotone exigent `valeur_normalisee`. Norme inconnue → au moins un
+    champ numérique exploitable. Zéro effet de bord (lecture seule).
+    """
+    def _num(k: str) -> bool:
+        v = entry.get(k)
+        return isinstance(v, (int, float)) and math.isfinite(float(v))
+
+    norm = (type_norm or "").lower()
+    if norm in _LAST_GOOD_NEEDS_VALEUR_BRUTE:
+        return _num("valeur")
+    if norm in _LAST_GOOD_NEEDS_NORMALISEE:
+        return _num("valeur_normalisee")
+    return _num("valeur") or _num("valeur_normalisee")
+
+
 def _try_last_good_fallback(cle: str, crit: dict, now: datetime,
                             ts: str) -> Optional[dict]:
     """Repli « dernière valeur valide » quand un critère réseau échoue (None).
 
     Lit le cache last-good chargé pour ce run : si le critère est ÉLIGIBLE (source
     réseau LENTE, pas prix/momentum/vol) ET qu'une dernière bonne valeur existe ET
-    est FRAÎCHE (âge ≤ LAST_GOOD_MAX_AGE_DAYS jours ouvrés), on la REJOUE en la
-    MARQUANT `reporte: true` + `reporte_age_j` (échec VISIBLE). Sinon None (n/a,
-    comportement actuel — zéro invention).
+    est FRAÎCHE (âge ≤ LAST_GOOD_MAX_AGE_DAYS jours ouvrés) ET EXPLOITABLE par la
+    normalisation de la fiche, on la REJOUE en la MARQUANT `reporte: true` +
+    `reporte_age_j` (échec VISIBLE). Sinon None (n/a, comportement actuel — zéro
+    invention).
 
     La cause de l'échec source (préfixe SKIP_COUNTER le plus récent pour ce
     cycle/critère) est annexée pour l'affichage health/decision-log.
@@ -3229,6 +3263,20 @@ def _try_last_good_fallback(cle: str, crit: dict, now: datetime,
         return None
     entry = lgc.lookup_fresh(_LAST_GOOD_CACHE, cle, now, crit=crit)
     if entry is None:
+        return None
+    # Garde-fou plomberie : une entrée qui ne porte PAS le champ requis par la
+    # normalisation (ex. valeur_normalisee-only pour un critère lineaire) est
+    # INUTILISABLE — la rejouer fabriquerait un « n/a (lineaire : valeur non
+    # numérique) » + une valeur 0 fantôme. On tombe en n/a PROPRE, motif visible.
+    if not _last_good_entry_exploitable(entry, crit.get("normalisation")):
+        champs = [k for k in ("valeur", "valeur_normalisee", "valeur_ponderee")
+                  if k in entry]
+        SKIP_COUNTER[f"last_good_incompatible:{cle}"] += 1
+        logger.warning(
+            "Critère %s : report last-good INCOMPATIBLE avec la normalisation "
+            "'%s' (champs cache=%s) → ignoré, n/a propre",
+            cle, crit.get("normalisation"), champs,
+        )
         return None
     age = int(entry.get("age_business_days", 0))
     out: Dict[str, Any] = {"ts": ts, "reporte": True, "reporte_age_j": age,
@@ -3285,10 +3333,15 @@ def build_critere_value(
         return res
     if res is not None:
         # Mémoriser au succès (les critères non éligibles sont filtrés par remember
-        # côté caller : on ne range au cache QUE les éligibles). Une valeur « hors
-        # fenêtre » (pas de valeur numérique réelle) n'est pas mémorisée par
-        # _entry_from_value (has_value=False) → no-op naturel.
-        if cle and lgc.is_last_good_eligible(cle, crit) and not res.get("reporte"):
+        # côté caller : on ne range au cache QUE les éligibles). Un placeholder
+        # « hors fenêtre » n'est PAS une observation réelle : c'est un neutre
+        # structurel {valeur_normalisee: 0.0} SANS `valeur` brute. Le mémoriser
+        # polluait le cache (entrée dégénérée valeur_normalisee-only) qui, rejouée
+        # plus tard sur un critère lineaire, produisait « valeur non numérique » +
+        # une valeur 0 fantôme. On l'exclut donc explicitement de la mémorisation.
+        _hors_fenetre = isinstance(res, dict) and res.get("note") == "hors fenêtre"
+        if (cle and lgc.is_last_good_eligible(cle, crit)
+                and not res.get("reporte") and not _hors_fenetre):
             d_run = now.astimezone(timezone.utc).date() if now.tzinfo else now.date()
             lgc.remember(_LAST_GOOD_CACHE, cle, res, d_run)
         return res

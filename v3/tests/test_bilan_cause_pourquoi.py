@@ -408,8 +408,9 @@ def test_render_variations_24h_colonnes():
                         conviction=-7.5)
     md = bj.render_variations_24h([v])
     assert ("| Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture "
-            "| Max du jour | Joué | Raison du mouvement |") in md
-    assert ("Or | SHORT | -7.50 | 4500 | +0.55% | +2.10% | +4.20% | +4.38% | Oui | "
+            "| Max du jour | Joué | Résultat | Raison du mouvement |") in md
+    # Résultat = « — » ici (Variation24h sans outcome), Raison conservée.
+    assert ("Or | SHORT | -7.50 | 4500 | +0.55% | +2.10% | +4.20% | +4.38% | Oui | — | "
             "Fed hawkish") in md
 
 

@@ -2617,6 +2617,9 @@ class Variation24h:
     raison: Optional[str]          # news cohérente avec le sens du mouvement (ou None)
     conviction: Optional[float] = None  # note de conviction SIGNÉE 24h (score_pm1 →
     #                                     score_pond), MÊME source que Suivi/Bilan.
+    conviction_niveau: Optional[str] = None  # libellé « forte »/« faible » (decision-log).
+    resultat: Optional[str] = None  # outcome measures-log : VRAI / FAUSSE / non-conclusif.
+    en_cours: bool = False         # jour COURANT (24h pas encore clos) → clôture non figée.
 
 
 def _call_sign(call: Optional[str]) -> Optional[int]:
@@ -2776,18 +2779,28 @@ def variations_24h_significatives(
     decision_log_dir: Path = DECISION_LOG_DIR,
     events_path: Optional[Path] = None,
     seuil_pct: float = SEUIL_VARIATION_PCT,
+    today: Optional[date] = None,
 ) -> List[Variation24h]:
-    """TOUTES les variations 24h de nos actifs dont |mouvement| > `seuil_pct`,
+    """TOUTES les variations 24h de nos actifs dont |mouvement figé| > `seuil_pct`,
     triées du plus RÉCENT au plus ANCIEN. Lecture seule du measures-log + jointure
     sélection (joué ou non) + news cohérente avec le sens (raison). Zéro invention :
-    prix/raison absents → None."""
+    prix/raison absents → None.
+
+    Historique FIGÉ (correctif fondateur 02/07, points 1-2) : le mouvement d'un jour
+    passé est lu depuis sa cellule 24h DATÉE (measures-log `realized_pct`, ou clôture
+    du bilan persistée), JAMAIS re-dérivé d'un prix courant. Le filtre >1 % s'applique
+    donc à cette valeur figée → aucune ligne n'apparaît/disparaît rétroactivement. Le
+    jour COURANT (échéance 24h pas encore atteinte à `today`) est marqué « en cours »."""
     if not measures_log_path.exists():
         return []
-    # Clôture favorable telle qu'affichée par le bilan (par date+actif), pour la
-    # Sélection — afin que la colonne « % clôture » MATCHE le bilan (zéro divergence).
-    # On lit les constantes de chemin via le module (et non les valeurs par défaut
-    # liées au def-time) pour rester monkeypatchable en test.
+    today = today or date.today()
+    # Clôture favorable + max du jour tels qu'affichés par le bilan (par date+actif),
+    # pour la Sélection — afin que « % clôture » et « Max du jour » MATCHENT le bilan
+    # (zéro divergence, source datée unifiée = sortie-timing-log). On lit les
+    # constantes de chemin via le module (pas les défauts def-time) → monkeypatchable.
     cloture_bilan = load_cloture_favorable_bilan(SORTIE_TIMING_LOG)
+    max_bilan = load_max_gain_bilan(SORTIE_TIMING_LOG)
+    score_fort_seuil = _load_score_fort_seuil()
     # Dédup par (actif, échéance) : on garde le dernier enregistrement.
     records: Dict[Tuple[str, str], dict] = {}
     for line in measures_log_path.read_text(encoding="utf-8").splitlines():
@@ -2835,8 +2848,12 @@ def variations_24h_significatives(
                 sel_cache[bdate] = load_selection_map(bdate, decision_log_dir)
             joue = bool(sel_cache[bdate].get((actif, "24h"), False))
         # Note de conviction signée (decision-log du jour d'émission) — MÊME source
-        # que le Suivi/Bilan (score_pm1 → score_pond). None si non tracée.
+        # que le Suivi/Bilan (score_pm1 → score_pond). None si non tracée. Point 5 :
+        # on capte AUSSI le libellé « forte »/« faible » (même règle que le bilan,
+        # conviction_level) pour afficher « forte (+8.77) ». Libellé None si le record
+        # est absent des vieux logs → note brute seule (zéro invention).
         conviction = None
+        conviction_niveau = None
         if bdate is not None:
             if bdate not in conv_cache:
                 conv_cache[bdate] = load_conviction_records(bdate, decision_log_dir)
@@ -2846,6 +2863,8 @@ def variations_24h_significatives(
                 csc = crec.get("score_pond")
             if isinstance(csc, (int, float)):
                 conviction = round(float(csc), 2)
+            if crec:
+                conviction_niveau = conviction_level(crec, score_fort_seuil)
         # Raison du mouvement : news high COHÉRENTE avec le sens du mouvement.
         raison = None
         if bdate is not None:
@@ -2871,8 +2890,23 @@ def variations_24h_significatives(
             perf_cloture_fav = cb_val
         else:
             perf_cloture_fav = round(rp * sign, 2) if sign is not None else None
+        # Max du jour (point 3) : excursion favorable réelle. Le max_gain_pct de la
+        # cellule 24h du measures-log est prioritaire quand il existe (valeur figée par
+        # cellule) ; sinon on CÂBLE la même source datée unifiée que le bilan quotidien
+        # (sortie-timing-log via load_max_gain_bilan — vrai high/low du jour) pour
+        # remplir les cellules restées « — » ; « — » si aucune des deux (zéro invention).
         mg = r.get("max_gain_pct")
-        max_jour = round(float(mg), 2) if isinstance(mg, (int, float)) else None
+        if isinstance(mg, (int, float)):
+            max_jour = round(float(mg), 2)
+        else:
+            max_jour = max_bilan.get((jour_aff.isoformat(), actif))
+        # Verdict (point 6) : outcome de la cellule 24h du measures-log.
+        outcome = r.get("outcome")
+        resultat = str(outcome) if outcome in ("VRAI", "FAUSSE", "non-conclusif") else None
+        # Jour COURANT (point 1) : l'échéance 24h n'est pas encore atteinte à `today`
+        # → la clôture affichée est le dernier point, pas un résultat figé. Marqué
+        # « en cours » au rendu ; les jours passés (ech < today) sont figés.
+        en_cours = ech >= today
         out.append(Variation24h(
             jour=jour_aff, actif=actif,
             prix_entree=(r.get("prix_emission") if isinstance(r.get("prix_emission"), (int, float)) else None),
@@ -2881,8 +2915,25 @@ def variations_24h_significatives(
             joue=joue, call=call,
             raison=raison,
             conviction=conviction,
+            conviction_niveau=conviction_niveau,
+            resultat=resultat,
+            en_cours=en_cours,
         ))
     out.sort(key=lambda v: (v.jour, v.actif), reverse=True)  # récent → ancien
+    # Dédup des raisons (point 4) : une même news (titre identique ou quasi) ne peut
+    # pas expliquer plusieurs jours. On la garde sur le jour le PLUS RÉCENT où elle
+    # apparaît (premier rencontré dans l'ordre récent → ancien) et on l'efface des
+    # jours plus anciens (« non identifiée » = None). Clé de quasi-égalité : titre
+    # normalisé (minuscules, alphanumérique, préfixe 40 car.).
+    seen_raisons: set = set()
+    for v in out:
+        if not v.raison:
+            continue
+        key = "".join(ch for ch in v.raison.lower() if ch.isalnum())[:40]
+        if key in seen_raisons:
+            v.raison = None
+        else:
+            seen_raisons.add(key)
     return out
 
 
@@ -2899,12 +2950,17 @@ def render_variations_24h(variations: List[Variation24h], now: Optional[datetime
     L.append("")
     L.append(
         "_Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). "
-        "« Call » = notre direction (LONG / SHORT). « Prix d'entrée » = cours à "
-        "l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance "
-        "(`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan "
-        "du jour. « Max du jour » = meilleur gain favorable atteint. « Joué » = "
-        "l'actif était dans le top 3 du jour. « — » = point non relevé (zéro "
-        "invention : les jours sans relevé 12h/18h restent vides)._"
+        "« Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / "
+        "faible) et note signée du jour, même source que le Suivi et le Bilan. "
+        "« Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = "
+        "avancée du call en séance (`+` va dans le sens du call, `-` contre nous), "
+        "mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés "
+        "est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un "
+        "jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain "
+        "favorable atteint (même source datée que le Bilan). « Joué » = l'actif était "
+        "dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ "
+        "faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro "
+        "invention : les jours sans relevé restent vides)._"
     )
     L.append("")
     if not variations:
@@ -2913,9 +2969,11 @@ def render_variations_24h(variations: List[Variation24h], now: Optional[datetime
         return "\n".join(L)
     L.append(
         "| Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture "
-        "| Max du jour | Joué | Raison du mouvement |"
+        "| Max du jour | Joué | Résultat | Raison du mouvement |"
     )
-    L.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    L.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+
+    _VERDICT = {"VRAI": "✅", "FAUSSE": "❌", "non-conclusif": "⚪"}
 
     def _fp(v: Optional[float]) -> str:
         return f"{v:.4g}" if isinstance(v, (int, float)) else "—"
@@ -2927,11 +2985,23 @@ def render_variations_24h(variations: List[Variation24h], now: Optional[datetime
         jour = f"{JJ[v.jour.weekday()]} {v.jour.strftime('%d/%m')}"
         call = v.call or "—"
         joue = "Oui" if v.joue else "Non"
-        conv = f"{v.conviction:+.2f}" if isinstance(v.conviction, (int, float)) else "—"
+        # Conviction : « forte (+8.77) » si le libellé est tracé, sinon note brute.
+        if isinstance(v.conviction, (int, float)):
+            conv = (
+                f"{v.conviction_niveau} ({v.conviction:+.2f})"
+                if v.conviction_niveau else f"{v.conviction:+.2f}"
+            )
+        else:
+            conv = "—"
+        # Clôture : « en cours » pour le jour non encore clos (pas un résultat figé).
+        cloture = _pct(v.perf_cloture_fav)
+        if v.en_cours and isinstance(v.perf_cloture_fav, (int, float)):
+            cloture = f"{cloture} (en cours)"
+        verdict = _VERDICT.get(v.resultat or "", "—")
         L.append(
             f"| {jour} | {v.actif} | {call} | {conv} | {_fp(v.prix_entree)} | "
-            f"{_pct(v.perf_12h)} | {_pct(v.perf_18h)} | {_pct(v.perf_cloture_fav)} | "
-            f"{_pct(v.max_jour)} | {joue} | {v.raison or '—'} |"
+            f"{_pct(v.perf_12h)} | {_pct(v.perf_18h)} | {cloture} | "
+            f"{_pct(v.max_jour)} | {joue} | {verdict} | {v.raison or '—'} |"
         )
     L.append("")
     return "\n".join(L)

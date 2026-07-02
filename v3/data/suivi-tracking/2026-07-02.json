@@ -14,5 +14,26 @@
       "max_adv_pct": -0.07,
       "max_fav_pct": 1.46
     }
-  }
+  },
+  "18h": {
+    "Blé": {
+      "call": "LONG",
+      "fav_pct": 0.82,
+      "heure": "17h28",
+      "max_fav_pct": 0.82
+    },
+    "Café (Arabica)": {
+      "call": "LONG",
+      "fav_pct": -1.13,
+      "heure": "17h28",
+      "max_fav_pct": 1.48
+    },
+    "Sucre": {
+      "call": "LONG",
+      "fav_pct": -0.2,
+      "heure": "17h28",
+      "max_fav_pct": 0.51
+    }
+  },
+  "base": "emission"
 }

@@ -22,3 +22,6 @@
 {"date": "2026-07-01", "actif": "Cacao", "call": "LONG", "categorie": "trop_tard", "pic_pct": 0.48, "pic_heure": "12h", "cloture_pct": -0.04, "max_gain_pct": 1.88}
 {"date": "2026-07-01", "actif": "Café (Arabica)", "call": "LONG", "categorie": "trop_tot", "pic_pct": 5.91, "pic_heure": "clôture", "cloture_pct": 5.91, "max_gain_pct": 6.69}
 {"date": "2026-07-01", "actif": "Sucre", "call": "LONG", "categorie": "trop_tard", "pic_pct": 0.82, "pic_heure": "18h", "cloture_pct": 0.56, "max_gain_pct": 0.61}
+{"date": "2026-07-02", "actif": "Blé", "call": "LONG", "categorie": "trop_tard", "pic_pct": 0.36, "pic_heure": "12h", "cloture_pct": -0.24, "max_gain_pct": 7.37}
+{"date": "2026-07-02", "actif": "Café (Arabica)", "call": "LONG", "categorie": "trop_tard", "pic_pct": 0.08, "pic_heure": "12h", "cloture_pct": -2.54, "max_gain_pct": 1.48}
+{"date": "2026-07-02", "actif": "Sucre", "call": "LONG", "categorie": "sans_objet", "pic_pct": -0.41, "pic_heure": "18h", "cloture_pct": -0.61, "max_gain_pct": 0.51}

@@ -3056,6 +3056,11 @@ def render_variations_24h(variations: List[Variation24h], now: Optional[datetime
     def _pct(v: Optional[float]) -> str:
         return f"{v:+.2f}%" if isinstance(v, (int, float)) else "—"
 
+    # [02/07, demande fondateur] À l'intérieur de chaque jour, les PARIS de la
+    # Sélection remontent en tête (en gras) ; le reste du marché suit. Tri stable :
+    # l'ordre des jours (récent → ancien) est préservé.
+    variations = sorted(variations, key=lambda v: (-v.jour.toordinal(), not v.joue))
+
     for v in variations:
         jour = f"{JJ[v.jour.weekday()]} {v.jour.strftime('%d/%m')}"
         call = v.call or "—"
@@ -3073,8 +3078,9 @@ def render_variations_24h(variations: List[Variation24h], now: Optional[datetime
         if v.en_cours and isinstance(v.perf_cloture_fav, (int, float)):
             cloture = f"{cloture} (en cours)"
         verdict = _VERDICT.get(v.resultat or "", "—")
+        actif = f"**{v.actif}**" if v.joue else v.actif
         L.append(
-            f"| {jour} | {v.actif} | {call} | {conv} | {_fp(v.prix_entree)} | "
+            f"| {jour} | {actif} | {call} | {conv} | {_fp(v.prix_entree)} | "
             f"{_pct(v.perf_12h)} | {_pct(v.perf_18h)} | {cloture} | "
             f"{_pct(v.max_jour)} | {joue} | {verdict} | {v.raison or '—'} |"
         )

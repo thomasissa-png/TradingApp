@@ -58,6 +58,9 @@ REVUE_EXPERTS_DIR = BILAN_SEMAINE_DIR / "revue-experts"
 # N'est PAS un fichier de config : c'est une donnée de mesure (v3/data/).
 MANAGER_STATE_DIR = BILAN_SEMAINE_DIR / ".state"
 PERFORMANCE_WEEKLY_DIR = ROOT / "data" / "performance" / "weekly"
+# Historique persisté du shadow « écart Top 1 vs Top 3 » (reco 28/06, point c).
+# Une entrée par semaine ISO, append idempotent (réécriture de la même semaine).
+SELECTION_WR_JSONL = PERFORMANCE_WEEKLY_DIR / "selection-wr.jsonl"
 DECISION_LOG_DIR = ROOT / "data" / "decision-log"
 PRIX_EMISSION_DIR = ROOT / "data" / "prix-emission"
 PRIX_OUVERTURE_DIR = ROOT / "data" / "prix-ouverture"
@@ -241,49 +244,11 @@ def collect_cellules(
 # Win rate par conviction (réutilise bilan_jour) — sur les paris de la semaine
 # ---------------------------------------------------------------------------
 
-def _conviction_semaine(
-    measures: List[Any], now: datetime, decision_log_dir: Optional[Path] = None
-):
-    """Win rate forte/faible sur les paris dont l'échéance tombe dans la semaine ISO.
-
-    Réutilise bilan_jour.win_rate_par_conviction + load_conviction_map (zéro
-    nouveau champ, §4.7). La conviction d'une cellule est lue sur le decision-log
-    du jour de DÉCISION du pari (bulletin_date = échéance - horizon).
-    """
-    from journaliste import iso_week_bounds, OUTCOME_VRAI, OUTCOME_FAUSSE  # noqa: PLC0415
-    from bilan_jour import load_conviction_map, win_rate_par_conviction  # noqa: PLC0415
-    from datetime import timedelta  # noqa: PLC0415
-
-    monday, sunday = iso_week_bounds(now)
-    horizon_days = {"24h": 1, "7j": 7, "1m": 30}
-
-    week_measures = [
-        m for m in measures
-        if m.outcome in (OUTCOME_VRAI, OUTCOME_FAUSSE)
-        and monday <= m.echeance <= sunday
-    ]
-    # Conviction par cellule : on lit le decision-log du jour de décision.
-    conv_map: Dict[Tuple[str, str], str] = {}
-    seen_dates: set = set()
-    for m in week_measures:
-        dd = horizon_days.get(m.horizon, 1)
-        decision_day = m.echeance - timedelta(days=dd)
-        if decision_day in seen_dates:
-            continue
-        seen_dates.add(decision_day)
-        day_map = load_conviction_map(decision_day, decision_log_dir) \
-            if decision_log_dir else load_conviction_map(decision_day)
-        for k, v in day_map.items():
-            conv_map.setdefault(k, v)
-
-    return win_rate_par_conviction(week_measures, conv_map)
-
-
 def _conviction_from_picks(picks: List["PickSemaine"], decision_log_dir: Optional[Path] = None):
     """[Point #4] Win rate par conviction sur les paris PERSISTÉS de la semaine.
 
-    DIAGNOSTIC du N=0/0 : l'ancienne voie (`_conviction_semaine`) classait la sortie
-    LIVE de `journaliste.measure()`, qui en fin de semaine re-mesure le passé et
+    DIAGNOSTIC du N=0/0 : l'ancienne voie (comptage par mesure live, retirée) classait
+    la sortie LIVE de `journaliste.measure()`, qui en fin de semaine re-mesure le passé et
     renvoie « non-conclusif » (prix passés non retéléchargeables) → 0 pari VRAI/FAUSSE
     → N=0/0 malgré des paris réellement jugés. Les verdicts vivent dans le journal
     persisté (measures-log/picks), pas dans la mesure live.
@@ -1910,16 +1875,70 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     return "\n".join(L)
 
 
-def _render_mesures_shadow(bilan: BilanSemaine, L: List[str]) -> None:
+def _read_selection_wr(path: Path = SELECTION_WR_JSONL) -> List[Dict[str, Any]]:
+    """Lit l'historique jsonl du shadow Top 1/Top 3 (une entrée par semaine ISO)."""
+    if not path.exists():
+        return []
+    out: List[Dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except (ValueError, TypeError):
+            continue  # ligne corrompue ignorée (zéro invention)
+    return out
+
+
+def _persist_selection_wr(
+    iso: str, wr_top1: float, n_top1: int, wr_top3: float, n_top3: int,
+    path: Path = SELECTION_WR_JSONL,
+) -> List[Dict[str, Any]]:
+    """Append idempotent d'une semaine dans le jsonl : réécriture de la même semaine
+    ISO remplace l'entrée (pas de doublon). Renvoie l'historique à jour."""
+    entries = [e for e in _read_selection_wr(path) if e.get("semaine") != iso]
+    entries.append({
+        "semaine": iso,
+        "wr_top1": round(wr_top1, 1), "n_top1": int(n_top1),
+        "wr_top3": round(wr_top3, 1), "n_top3": int(n_top3),
+    })
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for e in entries:
+            f.write(json.dumps(e, ensure_ascii=False) + "\n")
+    return entries
+
+
+def _cumul_selection_wr(
+    entries: List[Dict[str, Any]],
+) -> Optional[Tuple[float, int, float, int, int]]:
+    """Cumul pondéré par N sur toutes les semaines de l'historique. Renvoie
+    (wr_top1, n_top1, wr_top3, n_top3, n_semaines) ou None si historique vide."""
+    if not entries:
+        return None
+    n1 = sum(int(e.get("n_top1", 0)) for e in entries)
+    n3 = sum(int(e.get("n_top3", 0)) for e in entries)
+    v1 = sum(float(e.get("wr_top1", 0.0)) * int(e.get("n_top1", 0)) for e in entries)
+    v3 = sum(float(e.get("wr_top3", 0.0)) * int(e.get("n_top3", 0)) for e in entries)
+    wr1 = v1 / n1 if n1 else 0.0
+    wr3 = v3 / n3 if n3 else 0.0
+    return (wr1, n1, wr3, n3, len(entries))
+
+
+def _render_mesures_shadow(
+    bilan: BilanSemaine, L: List[str], selection_wr_path: Path = SELECTION_WR_JSONL,
+) -> None:
     """[Point #5] État des 3 mesures shadow actées en revue d'experts du 28/06.
 
     (a) corrélation du book : paris sélectionnés du même jour partageant la même
         famille macro (sur-concentration du risque) — calculé depuis les picks +
         _MACRO_FAMILLE (decision-log). (b) sortie au pic 18h : issue réelle vs
         sortie 18h, depuis l'agrégat sortie-timing (journal des bilans du jour).
-        (c) écart Top 1 vs Top 3 : les deux win rates de la semaine + écart. Tout
-        ce qui n'est pas calculable sans nouvelle instrumentation est signalé
-        « en attente d'instrumentation » (zéro invention)."""
+        (c) écart Top 1 vs Top 3 : les deux win rates de la semaine + écart, PLUS le
+        cumul multi-semaines pondéré par N lu depuis selection-wr.jsonl (append
+        idempotent par semaine ; « en chauffe » tant que < 3 semaines, zéro conclusion
+        hâtive). Tout ce qui n'est pas calculable est signalé (zéro invention)."""
     from collections import defaultdict  # noqa: PLC0415
     JJ = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
 
@@ -1977,12 +1996,26 @@ def _render_mesures_shadow(bilan: BilanSemaine, L: List[str]) -> None:
     nv3, nt3, _ = _agg_picks(bilan.picks)
     if nt1 and nt3:
         wr1, wr3 = nv1 / nt1 * 100.0, nv3 / nt3 * 100.0
-        L.append(
+        # Persistance idempotente de la semaine, puis cumul pondéré par N.
+        entries = _persist_selection_wr(bilan.iso, wr1, nt1, wr3, nt3, selection_wr_path)
+        ligne = (
             f"- **(c) Écart Top 1 vs Top 3** : Top 1 {wr1:.0f}% ({nv1}/{nt1}) vs Top 3 "
-            f"{wr3:.0f}% ({nv3}/{nt3}), écart {wr1 - wr3:+.0f} pt(s) cette semaine. Cumul "
-            "multi-semaines : en attente d'instrumentation (historique Top 1/Top 3 non "
-            "encore persisté)."
+            f"{wr3:.0f}% ({nv3}/{nt3}), écart {wr1 - wr3:+.0f} pt(s) cette semaine."
         )
+        cum = _cumul_selection_wr(entries)
+        if cum is not None:
+            cwr1, cn1, cwr3, cn3, nsem = cum
+            if nsem < 3:
+                ligne += (
+                    f" Cumul {nsem} sem. (en chauffe, < 3 sem. → zéro conclusion) : "
+                    f"Top 1 {cwr1:.0f}% (N={cn1}) vs Top 3 {cwr3:.0f}% (N={cn3})."
+                )
+            else:
+                ligne += (
+                    f" Cumul {nsem} sem. pondéré par N : Top 1 {cwr1:.0f}% (N={cn1}) vs "
+                    f"Top 3 {cwr3:.0f}% (N={cn3}), écart {cwr1 - cwr3:+.0f} pt(s)."
+                )
+        L.append(ligne)
     else:
         L.append("- **(c) Écart Top 1 vs Top 3** : pas assez de paris jugés cette semaine.")
     L.append("")

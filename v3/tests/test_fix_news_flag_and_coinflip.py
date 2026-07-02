@@ -13,6 +13,7 @@ Fix C : build_html.py génère un index.html non vide contenant le dernier bulle
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -194,12 +195,15 @@ def test_build_html_generates_non_empty_index(tmp_path, monkeypatch):
     # Exécute le script en sous-process (les chemins sont absolus dans le script).
     script = ROOT / "scripts" / "build_html.py"
     assert script.exists()
+    # [02/07] Sous-processus : le monkeypatch conftest ne s'applique pas ->
+    # BUILD_HTML_OUT redirige la sortie vers le tmp du test (zéro pollution data).
+    out = tmp_path / "index.html"
     res = subprocess.run(
         [sys.executable, str(script)],
         capture_output=True, text=True, cwd=str(ROOT.parent),
+        env={**os.environ, "BUILD_HTML_OUT": str(out)},
     )
     assert res.returncode == 0, f"build_html.py a échoué : {res.stderr}"
-    out = ROOT / "data" / "index.html"
     assert out.exists(), "index.html non créé"
     content = out.read_text(encoding="utf-8")
     assert len(content) > 500, "index.html trop court"
@@ -219,16 +223,19 @@ def test_build_html_generates_non_empty_index(tmp_path, monkeypatch):
         assert latest.name in content, f"Bulletin {latest.name} non embarqué dans index.html"
 
 
-def test_build_html_contains_color_classes_and_help_box():
+def test_build_html_contains_color_classes_and_help_box(tmp_path):
     """Vérifie que l'index.html généré contient les classes de colorisation
     .dir-long / .dir-short et l'encart repliable 'Comment lire les scores'."""
     script = ROOT / "scripts" / "build_html.py"
+    # [02/07] Sous-processus : le monkeypatch conftest ne s'applique pas ->
+    # BUILD_HTML_OUT redirige la sortie vers le tmp du test (zéro pollution data).
+    out = tmp_path / "index.html"
     res = subprocess.run(
         [sys.executable, str(script)],
         capture_output=True, text=True, cwd=str(ROOT.parent),
+        env={**os.environ, "BUILD_HTML_OUT": str(out)},
     )
     assert res.returncode == 0, f"build_html.py a échoué : {res.stderr}"
-    out = ROOT / "data" / "index.html"
     content = out.read_text(encoding="utf-8")
     # Classes CSS de colorisation
     assert ".dir-long" in content, "Classe CSS .dir-long absente"
@@ -241,17 +248,20 @@ def test_build_html_contains_color_classes_and_help_box():
     assert "<details" in content, "Balise <details> de l'encart absente"
 
 
-def test_build_html_contains_sticky_legend_and_subnav():
+def test_build_html_contains_sticky_legend_and_subnav(tmp_path):
     """Vérifie que la légende des scores vit dans le help-box « Comment lire »
     (la legend-bar redondante a été RETIRÉE — point #6 refonte) et que la
     sous-navigation d'ancres intra-bulletin est présente."""
     script = ROOT / "scripts" / "build_html.py"
+    # [02/07] Sous-processus : le monkeypatch conftest ne s'applique pas ->
+    # BUILD_HTML_OUT redirige la sortie vers le tmp du test (zéro pollution data).
+    out = tmp_path / "index.html"
     res = subprocess.run(
         [sys.executable, str(script)],
         capture_output=True, text=True, cwd=str(ROOT.parent),
+        env={**os.environ, "BUILD_HTML_OUT": str(out)},
     )
     assert res.returncode == 0, f"build_html.py a échoué : {res.stderr}"
-    out = ROOT / "data" / "index.html"
     content = out.read_text(encoding="utf-8")
     # [Point #6] La legend-bar redondante a été supprimée : la légende des scores
     # vit désormais UNIQUEMENT dans le help-box « Comment lire les scores ».

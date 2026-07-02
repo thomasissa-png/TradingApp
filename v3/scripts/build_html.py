@@ -20,6 +20,7 @@ DÉTAILS TECHNIQUES :
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -30,7 +31,10 @@ BULLETINS_DIR = ROOT / "data" / "bulletins"
 SUIVI_DIR = ROOT / "data" / "suivi"
 BILAN_JOUR_DIR = ROOT / "data" / "bilan-jour"
 WEEKLY_DIR = ROOT / "data" / "performance" / "weekly"
-OUT_PATH = ROOT / "data" / "index.html"
+# Sortie surchargeable par env var (tests en SOUS-PROCESSUS : le monkeypatch de
+# conftest ne traverse pas les processus ; BUILD_HTML_OUT évite d'écrire le
+# vrai index.html depuis un test). Prod : inchangé.
+OUT_PATH = Path(os.environ.get("BUILD_HTML_OUT") or (ROOT / "data" / "index.html"))
 FICHES_DIR = ROOT / "config" / "fiches"
 MEASURES_LOG_FILE = ROOT / "data" / "measures-log.jsonl"
 PERFORMANCE_AB_FILE = ROOT / "data" / "performance-ab.md"

@@ -18,20 +18,20 @@
   "18h": {
     "Blé": {
       "call": "LONG",
-      "fav_pct": 0.82,
-      "heure": "17h28",
-      "max_fav_pct": 0.82
+      "fav_pct": -0.05,
+      "heure": "18h15",
+      "max_fav_pct": 7.37
     },
     "Café (Arabica)": {
       "call": "LONG",
-      "fav_pct": -1.13,
-      "heure": "17h28",
+      "fav_pct": -0.95,
+      "heure": "18h15",
       "max_fav_pct": 1.48
     },
     "Sucre": {
       "call": "LONG",
-      "fav_pct": -0.2,
-      "heure": "17h28",
+      "fav_pct": -0.41,
+      "heure": "18h15",
       "max_fav_pct": 0.51
     }
   },

@@ -2,15 +2,15 @@
   "12h": {
     "Blé": {
       "call": "LONG",
-      "fav_pct": -0.11,
-      "heure": "11h30",
+      "fav_pct": 0.36,
+      "heure": "12h15",
       "max_adv_pct": -0.29,
       "max_fav_pct": 7.43
     },
     "Café (Arabica)": {
       "call": "LONG",
-      "fav_pct": -0.07,
-      "heure": "11h30",
+      "fav_pct": 0.08,
+      "heure": "12h15",
       "max_adv_pct": -0.07,
       "max_fav_pct": 1.46
     }

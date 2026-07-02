@@ -167,19 +167,25 @@ def test_conviction_degradee_si_couverture_basse_et_max_weight_na():
     assert r.conclusions["24h"] == "SHORT"
 
 
-def test_conviction_forte_si_couverture_basse_mais_max_weight_present():
-    """Le garde-fou ne se déclenche QUE si le critère de poids max est n/a.
-    S'il est présent, conviction « forte » normale (couverture basse seule ne
-    suffit pas — c'est le rôle du palier confidence, pas de ce garde-fou)."""
+def test_pas_de_garde_fou_capteurs_si_max_weight_present():
+    """Le garde-fou « capteurs éteints » ne se déclenche QUE si le critère de
+    poids max est n/a. S'il est présent, pas de plafonnement « fragile » (la
+    conviction peut ensuite être « modérée » via le plancher d'intensité 01/07,
+    mais jamais « fragile (capteurs éteints) »)."""
     r = _actif_cacao(score_24h=-1.78, coverage=0.41, max_weight_na=False)
-    assert sa._conviction_cell(r, "24h", seuil=0.6) == "forte"
+    conv = sa._conviction_cell(r, "24h", seuil=0.6)
+    assert not conv.startswith("fragile")
 
 
-def test_conviction_forte_si_couverture_suffisante_meme_max_weight_na():
-    """coverage ≥ 0.50 → pas de dégradation même si le max-weight est n/a (le
-    seuil garde-fou est 0.50, distinct de COVERAGE_OK)."""
+def test_conviction_plafonnee_si_max_weight_na_meme_couverture_ok():
+    """[Règle 01/07, GO fondateur] critère de poids MAX n/a → conviction
+    plafonnée « fragile (capteurs éteints) » QUEL QUE SOIT le coverage (l'ancien
+    seuil 0.50 ne protège plus : un actif aveugle sur son capteur principal
+    n'affiche plus une conviction pleine). Direction et note inchangées."""
     r = _actif_cacao(score_24h=-1.78, coverage=0.55, max_weight_na=True)
-    assert sa._conviction_cell(r, "24h", seuil=0.6) == "forte"
+    conv = sa._conviction_cell(r, "24h", seuil=0.6)
+    assert conv == "fragile (capteurs éteints)"
+    assert r.conclusions["24h"] == "SHORT"
 
 
 def test_max_weight_critere_is_na_helper():

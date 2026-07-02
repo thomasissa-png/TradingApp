@@ -30,11 +30,13 @@ def _load():
 
 
 def test_continus_resets_au_17_06_fix_l027():
+    # Les dates du registre AVANCENT avec les cutovers ultérieurs (re-découpage
+    # 30/06, ticket C 01/07) ; on vérifie le PLANCHER L027, pas l'égalité.
     rc = _load()
     for ticker in _CONTINUS:
         assert ticker in rc, f"{ticker} absent du registre"
-        assert rc[ticker]["ref_changed"] == _CUTOVER_L027, (
-            f"{ticker} devrait être reset au {_CUTOVER_L027} (fix L027)"
+        assert rc[ticker]["ref_changed"] >= _CUTOVER_L027, (
+            f"{ticker} devrait être reset au moins au {_CUTOVER_L027} (fix L027)"
         )
 
 
@@ -49,10 +51,13 @@ def test_continus_motif_l027():
 
 
 def test_non_continus_inchanges():
+    # Le fix L027 (17/06) n'a pas touché les non-continus : leur plancher reste
+    # le cutover momentum v3 du 11/06 (dates avancées ensuite par des cutovers
+    # DISTINCTS et légitimes, ex. re-découpage horizons du 30/06).
     rc = _load()
     for ticker in _NON_CONTINUS:
-        assert rc[ticker]["ref_changed"] == "2026-06-11", (
-            f"{ticker} (non continu) ne doit PAS être reset par le fix L027"
+        assert rc[ticker]["ref_changed"] >= "2026-06-11", (
+            f"{ticker} (non continu) doit porter au moins le cutover du 11/06"
         )
 
 

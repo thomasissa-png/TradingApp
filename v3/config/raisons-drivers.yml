@@ -10,8 +10,9 @@
 #           règle d'or, cas S&P 7j).
 #   - phrase_long  → citée quand la contribution du driver pousse LONG (effet > 0).
 #   - phrase_short → citée quand la contribution pousse SHORT (effet < 0).
-#   - phrase_neutre (optionnelle) → citée quand la convention de signe est
-#           DOUTEUSE (ex. meteo_cacao) : on n'assène pas de direction.
+#   - phrase_neutre (optionnelle) → jadis citée quand la convention de signe était
+#           DOUTEUSE. Plus AUCUN driver douteux depuis le 01/07 (météo cacao
+#           validée S8 18/06) : les phrases_neutre restantes sont dormantes.
 #
 # Conventions :
 #   - Les phrases décrivent l'EFFET observé (le signe d'Effet intègre déjà le
@@ -124,11 +125,14 @@ drivers:
     phrase_long: "ratio cuivre/or élevé : appétit pour le risque cyclique"
     phrase_short: "ratio cuivre/or bas : préférence défensive"
 
-  # Convention de signe DOUTEUSE (audit point 5) : on N'ASSÈNE PAS de direction.
+  # Symétrie « sécheresse OU excès = haussier » VALIDÉE par panel de 3 experts en
+  # S8 (18/06, sourcé) — câblage fiche cohérent (zscore_abs, signe +1). La mention
+  # « convention de signe à valider » est RETIRÉE le 01/07 (GO fondateur). Avec
+  # zscore_abs+signe+1 la contribution est toujours >= 0 → phrase_long citée.
   meteo_cacao_cote_ivoire_ghana:
-    phrase_long: "météo cacao Côte d'Ivoire/Ghana : driver dominant (convention de signe à valider)"
-    phrase_short: "météo cacao Côte d'Ivoire/Ghana : driver dominant (convention de signe à valider)"
-    phrase_neutre: "météo cacao Côte d'Ivoire/Ghana : driver dominant (convention de signe à valider)"
+    phrase_long: "météo cacao Côte d'Ivoire/Ghana : écart à la normale (sécheresse ou excès de pluie) menace l'offre"
+    phrase_short: "météo cacao Côte d'Ivoire/Ghana : pluies proches de la normale, pression sur l'offre allégée"
+    phrase_neutre: "météo cacao Côte d'Ivoire/Ghana : écart à la normale des pluies, driver dominant sur l'offre"
 
   cot_options_cacao:
     phrase_long: "positionnement cacao vendeur à l'extrême : potentiel de rebond"
@@ -211,7 +215,8 @@ aliases:
   cycle_bresil_biannuel: cycle_production_bresil_cafe
   usd_jpy_proxy_risk: usd_jpy_signal_risque
   tension_geopolitique_active: tension_geopolitique
-  # Cacao météo — convention de signe DOUTEUSE conservée (alias vers la clé douteuse).
+  # Cacao météo — alias vers la clé experte (convention de signe VALIDÉE S8 18/06,
+  # symétrie sécheresse/excès = haussier ; mention « à valider » retirée le 01/07).
   meteo_ci_ghana_precip_30j: meteo_cacao_cote_ivoire_ghana
   hf_positioning_flux_options: cot_options_cacao
   spread_brent_wti: brent_term_structure_m1m2

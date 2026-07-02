@@ -172,12 +172,37 @@ def test_handler_na_when_no_value():
     assert out is None
 
 
-def test_handler_hors_fenetre_returns_neutre():
-    """Hors fenêtre (jour > 9) → l'activation window court-circuite avant le handler."""
+def test_handler_hors_fenetre_na_propre_pas_de_placeholder_degenere():
+    """Hors fenêtre (jour > 9) SANS news fraîche → n/a PROPRE (None), JAMAIS le
+    placeholder générique dégénéré {valeur_normalisee: 0.0} sans valeur brute.
+
+    Régression : ce placeholder (valeur_normalisee-only pour un critère lineaire)
+    était persisté puis passé au scoring, où float(None) échouait en
+    « n/a (lineaire : valeur non numérique) » + « valeur 0 » affichée. caixin est
+    extrait des news (récence-gated), il n'a pas de fenêtre horaire générique.
+    """
     crit = {"cle_courante": "caixin_pmi_manuf", "normalisation": "lineaire",
             "source": "news", "centre": 50}
     later = datetime(2026, 6, 20, 9, 0, tzinfo=timezone.utc)  # jour 20 → hors fenêtre
+    # news datée du 03/06 → hors récence (cutoff = 20/06 - 10j = 10/06) → rejetée
     items = [_news("Caixin China manufacturing PMI rose to 50.8")]
     out = cc.build_critere_value("cuivre", crit, {}, {}, items, later)
+    assert out is None  # n/a propre, pas de dict {valeur_normalisee: 0.0}
+
+
+def test_handler_hors_fenetre_extrait_news_fraiche():
+    """Hors fenêtre mais news FRAÎCHE (récence OK) → extraction normale de la
+    valeur brute. caixin n'a plus de gate mensuel : seule la récence compte."""
+    crit = {"cle_courante": "caixin_pmi_manuf", "normalisation": "lineaire",
+            "source": "news", "centre": 50}
+    later = datetime(2026, 6, 20, 9, 0, tzinfo=timezone.utc)  # jour 20 → hors fenêtre
+    fresh = {
+        "trigger": "Caixin China manufacturing PMI rose to 50.8",
+        "l2": "", "l1": "", "source": "investing_economy", "news_zone": "CN",
+        "_dt": later - timedelta(days=1),  # récent vs `later`
+    }
+    out = cc.build_critere_value("cuivre", crit, {}, {}, [fresh], later)
     assert out is not None
-    assert out.get("note") == "hors fenêtre"
+    assert out["valeur"] == 50.8
+    # jamais un placeholder dégénéré
+    assert "note" not in out or out.get("note") != "hors fenêtre"

@@ -110,25 +110,28 @@ def test_registre_reel_contient_les_actifs_reset():
     # sémantique = 2026-06-17. Les 4 NON continus (cash fermé à 7h) ne sont PAS
     # touchés (le fix est SCOPÉ aux continus) → restent au 11/06.
     reg = sv.load_ref_changed()
-    # 8 CONTINUS reset au 17/06 (fix L027).
-    assert reg.get("BZ=F") == date(2026, 6, 17)   # petrole
-    assert reg.get("SI=F") == date(2026, 6, 17)   # argent
-    assert reg.get("GC=F") == date(2026, 6, 17)   # or
-    assert reg.get("CC=F") == date(2026, 6, 17)   # cacao
-    assert reg.get("KC=F") == date(2026, 6, 17)   # cafe
-    assert reg.get("ZW=F") == date(2026, 6, 17)   # ble
-    assert reg.get("HG=F") == date(2026, 6, 17)   # cuivre
-    assert reg.get("EUR=X") == date(2026, 6, 17)  # eurusd (FX, continu)
-    # 4 actifs NON continus : inchangés au 11/06 (fix L027 scopé aux continus).
-    assert reg.get("^IXIC") == date(2026, 6, 11)  # nasdaq
-    assert reg.get("^GSPC") == date(2026, 6, 11)  # sp500
-    assert reg.get("^FCHI") == date(2026, 6, 11)  # cac40
-    assert reg.get("^VIX") == date(2026, 6, 11)   # vix
+    # Le registre est append/MAJ : les dates AVANCENT avec les cutovers ultérieurs
+    # (re-découpage horizons 30/06, ticket C EUR/USD 01/07), jamais ne reculent.
+    # On vérifie donc les PLANCHERS de chaque ère, pas l'égalité stricte.
+    # 8 CONTINUS : au moins le 17/06 (fix L027).
+    assert reg.get("BZ=F") >= date(2026, 6, 17)   # petrole
+    assert reg.get("SI=F") >= date(2026, 6, 17)   # argent
+    assert reg.get("GC=F") >= date(2026, 6, 17)   # or
+    assert reg.get("CC=F") >= date(2026, 6, 17)   # cacao
+    assert reg.get("KC=F") >= date(2026, 6, 17)   # cafe
+    assert reg.get("ZW=F") >= date(2026, 6, 17)   # ble
+    assert reg.get("HG=F") >= date(2026, 6, 17)   # cuivre
+    assert reg.get("EUR=X") >= date(2026, 6, 17)  # eurusd (FX, continu)
+    # 4 actifs NON continus : au moins le 11/06 (cutover momentum v3).
+    assert reg.get("^IXIC") >= date(2026, 6, 11)  # nasdaq
+    assert reg.get("^GSPC") >= date(2026, 6, 11)  # sp500
+    assert reg.get("^FCHI") >= date(2026, 6, 11)  # cac40
+    assert reg.get("^VIX") >= date(2026, 6, 11)   # vix
     # 3 NOUVEAUX actifs (S10, 2026-06-26) : introduction, warm-up à zéro au 26/06
     # (pas un reset des 12 existants — ce sont de nouvelles cellules).
-    assert reg.get("USD/JPY") == date(2026, 6, 26)  # usdjpy
-    assert reg.get("COTN") == date(2026, 6, 26)     # coton
-    assert reg.get("CANE") == date(2026, 6, 26)     # sucre
+    assert reg.get("USD/JPY") >= date(2026, 6, 26)  # usdjpy
+    assert reg.get("COTN") >= date(2026, 6, 26)     # coton
+    assert reg.get("CANE") >= date(2026, 6, 26)     # sucre
     # Total : 15 actifs au registre (12 ère v1/v2 + 3 nouveaux au 26/06).
     assert len(reg) == 15
 

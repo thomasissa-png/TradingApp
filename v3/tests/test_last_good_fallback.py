@@ -227,3 +227,88 @@ def test_business_days_neutralise_weekend():
     assert lgc._business_days_between(date(2026, 6, 25), date(2026, 6, 25)) == 0
     # lundi → vendredi = 4 jours ouvrés
     assert lgc._business_days_between(date(2026, 6, 22), date(2026, 6, 26)) == 4
+
+
+# ---------------------------------------------------------------------------
+# GARDE PLOMBERIE — report last-good INCOMPATIBLE avec la normalisation
+#
+# Bug reproduit (bulletin 2026-07-01) : le critère Caixin PMI (lineaire, poids 12
+# cuivre) tombait en « n/a (lineaire : valeur non numérique) » + une valeur 0
+# fantôme. Cause : une entrée cache DÉGÉNÉRÉE {valeur_normalisee: 0.0} SANS
+# `valeur` brute (héritée d'un placeholder « hors fenêtre » mal mémorisé) était
+# rejouée sur un critère lineaire qui exige la valeur BRUTE → échec de typage.
+# Attendu : n/a PROPRE (pas de rejeu), motif visible `last_good_incompatible`.
+# ---------------------------------------------------------------------------
+
+# Caixin PMI Chine : lineaire, centre=50, éligible last-good (fragment caixin_pmi),
+# fenêtre d'activation = jours 1-9 du mois.
+CAIXIN_CLE = "caixin_pmi_manuf"
+CAIXIN_CRIT = {
+    "cle_courante": CAIXIN_CLE,
+    "normalisation": "lineaire",
+    "source": "Twelve Data",
+    "centre": 50,
+    "echelle": 10,
+    "cap": 1.0,
+}
+# 2026-07-01 (mercredi), 05h UTC → 07h Paris, jour 1 ≤ 9 → DANS la fenêtre PMI.
+NOW_PMI_IN_WINDOW = datetime(2026, 7, 1, 5, 0, tzinfo=timezone.utc)
+# 2026-06-30 (mardi), jour 30 > 9 → HORS fenêtre PMI.
+NOW_PMI_OUT_WINDOW = datetime(2026, 6, 30, 5, 0, tzinfo=timezone.utc)
+
+
+def test_last_good_lineaire_valeur_normalisee_only_refuse():
+    """Entrée cache {valeur_normalisee: 0.0} SANS `valeur` brute rejouée sur un
+    critère lineaire → REFUSÉE → n/a PROPRE (pas de valeur 0 fantôme), motif
+    `last_good_incompatible` visible pour criteres-health."""
+    cc._LAST_GOOD_CACHE = {
+        CAIXIN_CLE: {"date": "2026-06-30", "valeur_normalisee": 0.0}
+    }
+    # events vides → extraction news None → bascule sur le repli last-good.
+    res = cc.build_critere_value("cuivre", CAIXIN_CRIT, {}, {}, [], NOW_PMI_IN_WINDOW)
+    assert res is None, "report incompatible (pas de valeur brute) → n/a propre"
+    assert any(k.startswith("last_good_incompatible:") and CAIXIN_CLE in k
+               for k in cc.SKIP_COUNTER), "motif last_good_incompatible attendu"
+    # Aucune valeur 0 fantôme ni report ne doit être comptabilisé.
+    assert not any(CAIXIN_CLE in k for k in cc.REPORTED_COUNTER)
+
+
+def test_last_good_lineaire_avec_valeur_brute_est_rejoue():
+    """Le garde-fou NE bloque QUE les entrées incompatibles : une entrée qui porte
+    la `valeur` brute reste rejouable normalement (reporte=True)."""
+    cc._LAST_GOOD_CACHE = {
+        CAIXIN_CLE: {"date": "2026-06-30", "valeur": 49.5, "valeur_normalisee": -0.05}
+    }
+    res = cc.build_critere_value("cuivre", CAIXIN_CRIT, {}, {}, [], NOW_PMI_IN_WINDOW)
+    assert res is not None, "valeur brute présente → repli légitime"
+    assert res["reporte"] is True
+    assert res["valeur"] == 49.5
+
+
+def test_caixin_hors_fenetre_pas_de_placeholder_ni_pollution_cache():
+    """Fix racine : caixin_pmi_manuf (lineaire extrait des news) ne passe PLUS par
+    le placeholder générique « hors fenêtre » {valeur_normalisee: 0.0} — qui,
+    dégénéré (pas de valeur brute), échouait plus tard en scoring
+    « n/a (lineaire : valeur non numérique) » + valeur 0. Hors fenêtre sans news
+    fraîche → n/a PROPRE (None) et ZÉRO pollution du cache last-good."""
+    cc._LAST_GOOD_CACHE = {}
+    res = cc.build_critere_value("cuivre", CAIXIN_CRIT, {}, {}, [], NOW_PMI_OUT_WINDOW)
+    assert res is None, "caixin hors fenêtre sans news → n/a propre (pas de placeholder)"
+    assert CAIXIN_CLE not in cc._LAST_GOOD_CACHE, \
+        "aucun neutre dégénéré ne doit polluer le cache last-good"
+
+
+def test_last_good_entry_exploitable_unitaire():
+    """Contrat du helper : champ requis par famille de normalisation."""
+    # lineaire / triplet → exigent la valeur BRUTE
+    assert cc._last_good_entry_exploitable({"valeur": 49.5}, "lineaire")
+    assert not cc._last_good_entry_exploitable({"valeur_normalisee": 0.0}, "lineaire")
+    assert cc._last_good_entry_exploitable({"valeur": 1.0}, "triplet")
+    # zscore / zscore_abs / composite / mapping_non_monotone → exigent normalisee
+    assert cc._last_good_entry_exploitable({"valeur_normalisee": 0.42}, "zscore_abs")
+    assert cc._last_good_entry_exploitable(
+        {"valeur": 1.2, "valeur_normalisee": 0.6}, "zscore")
+    assert not cc._last_good_entry_exploitable({"valeur": 0.3}, "zscore")
+    # Valeurs non finies rejetées (zéro invention).
+    assert not cc._last_good_entry_exploitable({"valeur": float("nan")}, "lineaire")
+    assert not cc._last_good_entry_exploitable({"valeur": float("inf")}, "lineaire")

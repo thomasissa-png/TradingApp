@@ -181,16 +181,21 @@ def test_donnee_absente_tiret():
 
 
 # ---------------------------------------------------------------------------
-# (e) meteo_cacao → phrase neutre (signe douteux)
+# (e) meteo_cacao → convention de signe VALIDÉE (01/07) : phrase directionnelle
 # ---------------------------------------------------------------------------
 
-def test_meteo_cacao_phrase_neutre():
+def test_meteo_cacao_convention_validee_01_07():
+    # Point 5 (GO fondateur 01/07) : symétrie sécheresse/excès = haussier VALIDÉE
+    # par panel de 3 experts en S8 (18/06), câblage fiche cohérent (zscore_abs,
+    # signe +1). La mention « convention de signe à valider » est RETIRÉE ; le
+    # driver cite sa phrase directionnelle (phrase_long, effet > 0). N'assène
+    # toujours pas de « bonne récolte » (symétrie préservée).
     h = "24h"
     crit = [_crit("Météo cacao", "meteo_cacao_cote_ivoire_ghana", {h: +1.37})]
     r = _actif("Cacao", crit, {h: +1.75}, {h: "LONG"})
     raison = sa._raison_cellule(r, h)
-    assert "convention de signe à valider" in raison
-    # Pas d'assertion directionnelle bullish/bearish assénée.
+    assert "convention de signe à valider" not in raison
+    assert "écart à la normale" in raison
     assert "bonne récolte" not in raison
 
 

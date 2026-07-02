@@ -113,8 +113,11 @@ def test_surveillance_block_placeholder_si_aucune_cellule_a_risque():
     assert "_Aucune cellule à risque directionnel ce cycle._" in bulletin
 
 
-def test_surveillance_block_liste_cellule_avec_divergence():
-    """Cellule avec drapeau ↯ divergence_qn → listée."""
+def test_surveillance_block_divergence_hors_selection_non_listee():
+    """[Règle 01/07, GO fondateur] La surveillance est RÉDUITE aux paris de la
+    Sélection du jour et aux flips. Une cellule avec ↯ qui n'est NI dans la
+    Sélection NI en flip n'est plus listée (le détail complet reste au
+    decision-log, et l'intro le dit)."""
     fiche = _fiche()
     res = sa.score_actif("test", fiche, _vals(1.0, 1.0))
     # Force divergence 24h
@@ -125,13 +128,11 @@ def test_surveillance_block_liste_cellule_avec_divergence():
     bulletin = sa.render_bulletin([res], {}, NOW, "h", "ok")
     # On extrait la section surveillance
     section = bulletin.split("## ⚠️ Cellules à surveiller", 1)[1].split("##", 1)[0]
-    assert "TestActif 24h" in section
-    assert "↯" in section
-    # Direction présente
-    assert "LONG" in section or "SHORT" in section
-    # Les cellules sans drapeau ne sont PAS listées
-    assert "TestActif 7j" not in section
-    assert "TestActif 1m" not in section
+    # Hors Sélection et hors flip → non listée malgré le ↯.
+    assert "TestActif 24h" not in section
+    # L'intro explique la réduction et renvoie au decision-log.
+    assert "Sélection du jour" in section
+    assert "decision-log" in section
 
 
 def test_surveillance_block_exclut_insuffisant():
@@ -153,8 +154,10 @@ def test_surveillance_block_exclut_insuffisant():
     assert "TestActif 24h" not in section
 
 
-def test_surveillance_block_liste_contre_momentum():
-    """Cellule avec ⇄ contre-momentum → listée."""
+def test_surveillance_block_contre_momentum_hors_selection_non_liste():
+    """[Règle 01/07, GO fondateur] Même contrat que la divergence : le ⇄ d'une
+    cellule hors Sélection/flips n'est plus listé dans la surveillance (il reste
+    visible dans la Synthèse et au decision-log)."""
     fiche = _fiche()
     res = sa.score_actif("test", fiche, _vals(1.0, 1.0))
     res.contre_momentum = {"7j": True, "24h": False, "1m": False}
@@ -163,8 +166,8 @@ def test_surveillance_block_liste_contre_momentum():
     res.confidence = {h: "normale" for h in sa.HORIZONS}
     bulletin = sa.render_bulletin([res], {}, NOW, "h", "ok")
     section = bulletin.split("## ⚠️ Cellules à surveiller", 1)[1].split("##", 1)[0]
-    assert "TestActif 7j" in section
-    assert "⇄" in section
+    assert "TestActif 7j" not in section
+    assert "decision-log" in section
 
 
 def test_surveillance_block_apparait_avant_flips():

@@ -96,10 +96,12 @@ def test_p3_driver_detail_format():
     r = _actif("Or", "or", -7.82, "SHORT", "Taux réels US (10 ans)",
                "taux_reels", valeur=2.15, signe=-1)
     detail = sa._driver_detail(r, "24h")
-    # nom complet (non tronqué) + valeur + sens inversé + contribution signée.
+    # [Point 13 — 01/07] nom complet (non tronqué) + valeur + sens HUMAIN
+    # (« la hausse pousse à la baisse », plus de jargon « val …, sens inversé »)
+    # + contribution signée.
     assert "Taux réels US (10 ans)" in detail
-    assert "val 2.15" in detail
-    assert "sens inversé" in detail
+    assert "valeur 2.15" in detail
+    assert "la hausse pousse à la baisse" in detail
     assert "→ contribue -" in detail
 
 
@@ -107,7 +109,8 @@ def test_p3_driver_detail_sens_normal():
     r = _actif("S&P 500", "sp500", 6.63, "LONG", "Régime de volatilité (VIX)",
                "vix_regime", valeur=14.95, signe=1)
     detail = sa._driver_detail(r, "24h")
-    assert "sens normal" in detail
+    # [Point 13 — 01/07] sens normal rendu en clair.
+    assert "la hausse pousse à la hausse" in detail
     assert "→ contribue +" in detail
 
 
@@ -115,8 +118,10 @@ def test_p3_driver_detail_dans_selection_et_a_jouer():
     r = _actif("Or", "or", -7.82, "SHORT", "Taux réels US (10 ans)", "taux_reels")
     sel = "\n".join(sa.build_selection_du_jour_block([r], NOW))
     ajouer = "\n".join(sa.build_a_jouer_block([r], NOW))
-    assert "val 2.15" in sel and "sens inversé" in sel
-    assert "val 2.15" in ajouer and "sens inversé" in ajouer
+    # [Point 13 — 01/07] Forme humaine : « valeur X » + phrase de sens (plus de
+    # jargon « val …, sens inversé »).
+    assert "valeur 2.15" in sel and "la hausse pousse à la baisse" in sel
+    assert "valeur 2.15" in ajouer and "la hausse pousse à la baisse" in ajouer
 
 
 # ---------------------------------------------------------------------------

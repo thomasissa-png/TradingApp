@@ -30,7 +30,12 @@ NOW = datetime(2026, 6, 23, 9, 0, tzinfo=timezone.utc)
 SEUIL = 0.6  # seuil de conviction « forte » fixe (isole du chargement bilan_jour)
 
 
-def _fiche(poids: int = 10) -> dict:
+def _fiche(poids: int = 1) -> dict:
+    # poids=1, 1 critère, pertinence 1.0 → dénominateur d'intensité (note
+    # normalisée) = 1 → intensité ≡ |score| pour ces mocks. Le plancher
+    # d'intensité 24h (règle 01/07) coïncide alors avec NEUTRAL_BAND (score ≥ 0.30
+    # déjà exigé par `_cell_a_eviter`) → aucun sur-filtrage : les scénarios de
+    # ranking/exclusion testés ici restent inchangés.
     return {
         "actif": "X",
         "criteres": [
@@ -127,7 +132,9 @@ def test_a_bloc_tete_affiche_aujourdhui_et_sens():
     block = "\n".join(sa.build_paris_du_jour_block(res, NOW))
     assert "## 🎯 Aujourd'hui" in block
     # Tableau aligné (fondateur 24/06) au lieu de puces de texte.
-    assert "| Actif | Sens | Prix d'entrée | Conviction | Pourquoi |" in block
+    # [Points 4 + 9 — 01/07] Colonne chiffrée = « Note » (le chiffre) ; « Objectif »
+    # = seuil de réussite 24h de l'actif signé par le sens du call.
+    assert "| Actif | Sens | Prix d'entrée | Objectif | Note | Pourquoi |" in block
     assert "| **Or** | SHORT |" in block
     assert "| **EurUsd** | SHORT |" in block
 

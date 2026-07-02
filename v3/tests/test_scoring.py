@@ -669,7 +669,8 @@ def test_audit_veille_non_continu_emission_etiquette_degradee(tmp_path, monkeypa
         prix_emission_dir=prix_dir,
     )
     txt = "\n".join(lines)
-    assert "référence dégradée" in txt
+    # [Point 15 — 01/07] Étiquette humanisée : « (prix de référence approximatif) ».
+    assert "(prix de référence approximatif)" in txt
 
 
 def test_audit_veille_exclut_faible_carry_news(tmp_path, monkeypatch):

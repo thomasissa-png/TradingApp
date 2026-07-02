@@ -32,7 +32,11 @@ def _crit(nom: str, cle: str, contrib: float, h_contrib: Optional[Dict[str, floa
         type_norm="lineaire",
         valeur_brute=1.0,
         valeur_norm=1.0,
-        poids=5.0,
+        # poids=1/3 : `_actif` monte 3 critères → dénominateur d'intensité (note
+        # normalisée) = 3 × (1/3) × pertinence 1.0 = 1.0 → intensité ≡ |score| pour
+        # ces mocks. Le plancher d'intensité 24h (règle 01/07) coïncide alors avec
+        # NEUTRAL_BAND (déjà exigé) → aucun sur-filtrage, scénarios inchangés.
+        poids=1.0 / 3.0,
         signe=1,
         pertinence={h: 1.0 for h in sa.HORIZONS},
         note="",
@@ -189,7 +193,8 @@ def test_bloc_tableau_et_ecartee(monkeypatch):
     )
     texte = "\n".join(lignes)
     # P3 — « Porté par » enrichi : nom complet + valeur + sens + contribution.
-    assert "| Or | LONG | +0.90 | Fed (val 1, sens normal) → contribue +0.40 | 2400 |" in texte
+    # [Point 13 — 01/07] Forme humaine (« valeur X », phrase de sens).
+    assert "| Or | LONG | +0.90 | Fed (valeur 1, la hausse pousse à la hausse) → contribue +0.40 | 2400 |" in texte
     assert "écartée : Argent, même pari (drv_macro) que Or" in texte
     # P2 — les 4 règles de sélection sont désormais dans « Comment lire les
     # scores » (consolidées une fois), plus dans le bloc « Sélection du jour ».

@@ -223,7 +223,9 @@ def test_commodities_not_remapped_to_spot(yf_ticker, not_native):
 
 
 # ---------------------------------------------------------------------------
-# 6. Cutover : ref-changed.json — les 8 continus reset au 2026-06-17 (fix L027).
+# 6. Cutover : ref-changed.json — les 8 continus ont subi le fix L027 (17/06) ;
+#    la date de reset peut AVANCER avec les cutovers ultérieurs (registre
+#    append/MAJ, ex. re-découpage horizons du 30/06), jamais reculer.
 #    Le remap natif (or/argent/Brent → XAU/XAG/XBR) reste documenté dans le motif.
 # ---------------------------------------------------------------------------
 
@@ -234,14 +236,18 @@ def _ref_changed():
 @pytest.mark.parametrize("ticker", ["GC=F", "SI=F", "BZ=F"])
 def test_cutover_native_tickers_motif_conserve(ticker):
     """Or/argent/Brent : la trace du remap Twelve natif reste dans le motif, et
-    la date de reset suit le dernier cutover (fix L027, 2026-06-17)."""
+    la date de reset est au moins celle du fix L027 (2026-06-17)."""
     entry = _ref_changed()[ticker]
-    assert entry["ref_changed"] == "2026-06-17"
+    assert entry["ref_changed"] >= "2026-06-17"
     motif = entry["motif"].lower()
     assert "twelve natif" in motif or "twelve nativ" in motif
+    assert "l027" in motif  # la trace du fix L027 reste documentée
 
 
 @pytest.mark.parametrize("ticker", ["CC=F", "KC=F", "ZW=F", "HG=F"])
 def test_cutover_commodities_reset_l027(ticker):
-    """Cuivre/cacao/café/blé : reset au 2026-06-17 par le fix L027 (continus)."""
-    assert _ref_changed()[ticker]["ref_changed"] == "2026-06-17"
+    """Cuivre/cacao/café/blé : le fix L027 (17/06) est documenté et la date de
+    reset n'a jamais reculé en dessous."""
+    entry = _ref_changed()[ticker]
+    assert entry["ref_changed"] >= "2026-06-17"
+    assert "l027" in entry["motif"].lower()

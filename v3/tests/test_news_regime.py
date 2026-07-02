@@ -157,16 +157,24 @@ def test_news_neutre_reste_insuffisant(cuivre, tmp_path):
 def test_news_non_dominant_reste_insuffisant(cuivre, tmp_path):
     """(b-bis) ratio_news ≤ 0.5 (quant domine la news) → pas décisif → 🚫.
 
-    On couvre 1 critère news faible (news_construction poids 4, valeur +1) et
-    un critère QUANT fort (inventaires zscore poids 8, valeur_normalisee très
-    négative) avec une magnitude quant ≫ news sur tous les horizons → ratio_news
-    < 0.5. Couverture = (4+8)/48 = 0.25 (= FLOOR) : le carry échoue (pas de
-    direction antérieure), et la news n'est pas dominante → 🚫.
+    On couvre 1 critère news faible (news_construction poids 4, valeur +1) et des
+    critères QUANT forts, avec une magnitude quant ≫ news sur TOUS les horizons →
+    ratio_news < 0.5. La news n'est pas dominante → 🚫.
+
+    MAJ (reweight 30/06, cf. cuivre.yml) : `inventaires_lme_shfe_5j` a désormais
+    pertinence 24h = 0.0 et `momentum_prix_20j_cuivre` 24h = 0.1 → aucun seul quant
+    ne domine plus la news sur 24h (le ratio explosait, quant_total≈0). On couvre
+    donc 3 quant complémentaires — `ratio_cuivre_or` (24h pert 0.4) porte le court
+    terme, `momentum`/`inventaires` le moyen/long — tous dans le même sens (LONG)
+    que la news. Leur poids×pertinence cumulé domine sur 24h / 7j / 1m (ratio ≤ 0.5).
+    Couverture ≈ 0.31 (FLOOR ≤ cov < MIN) : carry impossible (pas de direction
+    antérieure) + news non dominante → 🚫.
     """
     valeurs = {
-        "news_construction_infra": _news_triplet(1),
-        # quant zscore, gros poids, magnitude forte sur tous les horizons.
-        "inventaires_lme_shfe_5j": {"valeur_normalisee": -3.0},
+        "news_construction_infra": _news_triplet(1),               # news +1 → LONG
+        "ratio_cuivre_or": {"valeur_normalisee": 3.0},             # quant 24h (signe +1 → LONG)
+        "momentum_prix_20j_cuivre": {"valeur_normalisee": 3.0},    # quant 7j (signe +1 → LONG)
+        "inventaires_lme_shfe_5j": {"valeur_normalisee": -3.0},    # quant 1m (signe -1 → LONG)
     }
     r = sa.score_actif(
         "cuivre", cuivre, valeurs, now=NOW, log_dir=tmp_path,

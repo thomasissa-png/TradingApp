@@ -398,12 +398,31 @@ def test_parse_events_log_v2_14_cols(tmp_path):
     assert decoded[0]["confidence"] == "high"
 
 
-def test_parse_events_log_v2_routes_correctly(tmp_path, triggers_cfg, now_fixed):
-    """Bout en bout : ligne v2 parsée → classify_all → triplet correct via IA."""
+def test_parse_events_log_v2_routes_correctly(tmp_path, triggers_cfg):
+    """Bout en bout : ligne v2 parsée → classify_all → triplet correct via IA.
+
+    NOTE (v2.2 Phase 2, format 19 col — CHANGELOG) : `parse_events_log` calcule
+    désormais le flag `stale` (canonical_event_date > STALE_DAYS vs HORLOGE RÉELLE
+    → event écarté du routing, cf. triggers_classifier L1341-1342). La date figée
+    2026-05-28 devient donc stale dès qu'on exécute la suite > 30j plus tard, et le
+    routing retourne 0 (faux négatif de test, PAS une régression code). On date
+    l'event à J-1 réel et on route avec today=maintenant : l'event reste NON stale
+    ET dans le lookback geopol_iran (7j).
+    """
+    now = datetime.now(timezone.utc)
+    d_recent = (now - timedelta(days=1)).date().isoformat()
+    log_v2 = (
+        "| date | L1 | L2 | trigger | cours | latence | R | source | news_zone "
+        "| category | pattern_id | impacts | materiality | reliability |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
+        f"| {d_recent} |  | Iran | Iran escalation, brent surges | BRENT |  | 1 "
+        "| bbc | Moyen-Orient | geopolitical |  | BRENT:LONG:high;GOLD:LONG:high "
+        "| high | confirmed |\n"
+    )
     p = tmp_path / "events-log.md"
-    p.write_text(EVENTS_LOG_V2_14, encoding="utf-8")
+    p.write_text(log_v2, encoding="utf-8")
     events = tc.parse_events_log(p)
-    res = tc.classify_all(events=events, today=now_fixed, triggers_cfg=triggers_cfg)
+    res = tc.classify_all(events=events, today=now, triggers_cfg=triggers_cfg)
     assert res["petrole"]["tension_geopol_moyen_orient"] == 1
     assert res["or"]["tension_geopolitique"] == 1
 

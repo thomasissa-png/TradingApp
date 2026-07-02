@@ -532,7 +532,14 @@ def test_output_compatible_scoring_gate():
 def _fake_df(values_list):
     """Helper : construit un DataFrame OHLCV yfinance-compatible à partir d'une liste
     [(date_str, close), ...] (oldest→newest)."""
-    import pandas as pd
+    # pandas est une dépendance CI (v3/requirements.txt: pandas==2.2.2, installée par
+    # `pip install -r v3/requirements.txt` dans cycle.yml/test-extraction.yml) mais
+    # absente de ce conteneur local. Les tests qui construisent un DataFrame mock via
+    # ce helper sont skippés proprement ici, JAMAIS en CI.
+    pd = pytest.importorskip(
+        "pandas",
+        reason="pandas (dépendance CI v3/requirements.txt) absente du conteneur local",
+    )
     rows = [{"Open": c, "High": c, "Low": c, "Close": c, "Volume": 0} for _, c in values_list]
     idx = pd.to_datetime([d for d, _ in values_list])
     df = pd.DataFrame(rows, index=idx)

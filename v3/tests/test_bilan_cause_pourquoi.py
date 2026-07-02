@@ -410,7 +410,8 @@ def test_render_variations_24h_colonnes():
     assert ("| Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture "
             "| Max du jour | Joué | Résultat | Raison du mouvement |") in md
     # Résultat = « — » ici (Variation24h sans outcome), Raison conservée.
-    assert ("Or | SHORT | -7.50 | 4500 | +0.55% | +2.10% | +4.20% | +4.38% | Oui | — | "
+    # [02/07] les paris de la Sélection sont en GRAS dans la colonne Actif.
+    assert ("**Or** | SHORT | -7.50 | 4500 | +0.55% | +2.10% | +4.20% | +4.38% | Oui | — | "
             "Fed hawkish") in md
 
 

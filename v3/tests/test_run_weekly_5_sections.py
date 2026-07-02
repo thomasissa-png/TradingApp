@@ -719,13 +719,16 @@ def test_section4_pick_perdant_affiche_variation_brute():
     assert "S&P 500 LONG (-2,3 %)" in blob
 
 
-def test_section4_opportunite_ratee_affiche_variation_brute():
-    """Section 4 : les opportunités ratées affichent la variation BRUTE de l'actif."""
+def test_section4_opportunite_ratee_affiche_pct_favorable():
+    """[Point #2] Section 4 : les opportunités ratées affichent le % FAVORABLE signé
+    (perf_dir), pas la variation brute qui se lisait à tort comme une perte pour un
+    SHORT gagnant."""
     mr = rw.MouvementRate(actif="Or", jour=date(2026, 6, 16), call="SHORT",
                           perf_dir=2.4, variation_brute=-2.4, raison="opportunité ratée")
     faibles = rw._points_faibles(_bilan_stub([], mouvements_rates=[mr]))
     blob = " ".join(faibles)
-    assert "Or SHORT -2,4 %" in blob  # variation brute (l'actif a baissé), pas le sens du call
+    assert "Or SHORT +2,4 %" in blob   # % favorable signé (SHORT qui a gagné)
+    assert "Or SHORT -2,4 %" not in blob
 
 
 def test_priorite_familles_ferme_si_N_suffisant():
@@ -765,9 +768,9 @@ def test_pick_semaine_proprietes():
     assert p2.drapeau_faible == "coin-flip"
 
 
-def test_section3_bien_fait_avec_pourquoi_et_catalyseur():
-    # « Bien fait » = > 1 % dans le bon sens ; on dit le POURQUOI réel (driver) + le
-    # catalyseur news confirmant s'il y en a un (symétrie avec la section 4).
+def test_section3_bien_fait_condense_une_ligne_par_pari():
+    # [Point #6] « Bien fait » condensé : UNE ligne par pari unique (actif+call), avec
+    # % favorable + critère DOMINANT (fini les paragraphes recopiés + catalyseur).
     forts = rw._points_forts(_bilan_stub([
         _pick("Pétrole (Brent)", "SHORT", "VRAI", 0.71, mv=3.8,
               raison_call="Stocks de brut US : surprise hebdomadaire + Tendance du pétrole Brent (20 jours)",
@@ -776,12 +779,14 @@ def test_section3_bien_fait_avec_pourquoi_et_catalyseur():
         _pick("Argent", "SHORT", "VRAI", 0.0, mv=0.6),            # < 1 % → exclu
     ]))
     blob = " ".join(forts)
-    # Le POURQUOI réel (drivers du score) est affiché, pas une news lambda.
-    assert ("Pétrole (Brent) SHORT (24h) : +3,8 % dans le bon sens. Pris sur : "
-            "Stocks de brut US : surprise hebdomadaire + Tendance du pétrole Brent (20 jours)") in blob
-    assert "Catalyseur confirmant : Stocks US en forte hausse" in blob
+    # Critère dominant seul (1er driver), format condensé « % favorable · dominant ».
+    assert ("Pétrole (Brent) SHORT (24h) : +3,8 % favorable · "
+            "Stocks de brut US : surprise hebdomadaire.") in blob
+    # Plus de paragraphe recopié : le 2e driver et le catalyseur ne sont plus listés ici.
+    assert "Tendance du pétrole Brent (20 jours)" not in blob
+    assert "Catalyseur confirmant" not in blob
     # Sans driver tracé : fallback type de signal (jamais vide).
-    assert "Or SHORT (24h) : +4,4 % dans le bon sens. Pris sur : quant-pur" in blob
+    assert "Or SHORT (24h) : +4,4 % favorable · quant-pur." in blob
     assert all("Argent" not in f for f in forts)   # mouvement sous 1 % écarté
 
 
@@ -969,7 +974,7 @@ def test_render_picks_par_jour_header_4_colonnes_quotidien():
     # Raison SORTIE du tableau (sous-liste) → header compact sans « Raison ».
     # « Max gain » (et non « Max ») → exempté du masquage mobile (markDenseTables).
     assert ("| Jour | Actif | Call | Conviction | % 12h | % 18h | Max gain | "
-            "Variation actif | Résultat |") in md
+            "Mouvement 24h réel | Résultat |") in md
     assert "| Résultat | Raison |" not in md
     assert "**Pourquoi ces paris (signal 7h) :**" in md
     # Valeurs au format quotidien (signe + 2 décimales, % collé), « — » si absent.

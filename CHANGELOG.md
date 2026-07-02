@@ -2,6 +2,31 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-07-01 — S11 : audit complet du bulletin + implémentation intégrale (GO fondateur)
+
+Audit fond+forme du bulletin 2026-07-01-07h (trio + avis orchestrateur), 24 améliorations validées fondateur, toutes livrées le jour même. Effectif au bulletin du 02/07 7h.
+
+### Règles de sélection (restrictives, zéro cutover)
+- **Véto « news contre la tendance courte »** : un pari 24h dont le driver dominant est la news et dont la tendance 3j est à contre-sens est écarté de la Sélection (cas de référence : Cacao LONG du 01/07). Motif visible dans « Écartés ».
+- **Plancher d'intensité** `SELECTION_INTENSITE_MIN = 0.30` (calibré sur la distribution réelle des decision-logs 23/06→01/07) : on ne force jamais un pari mou ; moins de 3 paris = normal.
+- **Conviction plafonnée « fragile (capteurs éteints) »** : critère de poids max n/a OU ≥2 critères de poids ≥8 n/a → cellule inéligible à la Sélection (cas Blé, stocks USDA morts).
+
+### Ticket C — frein des capteurs non-tendance sur le 24h (cutover EUR/USD seul)
+- Le reweight du 30/06 avait déjà mis les structurels à pertinence 24h 0.1 ; seul retardataire : `usd_jpy_proxy_risk` (EUR/USD) 0.7→0.1. Effet 01/07 : EUR/USD 24h SHORT→LONG ⇒ signal change ⇒ `ref_changed` EUR=X au 2026-07-02. CAC 40 vérifié conforme (aucun changement). Addendums SELECTION-RULE + KILL-CRITERION.
+- **Signe météo cacao** : symétrie validée S8 confirmée conforme au code ; mention « convention de signe à valider » retirée des raisons affichées.
+
+### Capteurs
+- 🐛 **PMI Caixin** : le placeholder hors-fenêtre émettait une valeur dégénérée (0.0 sans valeur brute) → « n/a (valeur non numérique) » au bulletin et pollution de criteres-last-good. Fix : handler dédié systématique, n/a propre. Aucun impact score. V2X/VXN/stocks/or-BC : sources absentes assumées (n/a propres), clé USDA = action fondateur.
+
+### Rendu du bulletin (17 points, présentation pure)
+- Raison d'un pari toujours adossée à un **titre de news réel** (fin du « pas de titre représentatif ») ou au premier driver concret ; « Porté par » jamais à contre-sens ; paradoxe net/top-titre expliqué en parenthèse.
+- « Note » (chiffre) ≠ « Conviction » (libellé) ; « forte » exige |intensité| ≥ 0.30 sinon « modérée (signal peu net) » ; « (écarté des paris) » affiché sur les lignes concernées.
+- « Cellules à surveiller » réduite à Sélection + flips ; **table Intensité supprimée** (sa valeur vit dans le libellé de conviction, la Synthèse reste la table centrale) ; légende complète (⚠️♻) + test anti-symbole-orphelin ; note ⌛ sous les paris ; colonne **Objectif** (seuil 24h signé) ; formes humaines (« valeur 2.15, la hausse pousse à la baisse ») ; noms de critères sans tiret cadratin ; « prix de référence approximatif ».
+
+### Dette repérée
+- Des tests écrivent dans les vrais chemins `v3/data/` quand la suite tourne (pollution nettoyée avant chaque commit) → à isoler (tmp_path) lors d'une prochaine session.
+- Tests `test_twelve_native_remap` rendus robustes aux resets ultérieurs (cassés depuis le 30/06, pré-existant vérifié).
+
 ## 2026-06-23 — Futures US le matin (Phase 1) : fetch VPS + lecture suivi
 
 Le matin, le cash US est fermé (ouvre 15h30) et Twelve Data ne sert AUCUN future

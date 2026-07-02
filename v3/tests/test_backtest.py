@@ -20,6 +20,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backtest"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+# pandas est une dépendance CI (v3/requirements.txt: pandas==2.2.2, installée par
+# `pip install -r v3/requirements.txt` dans cycle.yml/test-extraction.yml) mais est
+# absente de ce conteneur local. Les tests qui traversent le moteur backtest
+# (historical_data/backtest_quant → pandas) sont skippés proprement ici, JAMAIS en CI.
+_PANDAS_REASON = "pandas (dépendance CI v3/requirements.txt) absente du conteneur local"
+
 
 # ---------------------------------------------------------------------------
 # 1. No look-ahead (critère LE PLUS critique)
@@ -27,6 +33,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 def test_series_asof_strict_no_lookahead():
     """series_asof('GC=F', d) ne doit JAMAIS retourner de barre datée >= d."""
+    pytest.importorskip("pandas", reason=_PANDAS_REASON)
     from historical_data import series_asof, _to_date
 
     for test_d_str in ("2024-01-15", "2024-06-15", "2024-11-04", "2025-03-10"):
@@ -43,6 +50,7 @@ def test_series_asof_strict_no_lookahead():
 
 def test_series_asof_no_lookahead_on_trading_day():
     """Même test sur un JOUR DE TRADING (pas un weekend) — cas piège."""
+    pytest.importorskip("pandas", reason=_PANDAS_REASON)
     from historical_data import series_asof, _to_date, _get_full_df
 
     df_full = _get_full_df("GC=F")
@@ -156,6 +164,7 @@ def test_permutation_pvalue_strong_signal():
 def test_quant_zscore_uses_live_formula():
     """quant_zscore_single doit produire le même résultat que la formule live
     zscore_from_series appelée directement sur les closes."""
+    pytest.importorskip("pandas", reason=_PANDAS_REASON)
     from backtest_quant import quant_zscore_single
     from historical_data import series_asof
     from criteres_calculator import zscore_from_series
@@ -176,6 +185,7 @@ def test_quant_zscore_uses_live_formula():
 
 def test_quant_rsi_uses_live_compute_rsi():
     """quant_rsi doit utiliser la fonction live `_compute_rsi`."""
+    pytest.importorskip("pandas", reason=_PANDAS_REASON)
     from backtest_quant import quant_rsi
     from historical_data import series_asof
     from criteres_calculator import _compute_rsi
@@ -192,6 +202,7 @@ def test_quant_rsi_uses_live_compute_rsi():
 def test_build_valeurs_actif_returns_dict():
     """Smoke test : la construction des valeurs renvoie un dict avec au moins
     une clé câblée pour 'or' à une date avec historique."""
+    pytest.importorskip("pandas", reason=_PANDAS_REASON)
     from backtest_quant import build_valeurs_actif_asof
     from scoring_analyste import load_fiches
 
@@ -336,6 +347,7 @@ def test_fred_spread_asof_locf_alignment():
 
 def test_future_return_no_zero_on_weekend():
     """future_return un samedi ne doit PAS retourner 0 (artefact corrigé)."""
+    pytest.importorskip("pandas", reason=_PANDAS_REASON)
     from historical_data import future_return
     # 2024-06-15 = samedi. Entry = close lundi 17, exit = close mardi 18.
     r = future_return("GC=F", "2024-06-15", horizon_days=1)

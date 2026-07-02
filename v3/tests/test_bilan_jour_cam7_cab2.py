@@ -35,6 +35,11 @@ PARIS = ZoneInfo("Europe/Paris")
 # ===========================================================================
 
 def test_is_partial_holiday_memorial_day():
+    # holidays est une dépendance CI (v3/requirements.txt: holidays==0.98, installée
+    # par `pip install -r v3/requirements.txt` dans cycle.yml/test-extraction.yml) mais
+    # absente de ce conteneur local. Sans elle, les fériés partiels hors socle statique
+    # ne sont pas résolus → skip propre ici, JAMAIS en CI.
+    pytest.importorskip("holidays", reason="holidays (dépendance CI v3/requirements.txt) absente du conteneur local")
     # 2026-05-25 = Memorial Day (NYSE fermé) mais Euronext ouvert → partiel.
     d = date(2026, 5, 25)
     assert d.weekday() == 0  # lundi
@@ -43,6 +48,7 @@ def test_is_partial_holiday_memorial_day():
 
 
 def test_is_partial_holiday_premier_mai():
+    pytest.importorskip("holidays", reason="holidays (dépendance CI v3/requirements.txt) absente du conteneur local")
     # 2026-05-01 = Fête du Travail (Euronext fermé) mais NYSE ouvert → partiel.
     d = date(2026, 5, 1)
     assert d.weekday() == 4  # vendredi
@@ -70,6 +76,7 @@ def test_weekend_n_est_pas_partiel():
 
 
 def test_compter_jours_bourse_exclus_sur_fenetre():
+    pytest.importorskip("holidays", reason="holidays (dépendance CI v3/requirements.txt) absente du conteneur local")
     # Fenêtre couvrant le 1er Mai (Euronext fermé) ET le Memorial Day (NYSE
     # fermé) : 2 jours de bourse exclus par férié partiel.
     n = jr.compter_jours_bourse_exclus(date(2026, 5, 1), date(2026, 5, 31))
@@ -85,6 +92,7 @@ def test_compter_jours_bourse_exclus_fenetre_vide():
 
 
 def test_render_performance_affiche_compteur(monkeypatch):
+    pytest.importorskip("holidays", reason="holidays (dépendance CI v3/requirements.txt) absente du conteneur local")
     # Le rendu performance.md affiche le compteur CA-M7 sur la fenêtre observée.
     # On fabrique une mesure dont la date d'émission ouvre la fenêtre sur mai
     # (contient le 1er Mai + Memorial Day = 2 jours partiels).

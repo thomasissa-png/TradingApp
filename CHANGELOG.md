@@ -2,6 +2,22 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-07-02 — S11 (suite) : bilan hebdo + Mouvements de marché audités/corrigés, dette apurée à zéro (GO fondateur)
+
+Poursuite des audits surface par surface (« même travail ») puis apurement TOTAL de la dette sur ordre fondateur (« ne laisse aucune dette »).
+
+### Bilan hebdomadaire (8 corrections, audit S26)
+- Colonne « Mouvement 24h réel » (realized/outcome du measures-log, fin de la perf de phase recopiée : le « Cacao +13,6 % » du S26 était la phase mar→ven affichée comme mouvement du jour) ; « Opportunités ratées » sur le jour d'émission (un pari Top 1 ne peut plus y figurer « non classé ») ; learnings recalculés et doctrine-aware ; « Win rate par conviction » compté depuis les picks persistés (le N=0/0 venait d'une classification sur mesure live) ; sous-section « Mesures shadow en cours (reco 28/06) » ; dédup ; wording ; zéro cadratin. Puis : dead code `_conviction_semaine` retiré, **cumul Top 1/Top 3 instrumenté** (`performance/weekly/selection-wr.jsonl`, idempotent).
+
+### Page « Mouvements de marché » (7 corrections)
+- **🐛 P0 : historique figé.** Le « % clôture » des jours passés était recalculé chaque matin au prix courant (café 29/06 : +8,52 % puis +13,42 % selon le jour de lecture ; lignes qui apparaissaient/disparaissaient rétroactivement via le filtre > 1 %). Désormais : realized favorable de la cellule 24h datée, figé, test anti-dérive à deux générations. Max du jour câblé, raison honnête dédupliquée, conviction libellé+note, colonne Résultat ✅/❌/⚪, zéro cadratin.
+
+### Apurement de dette (registre vidé)
+- **Suivi** : justification UNIQUE bulletin↔suivi (le bulletin persiste `selection_raison` au decision-log, le suivi l'affiche verbatim) ; **% Sélection vs prix d'émission 7h (L027)** avec snapshot base-entrée dédié, puis **base émission unifiée** jusqu'au bout (suivi-tracking marqué `base:"emission"`, bilan/hebdo refusent le mélange de bases, « — » sur snapshots antérieurs).
+- **Tests** : les 3 rouges pré-existants élucidés (tous des évolutions documentées : flag stale v2.2, cutover 30/06, reweight horizons) ; 22 échecs environnementaux (pandas/holidays absents du conteneur) → skips ciblés motivés, couverture CI intacte (deps prouvées dans requirements + workflows) ; **fin de la pollution de `v3/data/` par les tests** (writers à chemin dynamique + fixture autouse + filet de session qui nomme le test fautif).
+- **Mesure** : garde-fou `prix_suspect_stale` (close fournisseur strictement identique au jour précédent, cas coton 2.371 les 29-30/06) → ⚠️ affiché au bilan, outcome jamais modifié.
+- Cutovers réalignés sur la réalité du déploiement : EUR=X et ZW=F avancés au 2026-07-03 (le merge est arrivé APRÈS l'émission 7h du 02/07, discipline anti-mélange) ; COTN/CANE restent au 02/07.
+
 ## 2026-07-01 (soir) — S11 : audit des suivis 12h/18h + clé USDA + ouverture US réparée (GO fondateur)
 
 Audit fond+forme des rapports `suivi/2026-07-01-12h.md` et `-18h.md`, 11 améliorations validées fondateur, 9 livrées le soir même (2 reportées avec justification). Effectif au suivi du 02/07 12h.

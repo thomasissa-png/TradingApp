@@ -89,6 +89,11 @@ REPORT_12H = "12h"
 REPORT_18H = "18h"
 VALID_REPORTS = (REPORT_12H, REPORT_18H)
 
+# Chantier B (L027, 02/07) — clé de snapshot DÉDIÉE base « prix d'émission 7h »
+# (fichier `{date}-12h-emission.json`), distincte du snapshot base-ouverture
+# `{date}-12h.json`. Sépare physiquement les deux bases → aucun mélange possible.
+REPORT_EMISSION_12H = f"{REPORT_12H}-emission"
+
 # Longueur max du rapport (CA-S5 : un suivi reste court, pas un bulletin).
 # Refonte suivi S9 : + tableau « Sélection du jour » en tête (≤ 3 lignes) + sa
 # note + titre du suivi détaillé → marge relevée (reste court : pas un bulletin).
@@ -149,6 +154,18 @@ class SuiviLigne:
     # du matin — MÊME source que le Bilan (bilan_jour.conviction_level), zéro
     # re-dérivation (correction fondateur 01/07, point 9a). None si non mesurable.
     conviction_niveau: Optional[str] = None
+    # Chantier B (règle L027, 02/07) — VALEURS BASE « PRIX D'ÉMISSION 7h » (le
+    # « Prix d'entrée » annoncé au trader dans le bulletin), réservées à la table
+    # « Sélection du jour » (% / max / action / suggestion « vs entrée »). Le
+    # PANORAMA garde les champs ci-dessus (base OUVERTURE de marché). Une cellule
+    # sans prix d'émission stampé → None (zéro invention, pas de repli sur l'ouverture).
+    emission: Optional[float] = None          # prix d'émission 7h (= « Prix d'entrée »)
+    delta_emission: Optional[float] = None    # (courant − émission) / émission * 100
+    fav_now_emission: Optional[float] = None  # % favorable signé, base entrée, créneau courant
+    fav_prec_emission: Optional[float] = None # idem créneau précédent (None au 12h / transition)
+    max_gain_emission: Optional[float] = None # meilleur % favorable atteint, base entrée
+    action_emission: str = "—"                # reco d'action turbo, base entrée
+    suggestion_emission: str = "—"            # suggestion de sortie, base entrée
 
 
 @dataclass
@@ -721,6 +738,44 @@ def briefing_7h_existe(date_j: date, bulletins_dir: Path) -> bool:
     return False
 
 
+def load_emission_7h(
+    date_j: date,
+    bulletins_dir: Path,
+    prix_emission_dir: Optional[Path] = None,
+) -> Dict[str, float]:
+    """Prix d'émission 7h {ticker: prix} du jour — le « Prix d'entrée » du bulletin.
+
+    Chantier B (règle L027, 02/07) : la table « Sélection du jour » du suivi mesure
+    son % CONTRE ce prix (celui annoncé au trader), pas contre l'ouverture stampée.
+    RÉUTILISE EXACTEMENT la source du Bilan (`mesure_bilan.load_cells_et_prix_7h` :
+    bulletins 7h du jour → `journaliste.load_prix_emission` par identité de bulletin,
+    fusionnés). Zéro invention : aucun bulletin 7h / stamp absent → {} (la table
+    affichera « — », jamais un prix d'entrée fabriqué). Best-effort : erreur → {}.
+    """
+    import journaliste as J  # noqa: PLC0415
+
+    base = prix_emission_dir if prix_emission_dir is not None else J.PRIX_EMISSION_DIR
+    out: Dict[str, float] = {}
+    try:
+        for p in J.list_bulletins(bulletins_dir):
+            bid = J.bulletin_id_from_path(p)
+            if bid is None:
+                continue
+            try:
+                if J.date.fromisoformat(bid[:10]) != date_j:
+                    continue
+            except (ValueError, AttributeError):
+                continue
+            if not J.is_seven_am_bulletin(bid):
+                continue
+            for k, v in J.load_prix_emission(bid, base).items():
+                out.setdefault(k, v)
+    except Exception as e:  # noqa: BLE001 — best-effort, dégrade proprement
+        logger.warning("load_emission_7h KO (%s) — table Sélection sans base entrée", e)
+        return {}
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Persistance des deltas pour la dynamique de tendance (Δ vs suivi précédent)
 # ---------------------------------------------------------------------------
@@ -1237,36 +1292,44 @@ def save_suivi_tracking(
     report_type: str,
     lignes: List["SuiviLigne"],
     now: datetime,
-    base_dir: Path = SUIVI_TRACKING_DIR,
+    base_dir: Optional[Path] = None,
 ) -> Optional[Path]:
     """Persiste le relevé du créneau pour les cellules de la Sélection du jour.
 
     Écrit `{date}.json` avec un bloc par créneau (clé "12h"/"18h") :
-        {"12h": {"<actif>": {"call": "LONG", "fav_pct": 1.0, "heure": "12h05"}}}
+        {"base": "emission",
+         "12h": {"<actif>": {"call": "LONG", "fav_pct": 1.0, "heure": "12h05"}}}
+    BASE ÉMISSION (L027, chantier vague finale 02/07) : `fav_pct` est désormais le
+    % favorable vs PRIX D'ÉMISSION 7h (`fav_now_emission`, mêmes prix que la table
+    Sélection via `load_prix_emission`), plus vs ouverture. Le champ top-level
+    `base: "emission"` marque cette base ; son ABSENCE (snapshots antérieurs) = base
+    ouverture → les lecteurs aval affichent « — » sur base non concordante (zéro
+    conversion cachée, zéro mélange de bases).
     IDEMPOTENT : relit le fichier, remplace SEULEMENT le bloc du créneau courant,
     réécrit le tout (rejouer le 12h ne touche pas le 18h, et inversement). Seules
-    les lignes `selection=True` AVEC un `fav_now` calculable sont écrites (zéro
-    invention : un actif sans relevé exploitable est absent → trou explicite côté
-    Bilan). Retourne le chemin écrit, ou None si rien à écrire (aucune sélection
-    relevable ce créneau — on n'écrase alors PAS un bloc existant).
+    les lignes `selection=True` AVEC un `fav_now_emission` calculable sont écrites
+    (zéro invention : un actif sans relevé émission exploitable est absent → trou
+    explicite côté Bilan). Retourne le chemin écrit, ou None si rien à écrire.
+    `base_dir=None` → résolu dynamiquement sur la constante module (testable par
+    monkeypatch : évite la pollution de v3/data en test).
     """
+    if base_dir is None:
+        base_dir = SUIVI_TRACKING_DIR
     bloc: Dict[str, dict] = {}
     for li in lignes:
-        if not li.selection or li.fav_now is None:
+        if not li.selection or li.fav_now_emission is None:
             continue
         rec = {
             "call": li.call,
-            "fav_pct": li.fav_now,
+            "fav_pct": li.fav_now_emission,
             "heure": now.strftime("%Hh%M"),
         }
-        # Champs ADDITIFS (brief S9) — excursions max depuis l'ouverture, pour que
-        # le Bilan du soir lise « meilleur/pire point » du créneau s'il le souhaite.
-        # On n'écrit que ce qui est calculable (zéro invention) ; les clés
-        # existantes (call/fav_pct/heure) sont INCHANGÉES (compat bilan_jour).
-        if li.max_favorable_pct is not None:
-            rec["max_fav_pct"] = li.max_favorable_pct
-        if li.max_adverse_pct is not None:
-            rec["max_adv_pct"] = li.max_adverse_pct
+        # Champ ADDITIF — meilleur % favorable atteint depuis l'ÉMISSION (même base
+        # que fav_pct), pour que le Bilan du soir lise « meilleur point » du créneau.
+        # On n'écrit que ce qui est calculable (zéro invention) ; pas d'excursion
+        # adverse base émission → on n'écrit pas max_adv (jamais de base ouverture ici).
+        if li.max_gain_emission is not None:
+            rec["max_fav_pct"] = li.max_gain_emission
         bloc[li.actif] = rec
     if not bloc:
         return None
@@ -1281,6 +1344,7 @@ def save_suivi_tracking(
         except (OSError, json.JSONDecodeError):
             data = {}
     data[report_type] = bloc
+    data["base"] = "emission"  # marqueur de base (absence = ouverture, cf. lecteurs aval)
     p.write_text(
         json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -1314,6 +1378,12 @@ def load_suivi_tracking(
             if isinstance(rec, dict):
                 clean[str(actif)] = rec
         out[str(slot)] = clean
+    # Marqueur de base du snapshot (L027) : "emission" si présent, sinon "ouverture"
+    # (snapshots antérieurs). Exposé sous une clé réservée `_base` (hors VALID_REPORTS,
+    # donc ignorée par les itérations de slots) pour que les lecteurs aval évitent tout
+    # mélange de bases (afficher « — » quand la base ne concorde pas avec leur calcul).
+    base_val = data.get("base")
+    out["_base"] = "emission" if base_val == "emission" else "ouverture"  # type: ignore[assignment]
     return out
 
 
@@ -1335,6 +1405,7 @@ def build_suivi(
     config: Optional[dict] = None,
     collect_light: Optional[Callable[[], list]] = None,
     futures_us_dir: Path = FUTURES_US_DIR,
+    prix_emission_dir: Optional[Path] = None,
 ) -> SuiviRapport:
     """Construit le rapport de suivi 12h/18h (R2/R3).
 
@@ -1374,6 +1445,10 @@ def build_suivi(
         prix_ouverture_dir = MO.PRIX_OUVERTURE_DIR
     band = MO.neutral_band_pct(config)
     ouvertures = MO.load_prix_ouverture(date_j, prix_ouverture_dir)
+    # Chantier B (L027, 02/07) — prix d'émission 7h ({ticker: prix} = « Prix d'entrée »
+    # du bulletin) : base de calcul de la table « Sélection du jour ». {} si stamp
+    # absent → la table affiche « — » (zéro invention). Le PANORAMA reste vs ouverture.
+    emissions = load_emission_7h(date_j, bulletins_dir, prix_emission_dir)
     cells = load_briefing_cells(date_j, bulletins_dir)
     # GARDE-FOU HONNÊTETÉ (brief S9) : un Briefing 7h archivé en cours de journée
     # rendait `cells` vide → tableau VIDE silencieux (cause du suivi 18h vide
@@ -1393,10 +1468,20 @@ def build_suivi(
 
     # Snapshot du suivi précédent (12h) pour la dynamique au 18h.
     prev = load_delta_snapshot(date_j, REPORT_12H, suivi_dir) if report_type == REPORT_18H else {}
+    # Chantier B (L027, 02/07) — snapshot 12h DÉDIÉ base ENTRÉE (fichier séparé
+    # `{date}-12h-emission.json`) pour la colonne « % 12h » de la table Sélection au
+    # 18h. TRANSITION : si un ancien snapshot 12h (base ouverture) est le seul présent,
+    # ce fichier-là est ABSENT → prev_em vide → « % 12h » = « — » (zéro faux Δ
+    # inter-bases ; on ne mélange JAMAIS un 12h base-ouverture avec un 18h base-entrée).
+    prev_em = (
+        load_delta_snapshot(date_j, REPORT_EMISSION_12H, suivi_dir)
+        if report_type == REPORT_18H else {}
+    )
 
     rapport = SuiviRapport(date_j=date_j, now=now, report_type=report_type)
     rapport.briefing_introuvable = briefing_introuvable
     deltas_now: Dict[str, Optional[float]] = {}
+    deltas_em_now: Dict[str, Optional[float]] = {}
     # Cache des séries 1h par ticker (1 fetch/ticker pour TOUT le suivi). Sert au
     # relevé de prix (cascade 1h → spot) ET aux excursions intraday max (réutilise
     # mesure_bilan). Best-effort : un fetch KO → None (le spot reste le fallback).
@@ -1535,6 +1620,33 @@ def build_suivi(
         # Reco d'action turbo (remplace Vendre/Pas vendre).
         action = compute_action(fav_now_v, max_gain, seuil)
 
+        # --- Chantier B (L027, 02/07) — valeurs BASE « PRIX D'ÉMISSION 7h » pour la
+        # table Sélection : % / max / action / suggestion contre le « Prix d'entrée »
+        # annoncé au trader (émission), pas contre l'ouverture. MÊMES primitives, MÊMES
+        # seuils que la base ouverture (compute_*/excursions_suivi) → seul le prix de
+        # référence change. Émission absente → tout reste None (zéro invention).
+        emission = emissions.get(ticker)
+        delta_em = None
+        if isinstance(emission, (int, float)) and isinstance(prix_courant, (int, float)) and emission:
+            delta_em = round((prix_courant - emission) / emission * 100.0, 2)
+        deltas_em_now[actif] = delta_em
+        fav_now_em = fav_delta(delta_em, call)
+        # % 12h base entrée : recalculé depuis le snapshot 12h base-entrée (fichier
+        # dédié). Absent (transition) → None → « — » (jamais un Δ inter-bases).
+        delta_prec_em = prev_em.get(actif)
+        fav_prec_em = (
+            fav_delta(delta_prec_em, call)
+            if isinstance(delta_prec_em, (int, float)) else None
+        )
+        # Excursion max favorable base entrée (même primitive, réf. = émission).
+        max_fav_em, _max_adv_em = excursions_suivi(
+            ticker, series_1h, date_j, emission, call
+        )
+        max_gain_em = max_gain_suivi(max_fav_em, fav_now_em)
+        statut_em = compute_statut(delta_em, call, band)
+        suggestion_em = compute_suggestion(delta_em, call, seuil, statut_em)
+        action_em = compute_action(fav_now_em, max_gain_em, seuil)
+
         rapport.lignes.append(SuiviLigne(
             actif=actif, call=call, ouverture=ouverture, prix_courant=prix_courant,
             delta_pct=delta, statut=statut, tendance=tendance,
@@ -1550,6 +1662,12 @@ def build_suivi(
             max_favorable_pct=(round(max_fav, 2) if max_fav is not None else None),
             max_adverse_pct=(round(max_adv, 2) if max_adv is not None else None),
             max_gain_pct=max_gain, action=action,
+            # Chantier B (L027, 02/07) — base ENTRÉE pour la table Sélection.
+            emission=emission, delta_emission=delta_em,
+            fav_now_emission=(round(fav_now_em, 2) if fav_now_em is not None else None),
+            fav_prec_emission=(round(fav_prec_em, 2) if fav_prec_em is not None else None),
+            max_gain_emission=max_gain_em, action_emission=action_em,
+            suggestion_emission=suggestion_em,
         ))
 
     # FIX 2a/2c (fondateur 23/06) — la section news est CENTRÉE sur les paris :
@@ -1586,12 +1704,19 @@ def build_suivi(
                 conviction_level(rec, score_fort_seuil)
                 if li.conviction is not None else None
             )
-            # VRAIE raison du call (drivers du score 7h) UNIQUEMENT pour les
-            # positions de la Sélection (« pourquoi on tient » — comme jour/semaine).
+            # JUSTIFICATION UNIQUE bulletin↔suivi (règle 02/07) : le bulletin PERSISTE
+            # le texte EXACT de sa justification (`selection_raison` du decision-log,
+            # formulé par scoring_analyste._raison_pari_affichee). Le suivi l'affiche
+            # VERBATIM → un SEUL texte pour le même pari. Fallback (vieux logs sans le
+            # champ) : les drivers du call (`drivers_du_call`), MENTIONNÉS « (reconstitué) ».
             if li.selection:
-                drivers = J.drivers_du_call(rec, li.call)
-                if drivers:
-                    li.raison_call = " + ".join(drivers)
+                persist = rec.get("selection_raison")
+                if isinstance(persist, str) and persist.strip():
+                    li.raison_call = persist.strip()
+                else:
+                    drivers = J.drivers_du_call(rec, li.call)
+                    if drivers:
+                        li.raison_call = " + ".join(drivers) + " (reconstitué)"
     except Exception as e:  # noqa: BLE001 — best-effort, jamais bloquant
         logger.warning("build_suivi: conviction/raison_call KO (non bloquant) : %s", e)
 
@@ -1624,6 +1749,10 @@ def build_suivi(
     # Persiste les deltas du 12h pour le suivi 18h (cache de présentation only).
     if report_type == REPORT_12H:
         save_delta_snapshot(date_j, REPORT_12H, deltas_now, suivi_dir)
+        # Chantier B (L027, 02/07) — snapshot 12h DÉDIÉ base ENTRÉE (fichier séparé),
+        # lu au 18h pour la colonne « % 12h » de la table Sélection SANS mélanger les
+        # bases. Aucun ancien snapshot n'est écrasé (clé de fichier distincte).
+        save_delta_snapshot(date_j, REPORT_EMISSION_12H, deltas_em_now, suivi_dir)
         # Persiste aussi les titres frais affichés au 12h → dédup au 18h.
         save_titres_frais_snapshot(date_j, REPORT_12H, titres_frais, suivi_dir)
 
@@ -1691,11 +1820,13 @@ def _fmt_call_conviction(
 def _render_selection_table(r: SuiviRapport) -> List[str]:
     """Tableau de PROGRESSION focalisé « Sélection du jour » (top ≤3), en tête.
 
-    Colonnes : Actif | Call 7h | % vs ouv. 12h | % vs ouv. 18h | Tendance |
-    Vendre / Pas vendre. Le `%` est le mouvement directionnel signé FAVORABLE
-    (`+` = va dans le sens du call, `−` = contre nous). Au 12h : seule la colonne
-    « 12h » est remplie. Au 18h : les deux. Si aucune cellule `selection_du_jour`
-    ce jour-là → « Pas de sélection aujourd'hui » (zéro invention).
+    Colonnes : Actif | Call 7h | Entrée | Prix | % vs entrée 12h | % vs entrée 18h |
+    Max gain | Gagné>1% | Action. Le `%` est le mouvement directionnel signé
+    FAVORABLE (`+` = sens du call, `−` = contre) mesuré vs le PRIX D'ÉMISSION 7h
+    (« Prix d'entrée » du bulletin — règle L027, 02/07), PAS vs l'ouverture (le
+    PANORAMA, lui, reste vs ouverture). Au 12h : seule la colonne « 12h » est
+    remplie. Au 18h : les deux (la « 12h » = « — » en transition, jamais un Δ
+    inter-bases). Aucune cellule `selection_du_jour` → « Pas de sélection » (zéro invention).
     """
     L: List[str] = []
     L.append("### Sélection du jour — progression")
@@ -1717,13 +1848,16 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
     # répétaient la direction (SHORT … SHORT -2.88) → UNE seule colonne « Call 7h »
     # qui porte direction + note signée. Ajout d'Ouverture + Prix (prix d'entrée
     # manquant, fondateur 30/06). Prix {hour} = dernier prix au moment du rapport.
+    # Chantier B (L027, 02/07) — la table Sélection mesure vs le PRIX D'ÉMISSION 7h
+    # (le « Prix d'entrée » annoncé au trader dans le bulletin), PAS vs l'ouverture :
+    # colonne « Entrée » + en-tête « % vs entrée ». Le PANORAMA, lui, reste vs ouverture.
     L.append(
         "| Actif "
         "| <span class=\"c-full\">Call 7h · conviction</span><span class=\"c-short\">Call</span> "
-        "| Ouverture "
+        "| Entrée "
         f"| <span class=\"c-full\">Prix {hour_label}</span><span class=\"c-short\">Prix</span> "
-        "| <span class=\"c-full\">% vs ouv. 12h</span><span class=\"c-short\">% 12h</span> "
-        "| <span class=\"c-full\">% vs ouv. 18h</span><span class=\"c-short\">% 18h</span> "
+        "| <span class=\"c-full\">% vs entrée 12h</span><span class=\"c-short\">% 12h</span> "
+        "| <span class=\"c-full\">% vs entrée 18h</span><span class=\"c-short\">% 18h</span> "
         "| <span class=\"c-full\">Max gain jour</span><span class=\"c-short\">Max</span> "
         "| <span class=\"c-full\">Gagné &gt; 1 % ?</span><span class=\"c-short\">&gt;1%</span> "
         "| Action |"
@@ -1731,32 +1865,34 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
     L.append("|---|---|---|---|---|---|---|---|---|")
     for li in selection:
         if is_12h:
-            # Au 12h : colonne 12h = favorable courant, colonne 18h = vide.
-            col_12 = _fmt_fav(li.fav_now)
+            # Au 12h : colonne 12h = favorable courant (base entrée), colonne 18h vide.
+            col_12 = _fmt_fav(li.fav_now_emission)
             col_18 = "—"
         else:
-            # Au 18h : colonne 12h = favorable précédent (snapshot 12h), 18h = courant.
-            col_12 = _fmt_fav(li.fav_prec)
-            col_18 = _fmt_fav(li.fav_now)
-        # Max gain du jour atteint (1h ∪ courant) + statut vs cible turbo > 1 %.
+            # Au 18h : colonne 12h = favorable précédent (snapshot 12h base ENTRÉE ;
+            # « — » en transition, jamais un Δ inter-bases), 18h = courant base entrée.
+            col_12 = _fmt_fav(li.fav_prec_emission)
+            col_18 = _fmt_fav(li.fav_now_emission)
+        # Max gain du jour atteint base ENTRÉE + statut vs cible turbo > 1 %.
         # Garde-fou plausibilité (point 3) : suffixe « ⚠️ à vérifier » si aberrant.
-        col_max = _fmt_max_gain(li.max_gain_pct, li.seuil_pct)
-        col_statut = statut_max_gain(li.max_gain_pct)
+        col_max = _fmt_max_gain(li.max_gain_emission, li.seuil_pct)
+        col_statut = statut_max_gain(li.max_gain_emission)
         # Colonne 1 fusionnée : direction + LIBELLÉ de conviction + note signée du
         # signal 7h (point 9a — « forte (+8.77) » ; même source que le Bilan).
         col_call = _fmt_call_conviction(li.call, li.conviction, li.conviction_niveau)
         L.append(
-            f"| {li.actif} | {col_call} | {_fmt_price(li.ouverture)} | "
+            f"| {li.actif} | {col_call} | {_fmt_price(li.emission)} | "
             f"{_fmt_price(li.prix_courant)} | {col_12} | {col_18} | "
-            f"{col_max} | {col_statut} | **{li.action}** |"
+            f"{col_max} | {col_statut} | **{li.action_emission}** |"
         )
     L.append("")
     # FIX 4 (fondateur 23/06) — légende courte : 1 phrase, détail replié.
     L.append(
         "_Call 7h = direction · conviction (note signée du signal 7h : plus c'est fort, "
-        "plus le pari est tranché). % 12h / 18h = évolution du call ; Max gain = meilleur "
-        "% atteint depuis l'entrée (> 1 % = gagné). **Action** : 🟢 laisse courir · 🟡 "
-        "sécurise (gain qui reflue sous la moitié du pic) · 🔴 coupe (pari cassé) · ⚪ tiens._"
+        "plus le pari est tranché). % 12h / 18h = évolution du call vs le prix d'entrée "
+        "7h ; Max gain = meilleur % atteint depuis l'entrée (> 1 % = gagné). **Action** : "
+        "🟢 laisse courir · 🟡 sécurise (gain qui reflue sous la moitié du pic) · 🔴 coupe "
+        "(pari cassé) · ⚪ tiens._"
     )
     L.append("")
     # Pourquoi on tient ces positions : la VRAIE raison du call (drivers du score à
@@ -1951,19 +2087,21 @@ def _render_markdown(r: SuiviRapport) -> str:
     # Cohérent avec la colonne « Action » (fondateur 24/06, source unique) : on
     # remonte les paris qui demandent un geste — 🔴 Coupe (pari cassé) ou 🟡 Sécurise
     # (gain qui reflue sous la moitié du pic). Drapeaux : Thomas décide.
+    # Chantier B (L027, 02/07) : les suggestions portent sur les PARIS → base ENTRÉE
+    # (cohérent avec la colonne « Action » de la table Sélection, source unique).
     a_agir = [li for li in r.lignes
-              if li.selection and li.action[:1] in ("🔴", "🟡")]
+              if li.selection and li.action_emission[:1] in ("🔴", "🟡")]
     if a_agir:
         for li in a_agir:
-            if li.action.startswith("🔴"):
+            if li.action_emission.startswith("🔴"):
                 L.append(
-                    f"- 🔴 **{li.actif}** ({li.call}) : {_fmt_fav(li.fav_now)} contre "
+                    f"- 🔴 **{li.actif}** ({li.call}) : {_fmt_fav(li.fav_now_emission)} contre "
                     f"le call (seuil {_fmt_pct(li.seuil_pct, signed=False)}) → couper."
                 )
             else:  # 🟡 Sécurise
                 L.append(
-                    f"- 🟡 **{li.actif}** ({li.call}) : a fait {_fmt_pct(li.max_gain_pct)} "
-                    f"de max, retombé à {_fmt_fav(li.fav_now)} → sécuriser une partie."
+                    f"- 🟡 **{li.actif}** ({li.call}) : a fait {_fmt_pct(li.max_gain_emission)} "
+                    f"de max, retombé à {_fmt_fav(li.fav_now_emission)} → sécuriser une partie."
                 )
     else:
         # Point 6 (fondateur 01/07) — cohérence : plus jamais « 4 Coupe en haut /
@@ -2029,7 +2167,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     except Exception as e:  # noqa: BLE001
         logger.error("run_suivi KO : %s", e)
         return 1
-    n_sorties = sum(1 for li in rapport.lignes if li.suggestion == "Sortie à envisager")
+    # Chantier B (L027, 02/07) : les suggestions de sortie portent sur les PARIS
+    # (selection) et sur la base ENTRÉE (cohérent avec le bloc « Suggestions de sortie »).
+    n_sorties = sum(
+        1 for li in rapport.lignes
+        if li.selection and li.suggestion_emission == "Sortie à envisager"
+    )
     logger.info(
         "OK : %s (%d positions, %d suggestions de sortie)",
         out_path, len(rapport.lignes), n_sorties,
@@ -2062,6 +2205,8 @@ __all__ = [
     "excursions_suivi",
     "load_briefing_cells",
     "briefing_7h_existe",
+    "load_emission_7h",
+    "REPORT_EMISSION_12H",
     "save_delta_snapshot",
     "load_delta_snapshot",
     "news_a_impact",

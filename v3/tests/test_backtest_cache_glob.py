@@ -41,6 +41,14 @@ def no_yfinance(monkeypatch):
     Garantit que le chemin cache-hit testé n'effleure JAMAIS yfinance — donc
     le test passe dans cet environnement où yfinance est absent, ET il
     régresserait bruyamment si le chemin cache-hit se remettait à importer yf."""
+    # pandas est une dépendance CI (v3/requirements.txt: pandas==2.2.2, installée par
+    # `pip install -r v3/requirements.txt` dans cycle.yml/test-extraction.yml) mais
+    # absente de ce conteneur local. Les 5 tests cache-hit qui traversent
+    # historical_data (→ pandas) sont skippés proprement ici, JAMAIS en CI.
+    pytest.importorskip(
+        "pandas",
+        reason="pandas (dépendance CI v3/requirements.txt) absente du conteneur local",
+    )
     monkeypatch.setitem(sys.modules, "yfinance", None)
     yield
 

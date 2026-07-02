@@ -346,11 +346,13 @@ def test_filtre_7h_reconnaissance_creneaux():
 def test_seul_7h_compte_dans_kpi(tmp_path):
     """3 bulletins le même jour → seul le 7h donne une mesure NOTÉE (N_brut=1).
 
-    Date POST-cutover (GC=F/Or est reset au 2026-06-17 depuis le cutover « fix
-    L027 — référence continus = émission 7h ») : on date le bulletin au 2026-06-17
-    pour que l'observation entre bien dans le KPI v2 et que le test isole son objet
-    réel (filtre 7h vs 12h/18h, CA-M6b), sans interférence de l'enforcement cutover.
-    Or étant un continu, la référence est l'ÉMISSION 7h (fix L027) → on la stampe.
+    Objet du test : le filtre 7h (CA-M6b, `only_seven_am`) — 12h/18h restent
+    NON_NOTE. Pour l'ISOLER de l'enforcement cutover (le ref_changed de GC=F a
+    été déplacé au 2026-06-30 par le reset du 30/06, cf. CHANGELOG — un bulletin
+    daté avant serait filtré du KPI v2 → n_total=0, parasitant CA-M6b), on injecte
+    un `ref_registry={}` neutre : GC=F devient hors-registre → aucun cutover, seul
+    le filtre 7h joue. Or étant un continu, la référence est l'ÉMISSION 7h (fix
+    L027) → on la stampe.
     """
     bdate = date(2026, 6, 17)
     today = jr.compute_echeance(bdate, "24h")
@@ -375,6 +377,7 @@ def test_seul_7h_compte_dans_kpi(tmp_path):
         today=today, bulletins_dir=bulletins, prix_emission_dir=prix_emis,
         prix_ouverture_dir=prix_ouv, fiches={"or": FICHE_OR},
         fetch_price=lambda t: 3460.0,
+        ref_registry={},  # neutralise le cutover → isole le filtre 7h (CA-M6b)
     )
     m24 = [m for m in measures if m.horizon == "24h"]
     notes = [m for m in m24 if m.outcome in (jr.OUTCOME_VRAI, jr.OUTCOME_FAUSSE, jr.OUTCOME_NC)]

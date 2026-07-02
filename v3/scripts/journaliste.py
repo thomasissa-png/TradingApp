@@ -1190,6 +1190,13 @@ class Measure:
     max_gain_pct: Optional[float] = None
     prix_cloture_source: Optional[str] = None
     prix_cloture_heure: Optional[str] = None
+    # Garde-fou fraîcheur fournisseur (vague finale 02/07) — True si le prix
+    # d'échéance/close retenu est STRICTEMENT identique à celui de l'échéance
+    # précédente du même ticker (staleness provider observée : cf. coton COTN figé
+    # à 2.371 les 29 ET 30/06). FLAG-ONLY : l'outcome n'est JAMAIS modifié (doctrine
+    # « mesurer avant d'agir ») ; seul l'affichage est suffixé d'un ⚠️. None = non
+    # évalué / pas d'échéance précédente comparable (zéro invention).
+    prix_suspect_stale: Optional[bool] = None
 
 
 def measure_cell(
@@ -2320,6 +2327,12 @@ def measure(
         else:
             m.system_version = "v2" if m.cell.bulletin_date >= rc_m else "v1"
 
+    # Garde-fou fraîcheur fournisseur — flag (jamais d'invalidation) les mesures dont
+    # le prix d'échéance/close est STRICTEMENT figé vs l'échéance précédente du même
+    # ticker (staleness provider). Comparaison sur les prix effectivement retenus ce
+    # run (re-dérivation déterministe des échéances) → même verdict que measures-log.
+    _flag_prix_suspect_stale(measures)
+
     # Agrégation par cellule
     by_cell: Dict[Tuple[str, str], List[Measure]] = {}
     for m in measures:
@@ -2343,6 +2356,29 @@ def measure(
         kpis[key] = compute_kpi(ms_kpi)
 
     return measures, kpis
+
+
+def _flag_prix_suspect_stale(measures: List[Measure]) -> None:
+    """Marque `prix_suspect_stale=True` (FLAG-ONLY, aucun changement d'outcome) sur les
+    mesures dont le prix d'échéance/close est STRICTEMENT identique à celui de l'échéance
+    IMMÉDIATEMENT PRÉCÉDENTE du même ticker+horizon (staleness fournisseur observée :
+    coton figé à 2.371 les 29 ET 30/06). Zéro invention : rien n'est flaggé sans une
+    échéance précédente comparable (deux prix non-None strictement égaux)."""
+    from collections import defaultdict  # noqa: PLC0415
+    groups: Dict[Tuple[str, str], List[Measure]] = defaultdict(list)
+    for m in measures:
+        if m.prix_courant is not None:
+            groups[(m.ticker, m.horizon)].append(m)
+    for ms in groups.values():
+        ms.sort(key=lambda m: m.echeance)
+        for prev, cur in zip(ms, ms[1:]):
+            if (
+                prev.echeance != cur.echeance
+                and isinstance(prev.prix_courant, (int, float))
+                and isinstance(cur.prix_courant, (int, float))
+                and float(cur.prix_courant) == float(prev.prix_courant)
+            ):
+                cur.prix_suspect_stale = True
 
 
 def _apply_ref_changed_cutover(
@@ -3235,7 +3271,10 @@ def render_performance_ab(
     return "\n".join(lines)
 
 
-def write_performance_ab(content: str, path: Path = PERFORMANCE_AB_FILE) -> Path:
+def write_performance_ab(content: str, path: Optional[Path] = None) -> Path:
+    # path=None → constante module résolue dynamiquement (monkeypatch → zéro pollution).
+    if path is None:
+        path = sys.modules[__name__].PERFORMANCE_AB_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     return path
@@ -3414,6 +3453,10 @@ def measure_to_record(m: Measure) -> Dict[str, Any]:
         # ("v1" avant ref_changed pour une cellule reset, "v2" après / hors
         # registre). None possible (rétro-compat / mesure non stampée).
         "system_version": m.system_version,
+        # Garde-fou fraîcheur fournisseur (FLAG-ONLY, n'altère jamais l'outcome) :
+        # True si le prix d'échéance est strictement figé vs l'échéance précédente
+        # du même ticker. None = non suspect / non évalué (zéro invention).
+        "prix_suspect_stale": m.prix_suspect_stale,
     }
 
 

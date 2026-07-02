@@ -1024,3 +1024,68 @@ def test_enrich_picks_inclut_vendredi_echeance_lundi(tmp_path, monkeypatch):
     assert p.conviction_signee == -9.51                      # conviction signée peuplée
     assert (p.perf_12h, p.perf_18h) == (-3.26, -5.08)        # % intraday peuplés
     assert p.max_gain_pct == 1.44                            # max gain jour peuplé
+
+
+# ---------------------------------------------------------------------------
+# Shadow Top 1 vs Top 3 — instrumentation du cumul (point c, reco 28/06).
+# Persistance jsonl idempotente par semaine + affichage « en chauffe ».
+# tmp_path uniquement, jamais le vrai v3/data.
+# ---------------------------------------------------------------------------
+
+def _bilan_shadow(iso, picks, path):
+    """Rend la sous-section shadow sur un jsonl injecté (tmp_path) et renvoie le md."""
+    lundi, dimanche = date(2026, 6, 15), date(2026, 6, 21)
+    bilan = rw.BilanSemaine(iso=iso, lundi=lundi, dimanche=dimanche, now=NOW, picks=picks)
+    L = []
+    rw._render_mesures_shadow(bilan, L, selection_wr_path=path)
+    return "\n".join(L)
+
+
+def test_selection_wr_persiste_une_entree_par_semaine(tmp_path):
+    p = tmp_path / "selection-wr.jsonl"
+    entries = rw._persist_selection_wr("2026-W25", 66.0, 3, 50.0, 6, p)
+    assert entries == [{"semaine": "2026-W25", "wr_top1": 66.0, "n_top1": 3,
+                        "wr_top3": 50.0, "n_top3": 6}]
+    assert rw._read_selection_wr(p) == entries
+
+
+def test_selection_wr_idempotent_meme_semaine_remplace(tmp_path):
+    p = tmp_path / "selection-wr.jsonl"
+    rw._persist_selection_wr("2026-W25", 66.0, 3, 50.0, 6, p)
+    rw._persist_selection_wr("2026-W25", 100.0, 4, 75.0, 8, p)  # même semaine → remplace
+    entries = rw._read_selection_wr(p)
+    assert len(entries) == 1                       # pas de doublon
+    assert entries[0]["wr_top1"] == 100.0 and entries[0]["n_top1"] == 4
+
+
+def test_cumul_selection_wr_pondere_par_n(tmp_path):
+    p = tmp_path / "selection-wr.jsonl"
+    rw._persist_selection_wr("2026-W25", 100.0, 1, 50.0, 2, p)   # top1 1 VRAI/1
+    rw._persist_selection_wr("2026-W26", 0.0, 1, 50.0, 2, p)     # top1 0 VRAI/1
+    cwr1, cn1, cwr3, cn3, nsem = rw._cumul_selection_wr(rw._read_selection_wr(p))
+    assert (cn1, cn3, nsem) == (2, 4, 2)
+    assert cwr1 == 50.0 and cwr3 == 50.0          # pondéré par N : (100*1+0*1)/2 = 50
+
+
+def test_shadow_affiche_en_chauffe_sous_3_semaines(tmp_path):
+    p = tmp_path / "selection-wr.jsonl"
+    lun = date(2026, 6, 15)
+    picks = [_pick("Or", "SHORT", "VRAI", 0.0, mv=4.0, score=-5.0, bdate=lun),
+             _pick("Blé", "SHORT", "FAUSSE", 0.0, mv=-2.0, score=-1.0, bdate=lun)]
+    md = _bilan_shadow("2026-W25", picks, p)
+    assert "Écart Top 1 vs Top 3" in md
+    assert "en chauffe" in md and "< 3 sem" in md
+    assert "en attente d'instrumentation" not in md   # ancien libellé retiré
+    # La semaine a bien été persistée (écriture runtime).
+    assert rw._read_selection_wr(p)[0]["semaine"] == "2026-W25"
+
+
+def test_shadow_affiche_cumul_pondere_des_3_semaines(tmp_path):
+    p = tmp_path / "selection-wr.jsonl"
+    rw._persist_selection_wr("2026-W23", 100.0, 2, 60.0, 5, p)
+    rw._persist_selection_wr("2026-W24", 100.0, 2, 60.0, 5, p)
+    lun = date(2026, 6, 15)
+    picks = [_pick("Or", "SHORT", "VRAI", 0.0, mv=4.0, score=-5.0, bdate=lun),
+             _pick("Blé", "SHORT", "FAUSSE", 0.0, mv=-2.0, score=-1.0, bdate=lun)]
+    md = _bilan_shadow("2026-W25", picks, p)
+    assert "Cumul 3 sem. pondéré par N" in md and "en chauffe" not in md

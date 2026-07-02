@@ -188,6 +188,9 @@ def test_garde_fou_n_inferieur_15_marque_en_chauffe():
 
 
 def test_garde_fou_seuil_exact_15_significatif():
+    # [02/07] wording : « [N=15] » remplacé par la forme claire « cumul depuis
+    # le début, N=15 » (vague hebdo, GO fondateur).
     cell = rw._fmt_news_cell((9, 6))  # N=15
     assert "en chauffe" not in cell
-    assert "[N=15]" in cell
+    assert "N=15" in cell
+    assert "cumul depuis le début" in cell

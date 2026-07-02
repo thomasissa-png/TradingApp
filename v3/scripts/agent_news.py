@@ -33,6 +33,12 @@ from news_collector import collect_all, mark_title_seen  # noqa: E402
 from repo_publisher import RepoPublisher  # noqa: E402
 from source_monitor import SourceMonitor, write_source_health  # noqa: E402
 
+# Chemin de sortie de source-health.md : constante de MODULE (surchargeable par
+# les tests via monkeypatch, cf. conftest _isole_ecritures_data) au lieu d'un
+# import inline de config.DATA_DIR au site d'écriture.
+from config import DATA_DIR as _DATA_DIR  # noqa: E402
+SOURCE_HEALTH_FILE = _DATA_DIR / "source-health.md"
+
 
 # ============================================================
 # Logging
@@ -114,8 +120,7 @@ def run_one_cycle(publisher: RepoPublisher, extractor: Extractor) -> dict:
     # Persiste source-health.md immédiatement (même si 0 filtered en aval).
     # Best-effort : ne casse pas le cycle si l'écriture échoue.
     try:
-        from config import DATA_DIR
-        health_path = DATA_DIR / "source-health.md"
+        health_path = SOURCE_HEALTH_FILE
         write_source_health(monitor, health_path)
         s = monitor.summary()
         logger.info(

@@ -876,6 +876,12 @@ class PerfTop3Ligne:
     # Note de conviction SIGNÉE (score_pm1 → score_pond), affichée dans le tableau —
     # MÊME source que le Suivi (conviction_signee) : « +3.24 », « -9.51 ». None si absent.
     score_conviction_signe: Optional[float] = None
+    # Action RÉELLEMENT affichée par le suivi ce jour, par slot ("12h"/"18h") —
+    # 🟢 Laisse courir / 🟡 Sécurise / 🔴 Coupe / ⚪ Tiens (compute_action reproduit
+    # depuis les relevés persistés). Correction fondateur 01/07 (point 2) : remplace
+    # la reco « Vendre » recalculée qui n'a jamais été affichée. {} / slot absent =
+    # « recommandation du suivi non tracée » (zéro invention).
+    actions_suivi: Optional[Dict[str, str]] = None
 
 
 def _verdict_sortie(
@@ -933,6 +939,7 @@ def compute_perf_top3(
     date_j: Optional[date] = None,
     events_path: Optional[Path] = None,
     conviction_records: Optional[Dict[Tuple[str, str], dict]] = None,
+    actions_map: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> List[PerfTop3Ligne]:
     """Bloc 1 — Performance 24h des cellules de la Sélection du jour (top ≤3).
 
@@ -947,6 +954,7 @@ def compute_perf_top3(
     Tri : par actif (déterministe). Zéro point → ligne avec « — » partout.
     """
     vendre_map = vendre_map or {}
+    actions_map = actions_map or {}
     out: List[PerfTop3Ligne] = []
     for m in measures_24h:
         actif = m.cell.actif_name
@@ -1049,6 +1057,7 @@ def compute_perf_top3(
             max_gain_pct=(round(mg, 2) if isinstance(mg, (int, float)) else None),
             score_conviction=score_conv,
             score_conviction_signe=(round(score_conv_signe, 2) if score_conv_signe is not None else None),
+            actions_suivi=(actions_map.get(actif) or None),
         ))
     out.sort(key=lambda x: x.actif)
     return out
@@ -1190,7 +1199,13 @@ def compute_gros_moves_autres(
             from journaliste import drivers_du_call  # noqa: PLC0415
             drv = drivers_du_call(rec, sens_move)
             if drv:
-                cause_move = "tendance quant (" + " + ".join(drv[:3]) + ")"
+                # Point 3c (fondateur 01/07) : ne PLUS étiqueter en bloc « tendance
+                # quant » — la liste des drivers du score mélange des critères news
+                # (ex. « Tension géopolitique ») et quant (ex. « Tendance du dollar »).
+                # Étiquette neutre et exacte : ce sont nos drivers dominants, sans
+                # asserter une famille qu'on ne vérifie pas ici. (Le tagging news/quant
+                # par critère demande le registre triggers-and-windows.yml — hors scope.)
+                cause_move = "nos drivers dominants (" + " + ".join(drv[:3]) + ")"
         out.append(GrosMoveAutre(
             actif=actif, call=call, mouvement_pct=round(delta, 2),
             direction_juste=direction_juste, raison_non_select=raison,
@@ -1200,6 +1215,68 @@ def compute_gros_moves_autres(
         ))
     out.sort(key=lambda x: abs(x.mouvement_pct), reverse=True)
     return out
+
+
+@dataclass
+class GardeGagnant:
+    """Cellule ÉCARTÉE de la Sélection par un garde-fou, dont le call s'est révélé
+    FAUX → l'exclusion nous a évité une perte (point 4, fondateur 01/07)."""
+    actif: str
+    call: str
+    fav_cloture: Optional[float]   # % favorable signé (négatif : le call aurait perdu)
+    motif: str                     # règle d'exclusion (garde-fou), depuis le decision-log
+
+
+def compute_gardes_gagnants(
+    measures_24h: List[Any],
+    selection_map: Dict[Tuple[str, str], bool],
+    conviction_records: Dict[Tuple[str, str], dict],
+    score_fort_seuil: float,
+    selection_coverage_min: float = 0.70,
+) -> List["GardeGagnant"]:
+    """Point 4 — « Écartés qui ont évité un FAUX » : cellules NON sélectionnées, dont
+    le call est FAUSSE, ET dont le motif d'exclusion est un VRAI garde-fou (pas un
+    simple « hors des 3 meilleures convictions » de classement). Symétrique honnête des
+    occasions manquées. Motif = source unique `reason_non_selection` (decision-log).
+    [] si aucun cas (l'appelant n'affiche alors rien). Zéro invention."""
+    from journaliste import OUTCOME_FAUSSE  # noqa: PLC0415
+    out: List[GardeGagnant] = []
+    for m in measures_24h:
+        actif = m.cell.actif_name
+        if selection_map.get((actif, m.horizon), False):
+            continue
+        if m.outcome != OUTCOME_FAUSSE:
+            continue
+        rec = conviction_records.get((actif, m.horizon))
+        motif = reason_non_selection(actif, rec, score_fort_seuil, selection_coverage_min)
+        # On ne crédite QUE les garde-fous protecteurs. On EXCLUT le motif de pur
+        # classement (« hors des 3 meilleures convictions ») : ne pas être dans le
+        # top 3 n'est pas un garde-fou, et « décision non retrouvée » n'informe pas.
+        low = motif.lower()
+        if "meilleures convictions" in low or "non retrouvée" in low:
+            continue
+        out.append(GardeGagnant(
+            actif=actif, call=m.cell.conclusion,
+            fav_cloture=_fav(m.delta_pct, m.cell.conclusion),
+            motif=motif,
+        ))
+    out.sort(key=lambda g: g.actif)
+    return out
+
+
+def _render_gardes_gagnants(bilan: "BilanJour") -> List[str]:
+    """Point 4 (fondateur 01/07) — « Écartés qui ont évité un FAUX » : symétrique
+    honnête des occasions manquées. Rien affiché s'il n'y a aucun cas (zéro bruit)."""
+    if not bilan.gardes_gagnants:
+        return []
+    L: List[str] = ["**Écartés qui ont évité un FAUX**", ""]
+    for g in bilan.gardes_gagnants:
+        L.append(
+            f"- **{g.actif}** ({g.call}) : écarté par « {g.motif} », le call aurait "
+            f"perdu ({_fmt_pct(g.fav_cloture)} à la clôture). Garde-fou payant."
+        )
+    L.append("")
+    return L
 
 
 def compute_apprentissage_jour(
@@ -1307,6 +1384,11 @@ class BilanJour:
     perf_top3: List[PerfTop3Ligne] = field(default_factory=list)        # Bloc 1
     gros_moves_autres: List[GrosMoveAutre] = field(default_factory=list)  # Bloc 2
     apprentissage: List[str] = field(default_factory=list)             # Bloc 3
+    # Point 4 (fondateur 01/07) — garde-fous gagnants : cellules ÉCARTÉES de la
+    # Sélection par une règle (↯ news à contre-sens, plancher intensité, capteurs
+    # éteints, conviction sous seuil) dont le call s'est révélé FAUX → l'exclusion
+    # nous a évité une perte. Symétrique honnête des « occasions manquées ».
+    gardes_gagnants: List["GardeGagnant"] = field(default_factory=list)
     markdown: str = ""
 
 
@@ -1582,17 +1664,27 @@ def build_bilan_jour(
     # Relevés intraday persistés par run_suivi (call + fav% + heure à 12h/18h).
     # Réutilise le tracking déjà chargé plus haut (fallback clôture).
     tracking = tracking_for_fallback
-    # Reco réelle du suivi 18h (compute_vendre sur fav 12h→18h, source unique).
-    vendre_map = _vendre_reco_18h(tracking)
+    # Action RÉELLE affichée par le suivi 12h/18h (compute_action reproduit depuis les
+    # relevés persistés — MÊME action que celle vue par l'utilisateur, point 2 01/07).
+    seuil_map = {
+        m.cell.actif_name: m.seuil_pct
+        for m in measures_24h
+        if isinstance(getattr(m, "seuil_pct", None), (int, float))
+    }
+    actions_map = _actions_suivi_reelles(tracking, seuil_map)
     conv_records = load_conviction_records(date_j, decision_log_dir)
     score_fort_seuil = _load_score_fort_seuil()
 
     bilan.perf_top3 = compute_perf_top3(
-        measures_24h, selection_map, tracking, vendre_map, date_j=date_j,
+        measures_24h, selection_map, tracking, actions_map=actions_map, date_j=date_j,
         conviction_records=conv_records,
     )
     bilan.gros_moves_autres = compute_gros_moves_autres(
         measures_24h, selection_map, conv_records, score_fort_seuil, date_j=date_j,
+    )
+    # Point 4 (fondateur 01/07) — garde-fous gagnants (écartés-FAUX).
+    bilan.gardes_gagnants = compute_gardes_gagnants(
+        measures_24h, selection_map, conv_records, score_fort_seuil,
     )
     bilan.apprentissage = compute_apprentissage_jour(bilan.perf_top3, bilan.gros_moves_autres)
 
@@ -1609,40 +1701,48 @@ def build_bilan_jour(
     return bilan
 
 
-def _vendre_reco_18h(tracking: Dict[str, Dict[str, dict]]) -> Dict[str, str]:
-    """Reco réelle « Vendre à 18h ? » par actif, recalculée depuis les relevés.
+def _actions_suivi_reelles(
+    tracking: Dict[str, Dict[str, dict]],
+    seuil_map: Optional[Dict[str, float]] = None,
+) -> Dict[str, Dict[str, str]]:
+    """Action RÉELLEMENT affichée par le suivi à 12h / 18h, par actif et par slot.
 
-    Réutilise `run_suivi.compute_vendre` (source de vérité unique, Vague A) sur le
-    couple (fav 18h, fav 12h) persisté. Le compute_vendre raisonne en delta signé
-    (et non en favorable) → on remonte le delta = fav / sens(call). band=0 ici (le
-    suivi a déjà filtré la bande neutre ; on ne ré-applique pas un seuil arbitraire,
-    on reproduit juste la décision verrou/coupe). {} si pas de relevé 18h.
+    Correction fondateur 01/07 (point 2) : le bloc « Sortie » citait une reco
+    « Vendre / Pas vendre » RECALCULÉE (compute_vendre) qui n'a JAMAIS été affichée
+    à l'utilisateur — le suivi affiche 🟢 Laisse courir / 🟡 Sécurise / 🔴 Coupe /
+    ⚪ Tiens (run_suivi.compute_action). On reproduit EXACTEMENT compute_action depuis
+    les relevés persistés (suivi-tracking : `fav_pct` + `max_fav_pct` par slot) pour
+    restituer l'action réelle, avec le seuil de coupe de l'actif (`seuil_map`, issu
+    des mesures du jour — MÊME source que le suivi). Un slot non relevé (ou seuil
+    absent alors que fav < 0, cas où 🔴 Coupe / ⚪ Tiens serait indécidable) → absent,
+    l'appelant écrira « recommandation du suivi non tracée ». Zéro invention.
     """
     try:
-        from run_suivi import compute_vendre, call_sign  # noqa: PLC0415
+        from run_suivi import compute_action, call_sign  # noqa: PLC0415
     except ImportError:  # pragma: no cover
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from run_suivi import compute_vendre, call_sign  # noqa: PLC0415
+        from run_suivi import compute_action, call_sign  # noqa: PLC0415
 
-    out: Dict[str, str] = {}
-    bloc_18h = tracking.get("18h") or {}
-    bloc_12h = tracking.get("12h") or {}
-    for actif, rec18 in bloc_18h.items():
-        if not isinstance(rec18, dict):
-            continue
-        call = str(rec18.get("call", ""))
-        sign = call_sign(call)
-        fav18 = rec18.get("fav_pct")
-        if sign is None or not isinstance(fav18, (int, float)):
-            continue
-        delta18 = fav18 / sign
-        rec12 = bloc_12h.get(actif)
-        delta12 = None
-        if isinstance(rec12, dict) and isinstance(rec12.get("fav_pct"), (int, float)):
-            s12 = call_sign(str(rec12.get("call", "")))
-            if s12 is not None:
-                delta12 = rec12["fav_pct"] / s12
-        out[actif] = compute_vendre(delta18, delta12, call, 0.0)
+    seuil_map = seuil_map or {}
+    out: Dict[str, Dict[str, str]] = {}
+    for slot in ("12h", "18h"):
+        bloc = tracking.get(slot) or {}
+        for actif, rec in bloc.items():
+            if not isinstance(rec, dict) or call_sign(str(rec.get("call", ""))) is None:
+                continue
+            fav = rec.get("fav_pct")
+            if not isinstance(fav, (int, float)):
+                continue
+            seuil = seuil_map.get(actif)
+            # Sans seuil, la distinction 🔴 Coupe / ⚪ Tiens sur une valeur négative
+            # serait une invention → on n'émet rien pour ce slot (zéro invention).
+            if seuil is None and fav < 0:
+                continue
+            maxf = rec.get("max_fav_pct")
+            maxf = maxf if isinstance(maxf, (int, float)) else fav
+            action = compute_action(fav, maxf, seuil)
+            if action and action != "—":
+                out.setdefault(actif, {})[slot] = action
     return out
 
 
@@ -1675,12 +1775,23 @@ def _a_reflue(p: "PerfTop3Ligne") -> bool:
     )
 
 
+def _action_suivi_at(p: "PerfTop3Ligne", slot: Optional[str]) -> Optional[str]:
+    """Action RÉELLEMENT affichée par le suivi au slot donné ("12h"/"18h"), telle que
+    reproduite depuis les relevés persistés. « clôture » n'est pas un slot de suivi →
+    None. None aussi si non relevé (l'appelant dira « non tracée »). Zéro invention."""
+    if slot not in ("12h", "18h") or not p.actions_suivi:
+        return None
+    return p.actions_suivi.get(slot)
+
+
 def _verdict_timing_sortie(p: "PerfTop3Ligne") -> Tuple[str, str]:
     """(verdict timing « trop tôt / trop tard / bien tenu », cause du repli tracée).
 
-    Confronte le pic favorable (12h/18h/clôture) à la clôture ET à la reco réelle du
-    suivi 12h/18h. Dit explicitement si on a clôturé TROP TARD (le gain a reflué après
-    le pic) ou si sortir aurait été TROP TÔT (ça montait encore à la clôture)."""
+    Confronte le pic favorable (12h/18h/clôture) à la clôture ET à l'action RÉELLEMENT
+    affichée par le suivi 12h/18h (🟢 Laisse courir / 🟡 Sécurise / 🔴 Coupe / ⚪ Tiens
+    — reproduite depuis les relevés, jamais recalculée en « Vendre »). Dit explicitement
+    si on a clôturé TROP TARD (le gain a reflué après le pic) ou si sortir aurait été
+    TROP TÔT (ça montait encore à la clôture). Correction fondateur 01/07 (point 2)."""
     if p.pic_valeur is None or p.pic_heure is None:
         return "pas de point de relevé exploitable pour juger la sortie", ""
     if p.pic_valeur <= 0:
@@ -1693,10 +1804,13 @@ def _verdict_timing_sortie(p: "PerfTop3Ligne") -> Tuple[str, str]:
             f"rendu à {_fmt_pct(p.fav_cloture)} à la clôture : sortir à {p.pic_heure} "
             "aurait verrouillé plus"
         )
-        if p.vendre_reco == "Vendre":
-            timing += f" (le suivi {p.pic_heure} disait déjà « Vendre » — signal capté)"
-        elif p.vendre_reco == "Pas vendre":
-            timing += " (le suivi disait « Pas vendre » — signal de sortie manqué)"
+        act = _action_suivi_at(p, p.pic_heure)
+        if act is None:
+            timing += f" (recommandation du suivi {p.pic_heure} non tracée)"
+        elif "Coupe" in act or "Sécurise" in act:
+            timing += f" (le suivi {p.pic_heure} affichait « {act} » — signal de sortie capté)"
+        else:
+            timing += f" (le suivi {p.pic_heure} affichait « {act} » — il invitait à tenir)"
         if p.cause_repli:
             cause_txt = f" Le repli après {p.pic_heure} coïncide avec : {p.cause_repli}."
         else:
@@ -1706,8 +1820,9 @@ def _verdict_timing_sortie(p: "PerfTop3Ligne") -> Tuple[str, str]:
     # Pic à la clôture : la position a monté jusqu'au bout → tenir était bon.
     if p.pic_heure == "clôture":
         timing = "✅ bien tenu — le pic est à la clôture, sortir plus tôt aurait laissé du gain"
-        if p.vendre_reco == "Vendre":
-            timing += " ; ⚠️ le suivi recommandait « Vendre » : sortir aurait été TROP TÔT"
+        act18 = _action_suivi_at(p, "18h")
+        if act18 and ("Coupe" in act18 or "Sécurise" in act18):
+            timing += f" ; ⚠️ le suivi 18h affichait « {act18} » : sortir aurait été TROP TÔT"
         return timing, ""
     return p.verdict, cause_txt
 
@@ -1738,14 +1853,16 @@ def _render_bloc1_perf_top3(bilan: "BilanJour") -> List[str]:
 def categorie_sortie(p: "PerfTop3Ligne") -> str:
     """Catégorie de timing de sortie d'un pick (persistée pour l'agrégat hebdo) :
     - « trop_tard » : le gain a reflué après le pic (on a tenu trop longtemps) ;
-    - « trop_tot »  : pic à la clôture mais le suivi disait « Vendre » (sortie aurait été prématurée) ;
+    - « trop_tot »  : pic à la clôture mais le suivi 18h affichait 🔴 Coupe / 🟡 Sécurise
+      (une sortie déclenchée aurait été prématurée) ;
     - « bien_tenu » : pic à la clôture, tenir était le bon choix ;
     - « sans_objet »: jamais dans notre sens (rien à verrouiller)."""
     if p.pic_valeur is None or p.pic_heure is None or p.pic_valeur <= 0:
         return "sans_objet"
     if _a_reflue(p):
         return "trop_tard"
-    if p.pic_heure == "clôture" and p.vendre_reco == "Vendre":
+    act18 = _action_suivi_at(p, "18h")
+    if p.pic_heure == "clôture" and act18 and ("Coupe" in act18 or "Sécurise" in act18):
         return "trop_tot"
     return "bien_tenu"
 
@@ -2004,12 +2121,28 @@ def _render_jour_selection(bilan: "BilanJour") -> List[str]:
 
 
 def _points_forts_jour(bilan: "BilanJour") -> List[str]:
-    """SECTION 2 — Ce qu'on a bien fait aujourd'hui + POURQUOI (calque hebdo)."""
+    """SECTION 2 — Ce qu'on a bien fait aujourd'hui + POURQUOI (calque hebdo).
+
+    Point 7 (fondateur 01/07) : la section 2 et la section 1 doivent raconter LA MÊME
+    journée. Un pari ✅ par max gain (> 1 %) mais dont la clôture est retombée ≤ 0 est
+    écrit tel quel — « gagné au max intraday (+X %), refermé à Y % à la clôture » — au
+    lieu d'être passé sous silence (ce qui contredisait la section 1)."""
     pts: List[str] = []
     for p in bilan.perf_top3:
-        if not (isinstance(p.fav_cloture, (int, float)) and p.fav_cloture >= _SEUIL_BIEN_FAIT_JOUR):
+        cloture_ok = isinstance(p.fav_cloture, (int, float)) and p.fav_cloture >= _SEUIL_BIEN_FAIT_JOUR
+        gagne_au_max = (
+            gagnant_max_gain(p.max_gain_pct)
+            and isinstance(p.fav_cloture, (int, float)) and p.fav_cloture <= 0
+        )
+        if not (cloture_ok or gagne_au_max):
             continue
-        ligne = f"{p.actif} {p.call} : {_fmt_pct(p.fav_cloture)} dans le bon sens"
+        if cloture_ok:
+            ligne = f"{p.actif} {p.call} : {_fmt_pct(p.fav_cloture)} dans le bon sens"
+        else:
+            ligne = (
+                f"{p.actif} {p.call} : gagné au max intraday ({_fmt_pct(p.max_gain_pct)}), "
+                f"refermé à {_fmt_pct(p.fav_cloture)} à la clôture"
+            )
         if p.raison_call:
             ligne += f". Pris sur : {p.raison_call}"
         pts.append(ligne + ".")
@@ -2027,7 +2160,8 @@ def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
     for p in bilan.perf_top3:
         if out_by.get(p.actif) != OUTCOME_FAUSSE:
             continue
-        ligne = f"{p.actif} {p.call} ({_fmt_pct(delta_by.get(p.actif))}) raté"
+        # Point 6 (01/07) : % FAVORABLE signé par le call (pas le delta brut).
+        ligne = f"{p.actif} {p.call} ({_fmt_pct(_fav(delta_by.get(p.actif), p.call))}) raté"
         # Le fondateur ne veut PAS qu'on RE-LISTE les critères suivis (déjà en
         # section 1 « Pourquoi ces paris ») : section 3 = UNIQUEMENT le pourquoi
         # du mouvement adverse (29/06 : « seul le pourquoi m'intéresse »).
@@ -2062,11 +2196,17 @@ def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
     for g in bilan.gros_moves_autres:
         if not g.direction_juste:
             continue
-        ampl = _fmt_pct(g.mouvement_pct)
+        # Point 6 (fondateur 01/07) : convention de signe UNIQUE dans les sections
+        # narratives = % FAVORABLE signé par le call (un SHORT gagnant s'affiche +0.79 %,
+        # pas -0.79 % brut). Le Delta% brut ne survit QUE dans l'annexe « Résultat des
+        # calls 7h » (légende explicite). g.mouvement_pct est le brut → on le convertit.
+        fav_signe = _fav(g.mouvement_pct, g.call)
+        ampl = _fmt_pct(fav_signe if fav_signe is not None else g.mouvement_pct)
         if isinstance(g.max_gain_pct, (int, float)):
             ampl += f", max {_fmt_pct(g.max_gain_pct)}"
-        ligne = (f"{g.actif} {g.call} ({ampl}, hors top 3, non sélectionné car "
-                 f"{g.raison_non_select})")
+        # Point 5 (fondateur 01/07) : motif d'exclusion affiché UNE seule fois (fin
+        # du « hors top 3, non sélectionné car hors top 3 » circulaire).
+        ligne = f"{g.actif} {g.call} ({ampl}, écarté : {g.raison_non_select})"
         ligne += f" : {g.cause_move}" if g.cause_move else " : cause non tracée"
         pts.append(ligne + ".")
     return pts[:9]
@@ -2090,14 +2230,20 @@ def _learnings_jour(bilan: "BilanJour") -> List[str]:
             "à surveiller si ça se répète (signal de calibration du Top 1)."
         )
 
-    # News Trader — gros move hors Sélection DANS notre sens, avec catalyseur tracé :
-    # on avait le bon sens mais pas joué (à capter plus tôt). Le plus gros d'abord.
+    # News Trader — gros move hors Sélection DANS notre sens, avec catalyseur tracé.
+    # Point 3 (fondateur 01/07) : PLUS de reco « capter la news plus tôt » (contraire
+    # à la doctrine quant-patron du 20/06 : on ne surpondère jamais la news). On
+    # signale l'OCCASION MANQUÉE en citant la RÈGLE EXACTE d'exclusion (↯ / plancher
+    # intensité / capteurs éteints / classement) issue du decision-log. Le plus gros
+    # d'abord.
     for g in bilan.gros_moves_autres:
         if g.direction_juste and g.cause_move:
             out.append(
-                f"💡 News Trader : {g.actif} a fait {_fmt_pct(g.mouvement_pct)} dans "
-                f"notre sens hors Sélection, porté par {g.cause_move}. Catalyseur à "
-                "capter plus tôt pour le faire entrer dans le Top 3."
+                f"💡 News Trader : {g.actif} a fait "
+                f"{_fmt_pct(_fav(g.mouvement_pct, g.call))} dans "  # point 6 : favorable signé
+                f"notre sens hors Sélection, porté par {g.cause_move}. Occasion manquée : "
+                f"écarté par la règle « {g.raison_non_select} » (la doctrine tient, on ne "
+                "surpondère pas la news pour forcer l'entrée)."
             )
             break
 
@@ -2117,7 +2263,7 @@ def _learnings_jour(bilan: "BilanJour") -> List[str]:
                 )
             out.append(
                 f"💡 News Trader : call à contre-sens sur {g.actif} "
-                f"({_fmt_pct(g.mouvement_pct)} contre nous){detail}"
+                f"({_fmt_pct(_fav(g.mouvement_pct, g.call))} contre nous){detail}"  # point 6 : favorable signé
             )
             break
 
@@ -2189,7 +2335,7 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
             L.append("Rien de net aujourd'hui : aucun pari à plus de 1 % dans le bon sens.")
     L.append("")
 
-    L.append("## 3. Ce qu'on doit améliorer aujourd'hui")          # 3. À améliorer + POURQUOI
+    L.append("## 3. Occasions manquées (hors Sélection)")          # 3. Occasions manquées + POURQUOI
     L.append("")
     faibles = _points_faibles_jour(bilan)
     if faibles:
@@ -2199,6 +2345,10 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     else:
         L.append("Aucun pari raté ni opportunité ratée nette aujourd'hui.")
     L.append("")
+
+    # Point 4 — « Écartés qui ont évité un FAUX » (symétrique des occasions manquées,
+    # affiché seulement s'il y a au moins un cas).
+    L.extend(_render_gardes_gagnants(bilan))
 
     # 4. Learnings — section OMISE s'il n'y a aucun learning du jour (décision
     # fondateur 24/06 : pas de section vide/blabla chaque jour ; les 3 experts ne
@@ -2225,6 +2375,14 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
 
     # Résultat brut des 12 calls 7h (table complète).
     L.append("### Résultat des calls 7h")
+    L.append("")
+    # Point 6 (fondateur 01/07) : convention de signe. Cette table est la SEULE à
+    # garder le Delta% BRUT — sa légende le dit explicitement pour éviter de le lire
+    # comme un favorable (les sections narratives, elles, affichent le favorable signé).
+    L.append(
+        "_Delta% = mouvement BRUT du marché (ouverture → clôture), PAS le favorable : "
+        "un SHORT gagnant a un Delta% négatif. « Max favorable » est signé par le call._"
+    )
     L.append("")
     L.append(
         "| Actif | Call 7h | Ouverture | Clôture | Delta% | Max favorable | "
@@ -2381,7 +2539,7 @@ def _catalyseurs_j1(now: Optional[datetime]) -> List[str]:
     if not evts:
         return [
             "Aucun catalyseur majeur connu dans les prochains jours "
-            "(calendrier éco statique — zéro invention)."
+            "(calendrier éco statique, zéro invention)."
         ]
 
     lignes: List[str] = []

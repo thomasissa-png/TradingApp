@@ -165,8 +165,11 @@ def test_tendance_au_18h_depuis_snapshot_12h(env):
                  {"GC=F": 3434.0, "^FCHI": 8110.0, "^GSPC": 5310.0})
     lig = _ligne(r18, "Or")
     assert lig.delta_pct == pytest.approx(1.0, abs=0.01)
-    assert lig.tendance == "↑ s'accélère"
-    assert lig.delta_vs_prec == pytest.approx(0.5, abs=0.02)
+    # Correction fondateur 01/07 : tendance + Δ dérivés du FAVORABLE. Or SHORT, le
+    # prix MONTE (+0.5% → +1.0%) → le pari se DÉGRADE (fav -0.5 → -1.0) : ↓ s'essouffle,
+    # Δ favorable = -0.5 (le pari recule), plus jamais +0.5 (variation du prix brut).
+    assert lig.tendance == "↓ s'essouffle"
+    assert lig.delta_vs_prec == pytest.approx(-0.5, abs=0.02)
 
 
 def test_flag_us_confirme_infirme_au_18h(env):
@@ -646,13 +649,16 @@ def test_positions_vs_ouverture_colonnes_riches(env):
     # l'exemption HTML qui empêche de masquer ces colonnes).
     assert "Max gain du jour" in panorama
     assert "Gagné" in panorama
-    assert "Action" in panorama
+    # Point 5 (fondateur 01/07) : le panorama (non détenu) porte « Call » (intact/cassé),
+    # PLUS l'action (Coupe/Sécurise/Tiens), qui reste dans la table Sélection.
+    assert "| Call |" in panorama
     # [Fusion 30/06] la conviction est fusionnée dans la colonne « Call 7h ».
     assert "conviction" in panorama
-    # Ligne Or : direction · conviction signée affichée (SHORT · -10.74), action en gras.
+    # Ligne Or : direction · LIBELLÉ conviction + note (point 9a : SHORT · forte (-10.74)),
+    # et état du call (✅ intact / ✖ cassé), plus d'action en gras dans le panorama.
     ligne_or = next(l for l in panorama.splitlines() if l.startswith("| Or |"))
-    assert "SHORT · -10.74" in ligne_or
-    assert "**🟢" in ligne_or or "**🟡" in ligne_or or "**⚪" in ligne_or or "**🔴" in ligne_or
+    assert "SHORT · forte (-10.74)" in ligne_or
+    assert "✅ intact" in ligne_or or "✖ cassé" in ligne_or
 
 
 def test_positions_vs_ouverture_conviction_absente_placeholder(env):
@@ -678,11 +684,13 @@ def test_coherence_top3_positions_memes_chiffres(env):
     or_top3 = next(l for l in top3.splitlines() if l.startswith("| Or |"))
     or_pano = next(l for l in panorama.splitlines() if l.startswith("| Or |"))
     or_li = _ligne(r, "Or")
-    # Max gain, Action et Conviction (mêmes valeurs dérivées de la même ligne).
+    # Max gain et Conviction (mêmes valeurs dérivées de la même ligne). L'action en
+    # gras reste dans la table Sélection (Top 3) ; le panorama porte « Call » intact/cassé
+    # (point 5) — plus d'action dupliquée dans le panorama.
     max_str = rs._fmt_pct(or_li.max_gain_pct)
-    conv_str = rs._fmt_conviction(or_li.call, or_li.conviction)
+    conv_str = rs._fmt_call_conviction(or_li.call, or_li.conviction, or_li.conviction_niveau)
     assert max_str in or_top3 and max_str in or_pano
-    assert f"**{or_li.action}**" in or_top3 and f"**{or_li.action}**" in or_pano
+    assert f"**{or_li.action}**" in or_top3
     assert conv_str in or_top3 and conv_str in or_pano
 
 
@@ -1018,7 +1026,9 @@ def test_etf_us_ferme_a_12h_pas_de_faux_zero(tmp_path):
     assert li.us_pas_ouvert is True
     assert li.prix_courant is None and li.ouverture is None
     assert li.delta_pct is None
-    assert "marché US fermé" in li.statut
+    # Point 4 (fondateur 01/07) : libellé UNIFIÉ « 🕐 pas encore ouvert », pas de faux neutre.
+    assert li.statut == rs.STATUT_PAS_ENCORE_OUVERT
+    assert "pas encore ouvert" in li.statut
     ligne_md = next(l for l in r.markdown.splitlines() if l.startswith("| Sucre |"))
     assert "0.00%" not in ligne_md
 
@@ -1032,3 +1042,145 @@ def test_etf_us_ouvert_a_18h_prix_normal(tmp_path):
     assert li.us_pas_ouvert is False
     assert li.prix_courant == pytest.approx(9.98)
     assert li.delta_pct == pytest.approx((9.98 - 9.78) / 9.78 * 100, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# Vague de corrections fondateur 01/07 (points 1..9)
+# ---------------------------------------------------------------------------
+
+def test_point1_delta_precedent_en_favorable(env):
+    # Point 1 : Δ précédent = variation du % FAVORABLE signé par le call (pas du prix
+    # brut). Cas réel fondateur : CAC 40 SHORT, le pari S'AMÉLIORE (fav +0.46 → +0.79)
+    # → Δ = +0.33 %pts (positif), plus jamais -0.33 (le prix brut baissait).
+    _build(env, "12h", datetime(2026, 6, 8, 12, 3, tzinfo=PARIS),
+           {"GC=F": 3400.0, "^FCHI": 8082.65, "^GSPC": None})  # delta -0.46% → fav +0.46
+    r18 = _build(env, "18h", datetime(2026, 6, 8, 18, 3, tzinfo=PARIS),
+                 {"GC=F": 3400.0, "^FCHI": 8055.85, "^GSPC": 5300.0})  # delta -0.79% → fav +0.79
+    cac = _ligne(r18, "CAC 40")
+    assert cac.fav_prec == pytest.approx(0.46, abs=0.03)
+    assert cac.fav_now == pytest.approx(0.79, abs=0.03)
+    assert cac.delta_vs_prec == pytest.approx(0.33, abs=0.03)
+    assert cac.tendance == "↑ s'accélère"
+
+
+def test_point2_tendance_retournement_favorable(env):
+    # Point 2 : ⇄ se retourne = le favorable change de camp. Or SHORT gagnant à 12h
+    # (fav +1.0), puis le prix repasse au-dessus de l'ouverture à 18h (fav < 0).
+    _build(env, "12h", datetime(2026, 6, 8, 12, 3, tzinfo=PARIS),
+           {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
+    r18 = _build(env, "18h", datetime(2026, 6, 8, 18, 3, tzinfo=PARIS),
+                 {"GC=F": 3438.0, "^FCHI": 8120.0, "^GSPC": 5300.0})
+    orr = _ligne(r18, "Or")
+    assert orr.fav_prec > 0 and orr.fav_now < 0
+    assert orr.tendance == "⇄ se retourne"
+
+
+def test_point3_max_gain_suspect_pure():
+    # Point 3 : garde-fou de plausibilité (bug Blé +7.93%). Plafond = seuil × 5.
+    assert rs.max_gain_suspect(7.93, 1.0) is True      # blé aberrant
+    assert rs.max_gain_suspect(2.64, 1.0) is False     # café plausible
+    assert rs.max_gain_suspect(7.93, None) is True     # fallback cible globale ×5
+    assert rs.max_gain_suspect(None, 1.0) is False     # zéro invention
+    assert "⚠️ à vérifier" in rs._fmt_max_gain(7.93, 1.0)
+    assert "⚠️" not in rs._fmt_max_gain(2.64, 1.0)
+
+
+def test_point3_max_gain_garde_fou_dans_rapport(env):
+    # Point 3 (intégration) : un tick aberrant dans la série 1h gonfle le max gain
+    # (Or SHORT, plus-bas à -8% = +8% favorable) → suffixé « ⚠️ à vérifier » (seuil
+    # Or 0.5% → plafond plausible 2.5%). Le max reste AFFICHÉ (zéro invention).
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    series = {"GC=F": _series_1h_jour([3400, 3128])}  # -8% ⇒ +8% favorable (SHORT)
+    r = _build_series(env, "12h", now, series)
+    orr = _ligne(r, "Or")
+    assert orr.max_gain_pct is not None and orr.max_gain_pct > 5.0
+    assert rs.max_gain_suspect(orr.max_gain_pct, orr.seuil_pct) is True
+    assert "⚠️ à vérifier" in r.markdown
+
+
+def test_point5_call_etat_intact_casse():
+    # Point 5 : le panorama porte « Call » intact/cassé (cassé = même seuil que 🔴).
+    assert rs.call_etat(1.0, 0.5) == "✅ intact"     # favorable
+    assert rs.call_etat(-0.3, 0.5) == "✅ intact"    # perd mais sous le seuil
+    assert rs.call_etat(-0.6, 0.5) == "✖ cassé"      # contre le call au-delà du seuil
+    assert rs.call_etat(None, 0.5) == "—"            # non mesurable
+
+
+def test_point5_panorama_action_absente_call_present(env):
+    # Point 5 : la reco d'action (🟢🟡🔴⚪) N'est PLUS dans le panorama (non détenu),
+    # remplacée par « Call » (intact/cassé). Elle reste dans la table Sélection.
+    _decision_log_selection(env, {"Or"})
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build(env, "12h", now, {"GC=F": 3438.0, "^FCHI": 8120.0, "^GSPC": None})
+    panorama = r.markdown.split("### Positions du matin vs ouverture")[1]
+    ligne_or = next(l for l in panorama.splitlines() if l.startswith("| Or |"))
+    assert "✖ cassé" in ligne_or       # Or SHORT monte au-delà du seuil → call cassé
+    assert "🔴 Coupe" not in ligne_or   # plus d'action dans le panorama
+    # ...mais l'action reste dans la table Sélection.
+    top3 = r.markdown.split("### Sélection du jour — progression")[1].split("###")[0]
+    assert "**🔴 Coupe**" in top3
+
+
+def test_point6_suggestions_message_coherent(env):
+    # Point 6 : aucun pari en alerte → message explicite (le panorama n'est pas détenu).
+    _decision_log_selection(env, {"Or"})
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
+    bloc = r.markdown.split("### Suggestions de sortie")[1]
+    assert "Aucune alerte sur les paris du jour." in bloc
+    assert "n'est pas détenu" in bloc
+
+
+def test_point7_news_contre_sens_pure():
+    # Point 7 : contre-sens = sens IA de la news OPPOSÉ au call (NEUTRAL/absent → non).
+    assert rs.news_contre_sens("LONG", "SHORT") is True
+    assert rs.news_contre_sens("SHORT", "LONG") is True
+    assert rs.news_contre_sens("LONG", "LONG") is False
+    assert rs.news_contre_sens("LONG", "NEUTRAL") is False
+    assert rs.news_contre_sens("LONG", None) is False
+
+
+def test_point7_grosse_actu_pour_fallback():
+    # Point 7 (b) : si la news du pari est « — », on reprend la grosse actu de l'actif.
+    lignes = ["- **Blé** : USDA relève les stocks mondiaux", "- Marché calme"]
+    assert rs._grosse_actu_pour("Blé", lignes) == "USDA relève les stocks mondiaux"
+    assert rs._grosse_actu_pour("Cacao", lignes) is None
+
+
+def test_point7_news_contre_sens_marquee_dans_rapport(env, tmp_path, monkeypatch):
+    # Point 7 (a) : Or SHORT est un pari ; la news dominante GOLD est LONG (haussière)
+    # → suffixe « (à contre-sens du pari) » dans « News des paris du jour ».
+    import briefing as B
+    ev_path = _events_log(tmp_path, [
+        {"trigger": "Gold rallies on safe-haven bid", "impacts": "GOLD:LONG:80",
+         "cat": "geopolitical", "materiality": "high"},
+    ])
+    monkeypatch.setattr(B, "EVENTS_LOG", ev_path)
+    _decision_log_selection(env, {"Or"})
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
+    bloc = r.markdown.split("### News des paris du jour")[1]
+    assert "Gold rallies" in bloc
+    assert "(à contre-sens du pari)" in bloc
+
+
+def test_point9a_fmt_call_conviction_libelle():
+    # Point 9a : conviction = LIBELLÉ (forte/faible) + note entre parenthèses.
+    assert rs._fmt_call_conviction("LONG", 8.77, "forte") == "LONG · forte (+8.77)"
+    assert rs._fmt_call_conviction("SHORT", -2.88, "faible") == "SHORT · faible (-2.88)"
+    # Dégradations : sans niveau → note seule ; sans score → direction ; rien → —.
+    assert rs._fmt_call_conviction("LONG", 3.24, None) == "LONG · +3.24"
+    assert rs._fmt_call_conviction("SHORT", None, "forte") == "SHORT"
+    assert rs._fmt_call_conviction("", None, None) == "—"
+
+
+def test_point9a_conviction_niveau_depuis_decision_log(env):
+    # Point 9a : le niveau (forte/faible) vient du decision-log (même source que le
+    # Bilan). Or a un score fort (|-10.74| ≥ seuil, sans drapeau) → « forte ».
+    _decision_log_conviction(env, {"Or": -10.74}, selection={"Or"})
+    now = datetime(2026, 6, 8, 12, 3, tzinfo=PARIS)
+    r = _build(env, "12h", now, {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
+    orr = _ligne(r, "Or")
+    assert orr.conviction_niveau == "forte"
+    top3 = r.markdown.split("### Sélection du jour — progression")[1].split("###")[0]
+    assert "forte (-10.74)" in top3

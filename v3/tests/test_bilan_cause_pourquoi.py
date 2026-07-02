@@ -312,18 +312,22 @@ def test_cause_dir_aucune_news_coherente_renvoie_none(tmp_path: Path):
 # Sortie « trop tôt / trop tard » + persistance pour l'agrégat hebdo
 # ===========================================================================
 
-def _perf(actif, call, fav_cloture, pic_valeur, pic_heure, vendre=None):
+def _perf(actif, call, fav_cloture, pic_valeur, pic_heure, vendre=None, actions=None):
     return bj.PerfTop3Ligne(
         actif=actif, call=call, fav_12h=None, fav_18h=None, fav_cloture=fav_cloture,
         pic_valeur=pic_valeur, pic_heure=pic_heure, points_manquants=[],
-        verdict="x", vendre_reco=vendre,
+        verdict="x", vendre_reco=vendre, actions_suivi=actions,
     )
 
 
 def test_categorie_sortie_trop_tot_tard_bien_tenu():
     assert bj.categorie_sortie(_perf("Or", "SHORT", 4.0, 4.0, "clôture")) == "bien_tenu"
     assert bj.categorie_sortie(_perf("Argent", "LONG", 1.2, 2.5, "12h")) == "trop_tard"
-    assert bj.categorie_sortie(_perf("VIX", "SHORT", 3.0, 3.0, "clôture", vendre="Vendre")) == "trop_tot"
+    # Point 2 (01/07) : « trop_tot » = pic à la clôture MAIS le suivi 18h affichait
+    # une action de sortie RÉELLE (🔴 Coupe / 🟡 Sécurise), pas une reco recalculée.
+    assert bj.categorie_sortie(
+        _perf("VIX", "SHORT", 3.0, 3.0, "clôture", actions={"18h": "🟡 Sécurise"})
+    ) == "trop_tot"
     assert bj.categorie_sortie(_perf("Blé", "LONG", -1.0, -1.0, "clôture")) == "sans_objet"
 
 

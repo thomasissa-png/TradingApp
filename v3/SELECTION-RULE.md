@@ -351,3 +351,11 @@ règle, NI le kill-criterion.
 **3. Conviction plafonnée « fragile (capteurs éteints) ».** Si le critère de **poids MAXIMUM** de la fiche est n/a, OU si **≥ 2 critères de poids ≥ 8** sont n/a, le libellé de conviction est plafonné à **« fragile (capteurs éteints) »** (nouveau motif), quel que soit le score, et la cellule devient **inéligible à la Sélection**. N'altère NI la direction NI la note (libellé + éligibilité uniquement). Cas de référence 01/07 : **Blé** (stocks USDA poids 11 n/a) ne peut plus afficher une conviction pleine.
 
 **Portée.** Zéro cutover, zéro reset de N : ces règles filtrent l'AFFICHAGE de la Sélection et l'éligibilité, pas la mesure du signal. Tests : `tests/test_regles_selection_2026_07_01.py` (véto rejoué sur le cas Cacao ; plancher garde Or / écarte EUR-USD + CAC ; capteurs éteints sur Blé).
+
+---
+
+## Addendum — 2026-07-01 (soir) : clé USDA posée, capteur stocks blé ressuscité (cutover Blé)
+
+**Fait générateur.** Le fondateur a posé le secret `USDA_API_KEY` (GO chat 01/07, clé vérifiée valide sur l'API NASS). Le critère `stocks_mondiaux_ble` (poids 11, le plus lourd de la fiche Blé, n/a depuis l'origine faute de clé) produira une valeur réelle dès le prochain cycle.
+
+**Impact.** Le capteur le plus lourd du Blé passe de mort à vivant : le score change ⇒ discipline anti-mélange ⇒ `ref_changed` de `ZW=F` avancé au **2026-07-02** (reset N=0, sous réserve du premier run vert : si la source échoue en CI, le capteur reste n/a propre et le reset est sans effet de mélange). La règle gravée (WR tradable ≥ 70 % / N ≥ 15, 24h-only) reste inchangée. Effet de bord attendu : la conviction du Blé n'est plus plafonnée « fragile (capteurs éteints) » quand la valeur arrive.

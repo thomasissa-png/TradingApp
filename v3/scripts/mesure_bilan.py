@@ -367,15 +367,17 @@ def measure_cellule_journee(
         m.max_favorable_pct = fav
         m.max_adverse_pct = adv
 
-        # --- Max gain du jour (HIGH/LOW de la bougie journalière) ---
-        # Base du win rate « cible turbo > 1% » (fondateur 24/06). On privilégie le
-        # high/low de la bougie 1day (vrai extrême du jour) ; à défaut, repli sur
-        # l'excursion 1h mesurée ci-dessus (estimation plancher, jamais une invention).
-        if day_high_low is None:
-            day_high_low = _day_high_low(ticker, date_j, fetch_history)
-        hi, lo = day_high_low
-        mg = max_gain_du_jour(hi, lo, reference, call)
-        m.max_gain_pct = mg if mg is not None else m.max_favorable_pct
+        # --- Max gain du jour = excursion favorable 1h (UNE seule source) ---
+        # Correction fondateur 01/07 (point 1) : le max qui décide « Gagné > 1 % »
+        # (section 1 du bilan, Top 1 / Top 3) DOIT être le MÊME que celui de l'annexe
+        # et des suivis réels. L'ancien 2e chemin (high/low de la bougie 1day)
+        # divergeait du suivi (Cacao +1.88 % vs +0.42 % réel ; Sucre +0.61 % vs
+        # +1.02 %) : on le RETIRE comme source de décision. Le max gain = l'excursion
+        # favorable 1h (max_favorable_pct), exactement la donnée que le suivi mesure et
+        # sur laquelle porte déjà le garde-fou anti-tick (run_suivi.max_gain_suspect).
+        # Zéro 3e logique. (_day_high_low / max_gain_du_jour conservées pour l'API mais
+        # ne pilotent plus le win rate.)
+        m.max_gain_pct = m.max_favorable_pct
 
     return m
 

@@ -38,10 +38,10 @@
    "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_cafe) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 8->6) — reset au 1er bulletin v3 (11/06 7h). MAJ 15/06 (justif CHANGELOG) : criteres sur prix le plus frais — fin de l'angle mort overnight/week-end. Le signal change => reset N=0, 3e reset des continus, ref_changed avance au 15/06. MAJ 16/06 (fix L027, GO mesure Thomas) : SEMANTIQUE DU WIN RATE des continus CHANGEE — reference de mesure 24h = PRIX D'EMISSION 7h (point d'execution reel) au lieu de l'OUVERTURE 8h Paris. 4e reset des continus, vrai defaut corrige. reset N=0, ref_changed avance au 1er bulletin sous la nouvelle semantique (17/06). MAJ 30/06 (re-decoupage par familles de vitesse + ajout tendance 2-3j) : la pertinence par horizon des signaux change (lents sortis du 24h, momentum court ajoute, quant-majorite retablie sur les 15) => signal change => reset N=0. Justif: SELECTION-RULE addendum 30/06."
   },
   "ZW=F": {
-   "ref_changed": "2026-06-30",
+   "ref_changed": "2026-07-02",
    "fiche_key": "ble",
    "actif": "Ble",
-   "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_ble) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 8->6) — reset au 1er bulletin v3 (11/06 7h). MAJ 15/06 (justif CHANGELOG) : criteres sur prix le plus frais — fin de l'angle mort overnight/week-end. Le signal change => reset N=0, 3e reset des continus, ref_changed avance au 15/06. MAJ 16/06 (fix L027, GO mesure Thomas) : SEMANTIQUE DU WIN RATE des continus CHANGEE — reference de mesure 24h = PRIX D'EMISSION 7h (point d'execution reel) au lieu de l'OUVERTURE 8h Paris. 4e reset des continus, vrai defaut corrige. reset N=0, ref_changed avance au 1er bulletin sous la nouvelle semantique (17/06). MAJ 30/06 (re-decoupage par familles de vitesse + ajout tendance 2-3j) : la pertinence par horizon des signaux change (lents sortis du 24h, momentum court ajoute, quant-majorite retablie sur les 15) => signal change => reset N=0. Justif: SELECTION-RULE addendum 30/06."
+   "motif": "Ajout critere momentum-prix v3 (momentum_prix_20j_ble) — correctif famille trend-following, la reference de mesure de la cellule change. MAJ 11/06 (justif CHANGELOG, A1/A2/A3) : atterrissage momentum v3 corrige (variation 20j + cap aveugle au momentum + poids 8->6) — reset au 1er bulletin v3 (11/06 7h). MAJ 15/06 (justif CHANGELOG) : criteres sur prix le plus frais — fin de l'angle mort overnight/week-end. Le signal change => reset N=0, 3e reset des continus, ref_changed avance au 15/06. MAJ 16/06 (fix L027, GO mesure Thomas) : SEMANTIQUE DU WIN RATE des continus CHANGEE — reference de mesure 24h = PRIX D'EMISSION 7h (point d'execution reel) au lieu de l'OUVERTURE 8h Paris. 4e reset des continus, vrai defaut corrige. reset N=0, ref_changed avance au 1er bulletin sous la nouvelle semantique (17/06). MAJ 30/06 (re-decoupage par familles de vitesse + ajout tendance 2-3j) : la pertinence par horizon des signaux change (lents sortis du 24h, momentum court ajoute, quant-majorite retablie sur les 15) => signal change => reset N=0. Justif: SELECTION-RULE addendum 30/06. MAJ 01/07 (cle USDA_API_KEY posee par le fondateur, GO chat 01/07) : le critere stocks_mondiaux_ble (poids 11, source USDA NASS, n/a depuis l'origine faute de cle) va produire une valeur reelle au prochain cycle => le score du Ble change => reset N=0, ref_changed avance au 1er bulletin avec le capteur vivant (2026-07-02, sous reserve du premier run vert). Justif: SELECTION-RULE addendum 01/07 (soir)."
   },
   "HG=F": {
    "ref_changed": "2026-06-30",
@@ -80,16 +80,16 @@
    "motif": "Critere gap_rv_iv (ecart vol realisee - implicite, poids 5) ressuscite le 11/06 (calculable depuis SPY+CBOE deja ingeres, lot sources 10/06) — la reference de mesure de la cellule change. Dernier actif v1 : a compter du 11/06, les 12 actifs sont en ere v2. MAJ 30/06 (re-decoupage par familles de vitesse + ajout tendance 2-3j) : la pertinence par horizon des signaux change (lents sortis du 24h, momentum court ajoute, quant-majorite retablie sur les 15) => signal change => reset N=0. Justif: SELECTION-RULE addendum 30/06."
   },
   "COTN": {
-   "ref_changed": "2026-06-30",
+   "ref_changed": "2026-07-02",
    "fiche_key": "coton",
    "actif": "Coton",
-   "motif": "MAJ 30/06 (re-decoupage par familles de vitesse + ajout tendance 2-3j) : la pertinence par horizon des signaux change (lents sortis du 24h, momentum court ajoute, quant-majorite retablie sur les 15) => signal change => reset N=0. Justif: SELECTION-RULE addendum 30/06."
+   "motif": "MAJ 30/06 (re-decoupage par familles de vitesse + ajout tendance 2-3j) : la pertinence par horizon des signaux change (lents sortis du 24h, momentum court ajoute, quant-majorite retablie sur les 15) => signal change => reset N=0. Justif: SELECTION-RULE addendum 30/06. MAJ 01/07 (fix groupes horaires, GO fondateur) : l'actif est suivi via un ETF/ETC cote a la bourse US (ouverture 15h30 Paris) mais etait classe 'continu' (stamp 8h, marche ferme) => reference d'ouverture fausse/absente, mesures suivi-interrompu en serie. Groupe corrige => la REFERENCE de mesure change => ref_changed avance au 2026-07-02 (impact quasi nul : warm-up N=0 depuis le 30/06)."
   },
   "CANE": {
-   "ref_changed": "2026-06-30",
+   "ref_changed": "2026-07-02",
    "fiche_key": "sucre",
    "actif": "Sucre",
-   "motif": "MAJ 30/06 (re-decoupage par familles de vitesse + ajout tendance 2-3j) : la pertinence par horizon des signaux change (lents sortis du 24h, momentum court ajoute, quant-majorite retablie sur les 15) => signal change => reset N=0. Justif: SELECTION-RULE addendum 30/06."
+   "motif": "MAJ 30/06 (re-decoupage par familles de vitesse + ajout tendance 2-3j) : la pertinence par horizon des signaux change (lents sortis du 24h, momentum court ajoute, quant-majorite retablie sur les 15) => signal change => reset N=0. Justif: SELECTION-RULE addendum 30/06. MAJ 01/07 (fix groupes horaires, GO fondateur) : l'actif est suivi via un ETF/ETC cote a la bourse US (ouverture 15h30 Paris) mais etait classe 'continu' (stamp 8h, marche ferme) => reference d'ouverture fausse/absente, mesures suivi-interrompu en serie. Groupe corrige => la REFERENCE de mesure change => ref_changed avance au 2026-07-02 (impact quasi nul : warm-up N=0 depuis le 30/06)."
   },
   "USD/JPY": {
    "ref_changed": "2026-06-30",

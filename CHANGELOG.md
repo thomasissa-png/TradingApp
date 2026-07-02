@@ -2,6 +2,28 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-07-01 (soir) — S11 : audit des suivis 12h/18h + clé USDA + ouverture US réparée (GO fondateur)
+
+Audit fond+forme des rapports `suivi/2026-07-01-12h.md` et `-18h.md`, 11 améliorations validées fondateur, 9 livrées le soir même (2 reportées avec justification). Effectif au suivi du 02/07 12h.
+
+### Capteurs et mesure
+- **Clé `USDA_API_KEY` posée par le fondateur** (vérifiée valide sur l'API NASS) → le critère stocks blé (poids 11) ressuscite ⇒ **cutover Blé** (`ZW=F` → 2026-07-02, addendum SELECTION-RULE).
+- **Ouverture US enfin captée** : cause racine prouvée (l'unique tick post-15h35 est souvent retardé de 1-3h par GitHub et tombait hors de toute fenêtre de routage → stamp US silencieusement raté les 30/06 ET 01/07). Fix : fenêtre de rattrapage ph==16 + nouvelle ligne cron `42 13-15 UTC` (été comme hiver, sans churner les crons existants). Idempotent, un 15h42 réussi garde priorité.
+- **Coton/Sucre reclassés groupe horaire US** (ETF COTN/CANE cotés bourse US, étaient traités en continus : faux neutres à midi, suivi-interrompu en série) ⇒ cutover `COTN`/`CANE` → 2026-07-02 (impact quasi nul, warm-up N=0 depuis le 30/06).
+
+### Bilan 22h15 (8 corrections, audit du bilan réel du 01/07)
+- **🐛 P0 : « Max gain jour » unifié** : la section 1 (qui décide Gagné > 1 % et nourrit le Top 1/Top 3) consommait le high/low de bougie 1day (gonflé : Cacao +1.88 % vs +0.42 % réel), l'annexe l'excursion 1h fidèle aux suivis. Source unique = excursion favorable (garde-fou anti-tick hérité du suivi). ⚠️ Le WR Sélection cumulé d'avant le 02/07 (6-14 paris) contenait des max gonflés : **signalé, historique non réécrit**.
+- **🐛 P0 : bloc « Sortie » adossé aux suivis réels** (il citait « le suivi disait Vendre » sur un pari où le 12h réel affichait « Laisse courir ») : l'action réellement affichée est reproduite depuis suivi-tracking, « non tracée » sinon.
+- Learnings alignés doctrine (fin de « capter la news plus tôt », occasion manquée = règle exacte d'exclusion citée) ; nouvelle sous-section « Écartés qui ont évité un FAUX » (les garde-fous crédités : cas Nasdaq 01/07 écarté ↯, fini -1.40 %) ; « Ce qu'on doit améliorer » → « Occasions manquées (hors Sélection) » sans phrasé circulaire ; % favorable signé partout dans le narratif (légende Delta% brut explicite à l'annexe) ; « gagné au max intraday, refermé à X % » ; zéro cadratin.
+
+### Suivis 12h/18h (7 corrections rendu/logique)
+- **Δ précédent et Tendance ↑↓⇄ recalés sur le % favorable signé** (bug de signe : Argent affichait « +4.00 pts » quand la position perdait 4 points ; convention FIX 3 du 23/06 enfin appliquée partout).
+- **Garde-fou max gain suspect** (plafond seuil_24h × 5 → « ⚠️ à vérifier ») : le « Blé +7.93 % » venait d'un tick aberrant (~633) avalé sans borne par le calcul d'excursion.
+- **« 🕐 pas encore ouvert »** pour les ETF US non cotés (fin du faux « +0.00 % neutre » du Sucre à midi).
+- **Panorama sans ordres** : colonne Action remplacée par « Call : ✅ intact / ✖ cassé » ; Coupe/Sécurise/Tiens réservés aux 3 paris détenus (décision fondateur 23/06 rétablie) + message de cohérence sous « Suggestions de sortie ».
+- **News à contre-sens marquée** « (à contre-sens du pari) » + fallback vers les grosses actus quand la ligne pari est vide ; conviction = libellé + note « forte (+8.77) ».
+- **Reportés (planifiés, risque de régression pipeline-wide)** : alignement textuel des justifications bulletin↔suivi ; % Sélection contre le prix d'émission 7h (aujourd'hui vs ouverture stampée, écart faible mais réel).
+
 ## 2026-07-01 — S11 : audit complet du bulletin + implémentation intégrale (GO fondateur)
 
 Audit fond+forme du bulletin 2026-07-01-07h (trio + avis orchestrateur), 24 améliorations validées fondateur, toutes livrées le jour même. Effectif au bulletin du 02/07 7h.

@@ -427,18 +427,25 @@ def test_tracking_load_absent_renvoie_vide(tmp_path):
 # Reco « Vendre à 18h ? » recalculée depuis les relevés (source unique)
 # ===========================================================================
 
-def test_vendre_reco_18h_verrouille_gain_qui_reflue():
-    # fav 12h=1.0, 18h=0.8 (le gain reflue) → Vendre (verrouiller près du pic).
-    tracking = {
-        "12h": {"S&P 500": {"call": "LONG", "fav_pct": 1.0}},
-        "18h": {"S&P 500": {"call": "LONG", "fav_pct": 0.8}},
-    }
-    assert bj._vendre_reco_18h(tracking)["S&P 500"] == "Vendre"
+def test_actions_suivi_reelles_cas_reel_cacao_0107():
+    # Point 2 (01/07) : le bloc Sortie doit citer l'ACTION RÉELLE affichée par le
+    # suivi (compute_action), PAS une reco « Vendre » recalculée. Cas réel du 01/07 :
+    # Cacao LONG, fav 12h = +0.48 % (max +0.48) → 🟢 Laisse courir (le suivi 12h réel
+    # affichait « 🟢 Laisse courir », jamais « Vendre »).
+    tracking = {"12h": {"Cacao": {"call": "LONG", "fav_pct": 0.48, "max_fav_pct": 0.48}}}
+    actions = bj._actions_suivi_reelles(tracking, {"Cacao": 1.0})
+    assert actions["Cacao"]["12h"] == "🟢 Laisse courir"
 
 
-def test_vendre_reco_18h_laisse_courir_gain_qui_grandit():
-    tracking = {
-        "12h": {"Or": {"call": "SHORT", "fav_pct": 0.3}},
-        "18h": {"Or": {"call": "SHORT", "fav_pct": 0.6}},
-    }
-    assert bj._vendre_reco_18h(tracking)["Or"] == "Pas vendre"
+def test_actions_suivi_reelles_securise_quand_gain_reflue():
+    # Dépassé la cible (>1 %) puis retombé sous la moitié du pic → 🟡 Sécurise.
+    tracking = {"18h": {"S&P 500": {"call": "LONG", "fav_pct": 0.4, "max_fav_pct": 1.4}}}
+    actions = bj._actions_suivi_reelles(tracking, {"S&P 500": 1.0})
+    assert actions["S&P 500"]["18h"] == "🟡 Sécurise"
+
+
+def test_actions_suivi_reelles_seuil_absent_negatif_non_trace():
+    # Sans seuil ET fav < 0 : distinction 🔴 Coupe / ⚪ Tiens indécidable → slot omis
+    # (zéro invention, l'appelant dira « recommandation du suivi non tracée »).
+    tracking = {"12h": {"Or": {"call": "SHORT", "fav_pct": -0.5, "max_fav_pct": 0.0}}}
+    assert "Or" not in bj._actions_suivi_reelles(tracking, {})

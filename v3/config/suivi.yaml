@@ -46,3 +46,14 @@ group_overrides_by_actif:
   "S&P 500": "us"
   "Nasdaq": "us"
   "VIX": "us"
+  # Nouveaux actifs 2026-06-26 suivis via ETF/ETC cotés en bourse US (NYSE/LSE)
+  # → ils N'ouvrent PAS en continu 08h Paris, mais à l'ouverture cash US 15h30.
+  # Sans cet override ils héritaient de leur famille `agri-softs` → "continu"
+  # (stamp 8h = prix pré-ouverture/veille → faux « +0,00 % neutre » à 12h + série
+  # de « suivi-interrompu »). Le Cacao (CC=F) / Café (KC=F) restent en continu
+  # (futures ICE cotés ~24h) : seuls les proxies ETF/ETC Coton/Sucre basculent US.
+  # ⚠ CHANGEMENT DE RÉFÉRENCE de la cellule (ouverture 8h → ouverture 15h35 US) :
+  # cutover à décider par l'orchestrateur. Impact nul aujourd'hui (COTN/CANE en
+  # warm-up N=0 depuis le 30/06), mais à consigner dans ref-changed.json.
+  "Coton": "us"
+  "Sucre": "us"

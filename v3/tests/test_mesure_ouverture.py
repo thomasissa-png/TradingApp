@@ -50,6 +50,18 @@ def test_actif_group_mapping():
     assert mo.actif_group(_fiche("X", "X", "famille-bidon")) is None
 
 
+def test_coton_sucre_mappes_us_pas_continu():
+    """Fix 01/07 : Coton (COTN) / Sucre (CANE) sont des ETF/ETC cotés en bourse US
+    → groupe "us" (ouverture 15h30) via override, PAS "continu" (stamp 8h faux).
+    Le Cacao (même famille agri-softs, future ICE) reste "continu"."""
+    coton = _fiche("Coton", "COTN", "agri-softs", 1.0)
+    sucre = _fiche("Sucre", "CANE", "agri-softs", 1.2)
+    cacao = _fiche("Cacao", "CC=F", "agri-softs", 1.0)
+    assert mo.actif_group(coton) == "us"      # override par nom
+    assert mo.actif_group(sucre) == "us"      # override par nom
+    assert mo.actif_group(cacao) == "continu"  # famille agri-softs inchangée
+
+
 # ---------------------------------------------------------------------------
 # CA-M2 — délai post-ouverture (heure Paris, DST via ZoneInfo)
 # ---------------------------------------------------------------------------
@@ -114,6 +126,53 @@ def test_stamp_marche_pas_ouvert_skip(tmp_path):
     )
     data = json.loads((base / "2026-06-08.json").read_text())
     assert data == {}  # S&P pas encore ouvert → absent
+
+
+def test_stamp_us_ecrit_apres_ouverture_15h36(tmp_path):
+    """Preuve que le CODE du stamp US est correct : à 15h36 Paris (US ouvert +
+    délai), S&P/Nasdaq/VIX sont bien stampés dès que fetch_price renvoie un prix.
+    Corollaire : leur absence dans prix-ouverture/*.json (defect 01/07) ne vient
+    PAS du mapping ni de la condition d'heure — mais du fait qu'aucun run n'appelle
+    stamp_prix_ouverture dans la fenêtre [15h35, clôture[ (déclenchement)."""
+    fiches = {
+        "sp500": FICHE_SP,
+        "nasdaq": _fiche("Nasdaq", "^IXIC", "indices"),
+        "vix": _fiche("VIX", "^VIX", "volatilité"),
+    }
+    base = tmp_path / "prix-ouverture"
+    now = datetime(2026, 6, 8, 15, 36, tzinfo=PARIS)  # US ouvert depuis 15h30 (+délai)
+    prix = {"^GSPC": 5300.0, "^IXIC": 17250.0, "^VIX": 14.2}
+    mo.stamp_prix_ouverture(
+        date_j=date(2026, 6, 8), fiches=fiches,
+        fetch_price=lambda t: prix[t], base_dir=base, now=now,
+    )
+    data = json.loads((base / "2026-06-08.json").read_text())
+    assert data == prix  # les 3 indices US stampés
+
+
+def test_stamp_coton_sucre_skip_8h_stamp_15h36(tmp_path):
+    """Fix 01/07 : Coton/Sucre (groupe us) sont SKIPPÉS à 8h30 (US fermé, plus de
+    faux stamp continu) et stampés à 15h36 (ouverture US)."""
+    fiches = {
+        "coton": _fiche("Coton", "COTN", "agri-softs", 1.0),
+        "sucre": _fiche("Sucre", "CANE", "agri-softs", 1.2),
+    }
+    base = tmp_path / "prix-ouverture"
+    prix = {"COTN": 2.37, "CANE": 9.79}
+    # 8h30 : US fermé → aucun stamp (avant le fix, ils étaient stampés en continu).
+    mo.stamp_prix_ouverture(
+        date_j=date(2026, 6, 8), fiches=fiches,
+        fetch_price=lambda t: prix[t], base_dir=base,
+        now=datetime(2026, 6, 8, 8, 30, tzinfo=PARIS),
+    )
+    assert json.loads((base / "2026-06-08.json").read_text()) == {}
+    # 15h36 : US ouvert → stampés.
+    mo.stamp_prix_ouverture(
+        date_j=date(2026, 6, 8), fiches=fiches,
+        fetch_price=lambda t: prix[t], base_dir=base,
+        now=datetime(2026, 6, 8, 15, 36, tzinfo=PARIS),
+    )
+    assert json.loads((base / "2026-06-08.json").read_text()) == prix
 
 
 # ---------------------------------------------------------------------------

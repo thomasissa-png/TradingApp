@@ -378,9 +378,23 @@ def _td_request(endpoint: str, params: dict, yf_ticker: Optional[str] = None) ->
         if isinstance(data, dict) and data.get("status") == "error":
             msg = data.get("message", "")
             if "not found" in msg.lower() or "not available" in msg.lower():
-                if yf_ticker:
+                # BUG PROUVÉ (bilans 22h15 29-30/06 : usdjpy/USD/JPY + sucre/CANE
+                # → prix_echeance None) : /price peut renvoyer "not found/not
+                # available" pour un symbole que /time_series sert parfaitement
+                # (forex hors fenêtre temps réel, ETC softs COTN/CANE, etc.).
+                # Blacklister ici condamnait le ticker pour TOUT le run — y compris
+                # le repli daily-close interne à fetch_price (fetch_quote →
+                # fetch_history 1day) — d'où l'échéance None au lieu d'un close réel.
+                # On ne blackliste QUE sur les vraies sondes de capacité
+                # (time_series / quote) ; jamais sur /price.
+                if yf_ticker and endpoint != "price":
                     _blacklist_ticker(yf_ticker)
-                logger.info("TD symbol not found (blacklisted=%s): %s", yf_ticker or "?", msg[:120])
+                logger.info(
+                    "TD %s not found (blacklisted=%s): %s",
+                    endpoint,
+                    yf_ticker if (yf_ticker and endpoint != "price") else "no",
+                    msg[:120],
+                )
                 return None
             logger.debug("TD %s API error: %s", endpoint, msg[:200])
             return None
@@ -749,8 +763,50 @@ def fetch_price(ticker: str, bypass_cache: bool = False) -> Optional[float]:
             if price is not None and price <= 0:
                 price = None
 
+    if price is None:
+        # Repli d'ÉCHÉANCE documenté (close 1day réel, zéro invention).
+        # Contourne la blacklist dynamique : un échec /time_series ponctuel plus
+        # tôt dans le run ne doit pas condamner le stamp d'échéance du même run.
+        # Ne s'applique qu'aux symboles réellement mappés Twelve (pas les ^indices
+        # sans proxy → eux restent yfinance/n-a). Source = dernier close journalier.
+        price = _td_daily_close(ticker)
+
     _cache_set(cache_key, price, CACHE_TTL_SHORT)
     return price
+
+
+def _td_daily_close(ticker: str) -> Optional[float]:
+    """Dernier close 1day via Twelve, en CONTOURNANT la blacklist dynamique.
+
+    Repli d'échéance réel (jamais inventé) : utilisé quand /price + yfinance +
+    fetch_quote ont tous échoué. Ne cible que les symboles présents dans
+    _TICKER_MAP (capables Twelve) pour ne pas ré-appeler des ^indices sans proxy.
+    Retourne None (→ n/a propre) si indisponible.
+    """
+    if not td_available() or ticker not in _TICKER_MAP:
+        return None
+    td_sym, extra_params = _TICKER_MAP[ticker]
+    params = {
+        "symbol": td_sym,
+        "interval": "1day",
+        "outputsize": 1,
+        "timezone": "UTC",
+        **extra_params,
+    }
+    # yf_ticker=None → aucun effet de bord blacklist (Change 1 garde /price safe,
+    # ici on veut aussi zéro blacklist sur cette sonde de repli).
+    data = _td_request("time_series", params)
+    if not data or "values" not in data or not data["values"]:
+        return None
+    try:
+        close = float(data["values"][0]["close"])
+    except (ValueError, KeyError, TypeError, IndexError):
+        return None
+    if close <= 0 or not math.isfinite(close):
+        return None
+    record_provenance(ticker, "twelve_native")
+    logger.info("TD daily-close repli échéance: %s (%s) = %s", ticker, td_sym, close)
+    return close
 
 
 # ── Price validation (hardcoded ranges) ───────────────────────────

@@ -39,6 +39,12 @@ on:
     # Plage 6-21h UTC : couvre 08h05/09h05 (06-07h UTC été, 07-08h hiver),
     # 15h35 (13h UTC été, 14h hiver) et 22h15 Paris (20h UTC été, 21h UTC hiver).
     - cron: "12,27,42 6,7,8,13,14,20,21 * * *"
+    # Rattrapage stamp US (fix 01/07, NOUVELLE ligne pour ne pas churner celle du
+    # dessus) : tirs :42 à 15h-16h Paris ÉTÉ COMME HIVER (13-15 UTC), routés
+    # "stamp" par la fenêtre ph∈{15,16}. 13:42 UTC hiver = 14h42 Paris → "none",
+    # inoffensif. Sans ça, l'unique tick post-ouverture-US (15h42) raté ou
+    # retardé par GitHub = ouverture US jamais captée (prouvé 30/06 + 01/07).
+    - cron: "42 13,14,15 * * *"
   workflow_dispatch:
     inputs:
       force:
@@ -242,6 +248,13 @@ jobs:
           elif [ "$ph" -eq 9 ];                       then slot="stamp"
           elif [ "$ph" -ge 11 ] && [ "$ph" -le 12 ]; then slot="suivi12"
           elif [ "$ph" -eq 15 ];                      then slot="stamp"
+          # 16h = fenêtre de RATTRAPAGE du stamp US (fix 01/07) : le tick 15h42
+          # est le SEUL à tomber après l'ouverture US 15h35, et GitHub le retarde
+          # souvent de 1-3h → il atterrissait à 16h+ où aucun créneau n'existait
+          # → stamp US silencieusement raté (prouvé les 30/06 et 01/07 :
+          # prix-ouverture/*.json sans ^GSPC/^IXIC/^VIX). Idempotent + entry-lock
+          # → un tick 15h42 réussi garde la priorité, le 16h ne réécrit rien.
+          elif [ "$ph" -eq 16 ];                      then slot="stamp"
           elif [ "$ph" -ge 17 ] && [ "$ph" -le 18 ]; then slot="suivi18"
           elif [ "$ph" -eq 22 ] && [ "$pm" -ge 15 ]; then slot="bilan"
           fi

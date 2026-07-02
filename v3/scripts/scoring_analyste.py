@@ -2918,6 +2918,36 @@ def selection_du_jour_map(
         return set(), {}
 
 
+def selection_raison_map(
+    results: List["ActifResult"],
+    now: datetime,
+    seuil_conviction: Optional[float] = None,
+) -> Dict[str, str]:
+    """Texte EXACT de la justification (« Pourquoi ») de chaque pari de la Sélection
+    du jour, keyé par fiche_key — JUSTIFICATION UNIQUE bulletin↔suivi (règle 02/07).
+
+    Le bulletin est la SEULE logique de formulation (`_raison_pari_affichee`, corrigée
+    01/07 : titre de news réel ou driver concret). On PERSISTE ce texte au decision-log
+    (`selection_raison`) pour que le suivi l'affiche VERBATIM, au lieu de re-formuler de
+    son côté (drivers_du_call) et de diverger. MÊME source que `selection_du_jour_map`
+    (`select_paris_du_jour`) → zéro divergence entre le pari affiché et son texte.
+    Best-effort : toute exception → {} (jamais de crash mesure). Un pari sans raison
+    exploitable (« — ») est ABSENT (le suivi retombe alors sur son fallback reconstitué).
+    """
+    try:
+        picks = select_paris_du_jour(
+            results, now, seuil_conviction=seuil_conviction,
+        )
+        out: Dict[str, str] = {}
+        for p in picks:
+            raison = p.get("raison")
+            if isinstance(raison, str) and raison.strip() and raison.strip() != "—":
+                out[p["fiche_key"]] = raison.strip()
+        return out
+    except Exception:  # noqa: BLE001 — best-effort (jamais de crash mesure)
+        return {}
+
+
 def build_paris_du_jour_block(
     results: List["ActifResult"],
     now: datetime,
@@ -5913,6 +5943,10 @@ def build_decision_log_records(
     # run_weekly traquent les paris AFFICHÉS. L'ancienne `compute_selection_du_jour`
     # (dédup famille macro + veto « tape ») est RETIRÉE de cette chaîne d'écriture.
     _selection_keys, _motif_exclusion = selection_du_jour_map(results, now=now)
+    # JUSTIFICATION UNIQUE bulletin↔suivi (règle 02/07) — texte EXACT du « Pourquoi »
+    # de chaque pari, MÊME source que la tête/decision-log (`select_paris_du_jour`).
+    # Persisté ci-dessous (`selection_raison`) pour que le suivi l'affiche VERBATIM.
+    _selection_raison = selection_raison_map(results, now=now)
     # SHADOW PUR (panel 3 experts 25/06, reco n°2) — règle de sélection
     # « haute-conviction » MESURÉE EN PARALLÈLE, sans toucher la sélection réelle
     # ci-dessus. Champ decision-log dédié `selection_shadow_hc` (+ motif). Aucun
@@ -6274,6 +6308,11 @@ def build_decision_log_records(
                 motif = _motif_exclusion.get(r.fiche_key)
                 if motif:
                     selection_extra["selection_motif_exclusion"] = motif
+                # JUSTIFICATION UNIQUE bulletin↔suivi (02/07) — texte EXACT du
+                # « Pourquoi » persisté pour affichage VERBATIM par le suivi.
+                _raison = _selection_raison.get(r.fiche_key)
+                if _raison:
+                    selection_extra["selection_raison"] = _raison
                 # --- SHADOW PUR — sélection « haute-conviction » (mesure only) ----
                 # NE remplace PAS `selection_du_jour` : champ séparé tracé pour la
                 # mesure comparée (win rate shadow vs réel). Aucun impact rendu.

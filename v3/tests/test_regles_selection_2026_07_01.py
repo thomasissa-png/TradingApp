@@ -158,6 +158,33 @@ def test_p1_cacao_ecarte_cafe_et_sucre_restent():
     assert {e["actif"] for e in ecartes_tend} == {"Cacao"}
 
 
+# ===========================================================================
+# Chantier A (02/07) — JUSTIFICATION UNIQUE bulletin↔suivi : le bulletin persiste
+# EXACTEMENT le texte de son « Pourquoi », le suivi l'affiche VERBATIM.
+# ===========================================================================
+def test_chantierA_selection_raison_map_egale_pourquoi_bulletin():
+    # `selection_raison_map` (persisté au decision-log) DOIT renvoyer, pour chaque
+    # pari retenu, le TEXTE EXACT de la colonne « Pourquoi » de la tête bulletin
+    # (`select_paris_du_jour` → clé `raison`). Une seule logique de formulation.
+    res = [
+        _cacao_news_contre_tendance(),   # écarté (véto) → absent des deux
+        _cafe_tendance_alignee(),
+        _sucre_driver_quant(),
+    ]
+    picks = sa.select_paris_du_jour(res, NOW, seuil_conviction=SEUIL)
+    raison_map = sa.selection_raison_map(res, NOW, seuil_conviction=SEUIL)
+    attendu = {
+        p["fiche_key"]: p["raison"]
+        for p in picks
+        if isinstance(p.get("raison"), str) and p["raison"].strip() not in ("", "—")
+    }
+    assert raison_map == attendu
+    # Le pari écarté (Cacao) n'a AUCUNE justification persistée.
+    assert "cacao" not in raison_map
+    # Au moins un pari retenu porte bien un texte non vide (sécurité anti-régression).
+    assert raison_map and all(v.strip() for v in raison_map.values())
+
+
 def test_p1_motif_hors_top_et_ligne_ecartes():
     res = [
         _cacao_news_contre_tendance(),

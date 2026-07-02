@@ -70,6 +70,16 @@ def env(tmp_path):
         json.dumps({"GC=F": 3400.0, "^FCHI": 8120.0, "^GSPC": 5300.0}),
         encoding="utf-8",
     )
+    # Chantier B (L027) — prix d'émission 7h (« Prix d'entrée » du bulletin), keyé par
+    # IDENTITÉ de bulletin (2026-06-08-07h.json). ÉGAL à l'ouverture par défaut : les
+    # tests structurels (cohérence action/suggestion) restent valides ; les tests
+    # dédiés Chantier B (base ≠ ouverture) écrivent leur propre fichier d'émission.
+    edir = tmp_path / "prix-emission"
+    edir.mkdir()
+    (edir / "2026-06-08-07h.json").write_text(
+        json.dumps({"GC=F": 3400.0, "^FCHI": 8120.0, "^GSPC": 5300.0}),
+        encoding="utf-8",
+    )
     dlog = tmp_path / "decision-log"
     dlog.mkdir()
     sdir = tmp_path / "suivi"
@@ -77,8 +87,8 @@ def env(tmp_path):
     # fermé » dans les tests qui n'injectent pas de cotation continue.
     fdir = tmp_path / "futures-us"
     return {
-        "bdir": bdir, "odir": odir, "dlog": dlog, "sdir": sdir, "fdir": fdir,
-        "fiches": FICHES, "tmp": tmp_path,
+        "bdir": bdir, "odir": odir, "edir": edir, "dlog": dlog, "sdir": sdir,
+        "fdir": fdir, "fiches": FICHES, "tmp": tmp_path,
     }
 
 
@@ -91,6 +101,7 @@ def _build(env, report_type, now, cur, fiches=None):
         decision_log_dir=env["dlog"],
         suivi_dir=env["sdir"],
         prix_ouverture_dir=env["odir"],
+        prix_emission_dir=env.get("edir"),
         fiches=fiches or env["fiches"],
         fetch_price=lambda t: cur.get(t),
         futures_us_dir=env["fdir"],
@@ -463,7 +474,8 @@ def test_selection_table_12h_seule_colonne_12h(env):
     assert "Sélection du jour — progression" in md
     # En-tête du tableau Sélection présent (libellés complets desktop, dans des
     # spans à double libellé .c-full/.c-short — on vérifie les deux colonnes %).
-    assert "% vs ouv. 12h" in md and "% vs ouv. 18h" in md
+    # Chantier B (L027) : la table Sélection mesure vs le PRIX D'ENTRÉE 7h.
+    assert "% vs entrée 12h" in md and "% vs entrée 18h" in md
     # Colonne « Action » (remplace « Vendre ? », fondateur 24/06).
     assert "| Action |" in md
     # Le tableau Sélection est AVANT le suivi détaillé.
@@ -519,6 +531,127 @@ def test_selection_table_pas_de_mention_monetaire(env):
 
 
 # ---------------------------------------------------------------------------
+# Chantier A (02/07) — JUSTIFICATION UNIQUE bulletin↔suivi : le suivi affiche
+# VERBATIM le texte persisté par le bulletin (selection_raison) ; fallback
+# reconstitué (drivers_du_call) sur les vieux logs qui n'ont pas le champ.
+# ---------------------------------------------------------------------------
+
+def _decision_log_records(env, records):
+    """Écrit un decision-log 7h brut (records arbitraires) pour le jour du test."""
+    fp = env["dlog"] / "2026-06-08-07h.jsonl"
+    fp.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+
+
+def test_chantierA_raison_verbatim_du_bulletin(env):
+    # Le bulletin a PERSISTÉ le texte exact de sa justification → le suivi l'affiche
+    # tel quel (une seule logique de formulation, côté bulletin).
+    texte = "Porté par le récit d'offre (déficit ICCO) et un momentum haussier"
+    _decision_log_records(env, [
+        {"bulletin_date": "2026-06-08", "actif": "Or", "horizon": "24h",
+         "selection_du_jour": True, "selection_raison": texte,
+         "score_pm1": -3.2, "criteres": [{"nom": "Autre driver", "contrib_pond": -0.9}]},
+    ])
+    r = _build(env, "12h", datetime(2026, 6, 8, 12, 3, tzinfo=PARIS),
+               {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
+    or_li = _ligne(r, "Or")
+    assert or_li.raison_call == texte            # VERBATIM, aucune re-formulation
+    assert texte in r.markdown
+    assert "(reconstitué)" not in (or_li.raison_call or "")
+
+
+def test_chantierA_fallback_reconstitue_vieux_log(env):
+    # Vieux decision-log SANS selection_raison mais AVEC criteres → le suivi
+    # reconstitue depuis drivers_du_call, avec la mention discrète « (reconstitué) ».
+    _decision_log_records(env, [
+        {"bulletin_date": "2026-06-08", "actif": "Or", "horizon": "24h",
+         "selection_du_jour": True, "score_pm1": -3.2,
+         "criteres": [
+             {"nom": "Dollar fort", "contrib_pond": -0.8},
+             {"nom": "Bruit mineur", "contrib_pond": -0.02},
+         ]},
+    ])
+    r = _build(env, "12h", datetime(2026, 6, 8, 12, 3, tzinfo=PARIS),
+               {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
+    or_li = _ligne(r, "Or")
+    assert or_li.raison_call is not None
+    assert or_li.raison_call.endswith("(reconstitué)")
+
+
+# ---------------------------------------------------------------------------
+# Chantier B (02/07, L027) — la table Sélection mesure vs le PRIX D'ÉMISSION 7h
+# (« Prix d'entrée » du bulletin) ; le PANORAMA reste vs ouverture.
+# ---------------------------------------------------------------------------
+
+def _set_emission(env, prix):
+    (env["edir"] / "2026-06-08-07h.json").write_text(json.dumps(prix), encoding="utf-8")
+
+
+def _set_ouverture(env, prix):
+    (env["odir"] / "2026-06-08.json").write_text(json.dumps(prix), encoding="utf-8")
+
+
+def test_chantierB_pct_vs_emission_cas_cacao(env):
+    # Cas réel cacao 01/07 : ouverture 5077, prix d'entrée (émission) 5079.97. Le %
+    # annoncé au trader dans la table Sélection doit se mesurer vs 5079.97, PAS 5077
+    # (arithmétique testée sur le ticker de la fixture ; le signe dépend du call).
+    _decision_log_selection(env, {"Or"})
+    _set_ouverture(env, {"GC=F": 5077.0, "^FCHI": 8120.0, "^GSPC": 5300.0})
+    _set_emission(env, {"GC=F": 5079.97, "^FCHI": 8120.0, "^GSPC": 5300.0})
+    r = _build(env, "12h", datetime(2026, 6, 8, 12, 3, tzinfo=PARIS),
+               {"GC=F": 5130.0, "^FCHI": 8120.0, "^GSPC": None})
+    or_li = _ligne(r, "Or")
+    assert or_li.emission == pytest.approx(5079.97)
+    # delta brut vs ouverture = +1.04 % ; vs entrée = +0.98 % → BASES DIFFÉRENTES.
+    assert or_li.delta_pct == pytest.approx(1.04, abs=0.02)
+    assert or_li.delta_emission == pytest.approx(0.98, abs=0.02)
+    assert or_li.delta_pct != or_li.delta_emission
+    md = r.markdown
+    panorama = md.split("### Positions du matin vs ouverture")[1]
+    assert "5077" in panorama                     # panorama = base ouverture
+    top3 = md.split("### Sélection du jour — progression")[1].split("### Positions")[0]
+    assert "5080" in top3                          # table Sélection = base entrée (5079.97)
+    assert "% vs entrée" in top3
+
+
+def test_chantierB_transition_pas_de_faux_delta(env):
+    # TRANSITION : le snapshot 12h précédent est sur l'ANCIENNE base (ouverture only).
+    # Au 18h, faute de snapshot base-entrée, la colonne « % 12h » de la table Sélection
+    # affiche « — » (zéro faux Δ inter-bases) — le panorama garde son Δ base-ouverture.
+    _decision_log_selection(env, {"Or"})
+    _set_emission(env, {"GC=F": 3410.0, "^FCHI": 8120.0, "^GSPC": 5300.0})
+    _build(env, "12h", datetime(2026, 6, 8, 12, 3, tzinfo=PARIS),
+           {"GC=F": 3366.0, "^FCHI": 8120.0, "^GSPC": None})
+    # Simule un ANCIEN 12h (pré-L027) : le snapshot base ENTRÉE n'existe pas.
+    (env["sdir"] / "2026-06-08-12h-emission.json").unlink()
+    r18 = _build(env, "18h", datetime(2026, 6, 8, 18, 3, tzinfo=PARIS),
+                 {"GC=F": 3400.0, "^FCHI": 8120.0, "^GSPC": 5300.0})
+    or_li = _ligne(r18, "Or")
+    assert or_li.fav_prec is not None              # base ouverture : snapshot legacy présent
+    assert or_li.fav_prec_emission is None          # base entrée absente → AUCUN faux Δ
+    top3 = r18.markdown.split("### Sélection du jour — progression")[1].split("### Positions")[0]
+    ligne_or = next(l for l in top3.splitlines() if l.startswith("| Or |"))
+    assert "—" in ligne_or                          # colonne « % 12h » = « — »
+
+
+def test_chantierB_action_et_suggestion_sur_base_entree(env):
+    # Or SHORT, seuil 0.5 %. Émission == prix courant (3438) → 0 % vs entrée → ⚪ Tiens,
+    # AUCUNE suggestion ; alors que vs ouverture (3400) c'est +1.12 % CONTRE le call
+    # (🔴 Coupe). La table Sélection ET les suggestions suivent la base ENTRÉE.
+    _decision_log_selection(env, {"Or"})
+    _set_emission(env, {"GC=F": 3438.0, "^FCHI": 8120.0, "^GSPC": 5300.0})
+    r = _build(env, "12h", datetime(2026, 6, 8, 12, 3, tzinfo=PARIS),
+               {"GC=F": 3438.0, "^FCHI": 8120.0, "^GSPC": None})
+    or_li = _ligne(r, "Or")
+    assert or_li.action == "🔴 Coupe"               # base ouverture (interne / panorama)
+    assert or_li.action_emission == "⚪ Tiens"        # base entrée (table Sélection)
+    md = r.markdown
+    assert "**⚪ Tiens**" in md
+    assert "**🔴 Coupe**" not in md                  # plus jamais le verdict base-ouverture
+    bloc = md.split("### Suggestions de sortie")[1]
+    assert "Aucune alerte" in bloc                   # aucune sortie sur la base entrée
+
+
+# ---------------------------------------------------------------------------
 # Brief S9 — cohérence avec le Bilan : excursions max favorable/adverse depuis
 # l'ouverture (réutilise mesure_bilan), cascade de prix, garde-fou briefing 7h.
 # ---------------------------------------------------------------------------
@@ -538,7 +671,8 @@ def _build_series(env, report_type, now, series_by_ticker, fiches=None, spot=Non
     return rs.build_suivi(
         report_type, now=now, date_j=date(2026, 6, 8),
         bulletins_dir=env["bdir"], decision_log_dir=env["dlog"], suivi_dir=env["sdir"],
-        prix_ouverture_dir=env["odir"], fiches=fiches or env["fiches"],
+        prix_ouverture_dir=env["odir"], prix_emission_dir=env.get("edir"),
+        fiches=fiches or env["fiches"],
         fetch_price=(lambda t: (spot or {}).get(t)),
         fetch_series=_fetch_series,
     )

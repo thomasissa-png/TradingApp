@@ -279,6 +279,48 @@ def _conviction_semaine(
     return win_rate_par_conviction(week_measures, conv_map)
 
 
+def _conviction_from_picks(picks: List["PickSemaine"], decision_log_dir: Optional[Path] = None):
+    """[Point #4] Win rate par conviction sur les paris PERSISTÉS de la semaine.
+
+    DIAGNOSTIC du N=0/0 : l'ancienne voie (`_conviction_semaine`) classait la sortie
+    LIVE de `journaliste.measure()`, qui en fin de semaine re-mesure le passé et
+    renvoie « non-conclusif » (prix passés non retéléchargeables) → 0 pari VRAI/FAUSSE
+    → N=0/0 malgré des paris réellement jugés. Les verdicts vivent dans le journal
+    persisté (measures-log/picks), pas dans la mesure live.
+
+    CORRECTION : on classe ici les mêmes picks jugés (VRAI/FAUSSE) déjà lus depuis le
+    journal persisté, via la SOURCE UNIQUE `bilan_jour.conviction_level` (score_pm1 +
+    drapeaux du decision-log, disponible même pour les semaines passées). Aucune
+    invention : un pari sans record de conviction est classé « faible » comme dans
+    win_rate_par_conviction. Taxonomie forte/faible = celle calculable et persistée
+    (le libellé forte/modérée/fragile du bulletin n'est pas un champ distinct du
+    decision-log : il dérive de ces mêmes score/drapeaux)."""
+    from bilan_jour import (  # noqa: PLC0415
+        WinRateConviction, conviction_level, load_conviction_records,
+        _load_score_fort_seuil,
+    )
+    seuil = _load_score_fort_seuil()
+    wr = WinRateConviction()
+    conv_cache: Dict[date, Dict[Tuple[str, str], dict]] = {}
+    for p in picks:
+        if p.outcome not in ("VRAI", "FAUSSE"):
+            continue
+        bd = p.bulletin_date
+        if bd not in conv_cache:
+            conv_cache[bd] = (load_conviction_records(bd, decision_log_dir)
+                              if decision_log_dir else load_conviction_records(bd))
+        rec = conv_cache[bd].get((p.actif, "24h")) or {}
+        niveau = conviction_level(rec, seuil) if rec else "faible"
+        vrai = 1 if p.vrai else 0
+        if niveau == "forte":
+            wr.n_forte += 1
+            wr.n_vrai_forte += vrai
+        else:
+            wr.n_faible += 1
+            wr.n_vrai_faible += vrai
+    return wr
+
+
 # ---------------------------------------------------------------------------
 # SECTION 1 — Performance des 24h sélectionnés (la semaine)
 # ---------------------------------------------------------------------------
@@ -722,7 +764,8 @@ class MouvementRate:
     """Un gros mouvement 24h (> 1 %) DANS LE BON SENS qu'on a RATÉ (pas dans le
     top 3 du jour) — opportunité manquée à comprendre pour s'améliorer."""
     actif: str
-    jour: date            # jour d'échéance (où le mouvement s'est joué)
+    jour: date            # jour d'ÉMISSION (bulletin_date) : le jour dont la Sélection
+                          # a été vérifiée (cohérent avec les tables Top 1/Top 3)
     call: str             # direction qui aurait gagné (notre call non sélectionné)
     perf_dir: float       # % de gain dans le sens du call (> 1)
     variation_brute: float  # variation BRUTE signée de l'actif (monte +, baisse −)
@@ -801,7 +844,13 @@ def mouvements_rates_semaine(
             raison = "écarté car signal quasi-neutre ; il a gagné quand même"
         else:
             raison = "bon call NON classé dans le top 3 ce jour-là (conviction/score inférieurs) : opportunité ratée"
-        out.append(MouvementRate(actif=actif, jour=ech, call=str(call),
+        # [Point #2] `jour` = JOUR D'ÉMISSION (bdate) — le MÊME jour dont on a
+        # vérifié la Sélection ci-dessus. Afficher l'échéance (ech) créait la
+        # contradiction S26 : un Argent émis mardi (non top 3 mardi, échéance mer)
+        # s'affichait « raté (mer) » alors qu'un AUTRE Argent émis mercredi était
+        # Top 1. En affichant le jour d'émission, un pari sélectionné ce jour-là ne
+        # peut JAMAIS figurer ici (il a été écarté par le `continue` de sélection).
+        out.append(MouvementRate(actif=actif, jour=bdate, call=str(call),
                                  perf_dir=round(perf_dir, 2),
                                  variation_brute=round(float(rp), 2), raison=raison))
     out.sort(key=lambda m: (-m.perf_dir, m.jour, m.actif))
@@ -1299,10 +1348,12 @@ def build_bilan_semaine(
         now, fiches=fiches, fetch_price=fetch_price, prev_candidates=prev_candidates
     )
 
-    conv = _conviction_semaine(measures, now)
     sel = selection_semaine(now)
     tend = tendances_par_actif(now, fiches=fiches)
     picks = _enrich_picks_semaine(now)
+    # [Point #4] Conviction lue sur les paris PERSISTÉS (picks), pas sur la mesure
+    # live non-conclusive en fin de semaine (cf. _conviction_from_picks).
+    conv = _conviction_from_picks(picks)
     # Famille granulaire par pick (sert au learning « biais LONG métaux », S-MÉTAUX).
     _fam_par_cle = {
         cle: str((f or {}).get("famille") or "").strip().lower()
@@ -1445,7 +1496,7 @@ def _render_picks_par_jour(picks: List["PickSemaine"], L: List[str]) -> None:
     # En-tête « Max gain » (et non « Max ») : déclenche l'EXEMPTION de masquage
     # mobile de markDenseTables (build_html) → toutes les colonnes restent visibles
     # via scroll horizontal, aucune (Call/Conviction/% 18h) n'est cachée sur mobile.
-    L.append("| Jour | Actif | Call | Conviction | % 12h | % 18h | Max gain | Variation actif | Résultat |")
+    L.append("| Jour | Actif | Call | Conviction | % 12h | % 18h | Max gain | Mouvement 24h réel | Résultat |")
     L.append("|---|---|---|---|---|---|---|---|---|")
     for p in rows:
         jour = f"{JJ[p.bulletin_date.weekday()]} {p.bulletin_date.day}"
@@ -1460,13 +1511,25 @@ def _render_picks_par_jour(picks: List["PickSemaine"], L: List[str]) -> None:
         )
     L.append("")
     # « Pourquoi » en sous-liste (drivers du signal 7h), tableau gardé étroit.
+    # [Point #6] Dédup : un même pari (actif+call+raison recopié plusieurs jours) =
+    # UNE seule ligne, avec le rappel des jours concernés (fini la recopie 4x).
     avec_raison = [p for p in rows if _raison_pick(p) and _raison_pick(p) != "—"]
     if avec_raison:
         L.append("**Pourquoi ces paris (signal 7h) :**")
         L.append("")
+        jours_par_pari: Dict[Tuple[str, str, str], List[str]] = {}
+        ordre: List[Tuple[str, str, str]] = []
         for p in avec_raison:
-            jour = f"{JJ[p.bulletin_date.weekday()]} {p.bulletin_date.day}"
-            L.append(f"- **{p.actif}** ({jour}, {p.call}) : {_raison_pick(p)}")
+            cle = (p.actif, p.call, _raison_pick(p))
+            if cle not in jours_par_pari:
+                jours_par_pari[cle] = []
+                ordre.append(cle)
+            jours_par_pari[cle].append(f"{JJ[p.bulletin_date.weekday()]} {p.bulletin_date.day}")
+        for actif, call, raison in ordre:
+            jrs = jours_par_pari[(actif, call, raison)]
+            jlbl = (jrs[0] if len(jrs) == 1
+                    else f"{jrs[0]}, répété {', '.join(jrs[1:])}")
+            L.append(f"- **{actif}** ({jlbl}, {call}) : {raison}")
         L.append("")
 
 
@@ -1475,7 +1538,10 @@ def _drivers_reels(rec: dict, call: str) -> List[str]:
     semaine / suivi) : tous les critères qui ont matériellement poussé le score dans
     le sens du call, déterministe, jamais une news lambda."""
     from journaliste import drivers_du_call  # noqa: PLC0415
-    return drivers_du_call(rec, call)
+    # [Point #8] Zéro cadratin dans les libellés de critères : on réutilise le
+    # nettoyeur UNIQUE côté scoring (" — "/" – " -> " : "), pas un 3e nettoyeur.
+    from scoring_analyste import _clean_nom_critere  # noqa: PLC0415
+    return [_clean_nom_critere(d) for d in drivers_du_call(rec, call)]
 
 
 def _raison_reelle(rec: dict, call: str) -> Optional[str]:
@@ -1540,8 +1606,9 @@ def _render_section1_selection(bilan: BilanSemaine, L: List[str]) -> None:
     L.append(
         "> Nos paris 24h de la semaine, triés PAR JOUR. **Top 1** = le meilleur pari de "
         "chaque jour (1 par jour de bourse, ~5/semaine) ; **Top 3** = les trois retenus. "
-        "**Variation actif** = mouvement RÉEL de l'actif sur 24h (monte → +, baisse → −) ; "
-        "le ✅/❌ dit si notre call (LONG/SHORT) était dans le bon sens. Win rate = % de "
+        "**Mouvement 24h réel** = variation RÉELLE de l'actif sur la fenêtre 24h du pari "
+        "(realized_pct du measures-log, monte → +, baisse → −) ; le ✅/❌ = verdict outcome "
+        "du measures-log (notre call LONG/SHORT était-il dans le bon sens). Win rate = % de "
         "calls justes · ampleur = % moyen favorable (jamais d'euros)."
     )
     L.append("")
@@ -1687,7 +1754,11 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     # reste présent (lu par build_html.weekHumanTitle pour le titre humain).
     L.append(f"# Bilan semaine · {bilan.iso} ({bilan.lundi.isoformat()} → {bilan.dimanche.isoformat()})")
     L.append("")
-    L.append(f"- Généré : {horodatage_fr(bilan.now)} (samedi matin, Paris)")
+    # [Point #7] Le moment de la journée suit l'heure réelle du run (ne plus écrire
+    # « matin » si le bilan est généré l'après-midi).
+    _h = bilan.now.hour
+    _moment = "matin" if _h < 13 else "après-midi" if _h < 18 else "soir"
+    L.append(f"- Généré : {horodatage_fr(bilan.now)} (samedi {_moment}, Paris)")
     L.append("- WIN RATE ONLY · aucune mesure monétaire. Le Manager PROPOSE, Thomas VALIDE.")
     L.append(
         "- WR tradable = VRAI / (VRAI + FAUSSE + non-conclusif) · inclut les jours "
@@ -1817,6 +1888,11 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     L.append("")
 
     # ===================================================================
+    # MESURES SHADOW en cours (reco revue d'experts du 28/06) — état de suivi.
+    # ===================================================================
+    _render_mesures_shadow(bilan, L)
+
+    # ===================================================================
     # SECTION 7 — Revue des experts (note CURÉE, écrite à la main avec Thomas,
     # pas auto-calculée). Vit dans data/bilan-semaine/revue-experts/{ISO}.md
     # pour survivre à la régénération déterministe du bilan. Absente → section
@@ -1832,6 +1908,84 @@ def render_bilan_semaine(bilan: BilanSemaine) -> str:
     _render_annexe_technique(bilan, L)
 
     return "\n".join(L)
+
+
+def _render_mesures_shadow(bilan: BilanSemaine, L: List[str]) -> None:
+    """[Point #5] État des 3 mesures shadow actées en revue d'experts du 28/06.
+
+    (a) corrélation du book : paris sélectionnés du même jour partageant la même
+        famille macro (sur-concentration du risque) — calculé depuis les picks +
+        _MACRO_FAMILLE (decision-log). (b) sortie au pic 18h : issue réelle vs
+        sortie 18h, depuis l'agrégat sortie-timing (journal des bilans du jour).
+        (c) écart Top 1 vs Top 3 : les deux win rates de la semaine + écart. Tout
+        ce qui n'est pas calculable sans nouvelle instrumentation est signalé
+        « en attente d'instrumentation » (zéro invention)."""
+    from collections import defaultdict  # noqa: PLC0415
+    JJ = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
+
+    L.append("## Mesures shadow en cours (reco 28/06)")
+    L.append("")
+    L.append(
+        "> Suivi des 3 mesures actées en revue d'experts du 28/06, en observation "
+        "(shadow) avant toute bascule en règle. Chiffres de la semaine, zéro invention."
+    )
+    L.append("")
+
+    # (a) Corrélation du book — sur-concentration par famille macro le même jour.
+    par_jour: Dict[date, List["PickSemaine"]] = defaultdict(list)
+    for p in bilan.picks:
+        par_jour[p.bulletin_date].append(p)
+    jours_correles: List[Tuple[date, Dict[str, List[str]]]] = []
+    for d, ps in sorted(par_jour.items()):
+        fam: Dict[str, List[str]] = defaultdict(list)
+        for p in ps:
+            f = _MACRO_FAMILLE.get((p.famille or "").lower(), "Autres")
+            fam[f].append(p.actif)
+        concentres = {f: a for f, a in fam.items() if len(a) >= 2}
+        if concentres:
+            jours_correles.append((d, concentres))
+    if par_jour:
+        L.append(
+            f"- **(a) Corrélation du book** : sur {len(par_jour)} jour(s) avec paris "
+            f"sélectionnés, {len(jours_correles)} avec ≥ 2 paris de la MÊME famille "
+            "macro le même jour (risque de sur-concentration)."
+        )
+        for d, conc in jours_correles[:5]:
+            bouts = " ; ".join(f"{f} ({', '.join(a)})" for f, a in conc.items())
+            L.append(f"  - {JJ[d.weekday()]} {d.day} : {bouts}")
+    else:
+        L.append("- **(a) Corrélation du book** : aucun pari sélectionné cette semaine.")
+
+    # (b) Sortie au pic 18h — issue réelle vs sortie 18h (agrégat sortie-timing).
+    t = bilan.sortie_timing
+    if t is not None and t.n_juge:
+        L.append(
+            f"- **(b) Sortie au pic 18h** : sur {t.n_juge} position(s) jugée(s), "
+            f"{t.n_trop_tard} ont rendu du gain APRÈS le pic (sortir à 18h aurait mieux "
+            f"fait), {t.n_trop_tot} auraient été coupée(s) trop tôt à 18h, "
+            f"{t.n_bien_tenu} bien tenue(s)."
+        )
+    else:
+        L.append(
+            "- **(b) Sortie au pic 18h** : aucun verdict de sortie tracé cette semaine "
+            "(sortie-timing-log vide)."
+        )
+
+    # (c) Écart Top 1 vs Top 3 — les deux win rates de la semaine.
+    top1 = _top1_picks(bilan.picks)
+    nv1, nt1, _ = _agg_picks(top1)
+    nv3, nt3, _ = _agg_picks(bilan.picks)
+    if nt1 and nt3:
+        wr1, wr3 = nv1 / nt1 * 100.0, nv3 / nt3 * 100.0
+        L.append(
+            f"- **(c) Écart Top 1 vs Top 3** : Top 1 {wr1:.0f}% ({nv1}/{nt1}) vs Top 3 "
+            f"{wr3:.0f}% ({nv3}/{nt3}), écart {wr1 - wr3:+.0f} pt(s) cette semaine. Cumul "
+            "multi-semaines : en attente d'instrumentation (historique Top 1/Top 3 non "
+            "encore persisté)."
+        )
+    else:
+        L.append("- **(c) Écart Top 1 vs Top 3** : pas assez de paris jugés cette semaine.")
+    L.append("")
 
 
 def _render_revue_experts(bilan: BilanSemaine, L: List[str]) -> None:
@@ -1875,15 +2029,26 @@ def _render_annexe_technique(bilan: BilanSemaine, L: List[str]) -> None:
     # --- Win rate par conviction ---
     L.append("### Win rate par conviction")
     L.append("")
-    L.append("| Conviction | N paris | Win rate | Interprétation |")
-    L.append("|---|---|---|---|")
-    tf = _fmt_pct(bilan.taux_forte) if bilan.n_forte >= 3 else "— (N insuffisant)"
-    tw = _fmt_pct(bilan.taux_faible_conv) if bilan.n_faible_conv >= 3 else "— (N insuffisant)"
-    interp_f = _interp_conviction(bilan.taux_forte, bilan.n_forte, forte=True)
-    interp_w = _interp_conviction(bilan.taux_faible_conv, bilan.n_faible_conv, forte=False)
-    L.append(f"| Forte (|score| ≥ seuil, 0 drapeau ◧/⇆/↯/~) | {bilan.n_forte} | {tf} | {interp_f} |")
-    L.append(f"| Faible (quasi-neutre, mono-critère, coin-flip) | {bilan.n_faible_conv} | {tw} | {interp_w} |")
-    L.append("")
+    # [Point #4] Aucun pari classé -> « non tracé » explicite (au lieu d'un N=0/0
+    # trompeur). La conviction est lue sur les paris persistés (cf.
+    # _conviction_from_picks) : une semaine sans donnée est signalée, pas inventée.
+    if (bilan.n_forte + bilan.n_faible_conv) == 0:
+        L.append(
+            "_Non tracé cette semaine (persistance ajoutée le 02/07). Les prochaines "
+            "semaines classent chaque pari jugé en forte / faible depuis le "
+            "decision-log (score et drapeaux)._"
+        )
+        L.append("")
+    else:
+        L.append("| Conviction | N paris | Win rate | Interprétation |")
+        L.append("|---|---|---|---|")
+        tf = _fmt_pct(bilan.taux_forte) if bilan.n_forte >= 3 else "— (N insuffisant)"
+        tw = _fmt_pct(bilan.taux_faible_conv) if bilan.n_faible_conv >= 3 else "— (N insuffisant)"
+        interp_f = _interp_conviction(bilan.taux_forte, bilan.n_forte, forte=True)
+        interp_w = _interp_conviction(bilan.taux_faible_conv, bilan.n_faible_conv, forte=False)
+        L.append(f"| Forte (|score| ≥ seuil, 0 drapeau ◧/⇆/↯/~) | {bilan.n_forte} | {tf} | {interp_f} |")
+        L.append(f"| Faible (quasi-neutre, mono-critère, coin-flip) | {bilan.n_faible_conv} | {tw} | {interp_w} |")
+        L.append("")
 
     # --- Cellules : ce qui marche / ce qui décroche (fusion porteuses + surveiller
     #     + observations en un seul tableau) ---
@@ -2049,14 +2214,23 @@ def _points_forts(bilan: BilanSemaine) -> List[str]:
     pts: List[str] = []
 
     # Top 3 (24h) : gain directionnel > 1 % (donc dans le bon sens, et matériel).
+    # [Point #6] UNE ligne par pari UNIQUE (actif+call) : actif, sens, meilleur %
+    # favorable de la semaine, critère dominant. Fini les paragraphes recopiés (le
+    # même Argent SHORT n'apparaît plus 4 fois avec toute sa liste de drivers).
+    best_pari: Dict[Tuple[str, str], "PickSemaine"] = {}
     for p in bilan.picks:
         if p.mouvement_dir is None or p.mouvement_dir <= _SEUIL_BIEN_FAIT_PCT:
             continue
-        ligne = (f"{p.actif} {p.call} (24h) : {_fmt_signed_pct(p.mouvement_dir)} dans le "
-                 f"bon sens. Pris sur : {_raison_pick(p)}")
-        if p.cause_pro:  # news high allant dans notre sens = catalyseur qui a confirmé
-            ligne += f". Catalyseur confirmant : {p.cause_pro}"
-        pts.append(ligne + ".")
+        cle = (p.actif, p.call)
+        cur = best_pari.get(cle)
+        if cur is None or (p.mouvement_dir or 0.0) > (cur.mouvement_dir or 0.0):
+            best_pari[cle] = p
+    for p in sorted(best_pari.values(), key=lambda x: -(x.mouvement_dir or 0.0)):
+        dominant = _raison_pick(p).split(" + ")[0]
+        pts.append(
+            f"{p.actif} {p.call} (24h) : {_fmt_signed_pct(p.mouvement_dir)} favorable "
+            f"· {dominant}."
+        )
 
     # Tendances (7j) : phase de plus de 1 % dans le sens de la tendance.
     conv_cache: Dict[date, Dict[Tuple[str, str], dict]] = {}
@@ -2196,12 +2370,15 @@ def _points_faibles(bilan: BilanSemaine) -> List[str]:
     rates = bilan.mouvements_rates
     if rates:
         JJ = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
+        # [Point #2] Convention « % favorable signé » (perf_dir) : un SHORT gagnant
+        # s'affiche +9,2 % (favorable), plus la variation brute négative -9,2 % qui
+        # se lisait à tort comme une perte. Le jour est le jour d'émission.
         bouts = [
-            f"{m.actif} {m.call} {_fmt_signed_pct(m.variation_brute)} ({JJ[m.jour.weekday()]}) · {m.raison}"
+            f"{m.actif} {m.call} {_fmt_signed_pct(m.perf_dir)} ({JJ[m.jour.weekday()]}) · {m.raison}"
             for m in rates[:5]
         ]
         pts.append(
-            "Opportunités ratées (mouvement 24h de plus de 1 % dans le bon sens, hors "
+            "Opportunités ratées (mouvement 24h de plus de 1 % favorable, hors "
             "top 3) : " + " ; ".join(bouts) + "."
         )
 
@@ -2302,10 +2479,13 @@ def _learnings_semaine(bilan: BilanSemaine) -> List[str]:
         else:
             détail = ""
         out.append(
-            f"On a raté {len(rates)} mouvement(s) de plus de 1 % hors top 3{détail} : "
-            "revoir le classement — mais ne remonter que les signaux SOLIDES "
-            "(multi-critère ou portés par une news), jamais les mono-critère / "
-            "coin-flip, qui restent exclus à raison même quand ils gagnent."
+            f"On a raté {len(rates)} mouvement(s) de plus de 1 % favorable hors top 3"
+            f"{détail} : revoir le CLASSEMENT (score/conviction), sans jamais monter le "
+            "poids des news. Ne remonter que les signaux SOLIDES multi-critère ; laisser "
+            "exclus à raison, même gagnants, ceux écartés par une règle : coin-flip (↯), "
+            "mono-critère (◧, sous plancher d'intensité), quasi-neutre (~) ou capteurs "
+            "éteints (coverage insuffisant). Un gain isolé ne réhabilite pas un signal "
+            "que la règle exclut."
         )
 
     # S-MÉTAUX (News Trader) — biais directionnel HAUSSIER sur les métaux qui a coûté.
@@ -2382,7 +2562,25 @@ def _learnings_semaine(bilan: BilanSemaine) -> List[str]:
             verdict = (" Le flair news a mieux payé." if wn > wq
                        else " Le quant a mieux performé que les calls news." if wq > wn
                        else " Égalité news / quant cette semaine.")
-        out.append("Calls cette semaine : " + ", ".join(morceaux) + "." + verdict)
+        # [Point #7] Phrase claire plutôt que « quant-pur 78% (9) » cryptique.
+        n_total = len(nd) + len(qp)
+        if not nd and qp:
+            flag = " (non interprétable, N<3)" if len(qp) < 3 else ""
+            out.append(
+                f"Sur les {n_total} paris jugés, tous quant-purs : win rate "
+                f"{wq:.0f}%{flag} ; aucun pari news-driven cette semaine." + verdict
+            )
+        elif not qp and nd:
+            flag = " (non interprétable, N<3)" if len(nd) < 3 else ""
+            out.append(
+                f"Sur les {n_total} paris jugés, tous news-driven : win rate "
+                f"{wn:.0f}%{flag} ; aucun pari quant-pur cette semaine." + verdict
+            )
+        else:
+            out.append(
+                f"Sur les {n_total} paris jugés, répartition : "
+                + ", ".join(morceaux) + "." + verdict
+            )
 
     # Règle 5.4 — conviction forte vs faible (écart > 10 pts).
     if (bilan.n_forte >= 3 and bilan.n_faible_conv >= 3
@@ -2438,9 +2636,10 @@ def _fmt_news_cell(b: Tuple[int, int]) -> str:
     if n == 0:
         return "— (0 jugé)"
     wr = 100.0 * vrai / n
+    # [Point #7] « [N=31] » cryptique -> libellé explicite « cumul depuis le début ».
     if n < _NEWS_MIN_N:
-        return f"{wr:.0f}% [N={n} — en chauffe]"
-    return f"{wr:.0f}% [N={n}]"
+        return f"{wr:.0f}% (cumul depuis le début, N={n}, en chauffe)"
+    return f"{wr:.0f}% (cumul depuis le début, N={n})"
 
 
 def _news_vs_quant_winrate() -> Dict[str, Dict[str, Tuple[int, int]]]:

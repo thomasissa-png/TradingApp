@@ -49,6 +49,19 @@ def _kpi(actif, horizon, taux, n_eff, wilson_low):
     )
 
 
+def _pick(actif, call, outcome, bdate, realized_pct=None, mouvement_dir=None,
+          score=None, coin_flip=False, mono_critere=False, quasi_neutre=False,
+          ratio_news=None, raison_call=None):
+    """PickSemaine minimal pour les tests (valeurs par défaut sûres)."""
+    return rw.PickSemaine(
+        actif=actif, call=call, outcome=outcome,
+        realized_pct=realized_pct, mouvement_dir=mouvement_dir,
+        bulletin_date=bdate, ratio_news=ratio_news, score=score,
+        coin_flip=coin_flip, mono_critere=mono_critere, quasi_neutre=quasi_neutre,
+        raison_call=raison_call,
+    )
+
+
 def _patch_measure(monkeypatch, kpis_list, measures=None):
     """Mocke journaliste.measure -> (measures, kpis_dict)."""
     kpis = {(k.fiche_key, k.horizon): k for k in kpis_list}
@@ -214,10 +227,24 @@ def test_aucune_ecriture_config(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_win_rate_par_conviction(monkeypatch, tmp_path):
-    """Le bilan contient un tableau conviction forte/faible (§4.7)."""
+    """Le bilan contient un tableau conviction forte/faible (§4.7), calculé depuis
+    les paris PERSISTÉS de la semaine (Point #4)."""
     _patch_measure(monkeypatch, [_kpi("Or", "24h", 80.0, 6, 0.55)])
     _patch_conviction_empty(monkeypatch)
     monkeypatch.setattr(rw, "_read_weekly_archive", lambda iso: None)
+    picks = [
+        _pick("Or", "LONG", "VRAI", bdate=date(2026, 6, 9), score=9.0, mouvement_dir=2.0),
+        _pick("Argent", "SHORT", "FAUSSE", bdate=date(2026, 6, 10), score=0.2,
+              mouvement_dir=-1.0, coin_flip=True),
+    ]
+    monkeypatch.setattr(rw, "_enrich_picks_semaine", lambda *a, **k: picks)
+    import bilan_jour as bj
+    recs = {
+        date(2026, 6, 9): {("Or", "24h"): {"score_pm1": 9.0}},
+        date(2026, 6, 10): {("Argent", "24h"): {"score_pm1": 0.2, "coin_flip": True}},
+    }
+    monkeypatch.setattr(bj, "load_conviction_records", lambda d, *a, **k: recs.get(d, {}))
+    monkeypatch.setattr(bj, "_load_score_fort_seuil", lambda *a, **k: 3.0)
     bilan = rw.build_bilan_semaine(
         now=NOW, fiches={}, fetch_price=None, state_dir=tmp_path, persist_state=False
     )
@@ -225,15 +252,101 @@ def test_win_rate_par_conviction(monkeypatch, tmp_path):
     assert "Forte" in bilan.markdown and "Faible" in bilan.markdown
 
 
-def test_conviction_n_insuffisant(monkeypatch, tmp_path):
-    """N < 3 pour un niveau de conviction -> « N insuffisant » (CA-W6)."""
+def test_conviction_non_trace_si_aucun_pari(monkeypatch, tmp_path):
+    """[Point #4] Aucun pari persisté jugé -> « non tracé cette semaine » (plus de
+    N=0/0 trompeur). La conviction est lue sur les picks persistés, pas sur la mesure
+    live non-conclusive en fin de semaine."""
     _patch_measure(monkeypatch, [])
     _patch_conviction_empty(monkeypatch)
     monkeypatch.setattr(rw, "_read_weekly_archive", lambda iso: None)
+    # Aucun pari persisté cette semaine -> conviction non traçable.
+    monkeypatch.setattr(rw, "_enrich_picks_semaine", lambda *a, **k: [])
     bilan = rw.build_bilan_semaine(
         now=NOW, fiches={}, fetch_price=None, state_dir=tmp_path, persist_state=False
     )
-    assert "N insuffisant" in bilan.markdown
+    assert "Non tracé cette semaine" in bilan.markdown
+    assert "persistance ajoutée le 02/07" in bilan.markdown
+
+
+def test_conviction_comptee_depuis_picks_persistes(monkeypatch, tmp_path):
+    """[Point #4] Le N=0/0 malgré des paris jugés est corrigé : la conviction est
+    comptée depuis les picks PERSISTÉS (VRAI/FAUSSE), pas la mesure live."""
+    _patch_measure(monkeypatch, [])
+    _patch_conviction_empty(monkeypatch)
+    monkeypatch.setattr(rw, "_read_weekly_archive", lambda iso: None)
+    # 2 paris jugés persistés : 1 sans drapeau (forte) VRAI, 1 coin-flip (faible) FAUSSE.
+    picks = [
+        _pick("Or", "LONG", "VRAI", bdate=date(2026, 6, 9), score=9.0, mouvement_dir=2.0),
+        _pick("Argent", "SHORT", "FAUSSE", bdate=date(2026, 6, 10), score=0.2,
+              mouvement_dir=-1.0, coin_flip=True),
+    ]
+    monkeypatch.setattr(rw, "_enrich_picks_semaine", lambda *a, **k: picks)
+    # conviction_level lit le decision-log : on mocke les records bruts.
+    import bilan_jour as bj
+    recs = {
+        date(2026, 6, 9): {("Or", "24h"): {"score_pm1": 9.0}},
+        date(2026, 6, 10): {("Argent", "24h"): {"score_pm1": 0.2, "coin_flip": True}},
+    }
+    monkeypatch.setattr(bj, "load_conviction_records", lambda d, *a, **k: recs.get(d, {}))
+    monkeypatch.setattr(bj, "_load_score_fort_seuil", lambda *a, **k: 3.0)
+    bilan = rw.build_bilan_semaine(
+        now=NOW, fiches={}, fetch_price=None, state_dir=tmp_path, persist_state=False
+    )
+    assert bilan.n_forte == 1 and bilan.n_faible_conv == 1
+    assert "Non tracé cette semaine" not in bilan.markdown
+
+
+# ---------------------------------------------------------------------------
+# [Point #1] Colonne « Mouvement 24h réel » = realized_pct (pas la perf de phase 7j)
+# ---------------------------------------------------------------------------
+
+def test_colonne_mouvement_24h_est_realized_pct(monkeypatch, tmp_path):
+    """Rejoue la contradiction S26 (Cacao) : la colonne du tableau Top 1/Top 3 doit
+    afficher le realized_pct 24h de la cellule, PAS la perf de la phase 7j recopiée,
+    et être renommée « Mouvement 24h réel »."""
+    _patch_measure(monkeypatch, [])
+    _patch_conviction_empty(monkeypatch)
+    monkeypatch.setattr(rw, "_read_weekly_archive", lambda iso: None)
+    # Cacao mar : realized_pct 24h = +2,1 % (et surtout PAS +13,6 % = perf phase 7j).
+    pick = _pick("Cacao", "LONG", "VRAI", bdate=date(2026, 6, 9),
+                 realized_pct=2.1, mouvement_dir=2.1, score=7.7)
+    monkeypatch.setattr(rw, "_enrich_picks_semaine", lambda *a, **k: [pick])
+    bilan = rw.build_bilan_semaine(
+        now=NOW, fiches={}, fetch_price=None, state_dir=tmp_path, persist_state=False
+    )
+    md = bilan.markdown
+    assert "Mouvement 24h réel" in md
+    assert "Variation actif" not in md
+    assert "+2,1 %" in md          # realized_pct 24h rendu
+    assert "+13,6 %" not in md     # la perf de phase 7j n'est PAS recopiée
+
+
+# ---------------------------------------------------------------------------
+# [Point #2] Un pari sélectionné ne figure JAMAIS dans « Opportunités ratées »
+# ---------------------------------------------------------------------------
+
+def test_pari_selectionne_jamais_dans_opportunites_ratees(monkeypatch, tmp_path):
+    """Rejoue la contradiction S26 (Argent) : le jour affiché d'une opportunité ratée
+    = le jour d'émission dont la Sélection est vérifiée. Un actif sélectionné ce
+    jour-là ne peut pas apparaître comme raté ce même jour."""
+    import bilan_jour as bj
+    d_mer = date(2026, 6, 10)  # dans la semaine ISO de NOW (S24)
+    # Argent est SÉLECTIONNÉ le mercredi (top 1 du jour).
+    monkeypatch.setattr(bj, "load_selection_map",
+                        lambda day, *a, **k: {("Argent", "24h"): True} if day == d_mer else {})
+    monkeypatch.setattr(bj, "load_conviction_records", lambda day, *a, **k: {})
+    # measures-log mocké : Argent SHORT mer, VRAI, gros mouvement favorable.
+    log = tmp_path / "measures.jsonl"
+    import json
+    rec = {"actif": "Argent", "horizon": "24h", "conclusion": "SHORT",
+           "outcome": "VRAI", "realized_pct": -9.2, "bulletin_date": d_mer.isoformat(),
+           "echeance": date(2026, 6, 11).isoformat(), "fiche_key": "argent"}
+    log.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    rates = rw.mouvements_rates_semaine(NOW, measures_log=log)
+    # Argent était sélectionné le mercredi -> il ne peut PAS être une opportunité ratée.
+    assert all(m.actif != "Argent" for m in rates), (
+        "un pari sélectionné ne doit jamais figurer dans les opportunités ratées"
+    )
 
 
 # ---------------------------------------------------------------------------

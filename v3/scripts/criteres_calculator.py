@@ -3111,8 +3111,16 @@ def _build_critere_value_inner(
         return _handle_composite(cle, crit, ts)
 
     # Fenêtre d'activation
+    # caixin_pmi_manuf : critère LINEAIRE extrait des NEWS (pas de source à
+    # fenêtre horaire). Sa récence est déjà gérée par _handle_caixin_pmi
+    # (CAIXIN_NEWS_MAX_AGE_DAYS). Le placeholder générique hors-fenêtre
+    # {valeur_normalisee: 0.0} (SANS `valeur` brute) est DÉGÉNÉRÉ pour un
+    # lineaire : persisté puis passé au scoring, float(None) échoue en
+    # « n/a (lineaire : valeur non numérique) » + affiche « valeur 0 ». On saute
+    # donc la fenêtre générique pour lui → n/a PROPRE via _handle_caixin_pmi
+    # (motif caixin_pmi_no_value) ou valeur brute réelle si news dispo.
     in_window = is_in_activation_window(cle, now, triggers_cfg, fiche_key)
-    if in_window is False:
+    if in_window is False and cle != "caixin_pmi_manuf":
         return {"valeur_normalisee": 0.0, "ts": ts, "note": "hors fenêtre"}
 
     # Normalisation SYMÉTRIQUE « écart à la normale » (zscore_abs) — météo à

@@ -285,15 +285,17 @@ def test_last_good_lineaire_avec_valeur_brute_est_rejoue():
     assert res["valeur"] == 49.5
 
 
-def test_hors_fenetre_nest_pas_memorise_dans_le_cache():
-    """Fix racine : un placeholder « hors fenêtre » (neutre structurel, sans
-    valeur brute) ne DOIT PAS être mémorisé dans le cache last-good — sinon il
-    repollue le cache d'une entrée dégénérée valeur_normalisee-only."""
+def test_caixin_hors_fenetre_pas_de_placeholder_ni_pollution_cache():
+    """Fix racine : caixin_pmi_manuf (lineaire extrait des news) ne passe PLUS par
+    le placeholder générique « hors fenêtre » {valeur_normalisee: 0.0} — qui,
+    dégénéré (pas de valeur brute), échouait plus tard en scoring
+    « n/a (lineaire : valeur non numérique) » + valeur 0. Hors fenêtre sans news
+    fraîche → n/a PROPRE (None) et ZÉRO pollution du cache last-good."""
     cc._LAST_GOOD_CACHE = {}
     res = cc.build_critere_value("cuivre", CAIXIN_CRIT, {}, {}, [], NOW_PMI_OUT_WINDOW)
-    assert res is not None and res.get("note") == "hors fenêtre"
+    assert res is None, "caixin hors fenêtre sans news → n/a propre (pas de placeholder)"
     assert CAIXIN_CLE not in cc._LAST_GOOD_CACHE, \
-        "le neutre hors fenêtre ne doit pas polluer le cache last-good"
+        "aucun neutre dégénéré ne doit polluer le cache last-good"
 
 
 def test_last_good_entry_exploitable_unitaire():

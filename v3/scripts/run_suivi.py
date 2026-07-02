@@ -1292,36 +1292,44 @@ def save_suivi_tracking(
     report_type: str,
     lignes: List["SuiviLigne"],
     now: datetime,
-    base_dir: Path = SUIVI_TRACKING_DIR,
+    base_dir: Optional[Path] = None,
 ) -> Optional[Path]:
     """Persiste le relevé du créneau pour les cellules de la Sélection du jour.
 
     Écrit `{date}.json` avec un bloc par créneau (clé "12h"/"18h") :
-        {"12h": {"<actif>": {"call": "LONG", "fav_pct": 1.0, "heure": "12h05"}}}
+        {"base": "emission",
+         "12h": {"<actif>": {"call": "LONG", "fav_pct": 1.0, "heure": "12h05"}}}
+    BASE ÉMISSION (L027, chantier vague finale 02/07) : `fav_pct` est désormais le
+    % favorable vs PRIX D'ÉMISSION 7h (`fav_now_emission`, mêmes prix que la table
+    Sélection via `load_prix_emission`), plus vs ouverture. Le champ top-level
+    `base: "emission"` marque cette base ; son ABSENCE (snapshots antérieurs) = base
+    ouverture → les lecteurs aval affichent « — » sur base non concordante (zéro
+    conversion cachée, zéro mélange de bases).
     IDEMPOTENT : relit le fichier, remplace SEULEMENT le bloc du créneau courant,
     réécrit le tout (rejouer le 12h ne touche pas le 18h, et inversement). Seules
-    les lignes `selection=True` AVEC un `fav_now` calculable sont écrites (zéro
-    invention : un actif sans relevé exploitable est absent → trou explicite côté
-    Bilan). Retourne le chemin écrit, ou None si rien à écrire (aucune sélection
-    relevable ce créneau — on n'écrase alors PAS un bloc existant).
+    les lignes `selection=True` AVEC un `fav_now_emission` calculable sont écrites
+    (zéro invention : un actif sans relevé émission exploitable est absent → trou
+    explicite côté Bilan). Retourne le chemin écrit, ou None si rien à écrire.
+    `base_dir=None` → résolu dynamiquement sur la constante module (testable par
+    monkeypatch : évite la pollution de v3/data en test).
     """
+    if base_dir is None:
+        base_dir = SUIVI_TRACKING_DIR
     bloc: Dict[str, dict] = {}
     for li in lignes:
-        if not li.selection or li.fav_now is None:
+        if not li.selection or li.fav_now_emission is None:
             continue
         rec = {
             "call": li.call,
-            "fav_pct": li.fav_now,
+            "fav_pct": li.fav_now_emission,
             "heure": now.strftime("%Hh%M"),
         }
-        # Champs ADDITIFS (brief S9) — excursions max depuis l'ouverture, pour que
-        # le Bilan du soir lise « meilleur/pire point » du créneau s'il le souhaite.
-        # On n'écrit que ce qui est calculable (zéro invention) ; les clés
-        # existantes (call/fav_pct/heure) sont INCHANGÉES (compat bilan_jour).
-        if li.max_favorable_pct is not None:
-            rec["max_fav_pct"] = li.max_favorable_pct
-        if li.max_adverse_pct is not None:
-            rec["max_adv_pct"] = li.max_adverse_pct
+        # Champ ADDITIF — meilleur % favorable atteint depuis l'ÉMISSION (même base
+        # que fav_pct), pour que le Bilan du soir lise « meilleur point » du créneau.
+        # On n'écrit que ce qui est calculable (zéro invention) ; pas d'excursion
+        # adverse base émission → on n'écrit pas max_adv (jamais de base ouverture ici).
+        if li.max_gain_emission is not None:
+            rec["max_fav_pct"] = li.max_gain_emission
         bloc[li.actif] = rec
     if not bloc:
         return None
@@ -1336,6 +1344,7 @@ def save_suivi_tracking(
         except (OSError, json.JSONDecodeError):
             data = {}
     data[report_type] = bloc
+    data["base"] = "emission"  # marqueur de base (absence = ouverture, cf. lecteurs aval)
     p.write_text(
         json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -1369,6 +1378,12 @@ def load_suivi_tracking(
             if isinstance(rec, dict):
                 clean[str(actif)] = rec
         out[str(slot)] = clean
+    # Marqueur de base du snapshot (L027) : "emission" si présent, sinon "ouverture"
+    # (snapshots antérieurs). Exposé sous une clé réservée `_base` (hors VALID_REPORTS,
+    # donc ignorée par les itérations de slots) pour que les lecteurs aval évitent tout
+    # mélange de bases (afficher « — » quand la base ne concorde pas avec leur calcul).
+    base_val = data.get("base")
+    out["_base"] = "emission" if base_val == "emission" else "ouverture"  # type: ignore[assignment]
     return out
 
 

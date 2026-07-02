@@ -638,11 +638,15 @@ def _enrich_picks_semaine(
         conv_signee = (rec.get("score_pm1") if isinstance(rec.get("score_pm1"), (int, float))
                        else rec.get("score_pond") if isinstance(rec.get("score_pond"), (int, float))
                        else None)
-        # % 12h / % 18h favorables (jour d'émission = bdate, call du measures-log).
+        # % 12h / % 18h favorables vs ENTRÉE 7h (jour d'émission = bdate, call du
+        # measures-log). L027 : le bilan HEBDO agrège plusieurs jours ; on EXIGE la
+        # base émission (require_base) pour ne pas mélanger, dans une même colonne,
+        # des snapshots antérieurs base-ouverture (→ « — » pour ces jours).
         try:
             perf_12h, perf_18h = load_perf_intraday_favorable(
                 bdate, actif, str(call),
                 tracking_dir=SUIVI_TRACKING_DIR, snapshot_dir=SUIVI_SNAPSHOT_DIR,
+                require_base="emission",
             )
         except Exception:  # noqa: BLE001 — best-effort, jamais bloquant
             perf_12h = perf_18h = None
@@ -1574,7 +1578,9 @@ def _render_section1_selection(bilan: BilanSemaine, L: List[str]) -> None:
         "**Mouvement 24h réel** = variation RÉELLE de l'actif sur la fenêtre 24h du pari "
         "(realized_pct du measures-log, monte → +, baisse → −) ; le ✅/❌ = verdict outcome "
         "du measures-log (notre call LONG/SHORT était-il dans le bon sens). Win rate = % de "
-        "calls justes · ampleur = % moyen favorable (jamais d'euros)."
+        "calls justes · ampleur = % moyen favorable (jamais d'euros). **% 12h / % 18h** = "
+        "favorable vs ENTRÉE 7h (prix d'émission) ; « — » pour les jours antérieurs à la "
+        "bascule base-entrée (aucune conversion : bases jamais mélangées)."
     )
     L.append("")
     picks = bilan.picks
@@ -1927,7 +1933,7 @@ def _cumul_selection_wr(
 
 
 def _render_mesures_shadow(
-    bilan: BilanSemaine, L: List[str], selection_wr_path: Path = SELECTION_WR_JSONL,
+    bilan: BilanSemaine, L: List[str], selection_wr_path: Optional[Path] = None,
 ) -> None:
     """[Point #5] État des 3 mesures shadow actées en revue d'experts du 28/06.
 
@@ -1940,6 +1946,9 @@ def _render_mesures_shadow(
         idempotent par semaine ; « en chauffe » tant que < 3 semaines, zéro conclusion
         hâtive). Tout ce qui n'est pas calculable est signalé (zéro invention)."""
     from collections import defaultdict  # noqa: PLC0415
+    # path=None → constante module résolue dynamiquement (monkeypatch → zéro pollution).
+    if selection_wr_path is None:
+        selection_wr_path = sys.modules[__name__].SELECTION_WR_JSONL
     JJ = ("lun", "mar", "mer", "jeu", "ven", "sam", "dim")
 
     L.append("## Mesures shadow en cours (reco 28/06)")

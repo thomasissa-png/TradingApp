@@ -1576,10 +1576,17 @@ def build_bilan_jour(
         tracking_for_fallback = {}
 
     # Map ticker → dernier fav% relevé (18h prioritaire, sinon 12h) pour le
-    # fallback clôture #4 (reconstruction prix depuis fav% + référence).
+    # fallback clôture #4 (reconstruction prix depuis fav% + référence OUVERTURE).
+    # L027 : ce fallback reconstruit un prix depuis la RÉFÉRENCE OUVERTURE ; il ne
+    # doit donc consommer QUE des relevés base ouverture. Depuis la bascule du
+    # tracking en base ÉMISSION, on N'ALIMENTE PAS ce fallback avec des snapshots
+    # émission (mélange de bases interdit) → cellule « — » (fallbacks #1-3 restent).
     suivi_fav_map: Dict[str, float] = {}
+    # base émission incompatible avec la réf ouverture du fallback #4 → on n'alimente
+    # PAS ce fallback (les blocs trajectoire 12h/18h plus bas gardent le tracking).
+    _fav_slots = {} if tracking_for_fallback.get("_base") == "emission" else tracking_for_fallback
     for slot in ("12h", "18h"):  # 18h écrase 12h (dernier relevé)
-        for actif_name, rec in (tracking_for_fallback.get(slot) or {}).items():
+        for actif_name, rec in (_fav_slots.get(slot) or {}).items():
             if not isinstance(rec, dict):
                 continue
             fav = rec.get("fav_pct")
@@ -1602,6 +1609,15 @@ def build_bilan_jour(
         suivi_fav_map=suivi_fav_map,
     )
     bilan.measures_24h = measures_24h
+
+    # Garde-fou fraîcheur fournisseur (vague finale 02/07) — flag (JAMAIS d'invalidation)
+    # les clôtures du jour strictement identiques à la dernière clôture persistée du même
+    # actif (measures-log du jour précédent), symptôme d'un prix figé côté fournisseur
+    # (cf. coton 2.371 les 29 ET 30/06). Doit lire le log AVANT le merge du jour ci-dessous.
+    try:
+        _flag_prix_stale_bilan(measures_24h, date_j, sys.modules[__name__].MEASURES_LOG_FILE)
+    except Exception as e:  # noqa: BLE001 — garde-fou best-effort, jamais bloquant
+        logger.warning("bilan : garde-fou fraîcheur prix KO (%s)", e)
 
     # Persistance des mesures du jour → measures-log (merge non destructif) puis
     # régénération de variations-24h.md. Best-effort : un échec n'interrompt pas
@@ -2398,15 +2414,19 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     for m in sorted(bilan.measures_24h, key=lambda x: x.cell.actif_name):
         delta = m.delta_pct
         seuil = m.seuil_pct
-        flag = "—"
+        flag_parts: List[str] = []
         if (
             m.outcome == OUTCOME_FAUSSE
             and isinstance(delta, (int, float))
             and isinstance(seuil, (int, float))
             and abs(delta) >= GROS_MOVE_FACTOR * seuil
         ):
-            flag = "⚡ gros move"
+            flag_parts.append("⚡ gros move")
             faux_gros.append((m.cell.actif_name, abs(delta)))
+        # Garde-fou fraîcheur fournisseur (FLAG-ONLY) — clôture figée vs la veille.
+        if getattr(m, "prix_suspect_stale", None):
+            flag_parts.append("⚠️ prix possiblement figé (fournisseur)")
+        flag = " · ".join(flag_parts) if flag_parts else "—"
         cloture_cell = _fmt_price(m.prix_courant)
         if getattr(m, "ticker", None) in bilan.close_approx_tickers:
             cloture_cell = f"{cloture_cell} {CLOSE_APPROX_MARKER}"
@@ -2641,6 +2661,7 @@ def load_perf_intraday_favorable(
     call: Optional[str],
     tracking_dir: Path = SUIVI_TRACKING_DIR,
     snapshot_dir: Path = SUIVI_SNAPSHOT_DIR,
+    require_base: Optional[str] = None,
 ) -> Tuple[Optional[float], Optional[float]]:
     """(% favorable 12h, % favorable 18h) pour (actif, jour), depuis les MÊMES
     sources que le bilan du jour. Zéro re-dérivation, zéro invention.
@@ -2654,7 +2675,13 @@ def load_perf_intraday_favorable(
       (run_suivi n'écrit le delta-snapshot qu'au 12h) → reste « — » (pas inventé).
     - Jour sans snapshot (historique avant capture) → (None, None).
     Le call passé en argument est celui du measures-log ; on n'utilise un relevé
-    tracking que si SON call concorde (sinon on l'ignore, comme le bilan)."""
+    tracking que si SON call concorde (sinon on l'ignore, comme le bilan).
+
+    L027 (base émission) : `require_base` force la concordance de BASE du snapshot
+    (`base` du JSON : "emission", absence = "ouverture"). Si fixé et que la base ne
+    matche pas → les valeurs restent None (« — ») pour ne JAMAIS mélanger deux bases
+    dans une même colonne (ex : bilan HEBDO agrégeant des jours de part et d'autre de
+    la bascule). None (défaut) = passthrough base-agnostique (lecteurs mono-jour)."""
     sign = _call_sign(call)
     perf_12h: Optional[float] = None
     perf_18h: Optional[float] = None
@@ -2666,7 +2693,9 @@ def load_perf_intraday_favorable(
             data = json.loads(tpath.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             data = {}
-        if isinstance(data, dict):
+        snap_base = "emission" if (isinstance(data, dict) and data.get("base") == "emission") else "ouverture"
+        base_ok = require_base is None or snap_base == require_base
+        if isinstance(data, dict) and base_ok:
             for slot, target in (("12h", "perf_12h"), ("18h", "perf_18h")):
                 rec = (data.get(slot) or {}).get(actif)
                 if not isinstance(rec, dict):
@@ -2683,7 +2712,8 @@ def load_perf_intraday_favorable(
 
     # 2) Repli 12h pour les actifs HORS Sélection : delta BRUT vs ouverture (tous
     #    actifs) × signe du call = favorable (même primitive que fav_delta).
-    if perf_12h is None and sign is not None:
+    #    Base OUVERTURE : ignoré si l'appelant exige la base émission (zéro mélange).
+    if perf_12h is None and sign is not None and require_base != "emission":
         spath = snapshot_dir / f"{jour.isoformat()}-12h.json"
         if spath.exists():
             try:
@@ -2772,6 +2802,51 @@ def load_max_gain_bilan(
         if isinstance(mg, (int, float)):
             out[(str(d), str(a))] = round(float(mg), 2)
     return out
+
+
+def _flag_prix_stale_bilan(
+    measures: List[Any], date_j: date, measures_log_path: Path,
+) -> None:
+    """Marque `prix_suspect_stale=True` (FLAG-ONLY, aucun changement d'outcome) sur les
+    mesures du jour dont la clôture est STRICTEMENT identique à la dernière clôture
+    (`prix_echeance`) PERSISTÉE du même actif à une échéance ANTÉRIEURE (measures-log du
+    jour précédent) — symptôme d'un prix figé fournisseur (coton 2.371 les 29 ET 30/06).
+    Zéro invention : sans clôture antérieure comparable (deux prix non-None strictement
+    égaux), rien n'est flaggé. Lecture seule du log (aucune réécriture)."""
+    if not measures_log_path.exists():
+        return
+    # Dernière clôture persistée AVANT date_j, par actif (échéance max strictement < J).
+    last_close: Dict[str, Tuple[date, float]] = {}
+    for line in measures_log_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(r, dict):
+            continue
+        actif = r.get("actif")
+        px = r.get("prix_echeance")
+        if not actif or not isinstance(px, (int, float)):
+            continue
+        try:
+            ech = date.fromisoformat(str(r.get("echeance")))
+        except (TypeError, ValueError):
+            continue
+        if ech >= date_j:
+            continue
+        prev = last_close.get(str(actif))
+        if prev is None or ech > prev[0]:
+            last_close[str(actif)] = (ech, float(px))
+    for m in measures:
+        px_now = getattr(m, "prix_courant", None)
+        if not isinstance(px_now, (int, float)):
+            continue
+        prev = last_close.get(m.cell.actif_name)
+        if prev is not None and float(px_now) == prev[1]:
+            m.prix_suspect_stale = True
 
 
 def variations_24h_significatives(
@@ -3007,8 +3082,13 @@ def render_variations_24h(variations: List[Variation24h], now: Optional[datetime
     return "\n".join(L)
 
 
-def write_variations_24h(path: Path = VARIATIONS_24H_FILE, **kwargs) -> Path:
-    """Reconstruit et écrit data/variations-24h.md. Best-effort, jamais bloquant."""
+def write_variations_24h(path: Optional[Path] = None, **kwargs) -> Path:
+    """Reconstruit et écrit data/variations-24h.md. Best-effort, jamais bloquant.
+
+    `path=None` → résolu dynamiquement sur la constante module (testable par
+    monkeypatch : évite la pollution de v3/data en test)."""
+    if path is None:
+        path = sys.modules[__name__].VARIATIONS_24H_FILE
     variations = variations_24h_significatives()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_variations_24h(variations, **kwargs) + "\n", encoding="utf-8")

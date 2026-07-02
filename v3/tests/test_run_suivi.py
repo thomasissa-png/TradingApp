@@ -921,8 +921,12 @@ def test_excursions_persistees_dans_tracking(env, tmp_path):
     data = rs.load_suivi_tracking(date(2026, 6, 8), base_dir=tracking_dir)
     rec = data["12h"]["Or"]
     assert rec["call"] == "SHORT" and "fav_pct" in rec and "heure" in rec  # inchangés
+    # L027 : base ÉMISSION → max_fav_pct = max_gain_emission (réf. émission 3400 = ouv.
+    # ici). Plus de max_adv_pct persisté (aucune excursion adverse base émission →
+    # jamais de mélange de bases dans un même record).
     assert rec["max_fav_pct"] == pytest.approx(1.76, abs=0.02)
-    assert rec["max_adv_pct"] == pytest.approx(0.0, abs=0.02)  # jamais au-dessus de l'ouverture
+    assert "max_adv_pct" not in rec
+    assert data["_base"] == "emission"
 
 
 # ---------------------------------------------------------------------------

@@ -362,11 +362,13 @@ def test_max_gain_du_jour_high_low():
 # ===========================================================================
 
 def _ligne(actif, call, fav_now, selection=True):
+    # L027 : le tracking est désormais BASE ÉMISSION → save_suivi_tracking lit
+    # `fav_now_emission` (et non plus `fav_now`). On l'aligne sur la valeur testée.
     return rs.SuiviLigne(
         actif=actif, call=call, ouverture=100.0, prix_courant=101.0, delta_pct=1.0,
         statut="✅ gagne", tendance="—", delta_vs_prec=None, suggestion="Hold",
         seuil_pct=0.3, vendre="Pas vendre", selection=selection, fav_now=fav_now,
-        fav_prec=None,
+        fav_prec=None, fav_now_emission=fav_now,
     )
 
 

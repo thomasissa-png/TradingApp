@@ -3388,7 +3388,11 @@ def collect_for_fiche(
 # Écriture criteres-courants.md
 # ---------------------------------------------------------------------------
 
-def write_criteres(payload: dict, path: Path = CRITERES_OUT) -> Path:
+def write_criteres(payload: dict, path: Optional[Path] = None) -> Path:
+    # path=None → constante module résolue dynamiquement (monkeypatch en test →
+    # zéro pollution de v3/data).
+    if path is None:
+        path = sys.modules[__name__].CRITERES_OUT
     path.parent.mkdir(parents=True, exist_ok=True)
     yml = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
     content = (
@@ -3511,7 +3515,7 @@ def _render_reported_block(reported: Dict[str, int]) -> List[str]:
 
 
 def write_criteres_health(skips: Dict[str, int], now: datetime,
-                          path: Path = CRITERES_HEALTH_OUT,
+                          path: Optional[Path] = None,
                           provenance: Optional[Dict[str, str]] = None,
                           reported: Optional[Dict[str, int]] = None) -> Path:
     """Persiste la santé des critères : chaque SKIP/n/a → la RAISON exacte.
@@ -3522,7 +3526,10 @@ def write_criteres_health(skips: Dict[str, int], now: datetime,
     Inclut un bloc « Provenance des prix » (twelve_native / yfinance_fallback /
     stooq_fallback par symbole) si `provenance` est fourni.
     Zéro effet de bord sur le scoring (fichier informatif).
+    `path=None` → constante module résolue dynamiquement (monkeypatch → zéro pollution).
     """
+    if path is None:
+        path = sys.modules[__name__].CRITERES_HEALTH_OUT
     path.parent.mkdir(parents=True, exist_ok=True)
     ts = now.strftime("%Y-%m-%d %H:%M UTC")
     lines = [

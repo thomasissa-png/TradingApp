@@ -181,8 +181,13 @@ def load_cache(path: Path = LAST_GOOD_PATH) -> Dict[str, Any]:
     return {}
 
 
-def save_cache(cache: Dict[str, Any], path: Path = LAST_GOOD_PATH) -> None:
-    """Écrit le cache last-good (JSON trié, stable pour le diff git)."""
+def save_cache(cache: Dict[str, Any], path: Optional[Path] = None) -> None:
+    """Écrit le cache last-good (JSON trié, stable pour le diff git).
+
+    `path=None` → constante module résolue dynamiquement (monkeypatch en test →
+    zéro pollution de v3/data)."""
+    if path is None:
+        path = LAST_GOOD_PATH  # global module → monkeypatch effectif en test
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(cache, ensure_ascii=False, indent=2, sort_keys=True) + "\n",

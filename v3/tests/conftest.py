@@ -40,6 +40,9 @@ _REDIRECT_WRITE_DEFAULTS = (
     ("criteres_calculator", "CRITERES_HEALTH_OUT", False),
     ("last_good_cache", "LAST_GOOD_PATH", False),
     ("run_weekly", "SELECTION_WR_JSONL", False),
+    # Fuites résiduelles attrapées par le filet au run du 02/07 :
+    ("build_html", "OUT_PATH", False),
+    ("agent_news", "SOURCE_HEALTH_FILE", False),
 )
 
 

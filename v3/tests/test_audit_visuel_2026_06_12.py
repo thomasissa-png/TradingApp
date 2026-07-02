@@ -239,9 +239,11 @@ def test_bilan_jour_calque_sur_bilan_semaine():
     """Le bilan du jour reprend les mêmes sections que le bilan semaine, + annexe repliée."""
     b = _bilan_1_8_3()
     md = bj._render_markdown(b, {})
+    # [02/07] la section 3 a été renommée « Occasions manquées (hors Sélection) »
+    # (audit bilan 22h15, GO fondateur : c'était son vrai contenu).
     for h in ("## 1. Performance de la Sélection du jour",
               "## 2. Ce qu'on a bien fait aujourd'hui",
-              "## 3. Ce qu'on doit améliorer aujourd'hui",
+              "## 3. Occasions manquées (hors Sélection)",
               "## 4. Les learnings du jour",
               "## 5. Catalyseurs J+1"):
         assert h in md, f"section manquante : {h}"

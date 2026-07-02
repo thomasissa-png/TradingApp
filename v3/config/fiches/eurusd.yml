@@ -65,7 +65,16 @@ criteres:
     cap: 1.0
     signe: -1                    # inversé : USD/JPY baisse => LONG EUR
     poids: 4
-    pertinence: { "24h": 0.7, "7j": 0.8, "1m": 0.5 }
+    # [CUTOVER 01/07 — frein des capteurs non-tendance à contre-sens du 24h, GO
+    # fondateur 01/07] pertinence 24h 0.7 -> 0.1. PREUVE (bulletin 01/07) : ce
+    # critère portait l'effet 24h le plus fort (-2.68) et pilotait EUR/USD en SHORT
+    # CONTRE les tendances 3j (+1.47) et 7j (+1.46) positives — pattern identique au
+    # piège « taux réels contre l'or ». Sa pertinence 24h (0.7) dominait celle des
+    # tendances courtes (3j=1.0, 7j=0.5). Réduite à 0.1 pour que le 24h soit dominé
+    # par les tendances courtes (7j/1m INCHANGÉS). Effet 01/07 : score 24h -1.35 -> +0.94
+    # (SHORT -> LONG). Les autres capteurs structurels (taux 2y/10y, dxy, spread,
+    # cot, fedwatch) sont DÉJÀ à 0.1 sur le 24h (reweight 30/06) — non touchés.
+    pertinence: { "24h": 0.1, "7j": 0.8, "1m": 0.5 }
     effet_long: "USD/JPY baisse"
     effet_short: "USD/JPY monte"
 

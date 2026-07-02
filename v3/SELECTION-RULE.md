@@ -335,3 +335,19 @@ règle, NI le kill-criterion.
 - **Quant-majorité rétablie sur le 24h pour les 15 actifs** (décision gravée 20/06 : le quant domine, la news est un contexte secondaire). News/régime/chocs **non touchés** (ne pas casser le signal du jour).
 
 **Reset : les 15 cellules au 2026-06-30.** La pertinence par horizon change pour tous → `ref_changed` avancé au 2026-06-30 (`ref-changed.json`, clé `ticker_principal`). N et WR tradable repartent de zéro. **Coût assumé (fondateur) : valider jusqu'au 08/08 un quotidien piloté par des signaux lents n'a pas de sens ; mieux vaut valider le moteur corrigé.** La règle de sélection (WR ≥ 70 % / N ≥ 15, 24h-only) et **aucun poids de fiche** (seules les **pertinences par horizon** bougent) ne sont autrement modifiés. Vérif : `tests/test_reweight_horizons_3006.py` (quant domine la news sur le 24h pour les 15).
+
+---
+
+## Addendum — 2026-07-01 : véto tendance courte + plancher d'intensité + capteurs éteints (GO fondateur 01/07)
+
+> Append-only. La règle gravée (WR tradable ≥ 70 % / N ≥ 15, 24h-only, à J+60) reste **inchangée**. Ces filtres RESTREIGNENT la Sélection (ils n'ajoutent jamais un pari) ; ils ne changent NI la direction NI la note d'aucune cellule.
+
+**Contexte.** Audit du bulletin du 01/07 (validé fondateur). Doctrine WIN RATE ONLY : « le quant/la tendance est patron, les news sont du contexte » et « ne jamais forcer un pari faible ». Trois filtres de Sélection sont ajoutés (aucun cutover — zéro reset de compteur ; ce sont des règles de sélection, pas un changement de signal mesuré).
+
+**1. Véto « news contre la tendance courte » (sélection uniquement).** Un candidat à la « Sélection (max 3) » est **écarté** si (a) son **driver dominant** est un critère de type **news / direction-news** (`source_track` « ia* » / « keyword ») ET (b) l'**effet 24h** du critère **« tendance 3 jours »** (`momentum_prix_3j_*`) de l'actif est de **signe opposé au call**. Motif affiché dans la ligne « Écartés » : *« news contre la tendance courte »*. Cas de référence 01/07 : **Cacao LONG** (news El Niño/maladies dominante, tendance 3j négative) aurait été écarté ; **Café/Sucre** (driver non-news, tendance alignée) restent sélectionnés.
+
+**2. Plancher d'intensité (ne jamais forcer un pari faible).** Entrer en Sélection exige en plus une **intensité normalisée minimale** : `|note normalisée 24h| ≥ 0.30` (constante nommée `SELECTION_INTENSITE_MIN`). L'intensité = `note ÷ Σ|poids effectif couvert|` (`compute_note_normalisee`, ~[-1,+1], comparable inter-actifs). **Calibration** sur la distribution RÉELLE des decision-logs 24h depuis le 23/06 (7 cycles) : le seuil sépare les paris NETS (01/07 : Café +1.36, Sucre +1.02, Or −0.48 ; jours structurés Cacao/EUR/USD/Cuivre/Argent ~0.4→1.2) des paris MOUS (01/07 : EUR/USD −0.23, CAC −0.16 ; S&P ~0.02→0.15, VIX ~0.01, Blé ~0.03→0.08). Le gap empirique 01/07 entre le plus faible NET (Or 0.48) et le plus fort MOU (EUR/USD 0.23) = [0.23 ; 0.48] ; 0.30 tombe dedans → garde Or, écarte EUR/USD + CAC. **Moins de 3 paris (voire zéro) = normal** (doctrine « 2-3 bons paris, pas 12 »).
+
+**3. Conviction plafonnée « fragile (capteurs éteints) ».** Si le critère de **poids MAXIMUM** de la fiche est n/a, OU si **≥ 2 critères de poids ≥ 8** sont n/a, le libellé de conviction est plafonné à **« fragile (capteurs éteints) »** (nouveau motif), quel que soit le score, et la cellule devient **inéligible à la Sélection**. N'altère NI la direction NI la note (libellé + éligibilité uniquement). Cas de référence 01/07 : **Blé** (stocks USDA poids 11 n/a) ne peut plus afficher une conviction pleine.
+
+**Portée.** Zéro cutover, zéro reset de N : ces règles filtrent l'AFFICHAGE de la Sélection et l'éligibilité, pas la mesure du signal. Tests : `tests/test_regles_selection_2026_07_01.py` (véto rejoué sur le cas Cacao ; plancher garde Or / écarte EUR-USD + CAC ; capteurs éteints sur Blé).

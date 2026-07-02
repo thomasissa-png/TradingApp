@@ -2681,12 +2681,23 @@ def select_paris_du_jour(
     avec les cellules qui SERAIENT entrées dans le top `limit` par |note| mais qui
     ont été écartées pour cause de ↯ (news à contre-sens), dans l'ordre |note| desc.
 
+    `ecartes_tendance` : si une liste est fournie, elle est remplie (transparence,
+    règle fondateur 01/07) avec les cellules qui SERAIENT entrées dans le top
+    `limit` par |note| mais qui ont été écartées par le VÉTO « news contre la
+    tendance courte » (driver dominant news ET tendance 3j à contre-sens du call).
+
     `hors_top` : si une liste est fournie, elle est remplie (decision-log) avec
     TOUTES les cellules jouables NON retenues, chacune avec son `motif` :
       - « écarté : news à contre-sens (↯) » pour un ↯ ;
+      - « écarté : news contre la tendance courte » pour le véto tendance (01/07) ;
+      - « écarté : intensité sous le plancher » pour l'intensité faible (01/07) ;
       - « hors top 3 » pour une conviction jouable surnuméraire (au-delà de `limit`).
     Permet au decision-log de tracer le motif d'exclusion sur EXACTEMENT le même
     classement que la tête « 🎯 Aujourd'hui » (UNE seule sélection, partout).
+
+    EXCLUSIONS AMONT (jamais candidates, comme la couverture insuffisante) :
+      - « fragile (capteurs éteints) » (règle 01/07 point 3) : capteur de poids MAX
+        n/a OU >= 2 capteurs de poids >= 8 n/a → cellule INÉLIGIBLE (pas de pari).
     """
     if seuil_conviction is None:
         try:
@@ -2697,7 +2708,8 @@ def select_paris_du_jour(
             seuil_conviction = 0.6
 
     H = "24h"
-    candidats: List[Tuple[float, str, bool, Dict[str, str]]] = []
+    # motif ∈ {"" (retenable), "contresens", "news_tendance", "intensite"}.
+    candidats: List[Tuple[float, str, str, Dict[str, str]]] = []
     for r in results:
         conc = r.conclusions.get(H, "")
         if conc not in ("LONG", "SHORT"):
@@ -2706,9 +2718,21 @@ def select_paris_du_jour(
             continue
         if _conviction_cell(r, H, seuil_conviction) == _TETE_CONVICTION_EXCLUE:
             continue  # couverture insuffisante → pas de pari du jour
+        if _capteurs_lourds_eteints(r):
+            continue  # (01/07 point 3) capteurs lourds morts → inéligible
         score = r.scores.get(H, 0.0)
-        contresens = _cell_news_a_contresens(r, H, now)  # ↯ news à contre-sens
-        candidats.append((abs(score), r.nom, contresens, {
+        # Motif d'écartement, par ORDRE DE PRIORITÉ (le plus établi d'abord) :
+        # ↯ contre-sens (existant) > véto news/tendance-courte (01/07 point 1) >
+        # intensité sous plancher (01/07 point 2). "" = retenable.
+        if _cell_news_a_contresens(r, H, now):
+            motif = "contresens"
+        elif _cell_news_contre_tendance_courte(r, H):
+            motif = "news_tendance"
+        elif _intensite_sous_plancher(r, H):
+            motif = "intensite"
+        else:
+            motif = ""
+        candidats.append((abs(score), r.nom, motif, {
             "actif": r.nom,
             "fiche_key": r.fiche_key,
             "direction": conc,
@@ -2722,30 +2746,36 @@ def select_paris_du_jour(
     # Tri |note| décroissant, déterministe (actif départage les ex æquo).
     candidats.sort(key=lambda t: (-t[0], t[1]))
 
-    # Transparence : repérer les ↯ qui auraient été dans le top `limit` par |note|
-    # SI on ne filtrait pas les news à contre-sens (rang basé sur le tri brut, AVANT
-    # exclusion). Calculé sur la liste triée complète (jouables, hors fragile).
+    # Transparence : repérer les écartés qui auraient été dans le top `limit` par
+    # |note| SI on ne filtrait pas (rang sur le tri brut, AVANT exclusion).
     if ecartes_contresens is not None:
-        for rang, (_abs, _nom, contresens, d) in enumerate(candidats):
-            if contresens and rang < limit:
+        for rang, (_abs, _nom, motif, d) in enumerate(candidats):
+            if motif == "contresens" and rang < limit:
                 ecartes_contresens.append(d)
+    if ecartes_tendance is not None:
+        for rang, (_abs, _nom, motif, d) in enumerate(candidats):
+            if motif == "news_tendance" and rang < limit:
+                ecartes_tendance.append(d)
 
-    # Sélection finale : on saute les ↯ et on prend les non-↯ suivantes (top `limit`).
-    retenus = [d for _abs, _nom, contresens, d in candidats if not contresens]
+    # Sélection finale : on saute tous les écartés (motif non vide) et on prend les
+    # retenables suivantes (top `limit`).
+    retenus = [d for _abs, _nom, motif, d in candidats if not motif]
     selection = retenus[:limit]
 
-    # Decision-log : motif d'exclusion sur le MÊME classement que la tête. Une
-    # cellule jouable non retenue est soit un ↯ (news à contre-sens), soit hors
-    # top `limit`. Source de vérité UNIQUE = ce classement (cf. brief 23/06).
+    # Decision-log : motif d'exclusion sur le MÊME classement que la tête. Source
+    # de vérité UNIQUE = ce classement (cf. brief 23/06).
     if hors_top is not None:
+        _MOTIF_TXT = {
+            "contresens": "écarté : news à contre-sens (↯)",
+            "news_tendance": "écarté : news contre la tendance courte",
+            "intensite": "écarté : intensité sous le plancher",
+            "": "hors top 3",
+        }
         selection_keys = {d["fiche_key"] for d in selection}
-        for _abs, _nom, contresens, d in candidats:
+        for _abs, _nom, motif, d in candidats:
             if d["fiche_key"] in selection_keys:
                 continue
-            motif = (
-                "écarté : news à contre-sens (↯)" if contresens else "hors top 3"
-            )
-            hors_top.append({**d, "motif": motif})
+            hors_top.append({**d, "motif": _MOTIF_TXT[motif]})
 
     return selection
 
@@ -2795,35 +2825,43 @@ def build_paris_du_jour_block(
     """
     prix_reference = prix_reference or {}
     ecartes: List[Dict[str, str]] = []
+    ecartes_tend: List[Dict[str, str]] = []
     picks = select_paris_du_jour(
         results, now, seuil_conviction=seuil_conviction,
         ecartes_contresens=ecartes,
+        ecartes_tendance=ecartes_tend,
     )
 
-    def _ligne_ecartes() -> List[str]:
+    def _phrase_ecartes(items: List[Dict[str, str]], motif: str) -> List[str]:
         """Transparence : convictions qui SERAIENT dans le top 3 par |note| mais
-        écartées pour news à contre-sens (↯). Zéro invention : seulement si le cas
-        se produit (`ecartes` non vide)."""
-        if not ecartes:
+        écartées pour `motif`. Zéro invention : rendu seulement si `items` non vide."""
+        if not items:
             return []
         sens_humain = {"LONG": "LONG", "SHORT": "SHORT"}
-        if len(ecartes) == 1:
-            e = ecartes[0]
+        if len(items) == 1:
+            e = items[0]
             return [
                 f"_{e['actif']} ({sens_humain.get(e['direction'], e['direction'])}, "
-                f"conviction parmi les plus fortes) écarté des paris : news à "
-                f"contre-sens (↯)._",
+                f"conviction parmi les plus fortes) écarté des paris : {motif}._",
                 "",
             ]
         noms = ", ".join(
             f"{e['actif']} ({sens_humain.get(e['direction'], e['direction'])})"
-            for e in ecartes
+            for e in items
         )
         return [
-            f"_Écartés des paris pour news à contre-sens (↯), malgré une conviction "
-            f"parmi les plus fortes : {noms}._",
+            f"_Écartés des paris pour {motif}, malgré une conviction parmi les "
+            f"plus fortes : {noms}._",
             "",
         ]
+
+    def _ligne_ecartes() -> List[str]:
+        """Lignes « Écartés » : news à contre-sens (↯) + véto « news contre la
+        tendance courte » (règle fondateur 01/07). Zéro invention : uniquement les
+        cas réellement survenus."""
+        return _phrase_ecartes(ecartes, "news à contre-sens (↯)") + _phrase_ecartes(
+            ecartes_tend, "news contre la tendance courte"
+        )
 
     out: List[str] = ["## 🎯 Aujourd'hui", ""]
     if not picks:
@@ -3948,8 +3986,14 @@ def _synthese_cell_risk_flags(
 # depuis les drivers courants (aucun état stocké) → se met à jour « au fur et à
 # mesure » et persiste tant que le driver dominant ne change pas.
 
-# Convention de signe DOUTEUSE (audit point 5) : phrase neutre forcée.
-_RAISON_DRIVERS_DOUTEUX: set = {"meteo_cacao_cote_ivoire_ghana"}
+# Drivers à convention de signe DOUTEUSE → phrase neutre forcée (pas de direction
+# assénée). Ensemble VIDE depuis le 01/07 : la symétrie « sécheresse OU excès =
+# haussier » de la météo cacao a été VALIDÉE par panel de 3 experts en S8 (18/06,
+# sourcé) et le câblage fiche correspond (mode zscore_abs, signe +1) → la mention
+# « (convention de signe à valider) » est retirée, le driver utilise désormais sa
+# phrase directionnelle normale. La machinerie reste en place pour un futur driver
+# dont la convention de signe serait réellement douteuse.
+_RAISON_DRIVERS_DOUTEUX: set = set()
 
 # Quasi-neutre → on n'invente PAS de direction (audit : VIX 7j/1m, CAC).
 _RAISON_QUASI_NEUTRE = "quasi-neutre, pas de driver franc"

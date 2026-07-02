@@ -30,7 +30,12 @@ NOW = datetime(2026, 6, 23, 9, 0, tzinfo=timezone.utc)
 SEUIL = 0.6  # seuil de conviction « forte » fixe (isole du chargement bilan_jour)
 
 
-def _fiche(poids: int = 10) -> dict:
+def _fiche(poids: int = 1) -> dict:
+    # poids=1, 1 critère, pertinence 1.0 → dénominateur d'intensité (note
+    # normalisée) = 1 → intensité ≡ |score| pour ces mocks. Le plancher
+    # d'intensité 24h (règle 01/07) coïncide alors avec NEUTRAL_BAND (score ≥ 0.30
+    # déjà exigé par `_cell_a_eviter`) → aucun sur-filtrage : les scénarios de
+    # ranking/exclusion testés ici restent inchangés.
     return {
         "actif": "X",
         "criteres": [

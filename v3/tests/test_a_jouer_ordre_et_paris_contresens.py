@@ -33,10 +33,13 @@ NOW = datetime(2026, 6, 23, 9, 0, tzinfo=timezone.utc)
 SEUIL = 0.6  # seuil « forte » fixe (isole du chargement bilan_jour)
 
 
-def _fiche(poids: int = 10) -> dict:
+def _fiche(poids: int = 1) -> dict:
     # 3 critères équilibrés : évite le drapeau ◧ « mono-critère dominant » (qui
     # dégraderait la conviction en « fragile (1 seul critère) » au lieu de
     # « forte »). On veut isoler le ↯ (news à contre-sens) du ◧.
+    # poids=1 (dénominateur d'intensité = 3) : toutes les cellules testées ici ont
+    # |score| >= 1.86 (note normalisée >= 0.62 > 0.30) → le plancher d'intensité
+    # 24h (règle 01/07) ne modifie AUCUN de ces scénarios.
     return {
         "actif": "X",
         "criteres": [

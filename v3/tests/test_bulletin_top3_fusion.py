@@ -326,8 +326,11 @@ def test_surveillance_garde_alerte_directionnelle_sur_direction_actee():
     r.divergence_quant_news = {"24h": True, "7j": False, "1m": False}
     r.contre_momentum = {h: False for h in sa.HORIZONS}
     r.incoherence_inter_horizons = False
-    b = sa.render_bulletin([r], {}, NOW, "h", "ok")
-    section = b.split("## ⚠️ Cellules à surveiller", 1)[1].split("##", 1)[0]
+    # [Point 6 — 01/07] La surveillance du BULLETIN est réduite à la Sélection +
+    # flips ; le PRÉDICAT `_cellule_a_surveiller` (testé ici) reste inchangé. On
+    # vérifie donc `build_surveillance_block` en mode rétro-compat (sans filtre) :
+    # il liste bien la cellule ACTÉE portant l'alerte ↯.
+    section = "\n".join(sa.build_surveillance_block([r], NOW))
     assert "AvecDivergence 24h" in section
     assert "↯" in section
     # Les horizons sans alerte ne remontent pas

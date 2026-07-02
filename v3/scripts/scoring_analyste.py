@@ -1655,9 +1655,38 @@ def _enrich_net_news_label(
     if net_sens:
         if titre and headline_sens == net_sens:
             return f"news net {net_sens} : {titre}"
-        return f"news net {net_sens} (pas de titre représentatif aujourd'hui)"
+        # [Point 11 — 01/07] Paradoxe : le NET va dans un sens mais le TITRE majeur
+        # va DANS L'AUTRE (d'où le drapeau ↯). On l'explique en une parenthèse
+        # (dérivé du net vs top-titre déjà calculés, zéro nouveau scoring) au lieu
+        # de la phrase interdite « pas de titre représentatif aujourd'hui » (point 1).
+        if titre and headline_sens and headline_sens != net_sens:
+            globaux = "haussières" if net_sens == "haussière" else "baissières"
+            autre = "baissier" if net_sens == "haussière" else "haussier"
+            return (
+                f"news net {net_sens} "
+                f"(news globalement {globaux} mais un titre majeur {autre})"
+            )
+        # [Point 1 — 01/07] Aucun titre montrable : la phrase « pas de titre
+        # représentatif aujourd'hui » est INTERDITE comme raison. On retourne la
+        # sentinelle _NEWS_SANS_TITRE : les couches de RAISON (`_driver_affichable`)
+        # basculent alors sur le premier driver concret NON-news. En dernier
+        # recours d'affichage brut (swing), la sentinelle est nettoyée en
+        # « news net {sens} » (jamais de titre fabriqué).
+        return _NEWS_SANS_TITRE_PREFIX + net_sens
     # Aucune contribution news mesurable → on N'INVENTE PAS de sens depuis le call.
     return "contexte news (synthèse du flux)"
+
+
+# Sentinelle « porteur net news SANS titre montrable » (point 1). Préfixe repérable
+# par les couches de raison pour basculer sur un driver concret non-news.
+_NEWS_SANS_TITRE_PREFIX = "news net "
+
+
+def _est_news_sans_titre(label: str) -> bool:
+    """True si `label` est le porteur net news SANS titre ni paradoxe (point 1) :
+    « news net haussière » / « news net baissière » EXACTEMENT (pas de « : titre »
+    ni de parenthèse). Ces libellés déclenchent la bascule vers un driver concret."""
+    return label in ("news net haussière", "news net baissière")
 
 
 def _net_news_contrib_sens(r: "ActifResult") -> str:
@@ -1831,24 +1860,46 @@ def _cellule_a_surveiller(r: "ActifResult", h: str, flags: List[str]) -> bool:
 def build_surveillance_block(
     results: List["ActifResult"],
     now: datetime,
+    selection_keys: Optional[set] = None,
+    flip_cells: Optional[set] = None,
 ) -> List[str]:
     """Construit le bloc '## ⚠️ Cellules à surveiller'.
 
-    Liste UNIQUEMENT les cellules ACTÉES (LONG/SHORT) portant une alerte
-    directionnelle forte (cf. `_cellule_a_surveiller`). Les INSUFFISANT et les
-    cellules dont le seul flag est un qualificatif de couverture sont exclus
-    (anti-bruit #5.2). Format ligne : `- Actif Horizon — DIRECTION — [drapeaux]`.
-    Si aucune → ligne placeholder.
+    Liste les cellules ACTÉES (LONG/SHORT) portant une alerte directionnelle forte
+    (cf. `_cellule_a_surveiller`). Les INSUFFISANT et les cellules dont le seul flag
+    est un qualificatif de couverture sont exclus (anti-bruit #5.2).
+
+    [Point 6 — 01/07] RÉDUCTION : quand `selection_keys` et/ou `flip_cells` sont
+    fournis, on ne garde QUE les cellules de la Sélection du jour (24h) et les flips
+    du jour (au lieu des ~36 cellules à alerte). Le détail complet reste au
+    decision-log (ligne d'intro). Rétro-compat : si les deux sont None, comportement
+    historique (toutes les cellules à alerte).
+
+    Format ligne : `- Actif Horizon · DIRECTION · [drapeaux]`. Si aucune → placeholder.
     """
+    _filtrer = selection_keys is not None or flip_cells is not None
+    selection_keys = selection_keys or set()
+    flip_cells = flip_cells or set()
     lines: List[str] = []
     lines.append("## ⚠️ Cellules à surveiller")
     lines.append("")
+    if _filtrer:
+        lines.append(
+            "_Réduit aux paris de la Sélection du jour et aux flips du jour ; "
+            "le détail complet des cellules à alerte reste au decision-log._"
+        )
+        lines.append("")
     rows: List[str] = []
     for r in results:
         for h in HORIZONS:
             flags = _compute_cell_risk_flags(r, h, now)
             if not _cellule_a_surveiller(r, h, flags):
                 continue
+            if _filtrer:
+                est_selection = (h == "24h" and r.fiche_key in selection_keys)
+                est_flip = (r.nom.lower(), h) in flip_cells
+                if not (est_selection or est_flip):
+                    continue
             direction = r.conclusions.get(h, "")
             flags_str = " ".join(flags)
             rows.append(f"- {r.nom} {h} · {direction} · [{flags_str}]")
@@ -2097,6 +2148,35 @@ def _critere_dominant(r: "ActifResult", h: str) -> str:
     return _top_driver(r, h)[1]
 
 
+def _raison_pari_affichee(
+    r: "ActifResult", h: str, now: Optional[datetime] = None
+) -> str:
+    """Raison COURTE d'un pari de la tête « 🎯 Aujourd'hui ».
+
+    [Point 3] Driver dominant DANS LE SENS du call (jamais à contre-sens).
+    [Point 11] Net news enrichi du titre réel, ou de la parenthèse paradoxe si le
+    top-titre diverge du net.
+    [Point 1] Si le porteur net news n'a AUCUN titre montrable, on bascule sur le
+    premier driver concret NON-news dans le sens (jamais de titre fabriqué, jamais
+    la phrase « pas de titre représentatif aujourd'hui »).
+    """
+    direction = r.conclusions.get(h, "")
+    if direction in ("LONG", "SHORT"):
+        cle, nom, _ctr = _driver_dominant_net(r, h, direction)
+    else:
+        cle, nom = _top_driver(r, h)
+    if not nom:
+        return ""
+    label = _enrich_net_news_label(nom, r, now)
+    if _est_news_sans_titre(label) and direction in ("LONG", "SHORT"):
+        a_cle, a_nom, _a_ctr = _driver_dominant_non_news(
+            r, h, direction, exclude_cle=cle
+        )
+        if a_nom:
+            return _enrich_net_news_label(a_nom, r, now)
+    return label
+
+
 def detect_mono_critere_dominant(
     r: "ActifResult", h: str
 ) -> Tuple[bool, Optional[str]]:
@@ -2218,6 +2298,13 @@ def _max_weight_critere_is_na(r: "ActifResult") -> bool:
 _CONVICTION_CAPTEURS_ETEINTS = "fragile (capteurs éteints)"
 _CAPTEUR_LOURD_POIDS_MIN: float = 8.0  # « lourd » = poids >= 8 (échelle 1-12 des fiches)
 
+# [Point 5 — 01/07] Libellé quand la note est forte MAIS l'intensité normalisée
+# est sous le plancher SELECTION_INTENSITE_MIN (|intensité| < 0.30) : le signal
+# n'est pas assez NET pour mériter « forte ». Calé sur l'intensité (comparable
+# inter-actifs), pas sur la note brute (magnitude dépend de la couverture). Cas
+# de référence : Argent 24h note -1.92 mais intensité -0.26 → plus « forte ».
+_CONVICTION_INTENSITE_FAIBLE = "modérée (signal peu net)"
+
 
 def _capteurs_lourds_eteints(r: "ActifResult") -> bool:
     """True si les capteurs LOURDS de la fiche sont éteints (règle 01/07) :
@@ -2322,6 +2409,12 @@ def _conviction_cell(r: "ActifResult", h: str, seuil: float) -> str:
     # changent. Cas de référence : Blé 01/07 (stocks USDA poids 11 n/a).
     if score >= seuil and _capteurs_lourds_eteints(r):
         return _CONVICTION_CAPTEURS_ETEINTS
+    # [Point 5 — 01/07] « forte » exige EN PLUS une intensité normalisée nette
+    # (|intensité| >= SELECTION_INTENSITE_MIN). Sinon → « modérée (signal peu net) ».
+    # Placé APRÈS les autres motifs (fragile/contestée/zigzag/capteurs) qui
+    # restent prioritaires (point 5). Intensité non jugeable → non plafonné (prudence).
+    if score >= seuil and _intensite_sous_plancher(r, h):
+        return _CONVICTION_INTENSITE_FAIBLE
     if score >= seuil:
         return "forte"
     # |score| entre NEUTRAL_BAND et seuil, sans drapeau : ancien « faible »
@@ -2369,6 +2462,16 @@ def build_a_jouer_block(
             seuil_conviction = 0.6
     prix_reference = prix_reference or {}
 
+    # [Point 10 — 01/07] Les cellules jouables ÉCARTÉES de la Sélection (news à
+    # contre-sens ↯, véto tendance courte, intensité sous plancher) portent la
+    # mention « (écarté des paris) » dans la colonne Conviction. Source UNIQUE = la
+    # même sélection que la tête « 🎯 Aujourd'hui » (`selection_du_jour_map`).
+    _sel_keys, _sel_motifs = selection_du_jour_map(results, now, seuil_conviction)
+    _ecartes_keys = {
+        k for k, m in _sel_motifs.items()
+        if isinstance(m, str) and m.startswith("écarté")
+    }
+
     H = "24h"
     # Tampon par ligne : on calcule les champs AVANT de poser la colonne « Porté
     # par » car le marqueur ⚭ dépend des autres lignes (driver partagé) DU MÊME
@@ -2397,6 +2500,8 @@ def build_a_jouer_block(
         direction = conc if conc in ("LONG", "SHORT") else conc
         note_str = "—" if conc == CONCLUSION_INSUFFISANT else f"{score:+.2f}"
         conv = _conviction_cell(r, H, seuil_conviction)
+        if r.fiche_key in _ecartes_keys:
+            conv = f"{conv} (écarté des paris)"
         px = prix_reference.get(r.fiche_key)
         px_str = f"{px:g}" if isinstance(px, (int, float)) else "—"
         driver_cle, driver_nom = _top_driver(r, H)
@@ -2475,7 +2580,9 @@ def build_a_jouer_block(
     # « autres jouables » (conviction non-forte) reste en dessous (axe différent :
     # force de conviction, pas drapeau). Zéro changement de scoring/sélection.
     def _is_forte(d: Dict[str, str]) -> bool:
-        return d.get("conv", "") == "forte"
+        # startswith : « forte » ou « forte (écarté des paris) » (point 10) sont
+        # toutes deux des convictions fortes (la mention n'altère pas le groupe).
+        return d.get("conv", "").startswith("forte")
 
     forte = [d for d in jouables_cells if _is_forte(d)]
     autres_jouables = [d for d in jouables_cells if not _is_forte(d)]
@@ -2741,7 +2848,7 @@ def select_paris_du_jour(
             # (23/06) Transparence : si le driver dominant est le porteur du NET
             # news, raison = sens net + titre réel (au lieu de « Synthèse news
             # (net, IA) »). Tout autre driver INCHANGÉ (zéro invention).
-            "raison": _enrich_net_news_label(_critere_dominant(r, H) or "", r, now),
+            "raison": _raison_pari_affichee(r, H, now),
         }))
     # Tri |note| décroissant, déterministe (actif départage les ex æquo).
     candidats.sort(key=lambda t: (-t[0], t[1]))
@@ -2816,6 +2923,7 @@ def build_paris_du_jour_block(
     now: datetime,
     prix_reference: Optional[Dict[str, float]] = None,
     seuil_conviction: Optional[float] = None,
+    fiches: Optional[Dict[str, dict]] = None,
 ) -> List[str]:
     """Bloc markdown « 🎯 Aujourd'hui » alimenté par les CONVICTIONS 24h jouables.
 
@@ -2876,19 +2984,44 @@ def build_paris_du_jour_block(
         "**Les paris du jour (max 3)** — les plus fortes convictions 24h jouables"
     )
     out.append("")
-    # Tableau (aligné sur le reste des rapports) au lieu d'un bloc de puces de texte
-    # (demande fondateur 24/06). Colonnes courtes → lisible sur mobile (5 col.).
-    out.append("| Actif | Sens | Prix d'entrée | Conviction | Pourquoi |")
-    out.append("|---|---|---|---|---|")
+    # [Point 4 — 01/07] La colonne chiffrée s'appelle « Note » (le chiffre = la Note ;
+    # « Conviction » désigne le LIBELLÉ forte/molle/…, pas le chiffre).
+    # [Point 9] Colonne « Objectif » = seuil de réussite 24h de l'actif, signé par le
+    # sens du call (même source que le Swing 7j : fiches[key].seuils_reussite_pct).
+    out.append("| Actif | Sens | Prix d'entrée | Objectif | Note | Pourquoi |")
+    out.append("|---|---|---|---|---|---|")
+    fiches = fiches or {}
+    res_by_key = {r.fiche_key: r for r in results}
+    _pari_deja_cote = False  # [Point 8] au moins un pari porte ⌛ (already-priced)
     for p in picks:
-        px = prix_reference.get(p["fiche_key"])
+        key = p["fiche_key"]
+        px = prix_reference.get(key)
         px_str = f"{px:g}" if isinstance(px, (int, float)) else "—"
         raison = p.get("raison") or "—"
+        seuil_pct = (((fiches.get(key) or {}).get("seuils_reussite_pct") or {}).get("24h"))
+        if isinstance(seuil_pct, (int, float)):
+            signe = "+" if p["direction"] == "LONG" else "−"
+            obj = f"{signe}{abs(float(seuil_pct)):.1f} %"
+        else:
+            obj = "n/a"
+        # [Point 8] Drapeau ⌛ (already-priced) visible sur le pari + note de bas de
+        # tableau. Source de vérité : mêmes drapeaux que la grille de Synthèse.
+        actif_cell = f"**{p['actif']}**"
+        _r = res_by_key.get(key)
+        if _r is not None and "⌛" in _synthese_cell_risk_flags(_r, "24h", now):
+            actif_cell = f"{actif_cell} ⌛"
+            _pari_deja_cote = True
         out.append(
-            f"| **{p['actif']}** | {p['direction']} | {px_str} "
-            f"| {p['note_str']} | {raison} |"
+            f"| {actif_cell} | {p['direction']} | {px_str} "
+            f"| {obj} | {p['note_str']} | {raison} |"
         )
     out.append("")
+    if _pari_deja_cote:
+        out.append(
+            "_⌛ : l'actu qui pousse ce pari est déjà ancienne (déjà dans les prix) : "
+            "le pari repose sur la tendance, pas sur la fraîcheur de la news._"
+        )
+        out.append("")
     out.extend(_ligne_ecartes())
     return out
 
@@ -3839,10 +3972,28 @@ def _driver_detail(
     Le driver = critère au plus fort |effet| sur l'horizon (logique `_top_driver`
     inchangée — PUR AFFICHAGE, zéro modif du calcul). Retourne "—" si aucun
     contributeur réel. Best-effort : toute valeur manquante → dégradation propre.
+
+    [Point 3 — 01/07] Le « Porté par » n'est JAMAIS à contre-sens : pour une
+    cellule directionnelle (même quasi-neutre), on cite le plus fort contributeur
+    DANS LE SENS du call (`_driver_dominant_net`) ; s'il n'en existe aucun → « — »
+    (on n'affiche pas un contre-driver). [Point 1] Porteur net news sans titre
+    montrable → bascule sur le driver concret non-news dans le sens.
     """
-    cle, _nom = _top_driver(r, h)
-    if not cle and not _nom:
-        return "—"
+    direction = r.conclusions.get(h, "")
+    if direction in ("LONG", "SHORT"):
+        cle, _nom, _ctr = _driver_dominant_net(r, h, direction)
+        if not cle and not _nom:
+            return "—"  # aucun driver dans le sens → pas de contre-sens (point 3)
+        if _est_news_sans_titre(_enrich_net_news_label(_nom, r, now)):
+            a_cle, a_nom, _a_ctr = _driver_dominant_non_news(
+                r, h, direction, exclude_cle=cle
+            )
+            if a_nom:
+                cle, _nom = a_cle, a_nom
+    else:
+        cle, _nom = _top_driver(r, h)
+        if not cle and not _nom:
+            return "—"
     # Retrouver le CritereResult correspondant au driver (par cle puis nom).
     cible: Optional["CritereResult"] = None
     for c in r.criteres:
@@ -3866,12 +4017,18 @@ def _driver_detail(
     nom_enrichi = _enrich_net_news_label(nom, r, now)
     if nom_enrichi != nom:
         return f"{nom_enrichi} → contribue {contrib:+.2f}"
-    val = _fmt_raw(cible.valeur_brute)
-    sens = "normal" if cible.signe == 1 else "inversé"
+    # [Point 13 — 01/07] Forme HUMAINE (plus de jargon « val 0.08568, sens normal ») :
+    # valeur arrondie + phrase de sens explicite. « normal » = quand la valeur monte,
+    # c'est haussier ; « inversé » = quand elle monte, c'est baissier.
+    val = _fmt_val_humaine(cible.valeur_brute)
+    sens_txt = (
+        "la hausse pousse à la hausse" if cible.signe == 1
+        else "la hausse pousse à la baisse"
+    )
     parts = []
     if val != "—":
-        parts.append(f"val {val}")
-    parts.append(f"sens {sens}")
+        parts.append(f"valeur {val}")
+    parts.append(sens_txt)
     ctx = ", ".join(parts)
     return f"{nom} ({ctx}) → contribue {contrib:+.2f}"
 
@@ -4144,6 +4301,46 @@ def _driver_dominant_net(
     return best_cle, best_nom, best_ctr
 
 
+def _driver_dominant_non_news(
+    r: "ActifResult", h: str, direction: str, exclude_cle: str = ""
+) -> Tuple[str, str, float]:
+    """[Point 1 — 01/07] Plus fort contributeur NON-news DANS LE SENS de `direction`.
+
+    Comme `_driver_dominant_net` mais EXCLUT les critères news (source_track « ia* »
+    / « keyword ») et la clé `exclude_cle` (le driver news qu'on remplace). Sert de
+    repli quand le porteur du net news n'a AUCUN titre montrable : la raison bascule
+    alors sur ce driver concret (jamais de titre fabriqué). Retourne (cle, nom,
+    contribution) ou ("", "", 0.0) si aucun driver non-news ne pousse dans le sens.
+    """
+    veut_positif = direction == "LONG"
+    best_key: Tuple[float, str] = (-1.0, "")
+    best_cle = best_nom = ""
+    best_ctr = 0.0
+    for c in r.criteres:
+        if c.is_gate or c.is_na:
+            continue
+        cle = getattr(c, "cle_courante", "") or ""
+        if cle and cle == exclude_cle:
+            continue
+        src = getattr(c, "source_track", "") or ""
+        if src.startswith("ia") or src == "keyword":
+            continue
+        ctr = c.contributions.get(h)
+        if ctr is None:
+            continue
+        if veut_positif and ctr <= 0.0:
+            continue
+        if (not veut_positif) and ctr >= 0.0:
+            continue
+        key = (abs(ctr), c.nom)
+        if key > best_key:
+            best_key = key
+            best_cle = cle
+            best_nom = _nom_critere(c)
+            best_ctr = ctr
+    return best_cle, best_nom, best_ctr
+
+
 def _codriver_news_codominant(
     r: "ActifResult", h: str, direction: str, best_cle: str, best_ctr: float
 ) -> Tuple[str, float]:
@@ -4266,7 +4463,19 @@ def _raison_parts(
     # retombe sur la logique biblio legacy (dégradation sûre, zéro invention).
     if nom == SYNTHESE_NET_LABEL:
         enrichi = _enrich_net_news_label(nom, r, now)
-        if enrichi != nom:
+        # [Point 1] Porteur net news SANS titre montrable → bascule sur le premier
+        # driver concret non-news dans le sens (jamais la phrase interdite). On
+        # laisse alors la suite (biblio) traiter ce driver concret.
+        if _est_news_sans_titre(enrichi):
+            a_cle, a_nom, a_ctr = _driver_dominant_non_news(
+                r, h, direction, exclude_cle=cle
+            )
+            if a_nom:
+                cle, nom, ctr = a_cle, a_nom, a_ctr
+            else:
+                suffixe = f"{_raison_force_suffix(r, h)}{_raison_flags_suffix(r, h, now)}"
+                return enrichi, chiffre, suffixe
+        elif enrichi != nom:
             corps = enrichi
             co_cle, co_ctr = _codriver_news_codominant(r, h, direction, cle, ctr)
             if co_cle:
@@ -4387,7 +4596,17 @@ def raison_cellule_phrase(r: "ActifResult", h: str, now: Optional[datetime] = No
     # avec « Porté par » et `_raison_parts`). `now` absent → logique biblio legacy.
     if nom == SYNTHESE_NET_LABEL:
         enrichi = _enrich_net_news_label(nom, r, now)
-        if enrichi != nom:
+        # [Point 1] Porteur net news SANS titre montrable → bascule sur le premier
+        # driver concret non-news dans le sens (jamais la phrase interdite).
+        if _est_news_sans_titre(enrichi):
+            a_cle, a_nom, a_ctr = _driver_dominant_non_news(
+                r, h, direction, exclude_cle=cle
+            )
+            if a_nom:
+                cle, nom, ctr = a_cle, a_nom, a_ctr
+            else:
+                return enrichi  # aucun driver non-news → net sens (sans phrase interdite)
+        elif enrichi != nom:
             return enrichi
     phrases = _raison_phrases_for_cle(cle)
     if phrases is None:
@@ -4800,6 +5019,9 @@ def build_positions_1m_block(results, prix_reference=None, fiches=None, now=None
 # l'affichage — la valeur brute `type_norm` reste dans le decision-log.
 TYPE_NORM_LABELS: Dict[str, str] = {
     "zscore": "Écart à la normale",
+    # [Point 13 — 01/07] « zscore_abs » (jargon) → forme humaine. Ce mode mesure
+    # l'écart à la normale DANS LES DEUX SENS (sécheresse OU excès = signal).
+    "zscore_abs": "Écart à la normale (dans les deux sens)",
     "lineaire": "Échelle graduée",
     "mapping_non_monotone": "Régime par seuils",
     "composite": "Signal combiné",
@@ -4847,7 +5069,21 @@ def _nom_affiche(nom: str, source_track: str) -> str:
     track = (source_track or "").strip().lower()
     if track in SYNTHESE_NET_TRACKS:
         return SYNTHESE_NET_LABEL
-    return nom
+    return _clean_nom_critere(nom)
+
+
+# [Point 14 — 01/07] Les tirets cadratins dans les NOMS de critères (ex. « Météo
+# Brésil — écart à la normale ») sont retirés à l'AFFICHAGE (ponctuation FR :
+# deux-points). PUR RENDU : on ne touche pas au `nom` du YAML ni aux clés, on
+# transforme uniquement la chaîne affichée. Le « — » isolé (placeholder n/a de
+# cellule) n'est pas concerné : on ne remplace que le tiret cadratin ENTOURÉ
+# d'espaces DANS un nom de critère (séparateur syntaxique, pas placeholder).
+def _clean_nom_critere(nom: str) -> str:
+    """Remplace le tiret cadratin séparateur « — » (ou demi-cadratin « – ») d'un
+    nom de critère par « : ». Best-effort : chaîne vide/None → inchangée."""
+    if not nom:
+        return nom
+    return nom.replace(" — ", " : ").replace(" – ", " : ")
 
 
 def _nom_critere(c: "CritereResult") -> str:
@@ -5076,7 +5312,18 @@ def render_bulletin(
     # Synthèse). On ne les laisse donc PLUS dans le flux `lines` naturel ; elles
     # sont ré-insérées dans le splice de tête plus bas (cf. `head_block`). Tout ce
     # qu'il faut pour décider (Décision → alertes) reste ainsi groupé en tête.
-    surveillance_block = build_surveillance_block(results, now)
+    # [Point 6 — 01/07] Surveillance réduite à la Sélection du jour + flips du jour.
+    _surv_sel_keys, _ = selection_du_jour_map(results, now)
+    _surv_flip_cells = {
+        (r.nom.lower(), h)
+        for r in results
+        for h in HORIZONS
+        if (veille_conclusions.get(r.nom.lower(), {}).get(h))
+        and veille_conclusions.get(r.nom.lower(), {}).get(h) != r.conclusions.get(h)
+    }
+    surveillance_block = build_surveillance_block(
+        results, now, selection_keys=_surv_sel_keys, flip_cells=_surv_flip_cells
+    )
 
     # --- Reco A (audit corrélation cachée 05/06) — Drivers macro partagés ---
     # FLAG-ONLY (affichage pur). Signale quand un MÊME driver macro (par
@@ -5390,35 +5637,12 @@ def render_bulletin(
     # cellule de la grille ci-dessus (sous la direction + note). Le bloc-liste
     # redondant PAR ACTIF qui suivait a été RETIRÉ (doublon) : zéro perte d'info
     # (la grille porte la même raison, recalculée à chaque run).
-    # ── Intensité comparable entre actifs (INFORMATIF, pur affichage) ─────────
-    # (B) Audit Analyst : la Note brute n'est PAS comparable d'un actif à l'autre
-    # (sa magnitude dépend du nombre/poids de critères couverts). On affiche EN PLUS
-    # une « intensité comparable » = note ÷ Σ|poids effectif couvert| ∈ ~[-1, +1].
-    # RED LINE : INFORMATIF uniquement. La Sélection du jour et toute la décision
-    # restent sur la NOTE BRUTE (inchangées). Dégradation propre : « — » si 0 critère
-    # couvert. Le tri/décision sur cette colonne serait une décision SÉPARÉE.
-    # NB : section H2 DISTINCTE (pas H3 sous la Synthèse) → la grille de décision
-    # « ## Synthèse des décisions » reste la seule table de DIRECTIONS. Cette table
-    # d'intensité ne porte aucun drapeau directionnel : elle ne doit pas être lue
-    # comme une cellule de grille (les parsers de flags s'arrêtent au prochain « ## »).
-    synth_lines.append("")
-    synth_lines.append("## Intensité comparable entre actifs (informatif)")
-    synth_lines.append("")
-    synth_lines.append(
-        "_Note brute ÷ Σ|poids couvert| → échelle commune ~−1..+1, comparable D'UN "
-        "ACTIF À L'AUTRE (la note brute ne l'est pas, sa magnitude dépend du nombre de "
-        "critères actifs). **Informatif** : la Sélection et les décisions restent sur "
-        "la note brute. « — » = aucun critère couvert._"
-    )
-    synth_lines.append("")
-    synth_lines.append("| Actif | 24h | 7j | 1m |")
-    synth_lines.append("|---|---|---|---|")
-    for r in results:
-        intens_cells: List[str] = []
-        for h in HORIZONS:
-            nn = compute_note_normalisee(r.criteres, r.scores[h], h)
-            intens_cells.append("—" if nn is None else f"{nn:+.2f}")
-        synth_lines.append(f"| {r.nom} | {intens_cells[0]} | {intens_cells[1]} | {intens_cells[2]} |")
+    # [Point 17a — 01/07, décision fondateur] La table « ## Intensité comparable
+    # entre actifs » est SUPPRIMÉE du bulletin : sa valeur vit désormais dans le
+    # LIBELLÉ de conviction (point 5 : « forte » exige |intensité| >= 0.30, sinon
+    # « modérée (signal peu net) »). La Synthèse reste la table centrale. Le calcul
+    # `compute_note_normalisee` demeure (utilisé par le libellé + le decision-log) ;
+    # seule la table d'AFFICHAGE disparaît.
     synth_lines.append("")
     # P2/P4/P5 — la légende des symboles + la définition de « Note » sont
     # désormais dans « ## Comment lire les scores » (fin de bulletin), une seule
@@ -5467,7 +5691,7 @@ def render_bulletin(
     # deux contradictoires. La tête affichée == la sélection écrite au decision-log
     # (via `selection_du_jour_map`) == ce que le suivi/bilan traquent.
     head_block = (
-        build_paris_du_jour_block(results, now, prix_reference=prix_reference)
+        build_paris_du_jour_block(results, now, prix_reference=prix_reference, fiches=fiches)
         + build_a_jouer_block(results, now, prix_reference=prix_reference)
         + _SHADOW_CAPTEURS_NOTE
     )
@@ -5498,6 +5722,17 @@ def render_bulletin(
         + build_positions_1m_block(results, prix_reference=prix_reference, fiches=fiches, now=now)
         + lines[_meta_end:]
     )
+
+    # [Point 7 — 01/07] La légende DOIT couvrir TOUT symbole émis par le rendu.
+    # Les blocs « À jouer » / « Cellules à surveiller » affichent les drapeaux de
+    # `_compute_cell_risk_flags` (dont ⚠️♻ « valeur reportée ») qui n'étaient PAS
+    # ajoutés à `flags_present` (donc absents de la légende). On unionne ici tous
+    # les symboles réellement produits par ces cellules (symboles atomiques → pas
+    # de risque de sous-chaîne). Garantit : aucun symbole rendu sans entrée légende.
+    for _r in results:
+        for _h in HORIZONS:
+            for _f in _compute_cell_risk_flags(_r, _h, now):
+                flags_present.add(_f)
 
     # P2/P4/P5 — « ## Comment lire les scores » : TOUTE la pédagogie, une seule
     # fois, juste avant le détail. Les sections du jour (ci-dessus) ne gardent
@@ -6412,7 +6647,7 @@ def build_audit_veille_24h(
         src = getattr(m, "prix_reference_source", None)
         canonique = _source_canonique_attendue(m, fiches_for_tag)
         v1_tag = (
-            " `[référence dégradée : source non canonique]`"
+            " (prix de référence approximatif)"
             if (src is not None and canonique is not None and src != canonique)
             else ""
         )
@@ -6467,6 +6702,25 @@ def _fmt_raw(raw: Any) -> str:
             s = f"{raw:.10f}".rstrip("0").rstrip(".")
         return s
     return str(raw)
+
+
+def _fmt_val_humaine(raw: Any) -> str:
+    """[Point 13 — 01/07] Valeur brute ARRONDIE pour la lecture humaine du
+    « Porté par » (ex. 0.08568 → « 0.086 »). Réduit le bruit de décimales sur les
+    petites magnitudes ; délègue à `_fmt_raw` pour les entiers, grandes valeurs et
+    non-numériques (comportement inchangé). Zéro invention (pur formatage)."""
+    v = raw
+    if isinstance(raw, dict):
+        v = raw.get("valeur", raw.get("valeur_normalisee"))
+    if v is None or isinstance(v, bool):
+        return _fmt_raw(raw)
+    if isinstance(v, float):
+        if v == int(v) and abs(v) < 1e15:
+            return str(int(v))
+        if abs(v) < 100:
+            return f"{v:.3f}".rstrip("0").rstrip(".")
+        return _fmt_raw(v)
+    return _fmt_raw(raw)
 
 
 # ---------------------------------------------------------------------------

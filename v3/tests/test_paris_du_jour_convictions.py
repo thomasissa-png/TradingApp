@@ -132,7 +132,9 @@ def test_a_bloc_tete_affiche_aujourdhui_et_sens():
     block = "\n".join(sa.build_paris_du_jour_block(res, NOW))
     assert "## 🎯 Aujourd'hui" in block
     # Tableau aligné (fondateur 24/06) au lieu de puces de texte.
-    assert "| Actif | Sens | Prix d'entrée | Conviction | Pourquoi |" in block
+    # [Points 4 + 9 — 01/07] Colonne chiffrée = « Note » (le chiffre) ; « Objectif »
+    # = seuil de réussite 24h de l'actif signé par le sens du call.
+    assert "| Actif | Sens | Prix d'entrée | Objectif | Note | Pourquoi |" in block
     assert "| **Or** | SHORT |" in block
     assert "| **EurUsd** | SHORT |" in block
 

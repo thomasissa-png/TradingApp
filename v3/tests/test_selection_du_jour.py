@@ -193,7 +193,8 @@ def test_bloc_tableau_et_ecartee(monkeypatch):
     )
     texte = "\n".join(lignes)
     # P3 — « Porté par » enrichi : nom complet + valeur + sens + contribution.
-    assert "| Or | LONG | +0.90 | Fed (val 1, sens normal) → contribue +0.40 | 2400 |" in texte
+    # [Point 13 — 01/07] Forme humaine (« valeur X », phrase de sens).
+    assert "| Or | LONG | +0.90 | Fed (valeur 1, la hausse pousse à la hausse) → contribue +0.40 | 2400 |" in texte
     assert "écartée : Argent, même pari (drv_macro) que Or" in texte
     # P2 — les 4 règles de sélection sont désormais dans « Comment lire les
     # scores » (consolidées une fois), plus dans le bloc « Sélection du jour ».

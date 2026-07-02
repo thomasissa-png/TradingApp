@@ -78,8 +78,8 @@ FUTURE_FRESH_MAX_MIN = 30
 # ces ETF ne cotent QUE pendant les heures de bourse US (ouverture 15h30 Paris).
 # À 12h Paris le marché US est fermé → le « prix 12h » = dernier close US de la
 # veille = l'ouverture → faux mouvement de 0.00 % (fondateur 30/06 : Sucre/CANE
-# affichait +0.00 %). On les traite donc comme les indices US : « marché US fermé »
-# tant que le marché US n'est pas ouvert (au 18h ils cotent → suivi normal).
+# affichait +0.00 %). On affiche donc « 🕐 pas encore ouvert » (STATUT_PAS_ENCORE_OUVERT,
+# correction 01/07) tant que le marché US n'est pas ouvert (au 18h ils cotent → suivi normal).
 US_ETF_HOURS_TICKERS = frozenset({"CANE", "COTN"})
 
 PARIS_TZ = ZoneInfo("Europe/Paris")
@@ -145,6 +145,10 @@ class SuiviLigne:
     # à relier la force de conviction à la performance réalisée (fondateur 25/06).
     # None si le decision-log du jour ne porte pas de score pour cette cellule.
     conviction: Optional[float] = None
+    # Libellé de conviction (« forte » / « faible ») tel que dérivé du decision-log
+    # du matin — MÊME source que le Bilan (bilan_jour.conviction_level), zéro
+    # re-dérivation (correction fondateur 01/07, point 9a). None si non mesurable.
+    conviction_niveau: Optional[str] = None
 
 
 @dataclass
@@ -168,6 +172,10 @@ class SuiviRapport:
     # actif sélectionné). Source : events-log (news_reelle_paris). Remplace le
     # libellé opaque « Synthèse news (net, IA) ». Actif absent → « — » au rendu.
     news_paris: Dict[str, str] = field(default_factory=dict)
+    # Sens IA (LONG/SHORT/NEUTRAL) de la news dominante par pari (même source/ordre
+    # que news_paris) — sert à marquer « (à contre-sens du pari) » quand la news va
+    # contre le call (correction fondateur 01/07, point 7). Actif absent → pas de sens.
+    news_paris_sens: Dict[str, str] = field(default_factory=dict)
     # GARDE-FOU HONNÊTETÉ (brief S9) — distingue deux cas que l'ancien code
     # confondait en un tableau vide silencieux :
     #  - briefing_introuvable=True : AUCUN Briefing 7h actif pour date_j (archivé /
@@ -234,38 +242,37 @@ def compute_statut(
 
 
 def compute_tendance(
-    delta_now: Optional[float],
-    delta_prec: Optional[float],
+    fav_now: Optional[float],
+    fav_prec: Optional[float],
     is_us: bool,
     neutral_band_pct: float,
 ) -> str:
-    """Flag de dynamique de tendance (§3.2/§3.3).
+    """Flag de dynamique de tendance DÉRIVÉ DU % FAVORABLE (correction fondateur 01/07).
 
-    - Au 12h (premier suivi), `delta_prec` est None → `—` (pas de précédent).
-    - Au 18h, compare delta 18h vs delta 12h :
-        ↑ s'accélère  : |delta_now| > |delta_prec| ET même signe (renforce la thèse)
-        ↓ s'essouffle : |delta_now| < |delta_prec| ET même signe (ralentit)
-        ⇄ se retourne : signe(delta_now) ≠ signe(delta_prec) (retournement)
-    - `— neutre` si |delta_now| sous la bande.
+    La tendance décrit l'évolution du PARI (le % favorable signé par le call, +
+    = va dans notre sens), PAS la variation brute du prix. Sémantique fondateur :
+        ↑ s'accélère  : le pari s'améliore de plus en plus  → fav_now > fav_prec
+        ↓ s'essouffle : il s'améliore moins vite / se dégrade → fav_now < fav_prec
+        ⇄ se retourne : changement de CAMP (le favorable change de signe)
+    - Au 12h (premier suivi), `fav_prec` est None → `—` (pas de précédent).
+    - `— neutre` si |fav_now| sous la bande.
     NB : les flags US spécifiques (↗ confirmé / ↘ infirmé) sont posés au niveau
-    de la ligne (ils dépendent du sens du call, pas seulement du delta).
+    de la ligne (ils dépendent du sens du call).
     """
-    if delta_now is None:
+    if fav_now is None:
         return "—"
-    if abs(delta_now) / 100.0 < neutral_band_pct:
+    if abs(fav_now) / 100.0 < neutral_band_pct:
         return "— neutre"
-    if delta_prec is None:
+    if fav_prec is None:
         return "—"
-    s_now = 1 if delta_now > 0 else -1
-    s_prec = 1 if delta_prec > 0 else (-1 if delta_prec < 0 else 0)
-    if s_prec == 0:
-        # Précédent neutre/nul → on ne qualifie pas l'accélération.
-        return "—"
-    if s_now != s_prec:
+    s_now = 1 if fav_now > 0 else (-1 if fav_now < 0 else 0)
+    s_prec = 1 if fav_prec > 0 else (-1 if fav_prec < 0 else 0)
+    # Retournement = le favorable change de camp (gagnant→perdant ou l'inverse).
+    if s_now != 0 and s_prec != 0 and s_now != s_prec:
         return "⇄ se retourne"
-    if abs(delta_now) > abs(delta_prec):
+    if fav_now > fav_prec:
         return "↑ s'accélère"
-    if abs(delta_now) < abs(delta_prec):
+    if fav_now < fav_prec:
         return "↓ s'essouffle"
     return "—"
 
@@ -586,6 +593,62 @@ def us_trend_flag(delta_pct: Optional[float], call: str) -> str:
     return "↗ confirmé US" if (delta_pct > 0) == (sign > 0) else "↘ infirmé US"
 
 
+# Statut UNIFIÉ « marché pas encore ouvert » (correction fondateur 01/07) : un
+# actif dont le marché n'a pas encore coté ce jour (ETF US commodity type Sucre
+# CANE / Coton COTN avant l'ouverture US 15h30) N'AFFICHE PAS un faux « 0.00 %
+# neutre » (bug Sucre du 01/07 : 9.79→9.79). On dit clairement qu'il n'a pas coté.
+STATUT_PAS_ENCORE_OUVERT = "🕐 pas encore ouvert"
+
+
+# Garde-fou de plausibilité du « max gain du jour » (correction fondateur 01/07,
+# bug Blé +7.93 %). Le max gain vient de l'excursion 1h (mesure_bilan) sur la série
+# brute : un TICK ABERRANT avalé (blé coté ~586-593, +7.93 % ⇒ ~633 jamais atteint)
+# gonfle le max sans borne. On considère IMPLAUSIBLE un max journalier qui dépasse
+# ~5× le seuil de réussite 24h de l'actif (le seuil = déjà un mouvement « fort »
+# pour ce marché ; 5× est hors de portée d'une séance normale). Constante nommée,
+# multiple du seuil existant (pas un nombre magique). Le max reste AFFICHÉ (zéro
+# invention) mais suffixé « ⚠️ à vérifier ».
+SEUIL_MAX_GAIN_FACTEUR_PLAUSIBLE = 5.0
+
+
+def max_gain_suspect(
+    max_gain_pct: Optional[float],
+    seuil_pct: Optional[float],
+    facteur: float = SEUIL_MAX_GAIN_FACTEUR_PLAUSIBLE,
+) -> bool:
+    """True si le max gain dépasse le plafond plausible de l'actif (seuil × facteur).
+
+    Base = seuil de réussite 24h de l'actif ; à défaut, la cible turbo globale
+    (SEUIL_MAX_GAIN_SUIVI). False si `max_gain_pct` absent (zéro invention : on
+    ne flag pas ce qu'on ne mesure pas)."""
+    if not isinstance(max_gain_pct, (int, float)):
+        return False
+    base = abs(seuil_pct) if isinstance(seuil_pct, (int, float)) and seuil_pct else SEUIL_MAX_GAIN_SUIVI
+    return max_gain_pct > base * facteur
+
+
+def _fmt_max_gain(max_gain_pct: Optional[float], seuil_pct: Optional[float]) -> str:
+    """% max gain formaté, suffixé « ⚠️ à vérifier » si implausible (garde-fou 01/07)."""
+    base = _fmt_pct(max_gain_pct)
+    if max_gain_suspect(max_gain_pct, seuil_pct):
+        return f"{base} ⚠️ à vérifier"
+    return base
+
+
+def call_etat(fav_now: Optional[float], seuil_pct: Optional[float]) -> str:
+    """État du call dans le PANORAMA (correction fondateur 01/07, point 5) :
+    « ✅ intact » / « ✖ cassé ». « cassé » = MÊME seuil que le 🔴 Coupe
+    (fav contre le call au-delà du seuil de l'actif). « — » si non mesurable.
+
+    Le panorama n'est PAS détenu : on n'y met AUCUNE reco d'action
+    (Coupe/Sécurise/Tiens restent dans la table Sélection)."""
+    if not isinstance(fav_now, (int, float)):
+        return "—"
+    if isinstance(seuil_pct, (int, float)) and fav_now <= -abs(seuil_pct):
+        return "✖ cassé"
+    return "✅ intact"
+
+
 # ---------------------------------------------------------------------------
 # Chargement du bulletin 7h du jour (les positions à suivre)
 # ---------------------------------------------------------------------------
@@ -873,6 +936,66 @@ def news_reelle_paris(
             trigger = trigger[:157].rstrip() + "..."
         out[actif] = trigger
     return out
+
+
+def news_sens_paris(
+    report_type: str,
+    now: datetime,
+    actifs: List[str],
+    events_path: Optional[Path] = None,
+) -> Dict[str, str]:
+    """Sens IA (LONG/SHORT/NEUTRAL) de la news dominante par pari (correction 01/07).
+
+    MÊME source, MÊME tri et MÊME sélection que `news_reelle_paris` (l'event le plus
+    matériel/frais du jour par actif) — on ne renvoie ici que sa DIRECTION IA (champ
+    `impacts` déjà parsé par `briefing._parse_impacts_compact`). Sert à marquer
+    « (à contre-sens du pari) » quand la news va contre le call. Un actif sans sens
+    exploitable est ABSENT du dict (zéro invention). Best-effort : erreur → {}."""
+    cibles = {a for a in actifs}
+    if not cibles:
+        return {}
+    try:
+        import briefing as B  # noqa: PLC0415
+        path = events_path or B.EVENTS_LOG
+        events = B.parse_events_with_ingest_ts(path)
+        recents = B.filter_recent_impactful(events, now.date())
+        ordonnes = B._sort_by_materiality_then_date(recents)
+    except Exception as e:  # noqa: BLE001 — bloc léger best-effort, jamais de crash
+        logger.warning("news_sens_paris KO: %s — section vide", e)
+        return {}
+
+    out: Dict[str, str] = {}
+    for ev in ordonnes:
+        try:
+            actif = B._primary_actif_from_event(ev)
+        except Exception:  # noqa: BLE001
+            actif = None
+        if not actif or actif not in cibles or actif in out:
+            continue
+        try:
+            impacts = B._parse_impacts_compact(ev.get("impacts", ""))
+        except Exception:  # noqa: BLE001
+            impacts = []
+        sens = None
+        for imp in impacts:
+            if B._IA_ASSET_TO_LABEL.get(imp["asset"]) == actif:
+                sens = imp["direction"]
+                break
+        if sens is None and impacts:
+            sens = impacts[0]["direction"]
+        if sens:
+            out[actif] = sens
+    return out
+
+
+def news_contre_sens(call: str, sens: Optional[str]) -> bool:
+    """True si le sens IA de la news est OPPOSÉ au call (LONG vs SHORT). NEUTRAL ou
+    sens absent → False (pas de contradiction affichée). Correction fondateur 01/07."""
+    c = (call or "").strip().upper()
+    s = (sens or "").strip().upper()
+    if c not in ("LONG", "SHORT") or s not in ("LONG", "SHORT"):
+        return False
+    return c != s
 
 
 # source_track signifiant « ce créneau news porte la direction NETTE IA »
@@ -1304,11 +1427,33 @@ def build_suivi(
         except (TypeError, ValueError):
             seuil = None
 
+        is_select = bool(selection_map.get((actif, "24h"), False))
+
+        # ETF US commodity (CANE/COTN) : marché fermé tant que la bourse US n'a pas
+        # ouvert (typiquement à 12h) → pas de cotation fraîche. On teste EN PREMIER
+        # (avant la branche cash US) pour couvrir le cas quel que soit le groupe
+        # horaire (l'autre agent corrige les groupes de mesure_ouverture). On
+        # N'AFFICHE PAS un faux « 0.00 % neutre » (bug Sucre CANE 9.79→9.79 du
+        # 01/07) : statut UNIFIÉ « 🕐 pas encore ouvert ». Le suivi 18h (US ouvert)
+        # reprend le relevé normal. Zéro invention (fondateur 30/06 + 01/07).
+        us_etf_ferme = (
+            ticker in US_ETF_HOURS_TICKERS
+            and not MO.is_open_for_stamp("us", now, config)
+        )
+        if us_etf_ferme:
+            rapport.lignes.append(SuiviLigne(
+                actif=actif, call=call, ouverture=None, prix_courant=None,
+                delta_pct=None, statut=STATUT_PAS_ENCORE_OUVERT,
+                tendance="—", delta_vs_prec=None, suggestion="—", seuil_pct=seuil,
+                us_pas_ouvert=True, vendre="Pas vendre", selection=is_select,
+                fav_now=None, fav_prec=None,
+            ))
+            continue
+
         # Marché cash US pas encore ouvert (typiquement à 12h).
         us_pas_ouvert = (
             group == "us" and not MO.is_open_for_stamp("us", now, config)
         )
-        is_select = bool(selection_map.get((actif, "24h"), False))
         if us_pas_ouvert:
             # On trade le pari US en TURBO (qui suit le future). On suit donc
             # l'indice US continu via OANDA (SPX500/NAS100) DÈS 8h : % de mouvement
@@ -1334,24 +1479,6 @@ def build_suivi(
                 actif=actif, call=call, ouverture=None, prix_courant=None,
                 delta_pct=None, statut="⏳ future : cotation en attente", tendance="—",
                 delta_vs_prec=None, suggestion="—", seuil_pct=seuil,
-                us_pas_ouvert=True, vendre="Pas vendre", selection=is_select,
-                fav_now=None, fav_prec=None,
-            ))
-            continue
-
-        # ETF US commodity (CANE/COTN) marché fermé (typiquement à 12h) : pas de
-        # prix frais → on n'affiche PAS un faux 0.00 % (le "prix" serait le close
-        # US de la veille). « marché US fermé » comme les indices US ; le suivi 18h
-        # (US ouvert) reprend le relevé normal. Zéro invention (fondateur 30/06).
-        us_etf_ferme = (
-            ticker in US_ETF_HOURS_TICKERS
-            and not MO.is_open_for_stamp("us", now, config)
-        )
-        if us_etf_ferme:
-            rapport.lignes.append(SuiviLigne(
-                actif=actif, call=call, ouverture=None, prix_courant=None,
-                delta_pct=None, statut="⏳ marché US fermé (ETF, ouvre 15h30)",
-                tendance="—", delta_vs_prec=None, suggestion="—", seuil_pct=seuil,
                 us_pas_ouvert=True, vendre="Pas vendre", selection=is_select,
                 fav_now=None, fav_prec=None,
             ))
@@ -1388,7 +1515,11 @@ def build_suivi(
         # Tendance : générique (vs précédent) ; pour les actifs US au 18h on
         # surclasse par le flag US (open 15h30 a confirmé/infirmé le call).
         delta_prec = prev.get(actif)
-        tendance = compute_tendance(delta, delta_prec, group == "us", band)
+        fav_now_v = fav_delta(delta, call)
+        fav_prec_v = fav_delta(delta_prec, call) if isinstance(delta_prec, (int, float)) else None
+        # Tendance DÉRIVÉE DU FAVORABLE (correction fondateur 01/07) : évolution du
+        # pari (le % favorable), pas de la variation brute du prix.
+        tendance = compute_tendance(fav_now_v, fav_prec_v, group == "us", band)
         if report_type == REPORT_18H and group == "us" and delta is not None:
             tendance = us_trend_flag(delta, call)
         suggestion = compute_suggestion(delta, call, seuil, statut)
@@ -1397,8 +1528,6 @@ def build_suivi(
         # Sélection et le bloc « Suggestions de sortie » ne se contredisent JAMAIS
         # (mêmes seuils, mêmes verdicts). + % directionnels favorables signés.
         vendre = vendre_from_suggestion(suggestion)
-        fav_now_v = fav_delta(delta, call)
-        fav_prec_v = fav_delta(delta_prec, call) if isinstance(delta_prec, (int, float)) else None
         # Max gain ATTEINT à cet instant : excursion 1h (jusqu'à maintenant) ∪ %
         # courant. JAMAIS le plus-haut de la bougie du jour (fuiterait le futur/la
         # nuit — bug Cacao, fondateur 24/06).
@@ -1409,8 +1538,10 @@ def build_suivi(
         rapport.lignes.append(SuiviLigne(
             actif=actif, call=call, ouverture=ouverture, prix_courant=prix_courant,
             delta_pct=delta, statut=statut, tendance=tendance,
-            delta_vs_prec=(round(delta - delta_prec, 2)
-                           if (delta is not None and isinstance(delta_prec, (int, float)))
+            # Δ précédent = variation du % FAVORABLE signé par le call (correction
+            # fondateur 01/07) : + = le pari s'améliore, − = il se dégrade.
+            delta_vs_prec=(round(fav_now_v - fav_prec_v, 2)
+                           if (fav_now_v is not None and fav_prec_v is not None)
                            else None),
             suggestion=suggestion, seuil_pct=seuil, us_pas_ouvert=False,
             vendre=vendre, selection=is_select,
@@ -1427,6 +1558,8 @@ def build_suivi(
     # SUPPRIMÉ du rendu ; on ne garde qu'une liste vide pour la dédup des frais.
     selection_actifs = [li.actif for li in rapport.lignes if li.selection]
     rapport.news_paris = news_reelle_paris(report_type, now, selection_actifs)
+    # Sens IA par pari → marquage « (à contre-sens du pari) » au rendu (point 7).
+    rapport.news_paris_sens = news_sens_paris(report_type, now, selection_actifs)
     rapport.news = []
 
     # VRAIE raison du call (drivers du score 7h) pour les positions de la Sélection —
@@ -1437,11 +1570,22 @@ def build_suivi(
     # dans « Positions du matin vs ouverture » (fondateur 25/06). Même source unique
     # que le Bilan (load_conviction_records + score_pm1) → mêmes chiffres partout.
     try:
-        from bilan_jour import load_conviction_records  # noqa: PLC0415
+        from bilan_jour import (  # noqa: PLC0415
+            load_conviction_records, conviction_level, _load_score_fort_seuil,
+        )
         conv = load_conviction_records(date_j, decision_log_dir)
+        # Seuil de conviction forte — MÊME source/valeur que le Bilan (manager.yaml),
+        # pour que le libellé « forte/faible » soit identique partout (fondateur 01/07).
+        score_fort_seuil = _load_score_fort_seuil()
         for li in rapport.lignes:
             rec = conv.get((li.actif, "24h")) or {}
             li.conviction = conviction_signee(rec)
+            # Libellé de conviction (forte/faible) dérivé du decision-log — même
+            # fonction que le Bilan (zéro re-dérivation). Absent de score → None.
+            li.conviction_niveau = (
+                conviction_level(rec, score_fort_seuil)
+                if li.conviction is not None else None
+            )
             # VRAIE raison du call (drivers du score 7h) UNIQUEMENT pour les
             # positions de la Sélection (« pourquoi on tient » — comme jour/semaine).
             if li.selection:
@@ -1529,6 +1673,21 @@ def _fmt_conviction(call: str, score: Optional[float]) -> str:
     return f"{c} · {score:+.2f}" if has_dir else f"{score:+.2f}"
 
 
+def _fmt_call_conviction(
+    call: str, score: Optional[float], niveau: Optional[str]
+) -> str:
+    """Direction + LIBELLÉ de conviction + note signée (correction fondateur 01/07,
+    point 9a). Ex. « LONG · forte (+8.77) » / « SHORT · faible (-2.88) ». Le libellé
+    (forte/faible) vient du decision-log du matin (source unique = Bilan). Dégradations :
+    sans niveau → « LONG · +8.77 » ; sans score → « LONG » ; ni l'un ni l'autre → « — »."""
+    c = (call or "").strip().upper()
+    has_dir = c in ("LONG", "SHORT")
+    if not isinstance(score, (int, float)):
+        return c if has_dir else "—"
+    conv = f"{niveau} ({score:+.2f})" if niveau else f"{score:+.2f}"
+    return f"{c} · {conv}" if has_dir else conv
+
+
 def _render_selection_table(r: SuiviRapport) -> List[str]:
     """Tableau de PROGRESSION focalisé « Sélection du jour » (top ≤3), en tête.
 
@@ -1580,11 +1739,12 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
             col_12 = _fmt_fav(li.fav_prec)
             col_18 = _fmt_fav(li.fav_now)
         # Max gain du jour atteint (1h ∪ courant) + statut vs cible turbo > 1 %.
-        col_max = _fmt_pct(li.max_gain_pct)
+        # Garde-fou plausibilité (point 3) : suffixe « ⚠️ à vérifier » si aberrant.
+        col_max = _fmt_max_gain(li.max_gain_pct, li.seuil_pct)
         col_statut = statut_max_gain(li.max_gain_pct)
-        # Colonne 1 fusionnée : direction + note signée du signal 7h (même source que
-        # « Positions vs ouverture » → chiffres identiques à l'actif près).
-        col_call = _fmt_conviction(li.call, li.conviction)
+        # Colonne 1 fusionnée : direction + LIBELLÉ de conviction + note signée du
+        # signal 7h (point 9a — « forte (+8.77) » ; même source que le Bilan).
+        col_call = _fmt_call_conviction(li.call, li.conviction, li.conviction_niveau)
         L.append(
             f"| {li.actif} | {col_call} | {_fmt_price(li.ouverture)} | "
             f"{_fmt_price(li.prix_courant)} | {col_12} | {col_18} | "
@@ -1619,6 +1779,20 @@ _MSG_BRIEFING_INTROUVABLE = (
     "Briefing 7h du jour introuvable : suivi des positions impossible "
     "(aucun bulletin 7h actif pour ce jour). À ne pas lire comme « aucune position »."
 )
+
+
+def _grosse_actu_pour(actif: str, news_majeures: List[str]) -> Optional[str]:
+    """Titre de la grosse actu de `actif` dans « Grosses actualités » (point 7).
+
+    Les lignes de `news_majeures` ont la forme « - **Actif** : trigger ». On y
+    retrouve le titre d'un actif pour combler un pari dont la news dédiée est « — »
+    (au lieu de laisser un trou alors qu'une actu de cet actif existe déjà dans le
+    rapport). None si aucune ligne ne porte cet actif (zéro invention)."""
+    marqueur = f"**{actif}**"
+    for ligne in news_majeures:
+        if marqueur in ligne and " : " in ligne:
+            return ligne.split(" : ", 1)[1].strip()
+    return None
 
 
 def _render_markdown(r: SuiviRapport) -> str:
@@ -1687,23 +1861,23 @@ def _render_markdown(r: SuiviRapport) -> str:
     if h == REPORT_12H:
         L.append(
             f"| Actif {_CALL_TH}| Ouverture | Prix {h} | % favorable "
-            f"{_MAX_TH}{_WIN_TH}| Action | Statut |"
+            f"{_MAX_TH}{_WIN_TH}| Call | Statut |"
         )
         L.append("|---|---|---|---|---|---|---|---|---|")
         if not r.lignes:
             L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | | | |")
         for li in r.lignes:
             L.append(
-                f"| {li.actif} | {_fmt_conviction(li.call, li.conviction)} | "
+                f"| {li.actif} | {_fmt_call_conviction(li.call, li.conviction, li.conviction_niveau)} | "
                 f"{_fmt_price(li.ouverture)} | "
                 f"{_fmt_price(li.prix_courant)} | {_fmt_fav(li.fav_now)} | "
-                f"{_fmt_pct(li.max_gain_pct)} | {statut_max_gain(li.max_gain_pct)} | "
-                f"**{li.action}** | {li.statut} |"
+                f"{_fmt_max_gain(li.max_gain_pct, li.seuil_pct)} | {statut_max_gain(li.max_gain_pct)} | "
+                f"{call_etat(li.fav_now, li.seuil_pct)} | {li.statut} |"
             )
     else:
         L.append(
             f"| Actif {_CALL_TH}| Ouverture | Prix {h} | % favorable "
-            f"{_MAX_TH}{_WIN_TH}| Action | Δ précédent | "
+            f"{_MAX_TH}{_WIN_TH}| Call | Δ précédent | "
             f"Tendance | Statut |"
         )
         L.append("|---|---|---|---|---|---|---|---|---|---|---|")
@@ -1711,11 +1885,11 @@ def _render_markdown(r: SuiviRapport) -> str:
             L.append("| _aucune position actionnable du Briefing 7h_ | | | | | | | | | | |")
         for li in r.lignes:
             L.append(
-                f"| {li.actif} | {_fmt_conviction(li.call, li.conviction)} | "
+                f"| {li.actif} | {_fmt_call_conviction(li.call, li.conviction, li.conviction_niveau)} | "
                 f"{_fmt_price(li.ouverture)} | "
                 f"{_fmt_price(li.prix_courant)} | {_fmt_fav(li.fav_now)} | "
-                f"{_fmt_pct(li.max_gain_pct)} | {statut_max_gain(li.max_gain_pct)} | "
-                f"**{li.action}** | "
+                f"{_fmt_max_gain(li.max_gain_pct, li.seuil_pct)} | {statut_max_gain(li.max_gain_pct)} | "
+                f"{call_etat(li.fav_now, li.seuil_pct)} | "
                 f"{_fmt_points(li.delta_vs_prec)} | {li.tendance} | {li.statut} |"
             )
     L.append("")
@@ -1723,9 +1897,13 @@ def _render_markdown(r: SuiviRapport) -> str:
     # meilleur % atteint depuis l'entrée (> 1 % = gagné) ; Action 🟢 laisse courir /
     # 🟡 sécurise / 🔴 coupe / ⚪ tiens ; Conviction = note signée du signal 7h.
     L.append(
-        "_Call 7h = direction · conviction (note signée du signal 7h : plus c'est fort, "
-        "plus le pari est tranché). Max gain = meilleur % atteint depuis l'entrée "
-        "(> 1 % = gagné). **Action** : 🟢 laisse courir · 🟡 sécurise · 🔴 coupe · ⚪ tiens._"
+        "_Call 7h = direction · conviction (libellé + note signée du signal 7h). "
+        "Panorama de MARCHÉ (non détenu) : % favorable et Max gain vs l'OUVERTURE de "
+        "marché (la table Sélection, elle, mesure vs le prix d'entrée 7h). Max gain = "
+        "meilleur % depuis l'ouverture (« ⚠️ à vérifier » = valeur implausible à "
+        "contrôler). **Call** : ✅ intact / ✖ cassé (seuil de l'actif franchi contre le "
+        "call). Tendance : ↑ le pari s'améliore de plus en plus · ↓ il s'améliore moins "
+        "vite ou se dégrade · ⇄ il se retourne (change de camp)._"
     )
     L.append("")
 
@@ -1739,7 +1917,18 @@ def _render_markdown(r: SuiviRapport) -> str:
     if paris:
         for li in paris:
             titre = r.news_paris.get(li.actif)
-            L.append(f"- **{li.actif}** ({li.call}) : {titre if titre else '—'}")
+            # Fallback (point 7) : pas de news dédiée au pari, mais une grosse actu
+            # de cet actif existe déjà dans le rapport → on la reprend au lieu de « — ».
+            if not titre:
+                titre = _grosse_actu_pour(li.actif, r.news_majeures)
+            if titre:
+                # « (à contre-sens du pari) » si le sens IA de la news s'oppose au call.
+                suffixe = (" (à contre-sens du pari)"
+                           if news_contre_sens(li.call, r.news_paris_sens.get(li.actif))
+                           else "")
+                L.append(f"- **{li.actif}** ({li.call}) : {titre}{suffixe}")
+            else:
+                L.append(f"- **{li.actif}** ({li.call}) : —")
     else:
         L.append("Pas de sélection aujourd'hui.")
     L.append("")
@@ -1777,7 +1966,13 @@ def _render_markdown(r: SuiviRapport) -> str:
                     f"de max, retombé à {_fmt_fav(li.fav_now)} → sécuriser une partie."
                 )
     else:
-        L.append("Aucune alerte (laisse courir / rien à faire).")
+        # Point 6 (fondateur 01/07) — cohérence : plus jamais « 4 Coupe en haut /
+        # aucune alerte en bas ». Le panorama n'est PAS détenu : ses calls cassés ne
+        # sont pas des ordres de sortie.
+        L.append(
+            "Aucune alerte sur les paris du jour. (Le panorama ci-dessus n'est pas "
+            "détenu : ses calls cassés ne sont pas des ordres de sortie.)"
+        )
     L.append("")
 
     # [I-6 audit visuel 12/06] : catalyseurs du lendemain au suivi 18h (Thomas
@@ -1856,6 +2051,11 @@ __all__ = [
     "compute_vendre",
     "vendre_from_suggestion",
     "news_reelle_paris",
+    "news_sens_paris",
+    "news_contre_sens",
+    "call_etat",
+    "max_gain_suspect",
+    "STATUT_PAS_ENCORE_OUVERT",
     "fav_delta",
     "us_trend_flag",
     "prix_courant_cascade",

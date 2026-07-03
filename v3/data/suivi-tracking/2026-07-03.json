@@ -2,20 +2,20 @@
   "12h": {
     "Argent": {
       "call": "LONG",
-      "fav_pct": 0.49,
-      "heure": "11h33",
+      "fav_pct": 0.56,
+      "heure": "12h15",
       "max_fav_pct": 0.74
     },
     "Blé": {
       "call": "LONG",
       "fav_pct": 0.03,
-      "heure": "11h33",
+      "heure": "12h15",
       "max_fav_pct": 0.05
     },
     "Café (Arabica)": {
       "call": "LONG",
       "fav_pct": -0.01,
-      "heure": "11h33",
+      "heure": "12h15",
       "max_fav_pct": 0.3
     }
   },

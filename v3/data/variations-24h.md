@@ -1,11 +1,12 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 3 juillet 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 3 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| ven 03/07 | Coton | LONG | faible (+0.23) | 2.403 | — | — | -1.12% (en cours) | +0.00% | Non | ❌ | — |
 | jeu 02/07 | **Café (Arabica)** | LONG | forte (+9.47) | 310 | +0.08% | -0.95% | -2.54% (en cours) | +1.48% | Oui | ❌ | — |
 | jeu 02/07 | Pétrole (Brent) | SHORT | forte (-13.58) | 70.86 | +0.34% | — | -2.33% (en cours) | — | Non | ❌ | — |
 | jeu 02/07 | Or | LONG | forte (+1.65) | 4060 | -0.13% | — | +2.84% (en cours) | — | Non | ✅ | Frappes russes massives de missiles et drones sur Kyiv, au moins 10 morts |

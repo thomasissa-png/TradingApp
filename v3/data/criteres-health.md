@@ -1,23 +1,22 @@
 # Santé des critères
 
-_Cycle : 2026-07-02 05:23 UTC_
+_Cycle : 2026-07-03 05:23 UTC_
 
-**Synthèse** : 42 motifs de skip distincts, 75 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
+**Synthèse** : 41 motifs de skip distincts, 72 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 
 | Occurrences | Motif | Détail (cause exacte) |
 |---:|---|---|
 | 6 | fresh_price_refreshed | `GC=F` |
-| 5 | fresh_price_refreshed | `CC=F` |
+| 5 | fresh_price_appended | `CC=F` |
 | 5 | fresh_price_refreshed | `KC=F` |
 | 4 | fresh_price_refreshed | `BZ=F` |
 | 4 | fresh_price_refreshed | `HG=F` |
 | 3 | c2_std_zero | `unknown` |
 | 3 | caixin_pmi_no_value | `` |
-| 3 | fresh_price_appended | `CANE` |
-| 3 | fresh_price_appended | `COTN` |
 | 3 | fresh_price_refreshed | `EUR=X` |
 | 3 | fresh_price_refreshed | `SI=F` |
 | 3 | fresh_price_refreshed | `ZW=F` |
+| 3 | last_good_incompatible | `caixin_pmi_manuf` |
 | 1 | CBOE non câblé (Put/Call sans CSV public) | `put_call_ratio_cboe_5j` |
 | 1 | CBOE non câblé (Put/Call sans CSV public) | `vix_risk_usdjpy` |
 | 1 | composite_no_subsource | `demande_pv_mining_strikes` |
@@ -26,7 +25,7 @@ _Cycle : 2026-07-02 05:23 UTC_
 | 1 | Source linéaire non programmatique | `brent_term_structure_m1m2` |
 | 1 | Source linéaire non programmatique | `fedwatch_proba` |
 | 1 | Source linéaire non programmatique | `term_structure_m1_m3` |
-| 1 | Open-Meteo injoignable (récents) | `-21.2,-48.1:net_error` |
+| 1 | Open-Meteo injoignable (récents) | `22.3,72.6:net_error` |
 | 1 | Open-Meteo injoignable (récents) | `6.8,-5.3:net_error` |
 | 1 | no_breadth_data | `breadth_cac_ma50` |
 | 1 | Twelve : série vide | `USDGHS=X` |
@@ -55,9 +54,8 @@ _La source réseau a échoué ce cycle ; pour éviter un n/a qui ferait chuter l
 
 | Critère | Âge (j ouvrés) | Cause de l'échec source |
 |---|---:|---|
-| ⚠️ `caixin_pmi_manuf` | 2 | source réseau indisponible |
-| ⚠️ `meteo_bresil_canne_sucre` | 1 | source réseau indisponible |
-| ⚠️ `meteo_ci_ghana_precip_30j` | 3 | source réseau indisponible |
+| ⚠️ `meteo_ci_ghana_precip_30j` | 4 | source réseau indisponible |
+| ⚠️ `meteo_inde_gujarat_coton` | 1 | source réseau indisponible |
 
 ## Provenance des prix (source réellement utilisée ce cycle)
 

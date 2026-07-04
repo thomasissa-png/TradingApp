@@ -882,6 +882,10 @@ class PerfTop3Ligne:
     # la reco « Vendre » recalculée qui n'a jamais été affichée. {} / slot absent =
     # « recommandation du suivi non tracée » (zéro invention).
     actions_suivi: Optional[Dict[str, str]] = None
+    # Seuil de réussite 24h de l'actif (base du plafond « max plausible », résidu 3).
+    # None → le garde-fou max-suspect retombe sur la cible turbo globale. Sert à
+    # propager le marqueur ⚠️ « max à vérifier » jusqu'au bilan (section 1 / annexe).
+    seuil_pct: Optional[float] = None
 
 
 def _verdict_sortie(
@@ -1058,6 +1062,7 @@ def compute_perf_top3(
             score_conviction=score_conv,
             score_conviction_signe=(round(score_conv_signe, 2) if score_conv_signe is not None else None),
             actions_suivi=(actions_map.get(actif) or None),
+            seuil_pct=(float(m.seuil_pct) if isinstance(getattr(m, "seuil_pct", None), (int, float)) else None),
         ))
     out.sort(key=lambda x: x.actif)
     return out
@@ -2035,6 +2040,24 @@ def gagnant_max_gain(max_gain_pct: Optional[float],
     return isinstance(max_gain_pct, (int, float)) and max_gain_pct > seuil
 
 
+def _sans_prefixe_ecarte(motif: Optional[str]) -> str:
+    """Retire un préfixe « écarté : » déjà porté par le motif (résidu 2b, 03/07).
+
+    scoring_analyste préfixe certaines raisons d'exclusion (« écarté : news à
+    contre-sens (↯) »). Quand le rendu du bilan re-préfixe « écarté : », on obtient
+    un doublon. On normalise ici (insensible à la casse/espaces). None → « — »."""
+    if not motif:
+        return "—"
+    txt = motif.strip()
+    low = txt.lower()
+    if low.startswith("écarté"):
+        rest = txt[len("écarté"):].lstrip()
+        if rest.startswith(":"):
+            rest = rest[1:].lstrip()
+        return rest or "—"
+    return txt
+
+
 @dataclass
 class WinRateMaxGain:
     """Win rate de la Sélection sur le MAX GAIN du jour. WIN RATE ONLY.
@@ -2084,7 +2107,11 @@ def _render_jour_selection(bilan: "BilanJour") -> List[str]:
     if not perf:
         L += ["Pas de sélection aujourd'hui (aucun top 3 à noter).", ""]
         return L
+    from run_suivi import max_gain_suspect  # noqa: PLC0415
     wr = win_rate_max_gain(perf)
+    # Résidu 3 (03/07) : le garde-fou « max implausible » du suivi suit le chiffre
+    # jusqu'au bilan. seuil_pct par actif (pour retrouver le MÊME plafond que le suivi).
+    seuil_by = {p.actif: p.seuil_pct for p in perf}
     L.append(
         "> Le win rate qui compte = notre **Sélection** (notre niveau de certitude). "
         "Un pari est **GAGNÉ si son max gain du jour dépasse 1 %** (cible turbo, "
@@ -2094,7 +2121,13 @@ def _render_jour_selection(bilan: "BilanJour") -> List[str]:
     )
     L.append("")
     if wr.top1_actif is not None:
-        t1 = "✅ gagné" if wr.top1_gagnant else "❌ raté"
+        if wr.top1_gagnant:
+            top1_max = next((p.max_gain_pct for p in perf if p.actif == wr.top1_actif), None)
+            t1 = "✅ gagné"
+            if max_gain_suspect(top1_max, seuil_by.get(wr.top1_actif)):
+                t1 = "✅ gagné ⚠️ (max à vérifier)"
+        else:
+            t1 = "❌ raté"
         top1 = f"**Top 1** ({wr.top1_actif}) : {t1}"
     else:
         top1 = "**Top 1** : non mesurable (donnée absente)"
@@ -2115,8 +2148,10 @@ def _render_jour_selection(bilan: "BilanJour") -> List[str]:
     for p in perf_ordered:
         if not isinstance(p.max_gain_pct, (int, float)):
             g = "⚪"
+        elif gagnant_max_gain(p.max_gain_pct):
+            g = "✅ ⚠️" if max_gain_suspect(p.max_gain_pct, p.seuil_pct) else "✅"
         else:
-            g = "✅" if gagnant_max_gain(p.max_gain_pct) else "❌"
+            g = "❌"
         conv = f"{p.score_conviction_signe:+.2f}" if p.score_conviction_signe is not None else "—"
         L.append(
             f"| {p.actif} | {p.call} | {conv} | {_fmt_fav_cell(p.fav_12h)} | "
@@ -2165,9 +2200,15 @@ def _points_forts_jour(bilan: "BilanJour") -> List[str]:
     return pts
 
 
-def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
-    """SECTION 3 — Ce qu'on doit améliorer aujourd'hui + POURQUOI (calque hebdo) :
-    picks perdants (cause) + opportunités ratées (gros mouvements hors top 3)."""
+def _paris_perdants_jour(bilan: "BilanJour") -> List[str]:
+    """Post-mortem des PARIS PERDANTS de la Sélection + POURQUOI le marché a fait
+    l'inverse (cause adverse → cross-asset → driver minoritaire → piste externe →
+    divergence).
+
+    Résidu 2a (03/07) : ces paris appartiennent à la Sélection (leur bilan est déjà
+    en sections 1 et 2) — ils n'ont RIEN à faire en « Occasions manquées (hors
+    Sélection) ». On les rend désormais dans une puce dédiée de la section 2, pas
+    dans la section 3 (qui est STRICTEMENT hors Sélection)."""
     from journaliste import OUTCOME_FAUSSE  # noqa: PLC0415
     out_by = {m.cell.actif_name: m.outcome for m in bilan.measures_24h}
     delta_by = {m.cell.actif_name: m.delta_pct for m in bilan.measures_24h}
@@ -2205,6 +2246,17 @@ def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
         if p.cause_repli:
             ligne += f" ({p.cause_repli})"
         pts.append(ligne + ".")
+    return pts
+
+
+def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
+    """SECTION 3 — Occasions manquées HORS Sélection uniquement : gros mouvements
+    (≥ 1 %) hors top 3, dans le bon sens, non sélectionnés, avec le POURQUOI.
+
+    Résidu 2a (03/07) : les paris perdants de la Sélection sont désormais rendus par
+    `_paris_perdants_jour` (section 2). Cette section ne contient plus QUE du hors
+    Sélection (cohérent avec son titre)."""
+    pts: List[str] = []
     # Opportunités ratées : mouvement >= 1 % hors top 3 dans le bon sens, non
     # sélectionné. Amplitude affichée = clôture + max gain (le pic intraday est le
     # vrai signal quand la clôture est plate). FOCUS POURQUOI : la cause du
@@ -2222,7 +2274,10 @@ def _points_faibles_jour(bilan: "BilanJour") -> List[str]:
             ampl += f", max {_fmt_pct(g.max_gain_pct)}"
         # Point 5 (fondateur 01/07) : motif d'exclusion affiché UNE seule fois (fin
         # du « hors top 3, non sélectionné car hors top 3 » circulaire).
-        ligne = f"{g.actif} {g.call} ({ampl}, écarté : {g.raison_non_select})"
+        # Résidu 2b (03/07) : certains motifs sont DÉJÀ préfixés « écarté : » à la
+        # source (scoring_analyste : « écarté : news à contre-sens (↯) »). On dédoublonne
+        # le préfixe pour ne pas afficher « écarté : écarté : … ».
+        ligne = f"{g.actif} {g.call} ({ampl}, écarté : {_sans_prefixe_ecarte(g.raison_non_select)})"
         ligne += f" : {g.cause_move}" if g.cause_move else " : cause non tracée"
         pts.append(ligne + ".")
     return pts[:9]
@@ -2351,6 +2406,16 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
             L.append("Rien de net aujourd'hui : aucun pari à plus de 1 % dans le bon sens.")
     L.append("")
 
+    # Résidu 2a (03/07) : les paris PERDANTS de la Sélection (post-mortem « pourquoi
+    # le marché a fait l'inverse ») sont rendus ICI, en puce dédiée de la section 2 —
+    # PLUS en « Occasions manquées (hors Sélection) » (où ils n'ont rien à faire).
+    perdants = _paris_perdants_jour(bilan)
+    if perdants:
+        L.append("**Paris perdants — pourquoi le marché a fait l'inverse :**")
+        L.append("")
+        L.extend(f"- {x}" for x in perdants)
+        L.append("")
+
     L.append("## 3. Occasions manquées (hors Sélection)")          # 3. Occasions manquées + POURQUOI
     L.append("")
     faibles = _points_faibles_jour(bilan)
@@ -2359,7 +2424,7 @@ def _render_markdown(bilan: BilanJour, fiches: Dict[str, dict]) -> str:
     elif indispo:
         L.append(_MSG_MESURE_INDISPO)
     else:
-        L.append("Aucun pari raté ni opportunité ratée nette aujourd'hui.")
+        L.append("Aucune opportunité ratée nette hors Sélection aujourd'hui.")
     L.append("")
 
     # Point 4 — « Écartés qui ont évité un FAUX » (symétrique des occasions manquées,
@@ -2956,15 +3021,24 @@ def variations_24h_significatives(
             tracking_dir=SUIVI_TRACKING_DIR, snapshot_dir=SUIVI_SNAPSHOT_DIR,
         )
         sign = _call_sign(call)
-        # % clôture favorable : on PRÉFÈRE la valeur exacte du bilan (réf.
-        # ouverture→clôture, persistée dans sortie-timing-log) si elle existe ET que
-        # son call concorde → la page affiche le MÊME chiffre que le bilan. Sinon
-        # (hors Sélection / historique sans bilan) : realized brut converti favorable.
+        # % clôture favorable — ordre de priorité DÉPENDANT du gel (résidu 1, 03/07).
+        # Un jour PASSÉ est FIGÉ : sa source de vérité est le realized DATÉ du
+        # measures-log (prix_echeance figé, jamais re-dérivé). La clôture du
+        # sortie-timing-log (cloture_bilan) est RE-PERSISTÉE À CHAQUE RUN au prix
+        # COURANT pour les cellules encore dans la fenêtre de gel (ref_changed) → elle
+        # DÉRIVE d'un jour sur l'autre (Or 01/07 : -2.16 % → -5.06 % = prix courant).
+        # Elle ne doit donc JAMAIS primer sur un jour passé.
+        #   - jour PASSÉ  : realized daté → (repli) sortie-timing daté → « — ». JAMAIS
+        #     un prix courant. (realized est toujours présent ici : rp filtré non-None.)
+        #   - jour COURANT: on préfère la clôture exacte du bilan (réf. ouverture→clôture)
+        #     quand call concorde → même chiffre « en cours » que le Bilan, sinon realized.
         cb_call, cb_val = cloture_bilan.get((jour_aff.isoformat(), actif), (None, None))
-        if cb_val is not None and cb_call == call:
-            perf_cloture_fav = cb_val
+        realized_fav = round(rp * sign, 2) if sign is not None else None
+        cb_utilisable = cb_val if (cb_val is not None and cb_call == call) else None
+        if ech < today:
+            perf_cloture_fav = realized_fav if realized_fav is not None else cb_utilisable
         else:
-            perf_cloture_fav = round(rp * sign, 2) if sign is not None else None
+            perf_cloture_fav = cb_utilisable if cb_utilisable is not None else realized_fav
         # Max du jour (point 3) : excursion favorable réelle. Le max_gain_pct de la
         # cellule 24h du measures-log est prioritaire quand il existe (valeur figée par
         # cellule) ; sinon on CÂBLE la même source datée unifiée que le bilan quotidien
@@ -3056,6 +3130,14 @@ def render_variations_24h(variations: List[Variation24h], now: Optional[datetime
     def _pct(v: Optional[float]) -> str:
         return f"{v:+.2f}%" if isinstance(v, (int, float)) else "—"
 
+    from run_suivi import max_gain_suspect  # noqa: PLC0415
+
+    def _pct_max(v: Optional[float]) -> str:
+        # Résidu 3 (03/07) : marqueur ⚠️ sur un max implausible (garde-fou du suivi
+        # propagé à la page Mouvements). Pas de seuil actif ici → plafond turbo global.
+        base = _pct(v)
+        return f"{base} ⚠️" if max_gain_suspect(v, None) else base
+
     # [02/07, demande fondateur] À l'intérieur de chaque jour, les PARIS de la
     # Sélection remontent en tête (en gras) ; le reste du marché suit. Tri stable :
     # l'ordre des jours (récent → ancien) est préservé.
@@ -3082,7 +3164,7 @@ def render_variations_24h(variations: List[Variation24h], now: Optional[datetime
         L.append(
             f"| {jour} | {actif} | {call} | {conv} | {_fp(v.prix_entree)} | "
             f"{_pct(v.perf_12h)} | {_pct(v.perf_18h)} | {cloture} | "
-            f"{_pct(v.max_jour)} | {joue} | {verdict} | {v.raison or '—'} |"
+            f"{_pct_max(v.max_jour)} | {joue} | {verdict} | {v.raison or '—'} |"
         )
     L.append("")
     return "\n".join(L)

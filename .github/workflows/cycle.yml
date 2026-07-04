@@ -348,6 +348,20 @@ jobs:
         run: python v3/scripts/run_suivi.py 12h
 
       # ----- Slot SUIVI 18h (R3 léger) -----
+      # FILET stamp US (fix 03/07) : en pratique AUCUN run ne tombait dans
+      # [15h40, 17h[ (VPS tire 15h15 = trop tôt ; ticks GitHub 15h42/16h42
+      # retardés de ~2h → routés suivi18). Le créneau suivi18, LUI, tire
+      # toujours (cron fixe 16 UTC + VPS 18h15) → il stampe d'abord
+      # (idempotent + entry-lock : un stamp antérieur réussi garde priorité ;
+      # capture à ~18h = dégradée mais datée, jamais absente).
+      - name: Stamp ouverture (filet avant suivi 18h)
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'suivi18'
+        continue-on-error: true
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          LOG_LEVEL: INFO
+        run: python v3/scripts/run_stamp.py
+
       - name: Suivi 18h (R3 — statut vs ouverture + dynamique intraday US)
         if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'suivi18'
         env:

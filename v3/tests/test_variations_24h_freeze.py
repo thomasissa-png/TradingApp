@@ -202,3 +202,69 @@ def test_verdict_colonne_outcome(tmp_path, monkeypatch):
     # Blé : outcome None → « — » dans la colonne Résultat (avant-dernière).
     assert _row(md, "Blé").split("|")[-2].strip() != "✅"
     assert "Résultat" in md
+
+
+# ===========================================================================
+# Résidu 1 (03/07) — le % clôture d'un jour PASSÉ est le realized DATÉ figé,
+# JAMAIS la clôture sortie-timing qui dérive au prix courant.
+# ===========================================================================
+
+def test_jour_passe_ignore_sortie_timing_derive(tmp_path, monkeypatch):
+    """Rejeu du bug Or 01/07 (-1.51 figé → -5.06 courant le lendemain). La clôture
+    sortie-timing-log est RE-PERSISTÉE au prix courant à chaque run du bilan pour les
+    cellules encore dans la fenêtre de gel → elle dérive. Pour un jour PASSÉ, la page
+    doit garder le realized DATÉ du measures-log (figé), jamais cette valeur dérivée."""
+    monkeypatch.setattr(bj, "SUIVI_TRACKING_DIR", tmp_path / "nope")
+    monkeypatch.setattr(bj, "SUIVI_SNAPSHOT_DIR", tmp_path / "nope2")
+    # sortie-timing-log DÉRIVÉ au prix courant (-5.06), call concordant (piège maximal).
+    stl = tmp_path / "sortie-timing-log.jsonl"
+    stl.write_text(json.dumps({
+        "date": date(2026, 7, 1).isoformat(), "actif": "Or", "call": "LONG",
+        "cloture_pct": -5.06,
+    }) + "\n", encoding="utf-8")
+    monkeypatch.setattr(bj, "SORTIE_TIMING_LOG", stl)
+    mlog = tmp_path / "m.jsonl"
+    # realized figé -1.51 (favorable LONG = -1.51). ech 02/07 < today 03/07 → PASSÉ.
+    _write_measures(mlog, [_rec("Or", "LONG", -1.51,
+                                bdate=date(2026, 7, 1), ech=date(2026, 7, 2))])
+    v = bj.variations_24h_significatives(measures_log_path=mlog,
+                                         decision_log_dir=tmp_path / "dl",
+                                         today=date(2026, 7, 3))[0]
+    assert v.perf_cloture_fav == -1.51    # realized daté figé (résidu 1)
+    assert v.perf_cloture_fav != -5.06    # PAS le prix courant dérivé
+
+
+def test_jour_courant_prefere_cloture_bilan(tmp_path, monkeypatch):
+    """Le jour COURANT garde la clôture exacte du bilan (réf. ouverture→clôture) quand
+    le call concorde → même chiffre « en cours » que le Bilan (non régression)."""
+    monkeypatch.setattr(bj, "SUIVI_TRACKING_DIR", tmp_path / "nope")
+    monkeypatch.setattr(bj, "SUIVI_SNAPSHOT_DIR", tmp_path / "nope2")
+    stl = tmp_path / "sortie-timing-log.jsonl"
+    stl.write_text(json.dumps({
+        "date": date(2026, 7, 3).isoformat(), "actif": "Cacao", "call": "LONG",
+        "cloture_pct": 2.0,
+    }) + "\n", encoding="utf-8")
+    monkeypatch.setattr(bj, "SORTIE_TIMING_LOG", stl)
+    mlog = tmp_path / "m.jsonl"
+    _write_measures(mlog, [_rec("Cacao", "LONG", 1.5,
+                                bdate=date(2026, 7, 3), ech=date(2026, 7, 3))])
+    v = bj.variations_24h_significatives(measures_log_path=mlog,
+                                         decision_log_dir=tmp_path / "dl",
+                                         today=date(2026, 7, 3))[0]
+    assert v.en_cours is True
+    assert v.perf_cloture_fav == 2.0      # clôture bilan préférée (jour courant)
+
+
+def test_variations_max_suspect_flague(tmp_path, monkeypatch):
+    """Résidu 3 (03/07) : un max implausible porte le marqueur ⚠️ dans la colonne
+    « Max du jour » de la page Mouvements (garde-fou du suivi propagé jusqu'ici)."""
+    _isolate(monkeypatch, tmp_path)
+    mlog = tmp_path / "m.jsonl"
+    _write_measures(mlog, [_rec("Blé", "LONG", 7.37, bdate=date(2026, 6, 29),
+                                ech=date(2026, 6, 30), max_gain=7.43)])
+    md = bj.render_variations_24h(
+        bj.variations_24h_significatives(measures_log_path=mlog,
+                                         decision_log_dir=tmp_path / "dl",
+                                         today=date(2026, 7, 2)), now=NOW)
+    ligne = _row(md, "Blé")
+    assert "+7.43% ⚠️" in ligne           # max suspect flaggé

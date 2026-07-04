@@ -66,6 +66,20 @@ _FAMILY_GROUP: Dict[str, str] = {
     "énergie": "continu",
 }
 
+# Proxies Twelve Data pour les indices US « ^ » (fetch du stamp uniquement).
+# Diagnostic 03/07 : ^GSPC / ^IXIC / ^VIX sont blacklistés côté Twelve (indices ^
+# → fallback yfinance, bloqué en CI) → le fetch rendait None et le stamp restait
+# vide même quand il tournait. Or TOUT le système cote déjà ces actifs à l'échelle
+# ETF/proxy (bulletin : Nasdaq 735.8 = échelle QQQ) et SPY/QQQ/VIXY sont prouvés
+# vivants sur Twelve en CI. On mappe donc le TICKER DE FETCH vers son proxy, mais on
+# STOCKE le prix sous la clé ticker_principal habituelle → cohérent avec les prix
+# d'émission déjà en échelle proxy. Zéro invention : simple substitution de source.
+STAMP_INDEX_PROXY: Dict[str, str] = {
+    "^GSPC": "SPY",
+    "^IXIC": "QQQ",
+    "^VIX": "VIXY",
+}
+
 # Tolérance d'égalité (proportion) sous laquelle deux prix d'ouverture sont
 # considérés identiques (jitter d'arrondi). Au-delà, une tentative d'écrasement
 # est loggée comme violation de l'entry-lock. Aligné avec journaliste.py.
@@ -333,8 +347,12 @@ def stamp_prix_ouverture(
                 ticker, group, now.strftime("%H:%M"),
             )
             continue
+        # Indices US « ^ » blacklistés Twelve → fetch via proxy ETF (SPY/QQQ/VIXY),
+        # mais on conserve la clé `ticker` d'origine pour le stockage (échelle proxy
+        # cohérente avec les prix d'émission).
+        fetch_ticker = STAMP_INDEX_PROXY.get(ticker, ticker)
         try:
-            price = fetch_price(ticker)
+            price = fetch_price(fetch_ticker)
         except Exception as e:  # noqa: BLE001
             logger.warning("stamp ouverture %s : exception %s", ticker, e)
             price = None

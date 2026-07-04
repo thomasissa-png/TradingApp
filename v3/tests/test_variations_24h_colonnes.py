@@ -188,10 +188,13 @@ def test_coherence_avec_bilan_meme_chiffres(tmp_path, monkeypatch):
     v = bj.variations_24h_significatives(
         measures_log_path=mlog, decision_log_dir=tmp_path / "dl"
     )[0]
-    # TOUS les chiffres matchent le bilan (12h/18h/clôture/max), pas seulement 12h/18h.
+    # 12h/18h/max matchent le bilan ; la clôture d'un JOUR PASSÉ vient du
+    # realized measures-log (figé par construction). [03/07] priorité inversée :
+    # le sortie-timing était re-persisté au prix courant et dérivait (prouvé
+    # sur Or 01/07 : -2.16 % puis -5.06 % selon le jour de lecture).
     assert v.perf_12h == 1.99
     assert v.perf_18h == 4.17
-    assert v.perf_cloture_fav == 6.54   # clôture EXACTE du bilan (pas re-dérivée)
+    assert v.perf_cloture_fav == 7.82   # realized measures-log, jamais re-dérivé
     assert v.max_jour == 9.24
 
 
@@ -265,4 +268,6 @@ def test_jour_affiche_est_emission_pas_echeance(tmp_path, monkeypatch):
     assert v.jour != lundi
     assert v.perf_12h == 2.21          # relevés lus au jour d'émission
     assert v.perf_18h == 2.47
-    assert v.perf_cloture_fav == 1.74  # clôture du bilan, jour d'émission
+    # [03/07] jour passé → realized measures-log prioritaire (sortie-timing
+    # dérivait au prix courant, cf. test de cohérence supra).
+    assert v.perf_cloture_fav == 2.95  # realized measures-log du jour d'émission

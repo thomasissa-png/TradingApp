@@ -428,15 +428,20 @@ def test_window_unknown_returns_none(triggers_cfg):
     assert cc.is_in_activation_window("inexistant_cle", now, triggers_cfg, "x") is None
 
 
-def test_window_out_emits_zero_normalisee(triggers_cfg, now_fixed):
-    """Critère numerique hors fenêtre → valeur_normalisee=0 (contribution 0)."""
-    # On simule un critère EIA un lundi (hors fenêtre)
-    monday = datetime(2026, 5, 25, 12, 0, tzinfo=timezone.utc)
+def test_window_out_emits_na_propre(triggers_cfg, now_fixed):
+    """Fix 03/07 : critère QUANTITATIF hors fenêtre → n/a PROPRE (None = critère
+    ABSENT), PLUS le placeholder pseudo-présent {valeur_normalisee: 0.0}.
+
+    L'ancien contrat (valeur_normalisee=0 présente) faisait compter le poids du
+    critère dans la couverture → neutralisait le plafond « fragile (capteurs
+    éteints) ». Désormais absent → poids exclu → garde-fou réarmé."""
+    monday = datetime(2026, 5, 25, 12, 0, tzinfo=timezone.utc)  # hors fenêtre EIA
     crit = {"cle_courante": "eia_crude_surprise", "normalisation": "zscore",
             "source": "EIA API", "zscore_div": 2, "cap": 1.0}
+    cc.SKIP_COUNTER.clear()
     val = cc.build_critere_value("petrole", crit, {}, triggers_cfg, [], monday)
-    assert val is not None
-    assert val["valeur_normalisee"] == 0.0
+    assert val is None  # critère ABSENT (n/a propre), plus de placeholder 0.0
+    assert cc.SKIP_COUNTER.get("hors_fenetre:eia_crude_surprise") == 1
 
 
 # ---------------------------------------------------------------------------

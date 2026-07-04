@@ -443,7 +443,7 @@ def test_post_mortem_cause_adverse_news_medium(tmp_path: Path):
     bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
     bilan.perf_top3 = perf
     bilan.measures_24h = [_measure_perdant("Argent", "SHORT", 3.62)]
-    joined = "\n".join(bj._points_faibles_jour(bilan))
+    joined = "\n".join(bj._paris_perdants_jour(bilan))
     assert "Le marché a monté sur : Silver rallies on industrial demand" in joined
 
 
@@ -457,7 +457,7 @@ def test_post_mortem_divergence_sans_catalyseur(tmp_path: Path):
     bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
     bilan.perf_top3 = perf
     bilan.measures_24h = [_measure_perdant("Argent", "SHORT", 3.62)]
-    joined = "\n".join(bj._points_faibles_jour(bilan))
+    joined = "\n".join(bj._paris_perdants_jour(bilan))
     assert "sans catalyseur news identifié" in joined
     assert "divergence" in joined.lower()
 
@@ -474,7 +474,7 @@ def test_section3_loser_ne_relit_pas_les_criteres_suivis():
         cause_minoritaire=None, cause_externe=None, cause_repli=None,
     )]
     bilan.measures_24h = [_measure_perdant("Cacao", "LONG", -2.09)]
-    line = "\n".join(bj._points_faibles_jour(bilan))
+    line = "\n".join(bj._paris_perdants_jour(bilan))
     assert "on a suivi" not in line                 # plus de rappel des critères
     assert "Maladies des cabosses" not in line        # ni la liste de la section 1
     assert "Le marché a reculé sur : prévisions de temps plus sec" in line
@@ -555,7 +555,7 @@ def test_post_mortem_daily_driver_minoritaire(tmp_path: Path):
     bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
     bilan.perf_top3 = perf
     bilan.measures_24h = [_measure_perdant("Argent", "SHORT", 3.62)]  # pas de sibling → cross None
-    joined = "\n".join(bj._points_faibles_jour(bilan))
+    joined = "\n".join(bj._paris_perdants_jour(bilan))
     assert "facteur qu'on avait sous-pondéré (Stocks au hub Cushing)" in joined
     assert "divergence" not in joined.lower()
 
@@ -594,7 +594,7 @@ def test_post_mortem_levier_a_cross_asset(tmp_path: Path):
         NS(cell=NS(actif_name="Or"), outcome="x", delta_pct=2.10),
         NS(cell=NS(actif_name="EUR/USD"), outcome="x", delta_pct=0.80),
     ]
-    joined = "\n".join(bj._points_faibles_jour(bilan))
+    joined = "\n".join(bj._paris_perdants_jour(bilan))
     assert "complexe métaux précieux (Or +2.10%)" in joined
     assert "divergence" not in joined.lower()  # Levier A a expliqué, pas de fallback
 
@@ -637,7 +637,7 @@ def test_post_mortem_levier_b_piste_externe(tmp_path: Path):
     bilan.perf_top3 = perf
     # Aucun sibling corrélé dans les mesures → Levier A renvoie None.
     bilan.measures_24h = [_measure_perdant("Argent", "SHORT", 3.62)]
-    joined = "\n".join(bj._points_faibles_jour(bilan))
+    joined = "\n".join(bj._paris_perdants_jour(bilan))
     assert "piste externe à vérifier : Silver added to US critical minerals list" in joined
 
 
@@ -649,3 +649,81 @@ def test_enrich_externe_off_par_defaut(monkeypatch):
     bilan.measures_24h = []
     bj._enrich_causes_externes(bilan)  # ne lève pas, ne fetch pas
     assert True
+
+
+# ===========================================================================
+# Résidu 2 (03/07) — section 3 « Occasions manquées (hors Sélection) » propre
+# ===========================================================================
+
+def test_residu2a_loser_selection_hors_occasions_manquees():
+    """Un pari PERDANT de la Sélection va en section 2 (paris perdants), PLUS en
+    section 3 « Occasions manquées (hors Sélection) » (où il n'a rien à faire)."""
+    bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
+    bilan.perf_top3 = [NS(
+        actif="Café (Arabica)", call="LONG", raison_call="Gel Brésil",
+        cause_adverse="pluies favorables au Brésil", cause_minoritaire=None,
+        cause_externe=None, cause_repli=None,
+    )]
+    bilan.measures_24h = [_measure_perdant("Café (Arabica)", "LONG", -3.1)]
+    bilan.gros_moves_autres = []
+    perdants = "\n".join(bj._paris_perdants_jour(bilan))
+    faibles = "\n".join(bj._points_faibles_jour(bilan))
+    assert "Café (Arabica)" in perdants          # section 2 : présent
+    assert "Café (Arabica)" not in faibles        # section 3 : absent
+    assert faibles == ""                           # rien hors Sélection
+
+
+def test_residu2b_sans_prefixe_ecarte():
+    assert bj._sans_prefixe_ecarte("écarté : news à contre-sens (↯)") == "news à contre-sens (↯)"
+    assert bj._sans_prefixe_ecarte("Écarté : intensité sous le plancher") == "intensité sous le plancher"
+    assert bj._sans_prefixe_ecarte("hors top 3") == "hors top 3"
+    assert bj._sans_prefixe_ecarte(None) == "—"
+
+
+def test_residu2b_pas_de_doublon_ecarte():
+    """Motif déjà préfixé « écarté : » à la source → pas de doublon au rendu."""
+    bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
+    bilan.perf_top3 = []
+    bilan.measures_24h = []
+    bilan.gros_moves_autres = [bj.GrosMoveAutre(
+        actif="Sucre", call="LONG", mouvement_pct=1.66, direction_juste=True,
+        raison_non_select="écarté : news à contre-sens (↯)", apprentissage="x",
+        cause_move="tendance quant",
+    )]
+    line = "\n".join(bj._points_faibles_jour(bilan))
+    assert "écarté : news à contre-sens (↯)" in line
+    assert "écarté : écarté :" not in line
+
+
+# ===========================================================================
+# Résidu 3 (03/07) — le max suspect suit jusqu'à la décision (bilan section 1)
+# ===========================================================================
+
+def test_residu3_bilan_section1_max_suspect_flague():
+    """Le bilan propage le ⚠️ « max à vérifier » sur le Top 1 ET la colonne
+    « Gagné >1% » quand le max qui décide est implausible (Blé +7.43)."""
+    p = bj.PerfTop3Ligne(
+        actif="Blé", call="LONG", fav_12h=None, fav_18h=None, fav_cloture=-0.5,
+        pic_valeur=7.43, pic_heure="12h", points_manquants=[], verdict="x",
+        vendre_reco=None, max_gain_pct=7.43, score_conviction=5.0,
+        score_conviction_signe=5.0, seuil_pct=1.0,
+    )
+    bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
+    bilan.perf_top3 = [p]
+    md = "\n".join(bj._render_jour_selection(bilan))
+    assert "✅ gagné ⚠️ (max à vérifier)" in md   # Top 1
+    assert "✅ ⚠️" in md                            # cellule Gagné >1%
+
+
+def test_residu3_bilan_section1_max_plausible_non_flague():
+    """Max plausible → aucun ⚠️ (non régression)."""
+    p = bj.PerfTop3Ligne(
+        actif="Or", call="SHORT", fav_12h=None, fav_18h=None, fav_cloture=1.8,
+        pic_valeur=1.8, pic_heure="clôture", points_manquants=[], verdict="x",
+        vendre_reco=None, max_gain_pct=1.8, score_conviction=4.0,
+        score_conviction_signe=-4.0, seuil_pct=1.0,
+    )
+    bilan = bj.BilanJour(date_j=DJ2, now=datetime(2026, 6, 26, 22, 15))
+    bilan.perf_top3 = [p]
+    md = "\n".join(bj._render_jour_selection(bilan))
+    assert "⚠️" not in md

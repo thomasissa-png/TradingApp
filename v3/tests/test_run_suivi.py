@@ -1322,3 +1322,21 @@ def test_point9a_conviction_niveau_depuis_decision_log(env):
     assert orr.conviction_niveau == "forte"
     top3 = r.markdown.split("### Sélection du jour — progression")[1].split("###")[0]
     assert "forte (-10.74)" in top3
+
+
+# ===========================================================================
+# Résidu 3 (03/07) — le max implausible suit le chiffre jusqu'à la décision
+# ===========================================================================
+
+def test_residu3_statut_max_gain_suspect_flague():
+    """« ✅ gagné » devient « ✅ gagné ⚠️ (max à vérifier) » quand le max qui
+    déclenche le gain est implausible (> 5× le seuil de l'actif). Flag-only :
+    l'outcome ne change pas, le doute est visible au moment où le chiffre décide."""
+    assert rs.statut_max_gain(8.0, seuil_pct=1.0) == "✅ gagné ⚠️ (max à vérifier)"
+    # Plausible (2 % ≤ 5×1 %) → « ✅ gagné » sans flag.
+    assert rs.statut_max_gain(2.0, seuil_pct=1.0) == "✅ gagné"
+    # Sous la cible turbo → « ⏳ pas encore » (inchangé, jamais flaggé).
+    assert rs.statut_max_gain(0.5, seuil_pct=1.0).startswith("⏳")
+    # Sans seuil actif : plafond turbo global (SEUIL_MAX_GAIN_SUIVI×5 = 5 %).
+    assert "⚠️" in rs.statut_max_gain(7.43)
+    assert rs.statut_max_gain(3.0) == "✅ gagné"

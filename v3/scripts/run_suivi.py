@@ -558,13 +558,22 @@ def max_gain_suivi(
 
 
 def statut_max_gain(max_gain_pct: Optional[float],
-                    seuil: float = SEUIL_MAX_GAIN_SUIVI) -> str:
+                    seuil: float = SEUIL_MAX_GAIN_SUIVI,
+                    seuil_pct: Optional[float] = None) -> str:
     """Statut du pari vs la cible turbo (> 1 %), affiché dans le suivi.
     « ✅ gagné » si déjà au-dessus ; « ⏳ pas encore » avec le max atteint ;
-    « — » si non mesurable (zéro invention)."""
+    « — » si non mesurable (zéro invention).
+
+    Résidu 3 (03/07) : le garde-fou « max implausible » suit le chiffre JUSQU'À la
+    décision. Quand le max qui déclenche « ✅ gagné » est SUSPECT (max_gain_suspect),
+    on affiche « ✅ gagné ⚠️ (max à vérifier) » : l'outcome ne change PAS (flag-only,
+    zéro modif de mesure), mais le doute est visible au moment où le chiffre décide.
+    `seuil_pct` = seuil de réussite 24h de l'actif (base du plafond plausible)."""
     if not isinstance(max_gain_pct, (int, float)):
         return "—"
     if max_gain_pct > seuil:
+        if max_gain_suspect(max_gain_pct, seuil_pct):
+            return "✅ gagné ⚠️ (max à vérifier)"
         return "✅ gagné"
     return f"⏳ pas encore ({max_gain_pct:+.2f}%)"
 
@@ -1876,7 +1885,7 @@ def _render_selection_table(r: SuiviRapport) -> List[str]:
         # Max gain du jour atteint base ENTRÉE + statut vs cible turbo > 1 %.
         # Garde-fou plausibilité (point 3) : suffixe « ⚠️ à vérifier » si aberrant.
         col_max = _fmt_max_gain(li.max_gain_emission, li.seuil_pct)
-        col_statut = statut_max_gain(li.max_gain_emission)
+        col_statut = statut_max_gain(li.max_gain_emission, seuil_pct=li.seuil_pct)
         # Colonne 1 fusionnée : direction + LIBELLÉ de conviction + note signée du
         # signal 7h (point 9a — « forte (+8.77) » ; même source que le Bilan).
         col_call = _fmt_call_conviction(li.call, li.conviction, li.conviction_niveau)
@@ -2007,7 +2016,7 @@ def _render_markdown(r: SuiviRapport) -> str:
                 f"| {li.actif} | {_fmt_call_conviction(li.call, li.conviction, li.conviction_niveau)} | "
                 f"{_fmt_price(li.ouverture)} | "
                 f"{_fmt_price(li.prix_courant)} | {_fmt_fav(li.fav_now)} | "
-                f"{_fmt_max_gain(li.max_gain_pct, li.seuil_pct)} | {statut_max_gain(li.max_gain_pct)} | "
+                f"{_fmt_max_gain(li.max_gain_pct, li.seuil_pct)} | {statut_max_gain(li.max_gain_pct, seuil_pct=li.seuil_pct)} | "
                 f"{call_etat(li.fav_now, li.seuil_pct)} | {li.statut} |"
             )
     else:
@@ -2024,7 +2033,7 @@ def _render_markdown(r: SuiviRapport) -> str:
                 f"| {li.actif} | {_fmt_call_conviction(li.call, li.conviction, li.conviction_niveau)} | "
                 f"{_fmt_price(li.ouverture)} | "
                 f"{_fmt_price(li.prix_courant)} | {_fmt_fav(li.fav_now)} | "
-                f"{_fmt_max_gain(li.max_gain_pct, li.seuil_pct)} | {statut_max_gain(li.max_gain_pct)} | "
+                f"{_fmt_max_gain(li.max_gain_pct, li.seuil_pct)} | {statut_max_gain(li.max_gain_pct, seuil_pct=li.seuil_pct)} | "
                 f"{call_etat(li.fav_now, li.seuil_pct)} | "
                 f"{_fmt_points(li.delta_vs_prec)} | {li.tendance} | {li.statut} |"
             )
@@ -2099,10 +2108,24 @@ def _render_markdown(r: SuiviRapport) -> str:
                     f"le call (seuil {_fmt_pct(li.seuil_pct, signed=False)}) → couper."
                 )
             else:  # 🟡 Sécurise
-                L.append(
-                    f"- 🟡 **{li.actif}** ({li.call}) : a fait {_fmt_pct(li.max_gain_emission)} "
-                    f"de max, retombé à {_fmt_fav(li.fav_now_emission)} → sécuriser une partie."
-                )
+                # Résidu 3 (03/07) : si le max qui déclenche « Sécurise » est SUSPECT
+                # (implausible) ET que le % courant est négatif (on est repassé contre
+                # le call), « sécuriser une partie » suppose un gain acquis qui n'est
+                # peut-être qu'un tick aberrant → on remplace par l'alerte de vérif
+                # (flag-only : la mesure/l'action ne changent pas, le doute est visible).
+                if (max_gain_suspect(li.max_gain_emission, li.seuil_pct)
+                        and isinstance(li.fav_now_emission, (int, float))
+                        and li.fav_now_emission < 0):
+                    L.append(
+                        f"- 🟡 **{li.actif}** ({li.call}) : a fait {_fmt_pct(li.max_gain_emission)} "
+                        f"de max, retombé à {_fmt_fav(li.fav_now_emission)} → "
+                        "⚠️ max douteux : vérifier avant d'agir."
+                    )
+                else:
+                    L.append(
+                        f"- 🟡 **{li.actif}** ({li.call}) : a fait {_fmt_pct(li.max_gain_emission)} "
+                        f"de max, retombé à {_fmt_fav(li.fav_now_emission)} → sécuriser une partie."
+                    )
     else:
         # Point 6 (fondateur 01/07) — cohérence : plus jamais « 4 Coupe en haut /
         # aucune alerte en bas ». Le panorama n'est PAS détenu : ses calls cassés ne

@@ -129,11 +129,10 @@ def test_stamp_marche_pas_ouvert_skip(tmp_path):
 
 
 def test_stamp_us_ecrit_apres_ouverture_15h36(tmp_path):
-    """Preuve que le CODE du stamp US est correct : à 15h36 Paris (US ouvert +
-    délai), S&P/Nasdaq/VIX sont bien stampés dès que fetch_price renvoie un prix.
-    Corollaire : leur absence dans prix-ouverture/*.json (defect 01/07) ne vient
-    PAS du mapping ni de la condition d'heure — mais du fait qu'aucun run n'appelle
-    stamp_prix_ouverture dans la fenêtre [15h35, clôture[ (déclenchement)."""
+    """Fix 03/07 : à 15h36 Paris (US ouvert + délai), S&P/Nasdaq/VIX sont stampés
+    en fetchant leurs PROXIES Twelve (^GSPC→SPY, ^IXIC→QQQ, ^VIX→VIXY, car les ^
+    sont blacklistés Twelve → fallback yfinance bloqué en CI). Le prix est STOCKÉ
+    sous la clé ticker_principal (^GSPC…), à l'échelle proxy (cohérent émission)."""
     fiches = {
         "sp500": FICHE_SP,
         "nasdaq": _fiche("Nasdaq", "^IXIC", "indices"),
@@ -141,13 +140,40 @@ def test_stamp_us_ecrit_apres_ouverture_15h36(tmp_path):
     }
     base = tmp_path / "prix-ouverture"
     now = datetime(2026, 6, 8, 15, 36, tzinfo=PARIS)  # US ouvert depuis 15h30 (+délai)
-    prix = {"^GSPC": 5300.0, "^IXIC": 17250.0, "^VIX": 14.2}
+    # fetch_price ne reçoit QUE les proxies (les ^ rendraient None via Twelve).
+    prix_proxy = {"SPY": 530.0, "QQQ": 460.0, "VIXY": 14.2}
     mo.stamp_prix_ouverture(
         date_j=date(2026, 6, 8), fiches=fiches,
-        fetch_price=lambda t: prix[t], base_dir=base, now=now,
+        fetch_price=lambda t: prix_proxy[t], base_dir=base, now=now,
     )
     data = json.loads((base / "2026-06-08.json").read_text())
-    assert data == prix  # les 3 indices US stampés
+    # Stockés sous la clé ^ d'origine, à la valeur du proxy fetché.
+    assert data == {"^GSPC": 530.0, "^IXIC": 460.0, "^VIX": 14.2}
+
+
+def test_stamp_index_proxy_fetch_uniquement_proxies(tmp_path):
+    """Fix 03/07 (ciblé) : le stamp des indices ^ ne fetch JAMAIS le symbole ^
+    (blacklisté Twelve) — il fetch exclusivement le proxy. On enregistre les
+    tickers réellement demandés à fetch_price pour le prouver."""
+    fiches = {
+        "sp500": FICHE_SP,
+        "nasdaq": _fiche("Nasdaq", "^IXIC", "indices"),
+        "vix": _fiche("VIX", "^VIX", "volatilité"),
+    }
+    base = tmp_path / "prix-ouverture"
+    now = datetime(2026, 6, 8, 15, 36, tzinfo=PARIS)
+    demandes: list[str] = []
+
+    def _fetch(t):
+        demandes.append(t)
+        return {"SPY": 530.0, "QQQ": 460.0, "VIXY": 14.2}[t]
+
+    mo.stamp_prix_ouverture(
+        date_j=date(2026, 6, 8), fiches=fiches,
+        fetch_price=_fetch, base_dir=base, now=now,
+    )
+    assert set(demandes) == {"SPY", "QQQ", "VIXY"}
+    assert not any(t.startswith("^") for t in demandes)
 
 
 def test_stamp_coton_sucre_skip_8h_stamp_15h36(tmp_path):

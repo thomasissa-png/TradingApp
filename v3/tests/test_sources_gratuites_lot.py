@@ -270,8 +270,10 @@ def test_stamps_de_mesure_ne_passent_pas_par_stooq(monkeypatch):
 # 4) Sources ÉCARTÉES — aucun câblage (pas de test fantôme)
 # ---------------------------------------------------------------------------
 
+# [03/07] usda_wasde_stocks_to_use RETIRÉ de cette liste : handler NASS
+# QuickStats câblé (clé USDA_API_KEY posée par le fondateur le 01/07, GO),
+# cf. test_usda_nass_stocks.py. Les autres restent écartées (zéro invention).
 @pytest.mark.parametrize("cle", [
-    "usda_wasde_stocks_to_use",          # Blé — WASDE (clé/403)
     "nass_crop_progress",                # Blé — Crop Progress (clé)
     "achats_pboc_cb_emergentes",         # Or — WGC banques centrales (HTML only)
     "stocks_ice_arabica_certifies_20j",  # Café — ICE arabica (HTML/PDF)

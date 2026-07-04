@@ -746,6 +746,148 @@ def fetch_eia_series(path: str, *, frequency: str = "weekly", series_id: Optiona
 
 
 # ---------------------------------------------------------------------------
+# USDA NASS QuickStats — stocks de blé US (clé env USDA_API_KEY)
+# ---------------------------------------------------------------------------
+# La fiche blé (usda_wasde_stocks_to_use, poids 11, signe -1) attend le ratio
+# stocks/consommation du rapport WASDE mensuel. AUCUNE source programmatique
+# gratuite ne publie ce ratio ; on approxime par le NIVEAU des stocks trimestriels
+# de blé (NASS Grain Stocks), z-scoré vs son propre historique. Le signe -1 de la
+# fiche (appliqué en aval par le scoring, NON touché ici) reste valide : stocks
+# HAUTS = offre abondante = baissier (z>0 → SHORT), stocks BAS = offre serrée =
+# haussier (z<0 → LONG) — même sémantique que le ratio stocks/conso.
+#
+# ÉCART ASSUMÉ (zéro invention) : la source NASS est TRIMESTRIELLE (First of
+# Mar/Jun/Sep/Dec) et mesure un NIVEAU de stocks, pas le ratio stocks/conso
+# MENSUEL du WASDE. Choix documenté : à défaut de flux WASDE gratuit, le niveau de
+# stocks NASS est le proxy public le plus fidèle. Poids/signe/clé INCHANGÉS.
+NASS_BASE = "https://quickstats.nass.usda.gov/api/api_GET/"
+
+# cle_courante → facettes de requête NASS (exactement la requête vérifiée live par
+# l'orchestrateur : WHEAT / STOCKS / NATIONAL).
+NASS_STOCKS_SERIES = {
+    "usda_wasde_stocks_to_use": {
+        "commodity_desc": "WHEAT",
+        "statisticcat_desc": "STOCKS",
+        "agg_level_desc": "NATIONAL",
+    },
+}
+
+# Rang chronologique intra-année d'une période de référence NASS (mois → 1..12).
+_NASS_MONTHS = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
+
+
+def _usda_key() -> Optional[str]:
+    k = os.environ.get("USDA_API_KEY")
+    return k or None
+
+
+def _nass_period_rank(desc: Any) -> Optional[int]:
+    """Rang du mois (1..12) d'un `reference_period_desc` NASS (ex. « FIRST OF MAR »).
+
+    Sélectionne la CADENCE TRIMESTRIELLE des Grain Stocks : seules les périodes
+    portant un mois reconnu sont retenues ; les totaux annuels « MARKETING YEAR »
+    (sans mois) → None (exclus, sinon ils polluent la série trimestrielle). Zéro
+    invention : on lit le mois tel qu'il figure dans le champ NASS.
+    """
+    if not isinstance(desc, str):
+        return None
+    up = desc.upper()
+    for tok, rank in _NASS_MONTHS.items():
+        if tok in up:
+            return rank
+    return None
+
+
+def _parse_nass_value(raw: Any) -> Optional[float]:
+    """Parse le champ `Value` NASS en float. Gère séparateurs de milliers (virgules
+    ET espaces) et les codes de suppression (« (D) », « (Z) », « (NA) ») → None."""
+    if isinstance(raw, (int, float)):
+        return float(raw) if math.isfinite(float(raw)) else None
+    if not isinstance(raw, str):
+        return None
+    cleaned = raw.replace(",", "").replace(" ", "").replace(" ", "").strip()
+    if not cleaned or cleaned.startswith("("):
+        return None  # « (D) » withheld, « (NA) », vide → n/a
+    try:
+        v = float(cleaned)
+    except ValueError:
+        return None
+    return v if math.isfinite(v) else None
+
+
+def fetch_nass_stocks_series(facets: Dict[str, str], *, length: int = 40
+                             ) -> Optional[List[float]]:
+    """Série chronologique (oldest→newest) des stocks trimestriels NASS.
+
+    None si clé absente / API KO / aucune donnée exploitable (n/a propre). Dédoublonne
+    par (year, mois) — premier gagnant — pour absorber d'éventuelles lignes multiples
+    (positions/classes) d'une même période, puis trie chronologiquement.
+    """
+    key = _usda_key()
+    if not key:
+        SKIP_COUNTER["nass_no_key"] += 1
+        logger.warning("USDA_API_KEY manquante — NASS %s skip", facets.get("commodity_desc"))
+        return None
+    params: Dict[str, Any] = {"key": key, "format": "JSON", **facets}
+    data = http_get_json(NASS_BASE, params=params)
+    if not isinstance(data, dict):
+        SKIP_COUNTER["nass_dead"] += 1
+        return None
+    rows = data.get("data")
+    if not isinstance(rows, list) or not rows:
+        SKIP_COUNTER["nass_empty"] += 1
+        return None
+    dedup: Dict[Tuple[int, int], float] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        rank = _nass_period_rank(row.get("reference_period_desc"))
+        if rank is None:
+            continue
+        try:
+            year = int(row.get("year"))
+        except (TypeError, ValueError):
+            continue
+        val = _parse_nass_value(row.get("Value"))
+        if val is None:
+            continue
+        dedup.setdefault((year, rank), val)  # premier gagnant
+    if not dedup:
+        SKIP_COUNTER["nass_no_numeric"] += 1
+        return None
+    ordered = [dedup[k] for k in sorted(dedup.keys())]
+    return ordered[-length:] if len(ordered) > length else ordered
+
+
+def _handle_nass_stocks(cle: str, crit: dict, ts: str) -> Optional[dict]:
+    """Handler z-score des stocks trimestriels NASS (usda_wasde_stocks_to_use).
+
+    Mêmes garde-fous que _handle_eia : série trop courte / clé absente / API KO →
+    None (n/a propre). Le signe -1 de la fiche est appliqué en aval par le scoring.
+    """
+    facets = NASS_STOCKS_SERIES.get(cle)
+    if not facets:
+        return None
+    window = int(crit.get("zscore_window", 12))
+    series = fetch_nass_stocks_series(facets, length=window + 10)
+    if not series or len(series) < 4:
+        SKIP_COUNTER["nass_series_courte"] += 1
+        return None
+    value = series[-1]
+    hist = series[-window:] if len(series) >= window else series
+    norm = compute_zscore_normalisee(
+        value, hist, zscore_div=float(crit.get("zscore_div", 2.0)),
+        cap=float(crit.get("cap", 1.0)), label=cle,
+    )
+    if norm is None:
+        return None
+    return _emit_zscore(value, norm, ts)
+
+
+# ---------------------------------------------------------------------------
 # FRED (Federal Reserve Economic Data — St. Louis Fed)
 # ---------------------------------------------------------------------------
 
@@ -3121,7 +3263,21 @@ def _build_critere_value_inner(
     # (motif caixin_pmi_no_value) ou valeur brute réelle si news dispo.
     in_window = is_in_activation_window(cle, now, triggers_cfg, fiche_key)
     if in_window is False and cle != "caixin_pmi_manuf":
-        return {"valeur_normalisee": 0.0, "ts": ts, "note": "hors fenêtre"}
+        # Fix hors-fenêtre → n/a PROPRE (03/07, même patron que le fix Caixin du
+        # 01/07). Les SEULS type_norm atteignant ce point sont QUANTITATIFS —
+        # zscore / zscore_abs / lineaire : gate, triplet, mapping_non_monotone et
+        # composite ont déjà retourné plus haut (l.3028-3111). Pour ces familles,
+        # l'ancien placeholder {valeur_normalisee: 0.0, note: "hors fenêtre"} était
+        # vu « présent » (is_na=False) par le scoring → le critère (ex. blé
+        # usda_wasde_stocks_to_use, poids 11) comptait dans la couverture et
+        # NEUTRALISAIT le plafond « fragile (capteurs éteints) ». On tombe donc en
+        # n/a propre : critère ABSENT (poids exclu de la couverture), motif tracé
+        # dans SKIP_COUNTER (« hors_fenetre:<cle> »). Le repli last-good reste un
+        # filet légitime (identique à Caixin) : sans valeur mémorisée → None ferme,
+        # ce qui réarme le garde-fou capteurs éteints. Les triplets/gates
+        # événementiels (0 hors-fenêtre VOULU) ne passent PAS ici : intacts.
+        SKIP_COUNTER[f"hors_fenetre:{cle}"] += 1
+        return None
 
     # Normalisation SYMÉTRIQUE « écart à la normale » (zscore_abs) — météo à
     # double extrême (cacao : sécheresse OU excès = haussier). Routée vers le
@@ -3143,6 +3299,14 @@ def _build_critere_value_inner(
         # EIA
         if cle in EIA_SERIES or "eia" in source:
             res = _handle_eia(cle, crit, ts)
+            if res is not None:
+                return res
+            return None
+        # USDA NASS QuickStats — stocks trimestriels de blé (clé USDA_API_KEY).
+        # Intercepté par clé exacte AVANT le catch-all Twelve. Sans clé / API KO →
+        # None (n/a propre).
+        if cle in NASS_STOCKS_SERIES:
+            res = _handle_nass_stocks(cle, crit, ts)
             if res is not None:
                 return res
             return None

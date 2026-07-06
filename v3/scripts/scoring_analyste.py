@@ -6948,26 +6948,36 @@ def build_decision_log_records(
                 **selection_extra,
             })
 
-    # --- État persisté « positions ouvertes » (FEATURE 03/07) --------------
-    # Un record dédié (record_type=positions_ouvertes) par cycle : transition de
-    # l'état de la veille avec les résultats du jour. Ignoré par les lecteurs
-    # par-cellule (ni actif ni horizon ∈ HORIZONS). Best-effort : toute panne →
-    # aucun record positions (le decision-log par-cellule reste intact).
+    return records
+
+
+def build_positions_record(
+    results: List[ActifResult],
+    now: datetime,
+) -> Optional[Dict[str, Any]]:
+    """Record d'état « positions ouvertes » (FEATURE 03/07), record_type dédié.
+
+    [Refactor 03/07 soir] SORTI de build_decision_log_records : cette fonction
+    garde son contrat historique « une ligne = une cellule actif × horizon »
+    (≈20 sites de tests/outillage itèrent son retour en indexant les champs de
+    cellule). Le record d'état est construit ICI et ajouté au moment de la
+    PERSISTANCE (write_decision_log, cf. run_bulletin) : le fichier JSONL le
+    porte, l'API mémoire reste cellules-only. Best-effort : toute panne → None
+    (le decision-log par-cellule reste intact)."""
     try:
         _prix_ref = _prix_reference_courant(now)
         _prev = get_prev_positions_ouvertes(DECISION_LOG_DIR, now)
         _new_pos, _evt = compute_positions_ouvertes(_prev, results, _prix_ref, now)
-        records.append({
+        return {
             "record_type": POSITIONS_RECORD_TYPE,
-            "bulletin_date": bulletin_date,
-            "generated_at": generated_at,
+            "bulletin_date": now.strftime("%Y-%m-%d"),
+            "generated_at": now.isoformat(),
             "positions": _new_pos,
             "clotures_du_jour": _evt.get("closed_today", []),
-        })
+        }
     except Exception as e:  # noqa: BLE001
         logger.warning("persistance positions ouvertes indisponible : %s", e)
-
-    return records
+        return None
 
 
 def _prix_reference_courant(now: datetime) -> Dict[str, float]:

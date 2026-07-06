@@ -3052,6 +3052,25 @@ def build_paris_du_jour_block(
             "le pari repose sur la tendance, pas sur la fraîcheur de la news._"
         )
         out.append("")
+    # [Point 1 — 03/07] Alerte catalyseur J0 : si un événement éco 🔴/🟡 tombe
+    # AUJOURD'HUI et que son scope touche un pari de la Sélection, on DRAPEAUTE
+    # (jamais un ordre) que ce(s) pari(s) « traverse(nt) l'annonce ». Aucun event
+    # J0 concerné → aucune ligne. Cas de réf. 03/07 : NFP (scope or/argent/sp500/…)
+    # ⇒ « Argent traverse l'annonce ». Une ligne par événement concerné.
+    _pari_keys = {p["fiche_key"] for p in picks}
+    for _ev in _catalyseurs_j0_scope(now):
+        _touchs = [p for p in picks if p["fiche_key"] in set(_ev.get("actifs") or [])]
+        if not _touchs:
+            continue
+        _sym = "🔴" if _ev.get("impact") == "high" else "🟡"
+        _heure = _ev.get("heure") or "heure non confirmée"
+        _noms = ", ".join(p["actif"] for p in _touchs)
+        _verbe = "traversent" if len(_touchs) > 1 else "traverse"
+        out.append(
+            f"{_sym} {_ev['nom']} à {_heure} : {_noms} {_verbe} l'annonce."
+        )
+    if _pari_keys and out and out[-1] != "":
+        out.append("")
     out.extend(_ligne_ecartes())
     return out
 
@@ -3565,6 +3584,40 @@ def _catalyseurs_j0_high(now: datetime) -> List[Dict[str, Any]]:
                     "nom": str(ev.get("nom") or ev.get("type") or "Événement"),
                     "actifs": [str(a) for a in (ev.get("actifs") or [])],
                     "impact": "high",
+                })
+        return out
+    except Exception:  # noqa: BLE001 — toute anomalie calendrier → silencieux
+        return []
+
+
+def _catalyseurs_j0_scope(now: datetime) -> List[Dict[str, Any]]:
+    """[Point 1 — 03/07] Événements du calendrier éco tombant AUJOURD'HUI (J0),
+    impact `high` (🔴) OU `medium` (🟡), pour l'ALERTE « traverse l'annonce » sous
+    les paris. Même source/mécanisme que `_catalyseurs_j0_high` (calendrier déjà
+    parsé pour le Décor / les Catalyseurs J+1) — on élargit juste au medium et on
+    remonte l'heure si elle est connue. DRAPEAU pur (affichage) : aucun impact
+    signal/mesure. Retourne [{nom, actifs:[fiche_key…], impact, heure|None}].
+    ZÉRO INVENTION : calendrier absent/KO → liste vide.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import calendrier_eco as _cal
+    except Exception:  # noqa: BLE001 — calendrier indispo → pas d'alerte
+        return []
+    try:
+        jour = now.date()
+        out: List[Dict[str, Any]] = []
+        for ev in _cal.charger_evenements():
+            impact = str(ev.get("impact") or "medium").strip().lower()
+            if impact not in ("high", "medium"):
+                continue
+            if _cal._dates_pour_event(ev, jour, jour):
+                heure = ev.get("heure") or ev.get("heure_paris")
+                out.append({
+                    "nom": str(ev.get("nom") or ev.get("type") or "Événement"),
+                    "actifs": [str(a) for a in (ev.get("actifs") or [])],
+                    "impact": impact,
+                    "heure": str(heure).strip() if heure else None,
                 })
         return out
     except Exception:  # noqa: BLE001 — toute anomalie calendrier → silencieux
@@ -4259,6 +4312,7 @@ def _load_raisons_drivers() -> Dict[str, Dict[str, Dict[str, str]]]:
         "drivers": data.get("drivers", {}) or {},
         "prefixes": data.get("prefixes", {}) or {},
         "aliases": data.get("aliases", {}) or {},
+        "by_actif": data.get("by_actif", {}) or {},
     }
 
 
@@ -4271,18 +4325,29 @@ def _resolve_cle_canonique(cle: str) -> str:
     return _load_raisons_drivers()["aliases"].get(cle, cle)
 
 
-def _raison_phrases_for_cle(cle: str) -> Optional[Dict[str, str]]:
+def _raison_phrases_for_cle(cle: str, fiche_key: str = "") -> Optional[Dict[str, str]]:
     """Retourne le dict de phrases (`phrase_long`/`phrase_short`/`phrase_neutre`)
     pour une `cle_courante`, ou None si la clé n'est pas dans la biblio.
 
-    Ordre : alias (clé réelle → canonique) → exact → PRÉFIXE (clés à suffixe
-    d'actif type `momentum_prix_20j_petrole`). L'exact prime sur le préfixe.
+    Ordre : override PER-ACTIF (`by_actif[fiche_key][cle]`, Point 5 — 03/07) →
+    alias (clé réelle → canonique) → exact → PRÉFIXE (clés à suffixe d'actif type
+    `momentum_prix_20j_petrole`). L'exact prime sur le préfixe.
+
+    `fiche_key` (optionnel) : identifiant d'actif. Sert UNIQUEMENT à résoudre les
+    cle_courante MACRO PARTAGÉES au sens opposé selon l'actif (ex. `dxy_trend_20j`
+    signe:+1 pour USD/JPY vs −1 pour les matières premières) vers une entrée dédiée.
     """
     if not cle:
         return None
     biblio = _load_raisons_drivers()
-    canon = _resolve_cle_canonique(cle)
     drivers = biblio["drivers"]
+    # Override per-actif AVANT tout : la même cle peut porter un sens opposé selon
+    # l'actif → phrase dédiée (sinon la biblio générique devient absurde).
+    if fiche_key:
+        override = (biblio["by_actif"].get(fiche_key) or {}).get(cle)
+        if override and override in drivers:
+            return drivers[override]
+    canon = _resolve_cle_canonique(cle)
     if canon in drivers:
         return drivers[canon]
     # Préfixes : le plus long préfixe correspondant gagne (déterminisme).
@@ -4509,7 +4574,7 @@ def _raison_parts(
             corps = enrichi
             co_cle, co_ctr = _codriver_news_codominant(r, h, direction, cle, ctr)
             if co_cle:
-                co_phrases = _raison_phrases_for_cle(co_cle)
+                co_phrases = _raison_phrases_for_cle(co_cle, r.fiche_key)
                 co_label = ""
                 if co_phrases is not None and _resolve_cle_canonique(co_cle) not in _RAISON_DRIVERS_DOUTEUX:
                     co_label = co_phrases.get("phrase_long" if co_ctr > 0 else "phrase_short", "")
@@ -4523,7 +4588,7 @@ def _raison_parts(
             suffixe = f"{_raison_force_suffix(r, h)}{_raison_flags_suffix(r, h, now)}"
             return corps, chiffre, suffixe
 
-    phrases = _raison_phrases_for_cle(cle)
+    phrases = _raison_phrases_for_cle(cle, r.fiche_key)
     if phrases is None:
         corps = nom if nom else "—"
     else:
@@ -4540,7 +4605,7 @@ def _raison_parts(
 
     co_cle, co_ctr = _codriver_news_codominant(r, h, direction, cle, ctr)
     if co_cle:
-        co_phrases = _raison_phrases_for_cle(co_cle)
+        co_phrases = _raison_phrases_for_cle(co_cle, r.fiche_key)
         co_label = ""
         if co_phrases is not None and _resolve_cle_canonique(co_cle) not in _RAISON_DRIVERS_DOUTEUX:
             co_label = co_phrases.get("phrase_long" if co_ctr > 0 else "phrase_short", "")
@@ -4638,7 +4703,7 @@ def raison_cellule_phrase(r: "ActifResult", h: str, now: Optional[datetime] = No
                 return enrichi  # aucun driver non-news → net sens (sans phrase interdite)
         elif enrichi != nom:
             return enrichi
-    phrases = _raison_phrases_for_cle(cle)
+    phrases = _raison_phrases_for_cle(cle, r.fiche_key)
     if phrases is None:
         return nom or ""
     if _resolve_cle_canonique(cle) in _RAISON_DRIVERS_DOUTEUX:
@@ -5396,7 +5461,17 @@ def render_bulletin(
     # Pré-calcul des flips AVANT le rendu matrice (l'ordre d'affichage est :
     # Briefing → Flips vs veille → Matrice → Détail → Limites — demande Thomas
     # 2026-06-01 : remonter les changements de position en tête de bulletin).
-    flips: List[str] = []
+    # [Point 4 — 03/07] Seuil de conviction « forte » de l'actif (MÊME source que
+    # « À jouer » / la Sélection : bilan_jour._load_score_fort_seuil via
+    # `_raison_force_seuil`). Un flip dont la NOUVELLE note est SOUS ce seuil est
+    # un retournement de BRUIT (signal proche de zéro) : on le suffixe et on le
+    # trie EN FIN de liste — les VRAIS retournements (note ≥ seuil) d'abord.
+    try:
+        _seuil_fort_flip = _raison_force_seuil()
+    except Exception:  # noqa: BLE001 — défaut documenté si bilan_jour KO
+        _seuil_fort_flip = _RAISON_FORCE_SEUIL_DEFAUT
+    _flips_francs: List[str] = []
+    _flips_bruit: List[str] = []
     for r in results:
         veille = veille_conclusions.get(r.nom.lower(), {})
         for h in HORIZONS:
@@ -5412,10 +5487,20 @@ def render_bulletin(
                         noise_flag = " ⚪"
                     elif abs(sc) < NEUTRAL_BAND:
                         noise_flag = " ≈"
-                flips.append(
-                    f"- {r.nom} [{h}] : {v} → {r.conclusions[h]} "
-                    f"(score {sc:+.2f}){noise_flag}"
+                # [Point 4] Bruit = nouvelle note franche mais SOUS le seuil de
+                # conviction forte de l'actif (retournement non convaincant).
+                is_bruit = (
+                    r.conclusions[h] in ("LONG", "SHORT")
+                    and abs(sc) < _seuil_fort_flip
                 )
+                bruit_suffix = " (bruit : signal proche de zéro)" if is_bruit else ""
+                ligne = (
+                    f"- {r.nom} [{h}] : {v} → {r.conclusions[h]} "
+                    f"(score {sc:+.2f}){noise_flag}{bruit_suffix}"
+                )
+                (_flips_bruit if is_bruit else _flips_francs).append(ligne)
+    # Vrais retournements d'abord, flips de bruit ensuite (ordre stable intra-groupe).
+    flips: List[str] = _flips_francs + _flips_bruit
     # [Refonte S9 — (B)2] Compteur « (N flips) » dans le titre quand N>0. Le titre
     # reste préfixé par « ## Flips vs veille » (les parsers/tests s'appuient sur ce
     # préfixe ; le suffixe est purement informatif et repris dans le <summary> HTML).

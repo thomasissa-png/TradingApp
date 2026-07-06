@@ -238,11 +238,11 @@ def test_bloc_catalyseur_ignore_si_actif_non_selectionne(monkeypatch):
 def test_decision_log_selection_du_jour_true():
     a = _actif("Or", "or", score_24h=0.9, driver_cle="drv_a")
     records = sa.build_decision_log_records([a], _NOW)
-    rec_24h = next(r for r in records if r["horizon"] == "24h")
+    rec_24h = next(r for r in records if r.get("horizon") == "24h")
     assert rec_24h["selection_du_jour"] is True
     assert "selection_motif_exclusion" not in rec_24h
     # Hors 24h : champ absent (la sélection est définie sur le pari 24h).
-    rec_7j = next(r for r in records if r["horizon"] == "7j")
+    rec_7j = next(r for r in records if r.get("horizon") == "7j")
     assert "selection_du_jour" not in rec_7j
 
 
@@ -258,7 +258,7 @@ def test_decision_log_selection_motif_exclusion():
     records = sa.build_decision_log_records([a, b, c, d], _NOW)
 
     def _rec(actif):
-        return next(r for r in records if r["actif"] == actif and r["horizon"] == "24h")
+        return next(r for r in records if r["actif"] == actif and r.get("horizon") == "24h")
 
     assert _rec("Or")["selection_du_jour"] is True
     assert _rec("Argent")["selection_du_jour"] is True
@@ -280,7 +280,7 @@ def test_decision_log_selection_false_quand_non_selectionnee():
     surnumeraire = _actif("Café", "cafe", score_24h=0.4)  # 4e → hors top 3
     records = sa.build_decision_log_records(forts + [surnumeraire], _NOW)
     rec_24h = next(
-        r for r in records if r["actif"] == "Café" and r["horizon"] == "24h"
+        r for r in records if r["actif"] == "Café" and r.get("horizon") == "24h"
     )
     assert rec_24h["selection_du_jour"] is False
     assert rec_24h["selection_motif_exclusion"] == "hors top 3"
@@ -337,7 +337,7 @@ def test_decision_log_shadow_injecte():
     a = _actif("Or", "or", score_24h=0.9, driver_cle="drv_a")
     shadow = {"or": {"shadow_retour_j1": 0.05, "shadow_gap_overnight": -0.02}}
     records = sa.build_decision_log_records([a], _NOW, shadow_capteurs=shadow)
-    rec_24h = next(r for r in records if r["horizon"] == "24h")
+    rec_24h = next(r for r in records if r.get("horizon") == "24h")
     assert rec_24h["shadow_retour_j1"] == pytest.approx(0.05)
     assert rec_24h["shadow_gap_overnight"] == pytest.approx(-0.02)
 
@@ -345,7 +345,7 @@ def test_decision_log_shadow_injecte():
 def test_decision_log_shadow_none_si_absent():
     a = _actif("Or", "or", score_24h=0.9, driver_cle="drv_a")
     records = sa.build_decision_log_records([a], _NOW)  # pas de shadow_capteurs
-    rec_24h = next(r for r in records if r["horizon"] == "24h")
+    rec_24h = next(r for r in records if r.get("horizon") == "24h")
     assert rec_24h["shadow_retour_j1"] is None
     assert rec_24h["shadow_gap_overnight"] is None
 
@@ -631,10 +631,10 @@ def test_decision_log_selection_shadow_hc_loggee():
     """(b) Le champ `selection_shadow_hc` est écrit au decision-log (24h)."""
     a = _cacao_2506()
     records = sa.build_decision_log_records([a], _NOW)
-    rec_24h = next(r for r in records if r["horizon"] == "24h")
+    rec_24h = next(r for r in records if r.get("horizon") == "24h")
     assert rec_24h["selection_shadow_hc"] is True
     # Hors 24h : champ absent (la sélection est définie sur le pari 24h).
-    rec_7j = next(r for r in records if r["horizon"] == "7j")
+    rec_7j = next(r for r in records if r.get("horizon") == "7j")
     assert "selection_shadow_hc" not in rec_7j
 
 
@@ -645,7 +645,7 @@ def test_decision_log_shadow_hc_nest_pas_le_reel():
     le shadow ne contamine jamais le réel."""
     a = _cacao_2506()
     records = sa.build_decision_log_records([a], _NOW)
-    rec_24h = next(r for r in records if r["horizon"] == "24h")
+    rec_24h = next(r for r in records if r.get("horizon") == "24h")
     assert rec_24h["selection_du_jour"] is False        # RÉEL : écarté (inchangé)
     assert rec_24h["selection_shadow_hc"] is True       # SHADOW : aurait été pris
 
@@ -654,7 +654,7 @@ def test_decision_log_shadow_hc_motif_si_ecarte():
     a = _cacao_2506()
     a.scores["24h"] = 3.0  # inéligible shadow (note faible)
     records = sa.build_decision_log_records([a], _NOW)
-    rec_24h = next(r for r in records if r["horizon"] == "24h")
+    rec_24h = next(r for r in records if r.get("horizon") == "24h")
     assert rec_24h["selection_shadow_hc"] is False
     assert rec_24h["selection_shadow_hc_motif"] == "note < seuil shadow"
 
@@ -994,16 +994,19 @@ def test_profil_23_06_contresens_exclu_tete_egale_decision_log():
 
     # 2) Le decision-log marque selection_du_jour:true sur EXACTEMENT ces cellules.
     records = sa.build_decision_log_records(actifs, _NOW)
+    # [03/07] .get() : le decision-log porte désormais aussi des records d'état
+    # (record_type=positions_ouvertes) sans champ horizon/fiche_key : les
+    # lecteurs (prod comme tests) doivent les ignorer sans crasher.
     selected = {
-        r["fiche_key"] for r in records
-        if r["horizon"] == "24h" and r.get("selection_du_jour") is True
+        r.get("fiche_key") for r in records
+        if r.get("horizon") == "24h" and r.get("selection_du_jour") is True
     }
     assert selected == tete
 
     # 3) Les ↯ écartés portent le motif « écarté : news à contre-sens (↯) ».
     motifs = {
         r["fiche_key"]: r.get("selection_motif_exclusion")
-        for r in records if r["horizon"] == "24h"
+        for r in records if r.get("horizon") == "24h"
     }
     assert motifs["or"] == "écarté : news à contre-sens (↯)"
     assert motifs["eurusd"] == "écarté : news à contre-sens (↯)"

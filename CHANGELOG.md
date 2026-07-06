@@ -2,6 +2,21 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-07-03 — S11 (fin) : audit de pertinence du bulletin + positions ouvertes + capteurs réellement branchés
+
+Audit de pertinence du bulletin 03/07 (jour du NFP) : « est-ce ce dont on a besoin ? ». 7 points validés fondateur, tous livrés, + les vraies causes racines des capteurs muets.
+
+### Pertinence du bulletin (7 points)
+- **Alerte catalyseur J0 sur les paris** (« 🔴 NFP à 14h30 : Argent traverse l'annonce », drapeau jamais un ordre) ; **news pré-publication marquées** (fin du « NFP décevant » affiché à 7h23 pour un chiffre de 14h30) ; **flips de bruit** étiquetés et relégués ; **phrase dollar dédiée USD/JPY** (résolution par actif dans la biblio, 2 phrases latentes signalées) ; **Santé des sources reléguée** après les sections de décision.
+- **📌 Positions ouvertes (Swing 7j / 1m)** : état persisté au decision-log (record dédié), reconstruction depuis le 30/06 (8 positions dont EUR/USD 1m SHORT pris 30/06 à 1.13861), % courant vs la VRAIE entrée, clôture au retournement, fin des entrées réimprimées chaque matin. Refactor structurel en cours de route : le record d'état vit à la PERSISTANCE, `build_decision_log_records` garde son contrat cellules-only (20 KeyError attrapés par la suite complète, réparés d'un coup).
+- Reste en décision fondateur : pari « fragile (1 seul critère) » inéligible à la Sélection (reco : oui).
+
+### Capteurs (causes racines prouvées sur logs)
+- **Stamp US** : aucun run ne tombait dans [15h40, 17h[ (VPS 15h15 trop tôt, ticks GitHub retardés ~2h routés suivi) → filet stamp avant le suivi 18h + fetch des indices via proxies SPY/QQQ/VIXY (les ^ sont yfinance-only, bloqué CI).
+- **USDA** : la clé n'était consommée NULLE PART → handler NASS QuickStats implémenté (z-score stocks blé trimestriels, écart WASDE documenté) ; **hors-fenêtre = n/a propre** (le placeholder 0.0 pseudo-présent neutralisait le garde-fou capteurs éteints, cas Blé pari n°3 le 03/07) ; cutover Blé → 04/07.
+- Gel Mouvements complété (le sortie-timing re-persisté au prix courant dérivait, priorité au realized daté) ; ⚠️ max suspect propagé jusqu'au « Gagné > 1 % » ; paris perdants sortis des « Occasions manquées ».
+- Suite complète : **2024 verts / 34 skips / 0 rouge**, v3/data intact.
+
 ## 2026-07-02 — S11 (suite) : bilan hebdo + Mouvements de marché audités/corrigés, dette apurée à zéro (GO fondateur)
 
 Poursuite des audits surface par surface (« même travail ») puis apurement TOTAL de la dette sur ordre fondateur (« ne laisse aucune dette »).

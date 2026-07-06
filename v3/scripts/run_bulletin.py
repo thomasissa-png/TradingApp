@@ -97,6 +97,54 @@ def insert_briefing_after_synthese(bulletin_path: Path, briefing_md: str) -> boo
     return True
 
 
+# ---------------------------------------------------------------------------
+# [Relégation Santé des sources — 03/07] La « Santé des sources » est insérée
+# EN TÊTE par briefing.prepend_to_bulletin (accolée au Décor). Décision fondateur :
+# elle doit DESCENDRE après les sections de décision, juste AVANT « ## Comment
+# lire les scores » (donc après « Flips vs veille » / la matrice / le détail).
+# On la CUT de sa position courante et on la PASTE avant la pédagogie — la
+# section elle-même est INCHANGÉE (splice pur, hors render_bulletin). La sous-nav
+# HTML (build_html) se reconstruit dynamiquement depuis l'ordre des <h2> du
+# document → aucun changement HTML nécessaire.
+_SANTE_BLOCK_RE = re.compile(r"## Santé des sources\n.*?(?=\n## |\Z)", re.DOTALL)
+_PEDAGOGIE_ANCHOR_RE = re.compile(r"^## Comment lire les scores", re.MULTILINE)
+
+
+def relocate_source_health_before_pedagogie(bulletin_path: Path) -> bool:
+    """Déplace « ## Santé des sources » juste AVANT « ## Comment lire les scores ».
+
+    Idempotent : si la section est déjà à sa place cible, cut+paste au même
+    endroit = no-op net (jamais de duplication). Best-effort : section OU ancre
+    « Comment lire » absente → aucune relocation (retour False), le bulletin reste
+    valide. Retourne True si un déplacement a été écrit.
+    """
+    if not bulletin_path.exists():
+        logger.warning("bulletin introuvable : %s", bulletin_path)
+        return False
+    content = bulletin_path.read_text(encoding="utf-8")
+    m_sante = _SANTE_BLOCK_RE.search(content)
+    if not m_sante or not _PEDAGOGIE_ANCHOR_RE.search(content):
+        logger.warning(
+            "Relégation santé des sources : section ou ancre « Comment lire les "
+            "scores » absente — section laissée en place."
+        )
+        return False
+    sante_block = m_sante.group(0).rstrip()
+    # Retrait de la section de sa position courante, resserrage des vides.
+    content_wo = _SANTE_BLOCK_RE.sub("", content, count=1)
+    content_wo = re.sub(r"\n{3,}", "\n\n", content_wo)
+    m_ped = _PEDAGOGIE_ANCHOR_RE.search(content_wo)
+    if not m_ped:  # garde-fou (ne devrait pas arriver après le retrait)
+        return False
+    insert_at = m_ped.start()
+    new_content = (
+        content_wo[:insert_at].rstrip() + "\n\n" + sante_block + "\n\n"
+        + content_wo[insert_at:].lstrip("\n")
+    )
+    bulletin_path.write_text(new_content, encoding="utf-8")
+    return True
+
+
 # Pied de bulletin (« --- » + « _Analyste version … _ ») : on insère « News par
 # actif » JUSTE AVANT lui pour que la section finale technique reste en dernier.
 _FOOTER_ANCHOR_RE = re.compile(r"\n---\n\n_Analyste version", re.MULTILINE)
@@ -212,6 +260,17 @@ def main() -> int:
         logger.info("Décor du jour inséré en tête du bulletin")
     except Exception as e:  # noqa: BLE001
         logger.warning("décor du jour KO (non bloquant) : %s", e)
+
+    # [Relégation Santé des sources — 03/07] La « Santé des sources » (insérée en
+    # tête avec le Décor) DESCEND après les sections de décision : juste avant
+    # « ## Comment lire les scores ». Best-effort — ne casse jamais le bulletin.
+    try:
+        if relocate_source_health_before_pedagogie(out_path):
+            logger.info(
+                "Santé des sources reléguée avant « Comment lire les scores »"
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("relégation santé des sources KO (non bloquant) : %s", e)
 
     # P7 — « News par actif » EN FIN de bulletin : events news par actif
     # (12 actifs, ordre canonique) du corpus matin. Best-effort.

@@ -238,7 +238,12 @@ def main() -> int:
             results, now, veille_conclusions=veille_conclusions_for_log,
             shadow_capteurs=shadow_capteurs,
         )
-        dl_path = scoring_analyste.write_decision_log(recs, now)
+        # Record d'état « positions ouvertes » ajouté à la PERSISTANCE seulement
+        # (l'API build_decision_log_records reste cellules-only, refactor 03/07).
+        _pos_rec = scoring_analyste.build_positions_record(results, now)
+        dl_path = scoring_analyste.write_decision_log(
+            recs + ([_pos_rec] if _pos_rec else []), now
+        )
         n_diverge = sum(1 for r in recs if r.get("diverge"))
         n_flip = sum(1 for r in recs if r.get("is_flip") is True)
         n_cont = sum(1 for r in recs if r.get("is_flip") is False)

@@ -63,6 +63,9 @@ on:
 
 permissions:
   contents: write
+  # actions:write : requis par le relais d'auto-guérison du bulletin (fix 06/07,
+  # cf. step « Relais bulletin manquant ») — même pattern que le relais sonde S7.
+  actions: write
 
 concurrency:
   group: cycle-decision
@@ -338,6 +341,35 @@ jobs:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           LOG_LEVEL: INFO
         run: python v3/scripts/run_stamp.py
+
+      # ----- RELAIS bulletin manquant (fix incident 06/07) -----------------
+      # Le 06/07, le dispatch VPS de 7h15 a raté SON tick (unique du jour) ET
+      # GitHub a avalé les 3 crons de secours 05h12/27/42 UTC → AUCUN bulletin
+      # de la journée. Le créneau stamp de 8h-9h, lui, tire de façon fiable :
+      # s'il constate qu'aucun bulletin n'existe pour AUJOURD'HUI un jour de
+      # bourse, il déclenche lui-même le slot bulletin (workflow_dispatch,
+      # non-bloquant). Idempotent : bulletin présent → no-op silencieux.
+      - name: Relais bulletin manquant (auto-guérison, 8h-9h)
+        if: steps.guard.outputs.run == 'true' && steps.route.outputs.slot == 'stamp'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ph=$(TZ='Europe/Paris' date +%H); ph=$((10#$ph))
+          # Fenêtre 8h-9h uniquement (le stamp US de 15h35 ne relaie pas :
+          # un bulletin déclenché l'après-midi n'aurait plus de sens).
+          if [ "$ph" -lt 8 ] || [ "$ph" -gt 9 ]; then exit 0; fi
+          today=$(TZ='Europe/Paris' date +%F)
+          if ls v3/data/bulletins/bulletin-${today}-*.md >/dev/null 2>&1; then
+            echo "Bulletin du ${today} présent → relais no-op."
+            exit 0
+          fi
+          echo "⚠️ AUCUN bulletin pour ${today} à ${ph}h → dispatch slot=bulletin."
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/cycle.yml/dispatches" \
+            -d '{"ref":"main","inputs":{"slot":"bulletin"}}' || true
 
       # ----- Slot SUIVI 12h (R2 léger — PAS le bulletin complet, Q9) -----
       - name: Suivi 12h (R2 — statut vs ouverture, dynamique, suggestions de sortie)

@@ -1,13 +1,13 @@
 # Santé des critères
 
-_Cycle : 2026-07-03 05:23 UTC_
+_Cycle : 2026-07-06 18:11 UTC_
 
-**Synthèse** : 41 motifs de skip distincts, 72 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
+**Synthèse** : 44 motifs de skip distincts, 75 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 
 | Occurrences | Motif | Détail (cause exacte) |
 |---:|---|---|
 | 6 | fresh_price_refreshed | `GC=F` |
-| 5 | fresh_price_appended | `CC=F` |
+| 5 | fresh_price_refreshed | `CC=F` |
 | 5 | fresh_price_refreshed | `KC=F` |
 | 4 | fresh_price_refreshed | `BZ=F` |
 | 4 | fresh_price_refreshed | `HG=F` |
@@ -21,11 +21,15 @@ _Cycle : 2026-07-03 05:23 UTC_
 | 1 | CBOE non câblé (Put/Call sans CSV public) | `vix_risk_usdjpy` |
 | 1 | composite_no_subsource | `demande_pv_mining_strikes` |
 | 1 | composite_partial | `hf_positioning_flux_options` |
+| 1 | hors_fenetre | `eia_crude_surprise` |
+| 1 | hors_fenetre | `grindings_q` |
+| 1 | hors_fenetre | `nass_crop_progress` |
+| 1 | hors_fenetre | `usda_wasde_stocks_to_use` |
 | 1 | Source linéaire non programmatique | `breadth_cac_ma50` |
 | 1 | Source linéaire non programmatique | `brent_term_structure_m1m2` |
 | 1 | Source linéaire non programmatique | `fedwatch_proba` |
 | 1 | Source linéaire non programmatique | `term_structure_m1_m3` |
-| 1 | Open-Meteo injoignable (récents) | `22.3,72.6:net_error` |
+| 1 | Open-Meteo injoignable (climato) | `33.5,-101.9:net_error` |
 | 1 | Open-Meteo injoignable (récents) | `6.8,-5.3:net_error` |
 | 1 | no_breadth_data | `breadth_cac_ma50` |
 | 1 | Twelve : série vide | `USDGHS=X` |
@@ -40,7 +44,6 @@ _Cycle : 2026-07-03 05:23 UTC_
 | 1 | Source z-score non programmatique | `egypte_gasc_tenders` |
 | 1 | Source z-score non programmatique | `inventaires_comex_silver` |
 | 1 | Source z-score non programmatique | `inventaires_lme_shfe_5j` |
-| 1 | Source z-score non programmatique | `nass_crop_progress` |
 | 1 | Source z-score non programmatique | `nass_crop_progress_cotton` |
 | 1 | Source z-score non programmatique | `spread_arabica_robusta` |
 | 1 | Source z-score non programmatique | `spread_ny_london` |
@@ -54,8 +57,9 @@ _La source réseau a échoué ce cycle ; pour éviter un n/a qui ferait chuter l
 
 | Critère | Âge (j ouvrés) | Cause de l'échec source |
 |---|---:|---|
-| ⚠️ `meteo_ci_ghana_precip_30j` | 4 | source réseau indisponible |
-| ⚠️ `meteo_inde_gujarat_coton` | 1 | source réseau indisponible |
+| ⚠️ `eia_crude_surprise` | 1 | hors_fenetre — eia_crude_surprise |
+| ⚠️ `meteo_ci_ghana_precip_30j` | 5 | source réseau indisponible |
+| ⚠️ `meteo_texas_cotton_precip` | 1 | source réseau indisponible |
 
 ## Provenance des prix (source réellement utilisée ce cycle)
 

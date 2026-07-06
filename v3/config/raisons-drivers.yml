@@ -73,6 +73,18 @@ drivers:
     phrase_long: "dollar en repli : vent porteur pour les matières premières en USD"
     phrase_short: "dollar fort : frein sur les matières premières en USD"
 
+  # [Point 5 — 03/07] Entrée DÉDIÉE USD/JPY. La cle_courante `dxy_trend_20j` est
+  # partagée (macro transversale), MAIS le sens du critère est OPPOSÉ pour USD/JPY
+  # (fiche usdjpy signe:+1 « DXY monte => LONG USD/JPY ») vs les matières premières
+  # (signe:−1). Sur un LONG USD/JPY, l'effet dxy est POSITIF → la biblio générique
+  # citait « dollar en repli … matières premières » (double faux : sens inversé ET
+  # « matières premières » absurde pour une paire de change). Phrases correctes ici,
+  # branchées via `by_actif` (résolution per-actif, cle inchangée → zéro impact
+  # signal/mesure). Effet>0 (LONG) ⇒ dollar FORT ; effet<0 (SHORT) ⇒ dollar en repli.
+  usdjpy_dollar:
+    phrase_long: "dollar fort : le billet vert paie mieux que le yen"
+    phrase_short: "dollar en repli : pression sur le dollar/yen"
+
   usd_jpy_signal_risque:
     phrase_long: "signal de risque USD/JPY qui se détend : euro soutenu"
     phrase_short: "USD/JPY tendu (risk-off dollar) : pression sur l'euro"
@@ -234,3 +246,12 @@ prefixes:
   momentum_cac_20j:
     phrase_long: "tendance CAC 20 jours haussière : on suit le momentum"
     phrase_short: "tendance CAC 20 jours baissière : on suit la baisse"
+
+# [Point 5 — 03/07] Overrides PER-ACTIF : quand une même cle_courante partagée a
+# un SENS opposé selon l'actif (fiche signe:+1 vs −1), la biblio générique (branchée
+# sur le seul signe de contribution) devient absurde. `by_actif[fiche_key][cle]`
+# pointe vers la clé de `drivers` à utiliser POUR CET ACTIF précis. Résolu AVANT
+# l'exact/alias/préfixe. Zéro impact signal : pur rendu de la phrase.
+by_actif:
+  usdjpy:
+    dxy_trend_20j: usdjpy_dollar

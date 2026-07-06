@@ -3052,6 +3052,25 @@ def build_paris_du_jour_block(
             "le pari repose sur la tendance, pas sur la fraîcheur de la news._"
         )
         out.append("")
+    # [Point 1 — 03/07] Alerte catalyseur J0 : si un événement éco 🔴/🟡 tombe
+    # AUJOURD'HUI et que son scope touche un pari de la Sélection, on DRAPEAUTE
+    # (jamais un ordre) que ce(s) pari(s) « traverse(nt) l'annonce ». Aucun event
+    # J0 concerné → aucune ligne. Cas de réf. 03/07 : NFP (scope or/argent/sp500/…)
+    # ⇒ « Argent traverse l'annonce ». Une ligne par événement concerné.
+    _pari_keys = {p["fiche_key"] for p in picks}
+    for _ev in _catalyseurs_j0_scope(now):
+        _touchs = [p for p in picks if p["fiche_key"] in set(_ev.get("actifs") or [])]
+        if not _touchs:
+            continue
+        _sym = "🔴" if _ev.get("impact") == "high" else "🟡"
+        _heure = _ev.get("heure") or "heure non confirmée"
+        _noms = ", ".join(p["actif"] for p in _touchs)
+        _verbe = "traversent" if len(_touchs) > 1 else "traverse"
+        out.append(
+            f"{_sym} {_ev['nom']} à {_heure} : {_noms} {_verbe} l'annonce."
+        )
+    if _pari_keys and out and out[-1] != "":
+        out.append("")
     out.extend(_ligne_ecartes())
     return out
 
@@ -3565,6 +3584,40 @@ def _catalyseurs_j0_high(now: datetime) -> List[Dict[str, Any]]:
                     "nom": str(ev.get("nom") or ev.get("type") or "Événement"),
                     "actifs": [str(a) for a in (ev.get("actifs") or [])],
                     "impact": "high",
+                })
+        return out
+    except Exception:  # noqa: BLE001 — toute anomalie calendrier → silencieux
+        return []
+
+
+def _catalyseurs_j0_scope(now: datetime) -> List[Dict[str, Any]]:
+    """[Point 1 — 03/07] Événements du calendrier éco tombant AUJOURD'HUI (J0),
+    impact `high` (🔴) OU `medium` (🟡), pour l'ALERTE « traverse l'annonce » sous
+    les paris. Même source/mécanisme que `_catalyseurs_j0_high` (calendrier déjà
+    parsé pour le Décor / les Catalyseurs J+1) — on élargit juste au medium et on
+    remonte l'heure si elle est connue. DRAPEAU pur (affichage) : aucun impact
+    signal/mesure. Retourne [{nom, actifs:[fiche_key…], impact, heure|None}].
+    ZÉRO INVENTION : calendrier absent/KO → liste vide.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import calendrier_eco as _cal
+    except Exception:  # noqa: BLE001 — calendrier indispo → pas d'alerte
+        return []
+    try:
+        jour = now.date()
+        out: List[Dict[str, Any]] = []
+        for ev in _cal.charger_evenements():
+            impact = str(ev.get("impact") or "medium").strip().lower()
+            if impact not in ("high", "medium"):
+                continue
+            if _cal._dates_pour_event(ev, jour, jour):
+                heure = ev.get("heure") or ev.get("heure_paris")
+                out.append({
+                    "nom": str(ev.get("nom") or ev.get("type") or "Événement"),
+                    "actifs": [str(a) for a in (ev.get("actifs") or [])],
+                    "impact": impact,
+                    "heure": str(heure).strip() if heure else None,
                 })
         return out
     except Exception:  # noqa: BLE001 — toute anomalie calendrier → silencieux
@@ -4259,6 +4312,7 @@ def _load_raisons_drivers() -> Dict[str, Dict[str, Dict[str, str]]]:
         "drivers": data.get("drivers", {}) or {},
         "prefixes": data.get("prefixes", {}) or {},
         "aliases": data.get("aliases", {}) or {},
+        "by_actif": data.get("by_actif", {}) or {},
     }
 
 
@@ -4271,18 +4325,29 @@ def _resolve_cle_canonique(cle: str) -> str:
     return _load_raisons_drivers()["aliases"].get(cle, cle)
 
 
-def _raison_phrases_for_cle(cle: str) -> Optional[Dict[str, str]]:
+def _raison_phrases_for_cle(cle: str, fiche_key: str = "") -> Optional[Dict[str, str]]:
     """Retourne le dict de phrases (`phrase_long`/`phrase_short`/`phrase_neutre`)
     pour une `cle_courante`, ou None si la clé n'est pas dans la biblio.
 
-    Ordre : alias (clé réelle → canonique) → exact → PRÉFIXE (clés à suffixe
-    d'actif type `momentum_prix_20j_petrole`). L'exact prime sur le préfixe.
+    Ordre : override PER-ACTIF (`by_actif[fiche_key][cle]`, Point 5 — 03/07) →
+    alias (clé réelle → canonique) → exact → PRÉFIXE (clés à suffixe d'actif type
+    `momentum_prix_20j_petrole`). L'exact prime sur le préfixe.
+
+    `fiche_key` (optionnel) : identifiant d'actif. Sert UNIQUEMENT à résoudre les
+    cle_courante MACRO PARTAGÉES au sens opposé selon l'actif (ex. `dxy_trend_20j`
+    signe:+1 pour USD/JPY vs −1 pour les matières premières) vers une entrée dédiée.
     """
     if not cle:
         return None
     biblio = _load_raisons_drivers()
-    canon = _resolve_cle_canonique(cle)
     drivers = biblio["drivers"]
+    # Override per-actif AVANT tout : la même cle peut porter un sens opposé selon
+    # l'actif → phrase dédiée (sinon la biblio générique devient absurde).
+    if fiche_key:
+        override = (biblio["by_actif"].get(fiche_key) or {}).get(cle)
+        if override and override in drivers:
+            return drivers[override]
+    canon = _resolve_cle_canonique(cle)
     if canon in drivers:
         return drivers[canon]
     # Préfixes : le plus long préfixe correspondant gagne (déterminisme).
@@ -4509,7 +4574,7 @@ def _raison_parts(
             corps = enrichi
             co_cle, co_ctr = _codriver_news_codominant(r, h, direction, cle, ctr)
             if co_cle:
-                co_phrases = _raison_phrases_for_cle(co_cle)
+                co_phrases = _raison_phrases_for_cle(co_cle, r.fiche_key)
                 co_label = ""
                 if co_phrases is not None and _resolve_cle_canonique(co_cle) not in _RAISON_DRIVERS_DOUTEUX:
                     co_label = co_phrases.get("phrase_long" if co_ctr > 0 else "phrase_short", "")
@@ -4523,7 +4588,7 @@ def _raison_parts(
             suffixe = f"{_raison_force_suffix(r, h)}{_raison_flags_suffix(r, h, now)}"
             return corps, chiffre, suffixe
 
-    phrases = _raison_phrases_for_cle(cle)
+    phrases = _raison_phrases_for_cle(cle, r.fiche_key)
     if phrases is None:
         corps = nom if nom else "—"
     else:
@@ -4540,7 +4605,7 @@ def _raison_parts(
 
     co_cle, co_ctr = _codriver_news_codominant(r, h, direction, cle, ctr)
     if co_cle:
-        co_phrases = _raison_phrases_for_cle(co_cle)
+        co_phrases = _raison_phrases_for_cle(co_cle, r.fiche_key)
         co_label = ""
         if co_phrases is not None and _resolve_cle_canonique(co_cle) not in _RAISON_DRIVERS_DOUTEUX:
             co_label = co_phrases.get("phrase_long" if co_ctr > 0 else "phrase_short", "")
@@ -4638,7 +4703,7 @@ def raison_cellule_phrase(r: "ActifResult", h: str, now: Optional[datetime] = No
                 return enrichi  # aucun driver non-news → net sens (sans phrase interdite)
         elif enrichi != nom:
             return enrichi
-    phrases = _raison_phrases_for_cle(cle)
+    phrases = _raison_phrases_for_cle(cle, r.fiche_key)
     if phrases is None:
         return nom or ""
     if _resolve_cle_canonique(cle) in _RAISON_DRIVERS_DOUTEUX:
@@ -4980,22 +5045,37 @@ def build_swing_block(
     prix_reference: Optional[Dict[str, float]] = None,
     fiches: Optional[Dict[str, dict]] = None,
     now: Optional[datetime] = None,
+    exclude_fiche_keys: Optional[set] = None,
 ) -> List[str]:
     """Sélection de tendance JOUABLE (max 3) pour un horizon (7j ou 1m) — réponse à
     l'audit (Spéculateur : « c'est un thermomètre, pas un trade »). On passe du
     panorama à des trades cadrés. Rendu en TABLEAU aligné sur le reste du bulletin
     (fondateur 25/06 : « plus visuel, aligné »), objectif = seuil de réussite de
-    l'actif à CET horizon (config), entrée = prix de réf. ZÉRO invention."""
+    l'actif à CET horizon (config), entrée = prix de réf. ZÉRO invention.
+
+    [Positions ouvertes 03/07] `exclude_fiche_keys` = fiche_key déjà OUVERTES à cet
+    horizon (elles vivent dans le bloc « 📌 Positions ouvertes », pas dans ce tableau
+    d'entrée). Ce tableau ne liste donc QUE les NOUVELLES entrées du jour. S'il est
+    vide alors que des positions sont en cours → message dédié « positions en cours
+    ci-dessus » (au lieu du « rien de jouable » qui serait faux)."""
     prix_reference = prix_reference or {}
     fiches = fiches or {}
     H = horizon
     now = now or datetime.now(timezone.utc)
-    retenus = select_swing_retenus(results, H)
+    exclude_fiche_keys = exclude_fiche_keys or set()
+    retenus = [
+        t for t in select_swing_retenus(results, H)
+        if t[1].fiche_key not in exclude_fiche_keys
+    ]
 
     out: List[str] = [titre, ""]
     if not retenus:
-        out.append(f"_Aucune tendance {H} à conviction forte et couverture suffisante "
-                   "ce cycle (normal : on ne force pas)._")
+        if exclude_fiche_keys:
+            out.append("_Aucune nouvelle entrée aujourd'hui (positions en cours "
+                       "ci-dessus)._")
+        else:
+            out.append(f"_Aucune tendance {H} à conviction forte et couverture "
+                       "suffisante ce cycle (normal : on ne force pas)._")
         out.append("")
         return out
     out.append(intro)
@@ -5021,7 +5101,8 @@ def build_swing_block(
     return out
 
 
-def build_swing_7j_block(results, prix_reference=None, fiches=None, now=None) -> List[str]:
+def build_swing_7j_block(results, prix_reference=None, fiches=None, now=None,
+                         exclude_fiche_keys=None) -> List[str]:
     """Swing 7 jours jouable (cf. build_swing_block)."""
     return build_swing_block(
         results, "7j", "## 📈 Swing 7j (max 3)",
@@ -5029,10 +5110,12 @@ def build_swing_7j_block(results, prix_reference=None, fiches=None, now=None) ->
         "la tendance de fond se retourne ; un seul pari par moteur). Tendance courte 7j "
         "(retard ~2-3j)._",
         prix_reference=prix_reference, fiches=fiches, now=now,
+        exclude_fiche_keys=exclude_fiche_keys,
     )
 
 
-def build_positions_1m_block(results, prix_reference=None, fiches=None, now=None) -> List[str]:
+def build_positions_1m_block(results, prix_reference=None, fiches=None, now=None,
+                             exclude_fiche_keys=None) -> List[str]:
     """Positions 1 mois jouables (cf. build_swing_block) — réponse à l'audit 1m."""
     return build_swing_block(
         results, "1m", "## 🗓️ Positions 1 mois (max 3)",
@@ -5041,7 +5124,381 @@ def build_positions_1m_block(results, prix_reference=None, fiches=None, now=None
         "tendance 20j + la macro : on capte le gros d'un mouvement de plusieurs "
         "semaines (entrée ~1-2 sem. après le début, acceptable à cet horizon)._",
         prix_reference=prix_reference, fiches=fiches, now=now,
+        exclude_fiche_keys=exclude_fiche_keys,
     )
+
+
+# ===========================================================================
+# POSITIONS OUVERTES (Swing 7j / 1 mois) — le « chaînon manquant » multi-horizons
+# ---------------------------------------------------------------------------
+# FEATURE 03/07 (P0 audit ouvert depuis le 01/07). RENDU/LECTURE UNIQUEMENT :
+# zéro impact signal/mesure/score/conclusion. WIN RATE ONLY (on suit le score de
+# RÉFÉRENCE ±1 : `r.conclusions` / `conclusion_pm1`, jamais le pondéré).
+#
+# Modèle d'état (persisté au decision-log de chaque cycle, cf.
+# `build_decision_log_records`) : une POSITION s'ouvre quand un actif ENTRE au
+# bloc Swing 7j ou Positions 1m (prix de prise = prix de réf. d'émission du jour),
+# reste ouverte tant que la cellule du même horizon garde le MÊME sens, et se
+# ferme (une seule fois, ligne ✂️) quand le sens se retourne ou que l'actif sort
+# de l'univers. Zéro invention : prix indisponible → prix_prise=None (affiché
+# « pris le <date> » sans montant), position jamais fabriquée.
+# ===========================================================================
+
+# Horizons portant des positions tenues (le 24h n'est PAS une position tenue).
+POSITIONS_SWING_HORIZONS: Tuple[str, ...] = ("7j", "1m")
+# Durée indicative par horizon (pour l'affichage « jour n/~N »).
+POSITIONS_HORIZON_DUREE: Dict[str, int] = {"7j": 7, "1m": 30}
+# Date d'ancrage de la reconstruction initiale (le re-découpage multi-horizons).
+# On ne remonte pas avant : la notion de « position tenue » commence là.
+POSITIONS_BOOTSTRAP_START: str = "2026-06-30"
+# Marqueur du record d'état dédié dans le decision-log (ignoré par les lecteurs
+# par-cellule existants : ni actif ni horizon ∈ HORIZONS).
+POSITIONS_RECORD_TYPE: str = "positions_ouvertes"
+PRIX_EMISSION_DIR = ROOT / "data" / "prix-emission"
+
+
+def _pct_favorable(prix_prise: Any, prix_courant: Any, sens: str) -> Optional[float]:
+    """Rendement FAVORABLE (signé par le sens) entre prix de prise et prix courant.
+    LONG → hausse favorable ; SHORT → baisse favorable. None si un prix manque
+    (zéro invention : jamais de % fabriqué)."""
+    if not isinstance(prix_prise, (int, float)) or not isinstance(prix_courant, (int, float)):
+        return None
+    if prix_prise == 0:
+        return None
+    raw = (float(prix_courant) - float(prix_prise)) / float(prix_prise) * 100.0
+    return raw if sens == "LONG" else -raw
+
+
+def _close_position(pos: Dict[str, Any], prix_reference: Dict[str, float],
+                    motif: str) -> Dict[str, Any]:
+    """Clôt une position : ajoute prix_cloture (prix de réf. du jour) + résultat %."""
+    px = prix_reference.get(pos.get("fiche_key"))
+    out = dict(pos)
+    out["motif_cloture"] = motif
+    out["prix_cloture"] = float(px) if isinstance(px, (int, float)) else None
+    out["resultat_pct"] = _pct_favorable(pos.get("prix_prise"), px, pos.get("sens", ""))
+    return out
+
+
+def swing_selected_keys(results: List["ActifResult"], horizon: str) -> set:
+    """fiche_key retenues au bloc swing/1m pour l'horizon (source UNIQUE :
+    `select_swing_retenus`, exactement le tableau d'entrée affiché)."""
+    return {t[1].fiche_key for t in select_swing_retenus(results, horizon)}
+
+
+def compute_positions_ouvertes(
+    prev_positions: List[Dict[str, Any]],
+    results: List["ActifResult"],
+    prix_reference: Optional[Dict[str, float]],
+    now: datetime,
+) -> Tuple[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
+    """Transition d'état PURE : (positions de la veille, résultats du jour) →
+    (nouvel état, événements). WIN RATE ONLY (`r.conclusions`, score ±1).
+
+    Événements retournés : `opened` (nouvelles entrées du jour → tableau Swing/1m),
+    `maintained` (déjà ouvertes, toujours mêmes sens → bloc 📌), `closed_today`
+    (sens retourné / sorties d'univers → ligne ✂️ une seule fois). L'état renvoyé
+    = maintained + opened (les fermées disparaissent le lendemain)."""
+    today = now.strftime("%Y-%m-%d")
+    prix_reference = prix_reference or {}
+    res_by_key = {r.fiche_key: r for r in results}
+    selected = {H: swing_selected_keys(results, H) for H in POSITIONS_SWING_HORIZONS}
+
+    maintained: List[Dict[str, Any]] = []
+    opened: List[Dict[str, Any]] = []
+    closed: List[Dict[str, Any]] = []
+    carried: set = set()  # (horizon, fiche_key) restant ouvertes
+
+    # 1) Sort des positions existantes : maintien vs clôture.
+    for p in prev_positions or []:
+        H = p.get("horizon")
+        k = p.get("fiche_key")
+        if H not in POSITIONS_SWING_HORIZONS or not k:
+            continue
+        r = res_by_key.get(k)
+        conc = r.conclusions.get(H) if r is not None else None
+        if conc not in ("LONG", "SHORT"):
+            closed.append(_close_position(p, prix_reference, "sortie"))
+            continue
+        if conc != p.get("sens"):
+            closed.append(_close_position(p, prix_reference, "retournement"))
+            continue
+        maintained.append(dict(p))
+        carried.add((H, k))
+
+    # 2) Ouvertures : cellules ENTRÉES au bloc, pas déjà ouvertes.
+    new_positions: List[Dict[str, Any]] = list(maintained)
+    for H in POSITIONS_SWING_HORIZONS:
+        for k in selected[H]:
+            if (H, k) in carried:
+                continue
+            r = res_by_key.get(k)
+            if r is None:
+                continue
+            sens = r.conclusions.get(H)
+            if sens not in ("LONG", "SHORT"):
+                continue
+            px = prix_reference.get(k)
+            pos = {
+                "horizon": H, "fiche_key": k, "actif": r.nom, "sens": sens,
+                "date_prise": today,
+                "prix_prise": float(px) if isinstance(px, (int, float)) else None,
+            }
+            new_positions.append(pos)
+            opened.append(pos)
+            carried.add((H, k))
+
+    events = {"opened": opened, "maintained": maintained, "closed_today": closed}
+    return new_positions, events
+
+
+def _jour_n_sur(date_prise: str, now: datetime, horizon: str) -> str:
+    """Libellé « j n/~N » (jour écoulé depuis la prise / durée indicative)."""
+    try:
+        d0 = datetime.strptime(date_prise, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return "—"
+    n = (now.date() - d0).days
+    duree = POSITIONS_HORIZON_DUREE.get(horizon, 7)
+    return f"j {max(n, 0)}/~{duree}"
+
+
+def build_positions_ouvertes_block(
+    events: Dict[str, List[Dict[str, Any]]],
+    prix_reference: Optional[Dict[str, float]],
+    now: datetime,
+) -> List[str]:
+    """Bloc « 📌 Positions ouvertes (Swing 7j / 1 mois) », rendu AVANT les tableaux
+    d'entrée Swing/1m. Liste les positions tenues (maintenues) + la ligne ✂️ de
+    clôture du jour (une seule fois). Vide (aucune tenue, aucune clôture) → aucun
+    bloc (anti-bruit)."""
+    prix_reference = prix_reference or {}
+    maintained = events.get("maintained", [])
+    closed = events.get("closed_today", [])
+    if not maintained and not closed:
+        return []
+
+    out: List[str] = ["## 📌 Positions ouvertes (Swing 7j / 1 mois)", ""]
+    if maintained:
+        out.append(
+            "| Actif | Sens | Prise | Jour | % courant | État |"
+        )
+        out.append("|---|---|---|---|---|---|")
+        for p in sorted(maintained, key=lambda x: (x.get("horizon", ""), x.get("actif", ""))):
+            H = p.get("horizon", "")
+            sens = p.get("sens", "")
+            px_prise = p.get("prix_prise")
+            prise = f"pris le {p.get('date_prise', '—')}"
+            if isinstance(px_prise, (int, float)):
+                prise += f" à {px_prise:g}"
+            jour = _jour_n_sur(p.get("date_prise", ""), now, H)
+            pct = _pct_favorable(px_prise, prix_reference.get(p.get("fiche_key")), sens)
+            pct_s = f"{pct:+.2f} %" if isinstance(pct, (int, float)) else "—"
+            out.append(
+                f"| **{p.get('actif', '?')}** ({H}) | {sens} | {prise} | {jour} | "
+                f"{pct_s} | tendance de fond intacte |"
+            )
+        out.append("")
+    for p in closed:
+        res = p.get("resultat_pct")
+        res_s = f"{res:+.2f} %" if isinstance(res, (int, float)) else "n/a"
+        out.append(
+            f"- ✂️ **{p.get('actif', '?')}** ({p.get('horizon', '')}) clôturée "
+            f"aujourd'hui (tendance retournée) : résultat {res_s}"
+        )
+    out.append("")
+    return out
+
+
+def _read_last_positions_state(
+    decision_log_dir: Path, before_date: str,
+) -> Optional[List[Dict[str, Any]]]:
+    """Lit le DERNIER record d'état `positions_ouvertes` de bulletin_date <
+    `before_date` (state de la veille). None si aucun record trouvé (→ bootstrap).
+    Une liste vide légitime (veille sans position) est retournée telle quelle."""
+    import json as _json
+    if not decision_log_dir.exists():
+        return None
+    files = sorted(decision_log_dir.glob("*.jsonl"), reverse=True)  # récent d'abord
+    for fp in files:
+        try:
+            with fp.open("r", encoding="utf-8") as fh:
+                found: Optional[List[Dict[str, Any]]] = None
+                for line in fh:
+                    line = line.strip()
+                    if not line or '"positions_ouvertes"' not in line:
+                        continue
+                    try:
+                        rec = _json.loads(line)
+                    except _json.JSONDecodeError:
+                        continue
+                    if not isinstance(rec, dict):
+                        continue
+                    if rec.get("record_type") != POSITIONS_RECORD_TYPE:
+                        continue
+                    if str(rec.get("bulletin_date", "")) >= before_date:
+                        continue
+                    found = rec.get("positions") or []
+                if found is not None:
+                    return found
+        except OSError:
+            continue
+    return None
+
+
+def _proxy_swing_selected(
+    recs_by_cell: Dict[Tuple[str, str], Dict[str, Any]], seuil: float,
+) -> Dict[str, set]:
+    """Proxy de sélection swing/1m à partir des seuls champs du decision-log
+    par-cellule (bootstrap : les logs historiques n'ont pas la sélection stampée).
+    Reproduit les filtres de `select_swing_retenus` mesurables sans reconstruire
+    l'ActifResult (conviction forte : ni molle, ni contestée, ni mono-critère ;
+    couverture ≥ SELECTION_COVERAGE_MIN ; |score| ≥ seuil), triés |score| desc,
+    cap SELECTION_MAX. La dédup par famille de driver n'est PAS rejouée (données
+    insuffisantes dans le log) → best-effort documenté."""
+    out: Dict[str, set] = {H: set() for H in POSITIONS_SWING_HORIZONS}
+    for H in POSITIONS_SWING_HORIZONS:
+        cands: List[Tuple[float, str]] = []
+        for (k, h), rec in recs_by_cell.items():
+            if h != H:
+                continue
+            if rec.get("conclusion_pm1") not in ("LONG", "SHORT"):
+                continue
+            if rec.get("quasi_neutre") or rec.get("diverge") or rec.get("mono_critere_dominant"):
+                continue
+            cov = rec.get("coverage")
+            if not isinstance(cov, (int, float)) or cov < SELECTION_COVERAGE_MIN:
+                continue
+            score = rec.get("score_pm1")
+            if not isinstance(score, (int, float)) or abs(score) < seuil:
+                continue
+            cands.append((abs(float(score)), k))
+        cands.sort(key=lambda x: -x[0])
+        out[H] = {k for _, k in cands[:SELECTION_MAX]}
+    return out
+
+
+def _resolve_prix_emission_jour(date: str, fiches: Dict[str, dict]) -> Dict[str, float]:
+    """{fiche_key: prix} depuis prix-emission/<date>-*.json (mapping ticker→fiche).
+    Best-effort : fichier absent/illisible → {} (zéro invention)."""
+    import json as _json
+    out: Dict[str, float] = {}
+    try:
+        candidates = sorted(PRIX_EMISSION_DIR.glob(f"{date}-*.json"))
+    except OSError:
+        return out
+    if not candidates:
+        return out
+    try:
+        stamped = _json.loads(candidates[-1].read_text(encoding="utf-8"))
+    except (OSError, _json.JSONDecodeError):
+        return out
+    if not isinstance(stamped, dict):
+        return out
+    for key, fiche in (fiches or {}).items():
+        ticker = (fiche or {}).get("ticker_principal")
+        if ticker and ticker in stamped and isinstance(stamped[ticker], (int, float)):
+            out[key] = float(stamped[ticker])
+    return out
+
+
+def reconstruct_positions_from_cell_logs(
+    decision_log_dir: Path,
+    now: datetime,
+    fiches: Optional[Dict[str, dict]] = None,
+    start_date: str = POSITIONS_BOOTSTRAP_START,
+) -> List[Dict[str, Any]]:
+    """Reconstruction INITIALE (aucun état persisté encore) : rejoue les
+    decision-logs par-cellule de `start_date` à la veille de `now` pour reconstituer
+    les positions en cours. Prix de prise résolu depuis prix-emission du jour
+    d'ouverture (introuvable → prix_prise=None, position listée sans montant).
+    Best-effort : dossier absent → []."""
+    import json as _json
+    if not decision_log_dir.exists():
+        return []
+    if fiches is None:
+        try:
+            fiches = load_fiches()
+        except Exception:  # noqa: BLE001
+            fiches = {}
+    seuil = _seuil_conviction_defaut()
+    today = now.strftime("%Y-%m-%d")
+
+    # Dernier run par bulletin_date, dans [start_date, today[.
+    files_by_date: Dict[str, Path] = {}
+    for fp in sorted(decision_log_dir.glob("*.jsonl")):
+        stem = fp.stem  # YYYY-MM-DD-HHMM
+        date = stem[:10]
+        if date < start_date or date >= today:
+            continue
+        files_by_date[date] = fp  # tri lexical → dernier run gagne
+
+    positions: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for date in sorted(files_by_date):
+        recs_by_cell: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        actif_by_key: Dict[str, str] = {}
+        try:
+            with files_by_date[date].open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = _json.loads(line)
+                    except _json.JSONDecodeError:
+                        continue
+                    if not isinstance(rec, dict):
+                        continue
+                    k = rec.get("fiche_key")
+                    h = rec.get("horizon")
+                    if not k or h not in POSITIONS_SWING_HORIZONS:
+                        continue
+                    recs_by_cell[(k, h)] = rec
+                    actif_by_key[k] = rec.get("actif") or k
+        except OSError:
+            continue
+
+        # Clôtures (retournement / sortie d'univers) AVANT ouvertures.
+        for (H, k), pos in list(positions.items()):
+            conc = (recs_by_cell.get((k, H)) or {}).get("conclusion_pm1")
+            if conc not in ("LONG", "SHORT") or conc != pos["sens"]:
+                del positions[(H, k)]
+
+        selected = _proxy_swing_selected(recs_by_cell, seuil)
+        prix_jour = _resolve_prix_emission_jour(date, fiches)
+        for H in POSITIONS_SWING_HORIZONS:
+            for k in selected.get(H, set()):
+                if (H, k) in positions:
+                    continue
+                conc = (recs_by_cell.get((k, H)) or {}).get("conclusion_pm1")
+                if conc not in ("LONG", "SHORT"):
+                    continue
+                px = prix_jour.get(k)
+                positions[(H, k)] = {
+                    "horizon": H, "fiche_key": k, "actif": actif_by_key.get(k, k),
+                    "sens": conc, "date_prise": date,
+                    "prix_prise": float(px) if isinstance(px, (int, float)) else None,
+                }
+
+    return list(positions.values())
+
+
+def get_prev_positions_ouvertes(
+    decision_log_dir: Path, now: datetime,
+    fiches: Optional[Dict[str, dict]] = None,
+) -> List[Dict[str, Any]]:
+    """État des positions de la VEILLE : record persisté s'il existe, sinon
+    reconstruction initiale depuis les logs par-cellule. Best-effort, jamais
+    d'exception propagée (le bulletin ne doit pas casser pour un bloc de rendu)."""
+    today = now.strftime("%Y-%m-%d")
+    try:
+        state = _read_last_positions_state(decision_log_dir, before_date=today)
+        if state is not None:
+            return state
+        return reconstruct_positions_from_cell_logs(decision_log_dir, now, fiches=fiches)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("positions ouvertes : état veille indisponible : %s", e)
+        return []
 
 
 # Traduction des types de normalisation en libellé humain pour le tableau
@@ -5396,7 +5853,17 @@ def render_bulletin(
     # Pré-calcul des flips AVANT le rendu matrice (l'ordre d'affichage est :
     # Briefing → Flips vs veille → Matrice → Détail → Limites — demande Thomas
     # 2026-06-01 : remonter les changements de position en tête de bulletin).
-    flips: List[str] = []
+    # [Point 4 — 03/07] Seuil de conviction « forte » de l'actif (MÊME source que
+    # « À jouer » / la Sélection : bilan_jour._load_score_fort_seuil via
+    # `_raison_force_seuil`). Un flip dont la NOUVELLE note est SOUS ce seuil est
+    # un retournement de BRUIT (signal proche de zéro) : on le suffixe et on le
+    # trie EN FIN de liste — les VRAIS retournements (note ≥ seuil) d'abord.
+    try:
+        _seuil_fort_flip = _raison_force_seuil()
+    except Exception:  # noqa: BLE001 — défaut documenté si bilan_jour KO
+        _seuil_fort_flip = _RAISON_FORCE_SEUIL_DEFAUT
+    _flips_francs: List[str] = []
+    _flips_bruit: List[str] = []
     for r in results:
         veille = veille_conclusions.get(r.nom.lower(), {})
         for h in HORIZONS:
@@ -5412,10 +5879,20 @@ def render_bulletin(
                         noise_flag = " ⚪"
                     elif abs(sc) < NEUTRAL_BAND:
                         noise_flag = " ≈"
-                flips.append(
-                    f"- {r.nom} [{h}] : {v} → {r.conclusions[h]} "
-                    f"(score {sc:+.2f}){noise_flag}"
+                # [Point 4] Bruit = nouvelle note franche mais SOUS le seuil de
+                # conviction forte de l'actif (retournement non convaincant).
+                is_bruit = (
+                    r.conclusions[h] in ("LONG", "SHORT")
+                    and abs(sc) < _seuil_fort_flip
                 )
+                bruit_suffix = " (bruit : signal proche de zéro)" if is_bruit else ""
+                ligne = (
+                    f"- {r.nom} [{h}] : {v} → {r.conclusions[h]} "
+                    f"(score {sc:+.2f}){noise_flag}{bruit_suffix}"
+                )
+                (_flips_bruit if is_bruit else _flips_francs).append(ligne)
+    # Vrais retournements d'abord, flips de bruit ensuite (ordre stable intra-groupe).
+    flips: List[str] = _flips_francs + _flips_bruit
     # [Refonte S9 — (B)2] Compteur « (N flips) » dans le titre quand N>0. Le titre
     # reste préfixé par « ## Flips vs veille » (les parsers/tests s'appuient sur ce
     # préfixe ; le suffixe est purement informatif et repris dans le <summary> HTML).
@@ -5745,11 +6222,41 @@ def render_bulletin(
     # ⚭ reste dans la légende quand l'annexe « Drivers macro partagés » est émise.
     if _shared_block:
         flags_present.add(_shared_drivers.SHARED_DRIVERS_SYMBOL)
+    # --- Positions ouvertes (Swing 7j / 1 mois) — FEATURE 03/07 ------------
+    # État de la veille (record persisté ou reconstruction initiale) → transition
+    # avec les résultats du jour. RENDU/LECTURE seul, best-effort intégral : toute
+    # panne → pas de bloc + tableaux d'entrée inchangés (jamais de bulletin cassé).
+    _pos_events: Dict[str, List[Dict[str, Any]]] = {
+        "opened": [], "maintained": [], "closed_today": []
+    }
+    try:
+        _prev_pos = get_prev_positions_ouvertes(DECISION_LOG_DIR, now, fiches=fiches)
+        _, _pos_events = compute_positions_ouvertes(
+            _prev_pos, results, prix_reference, now
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("bloc positions ouvertes indisponible : %s", e)
+    _positions_block = build_positions_ouvertes_block(_pos_events, prix_reference, now)
+    # fiche_key déjà ouvertes par horizon → exclues des tableaux d'entrée (elles
+    # vivent dans le bloc 📌). Les nouvelles entrées du jour (opened) y restent.
+    _exclude_by_h: Dict[str, set] = {H: set() for H in POSITIONS_SWING_HORIZONS}
+    for _m in _pos_events.get("maintained", []):
+        _h = _m.get("horizon")
+        if _h in _exclude_by_h:
+            _exclude_by_h[_h].add(_m.get("fiche_key"))
+
     lines = (
         lines[:_meta_end] + [""]
         + head_block + alertes_block + synth_lines
-        + build_swing_7j_block(results, prix_reference=prix_reference, fiches=fiches, now=now)
-        + build_positions_1m_block(results, prix_reference=prix_reference, fiches=fiches, now=now)
+        + _positions_block
+        + build_swing_7j_block(
+            results, prix_reference=prix_reference, fiches=fiches, now=now,
+            exclude_fiche_keys=_exclude_by_h["7j"],
+        )
+        + build_positions_1m_block(
+            results, prix_reference=prix_reference, fiches=fiches, now=now,
+            exclude_fiche_keys=_exclude_by_h["1m"],
+        )
         + lines[_meta_end:]
     )
 
@@ -6440,7 +6947,45 @@ def build_decision_log_records(
                 **directional_flags,
                 **selection_extra,
             })
+
+    # --- État persisté « positions ouvertes » (FEATURE 03/07) --------------
+    # Un record dédié (record_type=positions_ouvertes) par cycle : transition de
+    # l'état de la veille avec les résultats du jour. Ignoré par les lecteurs
+    # par-cellule (ni actif ni horizon ∈ HORIZONS). Best-effort : toute panne →
+    # aucun record positions (le decision-log par-cellule reste intact).
+    try:
+        _prix_ref = _prix_reference_courant(now)
+        _prev = get_prev_positions_ouvertes(DECISION_LOG_DIR, now)
+        _new_pos, _evt = compute_positions_ouvertes(_prev, results, _prix_ref, now)
+        records.append({
+            "record_type": POSITIONS_RECORD_TYPE,
+            "bulletin_date": bulletin_date,
+            "generated_at": generated_at,
+            "positions": _new_pos,
+            "clotures_du_jour": _evt.get("closed_today", []),
+        })
+    except Exception as e:  # noqa: BLE001
+        logger.warning("persistance positions ouvertes indisponible : %s", e)
+
     return records
+
+
+def _prix_reference_courant(now: datetime) -> Dict[str, float]:
+    """{fiche_key: prix} du créneau courant (prix d'émission stampé, mapping
+    ticker→fiche). Même source que `run()`. Best-effort : indispo → {}."""
+    out: Dict[str, float] = {}
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import journaliste as _journ  # noqa: PLC0415
+        fiches = load_fiches()
+        stamped = _journ.load_prix_emission(f"{now:%Y-%m-%d}-{now:%H}h") or {}
+        for key, fiche in fiches.items():
+            ticker = (fiche or {}).get("ticker_principal")
+            if ticker and ticker in stamped and isinstance(stamped[ticker], (int, float)):
+                out[key] = float(stamped[ticker])
+    except Exception as e:  # noqa: BLE001
+        logger.warning("prix de réf. courant (positions) indispo : %s", e)
+    return out
 
 
 def write_decision_log(

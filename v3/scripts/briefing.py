@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -492,6 +492,92 @@ MAX_TOP_NEWS = 3
 # Nombre max de thèmes dominants cités dans la phrase d'intro.
 MAX_THEMES_INTRO = 2
 
+# ---------------------------------------------------------------------------
+# [Point 1 — 03/07] Suffixe « pré-publication » sur les Top actus
+# ---------------------------------------------------------------------------
+# Le jour d'un catalyseur J0 du calendrier éco (NFP, FOMC, CPI... : MÊME source
+# que le Décor qui affiche déjà « Catalyseur(s) attendu(s) aujourd'hui »), une
+# news des Top actus dont le TITRE cite l'événement mais qui a été GÉNÉRÉE AVANT
+# l'heure de publication du chiffre reflète le rapport PRÉCÉDENT ou une
+# ANTICIPATION — jamais le résultat du jour (à 07h23 le NFP de 14h30 n'existe
+# pas). Honnêteté (P6), zéro invention. On la suffixe explicitement.
+PRE_PUBLICATION_SUFFIX = " (avant la publication : rapport précédent ou anticipation)"
+
+# Table type de catalyseur → (heure de publication Europe/Paris connue du
+# calendrier officiel, documentée dans config/calendrier-eco.yml) + mots-clés de
+# matching TITRE ↔ événement. Défaut NFP = 14h30 Paris (8h30 ET), documenté.
+# Clé = jeton reconnu DANS le `nom` du catalyseur (ex. « Emploi US (NFP / … ) »
+# contient « nfp »). On n'ajoute AUCUNE source : on lit le nom déjà fourni par
+# `_catalyseurs_j0_noms` (calendrier statique).
+_CATALYSEUR_PUBLICATION: Dict[str, Dict[str, Any]] = {
+    "NFP": {
+        "heure": time(14, 30),
+        "keywords": (
+            "nfp", "emploi us", "jobs report", "non-farm", "nonfarm",
+            "rapport sur l'emploi", "rapport mensuel", "rapport nfp",
+        ),
+    },
+    "CPI": {
+        "heure": time(14, 30),
+        "keywords": ("cpi", "inflation us", "indice des prix", "consumer price"),
+    },
+    "FOMC": {
+        "heure": time(20, 0),
+        "keywords": (
+            "fomc", "réserve fédérale", "reserve federale",
+            "décision de taux fed", "taux fed", "fed funds",
+        ),
+    },
+}
+
+
+def _types_catalyseurs_j0(cats_noms: List[str]) -> List[str]:
+    """Types de catalyseurs J0 reconnus (NFP/CPI/FOMC...) présents dans les noms.
+
+    Le `nom` du calendrier porte le type entre parenthèses (« … (NFP …) », «
+    … (CPI) », « … (FOMC) ») → on détecte le jeton par sous-chaîne insensible à
+    la casse. Ordre préservé, dédup.
+    """
+    types: List[str] = []
+    for nom in cats_noms:
+        low = (nom or "").lower()
+        for t in _CATALYSEUR_PUBLICATION:
+            if t.lower() in low and t not in types:
+                types.append(t)
+    return types
+
+
+def _pre_publication_suffix(
+    trigger: str,
+    types_j0: List[str],
+    now: Optional[datetime],
+) -> str:
+    """Suffixe pré-publication si la news CITE un catalyseur J0 et est générée
+    AVANT son heure de publication ; sinon chaîne vide.
+
+    - `types_j0` vide (jour SANS catalyseur reconnu) → toujours '' ;
+    - titre qui ne matche aucun mot-clé du catalyseur → '' ;
+    - `now` >= heure de publication (news datée APRÈS l'heure = le résultat) → ''.
+    Défaut documenté : l'heure de génération = `now` (heure de génération du
+    bulletin ; un bulletin de 07h23 est nécessairement AVANT une publication de
+    14h30). `now` absent → pas de comparaison possible → ''.
+    """
+    if not trigger or not types_j0 or now is None:
+        return ""
+    low = trigger.lower()
+    for t in types_j0:
+        conf = _CATALYSEUR_PUBLICATION[t]
+        if not any(kw in low for kw in conf["keywords"]):
+            continue
+        # Heure locale de génération vs heure de publication du catalyseur.
+        heure_gen = now.timetz().replace(tzinfo=None) if now.tzinfo else now.time()
+        if heure_gen < conf["heure"]:
+            return PRE_PUBLICATION_SUFFIX
+        # News générée à/après l'heure de publication → c'est le résultat, pas
+        # une anticipation : aucun suffixe.
+        return ""
+    return ""
+
 
 def _catalyseurs_j0_noms(now: datetime) -> List[str]:
     """Noms des catalyseurs J0 d'impact `high` du jour (liste, possiblement vide).
@@ -541,7 +627,10 @@ def _themes_dominants(groups: Dict[str, List[Dict[str, str]]]) -> List[str]:
 
 
 def _top_news_lignes(
-    impactful: List[Dict[str, str]], max_news: int = MAX_TOP_NEWS
+    impactful: List[Dict[str, str]],
+    max_news: int = MAX_TOP_NEWS,
+    now: Optional[datetime] = None,
+    cats_noms: Optional[List[str]] = None,
 ) -> List[str]:
     """Lignes « Top actualités à impact » : vrais titres triés materiality+fraîcheur.
 
@@ -549,7 +638,13 @@ def _top_news_lignes(
     écartés du TOP — ils restent dans le détail par actif). Dédup par titre+source.
     Chaque ligne nomme l'actif + le sens d'impact déjà qualifié (↑/↓/→). Zéro
     invention : aucun event high/medium → liste vide (message géré par l'appelant).
+
+    [Point 1 — 03/07] `now` + `cats_noms` (catalyseurs J0 du Décor) optionnels :
+    une news qui CITE un catalyseur J0 mais est générée AVANT son heure de
+    publication est suffixée « (avant la publication : … ) ». Défauts None →
+    aucun suffixe (rétrocompat : appels de test existants inchangés).
     """
+    types_j0 = _types_catalyseurs_j0(cats_noms or [])
     forts = [
         ev for ev in impactful
         if (ev.get("materiality", "") or "").lower() in ("high", "medium")
@@ -575,7 +670,8 @@ def _top_news_lignes(
         if len(trigger) > 180:
             trigger = trigger[:177].rstrip() + "..."
         sens_str = f" → {sens}" if sens else ""
-        lignes.append(f"- **{actif}**{sens_str} ({mat}) : {trigger}")
+        suffix = _pre_publication_suffix(trigger, types_j0, now)
+        lignes.append(f"- **{actif}**{sens_str} ({mat}) : {trigger}{suffix}")
     return lignes
 
 
@@ -619,7 +715,10 @@ def build_intro_block(
     lines.append(f"_Journée du {today:%Y-%m-%d}. {phrase_cat} {phrase_themes}_")
     lines.append("")
     lines.append("**Top actualités à impact**")
-    top = _top_news_lignes(impactful)
+    # [Point 1] on transmet `now` + les catalyseurs J0 déjà calculés (`cats`) pour
+    # suffixer les news pré-publication (même source que la phrase « Catalyseur(s)
+    # attendu(s) aujourd'hui » ci-dessus — zéro source neuve).
+    top = _top_news_lignes(impactful, now=now, cats_noms=cats)
     if top:
         lines.extend(top)
     else:

@@ -1,11 +1,14 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 7 juillet 2026, 07h28 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 7 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mar 07/07 | **Café (Arabica)** | LONG | forte (+13.20) | 349.9 | -2.94% | -9.19% | -9.25% (en cours) | +0.06% | Oui | ❌ | — |
+| mar 07/07 | **Cacao** | LONG | forte (+12.06) | 5696 | +0.20% | +0.85% | +1.50% (en cours) | +2.93% | Oui | ✅ | Côte d'Ivoire et Ghana cherchent à créer un cartel du cacao type OPEP |
+| mar 07/07 | Pétrole (Brent) | SHORT | faible (+0.14) | 72.67 | +0.23% | — | -4.19% (en cours) | +0.00% | Non | ❌ | — |
 | ven 03/07 | **Café (Arabica)** | LONG | forte (+9.25) | 301.3 | -0.01% | +0.26% | +16.11% | +0.30% | Oui | ✅ | — |
 | ven 03/07 | **Blé** | LONG | faible (+3.58) | 590.5 | +0.03% | -0.00% | +1.58% | +0.05% | Oui | ✅ | — |
 | ven 03/07 | **Argent** | LONG | forte (+8.76) | 62.31 | +0.56% | -0.01% | -2.54% | +0.74% | Oui | ❌ | — |
@@ -40,7 +43,7 @@ _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Ca
 | mar 30/06 | Coton | SHORT | forte (-2.36) | 2.372 | -0.67% | — | -1.77% | — | Non | ❌ | — |
 | mar 30/06 | Café (Arabica) | LONG | forte (+2.58) | 277.8 | +0.79% | — | +25.96% | — | Non | ✅ | — |
 | mar 30/06 | Blé | SHORT | forte (-1.09) | 575.2 | +0.64% | — | -4.27% | — | Non | ❌ | — |
-| lun 29/06 | **Cacao** | LONG | forte (+8.93) | 5096 | -1.43% | -2.67% | +11.76% | +0.02% | Oui | ✅ | Côte d'Ivoire et Ghana cherchent à créer un cartel du cacao similaire à l'OPEP |
+| lun 29/06 | **Cacao** | LONG | forte (+8.93) | 5096 | -1.43% | -2.67% | +11.76% | +0.02% | Oui | ✅ | — |
 | lun 29/06 | VIX | SHORT | faible (-0.19) | 22.63 | — | — | +8.57% | — | Non | ✅ | — |
 | lun 29/06 | Sucre | LONG | forte (+0.62) | 9.625 | +0.00% | — | +3.12% | — | Non | ✅ | Pluies de mousson insuffisantes en Inde, impact négatif sur la production de sucre |
 | lun 29/06 | S&P 500 | LONG | forte (+4.63) | 729.1 | — | — | +3.05% | — | Non | ✅ | — |

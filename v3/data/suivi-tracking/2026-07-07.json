@@ -2,14 +2,14 @@
   "12h": {
     "Cacao": {
       "call": "LONG",
-      "fav_pct": 0.3,
-      "heure": "11h58",
+      "fav_pct": 0.2,
+      "heure": "12h15",
       "max_fav_pct": 2.93
     },
     "Café (Arabica)": {
       "call": "LONG",
       "fav_pct": -2.94,
-      "heure": "11h58",
+      "heure": "12h15",
       "max_fav_pct": 0.06
     }
   },

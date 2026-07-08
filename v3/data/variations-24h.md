@@ -1,11 +1,21 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 8 juillet 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 8 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mer 08/07 | **Café (Arabica)** | LONG | forte (+13.03) | 317.7 | -1.20% | -2.74% | -1.27% (en cours) | +0.81% | Oui | ❌ | — |
+| mer 08/07 | **Cacao** | LONG | forte (+11.46) | 5761 | +2.52% | +5.88% | +4.87% (en cours) | +6.56% ⚠️ | Oui | ✅ | Pluies excessives en Côte d'Ivoire, principal producteur de cacao, menaçant la récolte et faisant monter les prix. |
+| mer 08/07 | **Blé** | LONG | forte (+13.99) | 612.4 | +0.31% | -1.75% | -1.72% (en cours) | +0.34% | Oui | ❌ | — |
+| mer 08/07 | VIX | LONG | forte (+2.54) | 21.93 | — | — | -3.37% (en cours) | +0.00% | Non | ❌ | — |
+| mer 08/07 | Pétrole (Brent) | LONG | forte (+2.28) | 76.37 | +2.76% | — | +3.18% (en cours) | +5.18% ⚠️ | Non | ✅ | — |
+| mer 08/07 | Or | LONG | forte (+6.69) | 4124 | -2.13% | — | -1.11% (en cours) | +0.10% | Non | ❌ | — |
+| mer 08/07 | Nasdaq | SHORT | forte (-3.57) | 701.4 | — | — | -1.42% (en cours) | +0.00% | Non | ❌ | — |
+| mer 08/07 | Cuivre | LONG | faible (+0.57) | 6.152 | -1.57% | — | -1.20% (en cours) | +0.94% | Non | ❌ | — |
+| mer 08/07 | CAC 40 | SHORT | faible (-4.53) | 8436 | +2.20% | — | +2.18% (en cours) | +2.22% | Non | ✅ | China blacklists Japanese defense institutes and tightens export restrictions on drone, nuclear, and defense firms |
+| mer 08/07 | Argent | LONG | forte (+6.04) | 60.45 | -3.77% | — | -3.45% (en cours) | +0.65% | Non | ❌ | — |
 | mar 07/07 | **Café (Arabica)** | LONG | forte (+13.20) | 349.9 | -2.94% | -9.19% | -9.25% (en cours) | +0.06% | Oui | ❌ | — |
 | mar 07/07 | **Cacao** | LONG | forte (+12.06) | 5696 | +0.20% | +0.85% | +1.50% (en cours) | +2.93% | Oui | ✅ | Côte d'Ivoire et Ghana cherchent à créer un cartel du cacao type OPEP |
 | mar 07/07 | Pétrole (Brent) | SHORT | faible (+0.14) | 72.67 | +0.23% | — | -5.24% (en cours) | — | Non | ❌ | — |

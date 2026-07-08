@@ -1,0 +1,23 @@
+{
+  "12h": {
+    "Blé": {
+      "call": "LONG",
+      "fav_pct": 0.31,
+      "heure": "12h15",
+      "max_fav_pct": 0.34
+    },
+    "Cacao": {
+      "call": "LONG",
+      "fav_pct": 2.52,
+      "heure": "12h15",
+      "max_fav_pct": 2.93
+    },
+    "Café (Arabica)": {
+      "call": "LONG",
+      "fav_pct": -1.2,
+      "heure": "12h15",
+      "max_fav_pct": 0.0
+    }
+  },
+  "base": "emission"
+}

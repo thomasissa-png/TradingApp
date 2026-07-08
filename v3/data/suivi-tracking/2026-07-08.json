@@ -22,20 +22,20 @@
   "18h": {
     "Blé": {
       "call": "LONG",
-      "fav_pct": -1.26,
-      "heure": "17h31",
+      "fav_pct": -1.75,
+      "heure": "18h15",
       "max_fav_pct": 0.34
     },
     "Cacao": {
       "call": "LONG",
-      "fav_pct": 5.0,
-      "heure": "17h31",
+      "fav_pct": 5.88,
+      "heure": "18h15",
       "max_fav_pct": 6.56
     },
     "Café (Arabica)": {
       "call": "LONG",
-      "fav_pct": -1.59,
-      "heure": "17h31",
+      "fav_pct": -2.74,
+      "heure": "18h15",
       "max_fav_pct": 0.81
     }
   },

@@ -37,3 +37,6 @@
 {"date": "2026-07-09", "actif": "CAC 40", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.25, "pic_heure": "12h", "cloture_pct": -0.9, "max_gain_pct": 0.0}
 {"date": "2026-07-09", "actif": "Cacao", "call": "LONG", "categorie": "trop_tard", "pic_pct": 5.48, "pic_heure": "18h", "cloture_pct": 5.25, "max_gain_pct": 5.29}
 {"date": "2026-07-09", "actif": "Coton", "call": "LONG", "categorie": "sans_objet", "pic_pct": 0.0, "pic_heure": "clôture", "cloture_pct": 0.0, "max_gain_pct": 0.0}
+{"date": "2026-07-10", "actif": "CAC 40", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.06, "pic_heure": "12h", "cloture_pct": -0.15, "max_gain_pct": 0.07}
+{"date": "2026-07-10", "actif": "Cacao", "call": "LONG", "categorie": "sans_objet", "pic_pct": -3.92, "pic_heure": "12h", "cloture_pct": -7.51, "max_gain_pct": 0.01}
+{"date": "2026-07-10", "actif": "Café (Arabica)", "call": "LONG", "categorie": "sans_objet", "pic_pct": -2.91, "pic_heure": "clôture", "cloture_pct": -2.91, "max_gain_pct": 0.02}

@@ -1,6 +1,6 @@
 # Win rate — semaine 2026-S28 (2026-07-06 → 2026-07-12)
 
-- Généré : 9 juillet 2026, 07h28 (réécrit à chaque run ; figé en fin de semaine)
+- Généré : 10 juillet 2026, 07h31 (réécrit à chaque run ; figé en fin de semaine)
 - Win rate CUMULÉ depuis le début (seul significatif en chauffe)
 - WR ≥ 0,5 % = win rate ne comptant que les calls justes ayant bougé d'au moins 0,5 % en notre faveur (mouvement exploitable ; toujours ≤ Win rate)
 
@@ -10,41 +10,41 @@
 
 | Actif | Conviction moy. | Win rate | WR ≥ 0,5 % | WR tradable | Paris (réels) | Nouveaux paris (semaine) | Non notés | Statut |
 |---|---|---|---|---|---|---|---|---|
-| Cacao | +7.69 | 100.0% | 100.0% | 100.0% | 6 (régimes=1) | 3 | 0 | ⏳ trop peu (6/15) |
-| Coton | +0.65 | 100.0% | 100.0% | 33.3% | 1 (régimes=1) | 2 | 2 | ⏳ trop peu (1/15) |
-| S&P 500 | +5.10 | 100.0% | 100.0% | 40.0% | 2 (régimes=1) | 1 | 4 | ⏳ trop peu (2/15) |
-| CAC 40 | -2.53 | 83.3% | 83.3% | 83.3% | 6 (régimes=3) | 3 | 0 | ⏳ trop peu (6/15) |
-| Café (Arabica) | +6.40 | 60.0% | 60.0% | 50.0% | 5 (régimes=1) | 3 | 1 | ⏳ trop peu (5/15) |
-| Pétrole (Brent) | -3.53 | 50.0% | 50.0% | 50.0% | 6 (régimes=3) | 3 | 0 | ⏳ trop peu (6/15) |
-| Cuivre | -1.90 | 33.3% | 33.3% | 16.7% | 3 (régimes=2) | 3 | 3 | ⏳ trop peu (3/15) |
-| Nasdaq | -1.24 | 25.0% | 25.0% | 20.0% | 4 (régimes=3) | 2 | 2 | ⏳ trop peu (4/15) |
-| Argent | -1.77 | 0.0% | 0.0% | 0.0% | 5 (régimes=2) | 3 | 1 | ⏳ trop peu (5/15) |
-| Blé | +2.08 | 0.0% | 0.0% | 0.0% | 2 (régimes=1) | 2 | 0 | ⏳ trop peu (2/15) |
-| Or | -6.31 | 0.0% | 0.0% | 0.0% | 5 (régimes=2) | 3 | 1 | ⏳ trop peu (5/15) |
-| VIX | +0.01 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 1 | 5 | ⏳ trop peu (1/15) |
-| EUR/USD | -8.25 | — | — | 0.0% | 0 | 0 | 3 | ⏳ en attente |
-| Sucre | +4.92 | — | — | — | 0 | 0 | 4 | ⏳ en attente |
-| USD/JPY | +1.26 | — | — | — | 0 | 0 | 6 | ⏳ en attente |
+| Cacao | +7.83 | 100.0% | 100.0% | 100.0% | 7 (régimes=1) | 4 | 0 | ⏳ trop peu (7/15) |
+| Coton | +1.26 | 100.0% | 100.0% | 25.0% | 1 (régimes=1) | 2 | 3 | ⏳ trop peu (1/15) |
+| S&P 500 | +5.12 | 100.0% | 100.0% | 83.3% | 5 (régimes=1) | 4 | 1 | ⏳ trop peu (5/15) |
+| Café (Arabica) | +5.42 | 83.3% | 83.3% | 71.4% | 6 (régimes=2) | 3 | 1 | ⏳ trop peu (6/15) |
+| VIX | +0.22 | 66.7% | 66.7% | 33.3% | 3 (régimes=2) | 2 | 4 | ⏳ trop peu (3/15) |
+| CAC 40 | -3.07 | 60.0% | 60.0% | 42.9% | 5 (régimes=3) | 4 | 2 | ⏳ trop peu (5/15) |
+| Cuivre | -1.98 | 57.1% | 57.1% | 57.1% | 7 (régimes=5) | 4 | 0 | ⏳ trop peu (7/15) |
+| Blé | +1.81 | 50.0% | 50.0% | 33.3% | 2 (régimes=2) | 3 | 1 | ⏳ trop peu (2/15) |
+| Pétrole (Brent) | -2.48 | 33.3% | 33.3% | 28.6% | 6 (régimes=3) | 3 | 1 | ⏳ trop peu (6/15) |
+| Nasdaq | -1.60 | 25.0% | 25.0% | 0.0% | 4 (régimes=2) | 3 | 3 | ⏳ trop peu (4/15) |
+| Or | -6.00 | 20.0% | 20.0% | 14.3% | 5 (régimes=3) | 2 | 2 | ⏳ trop peu (5/15) |
+| Argent | -2.05 | 0.0% | 0.0% | 0.0% | 5 (régimes=3) | 3 | 2 | ⏳ trop peu (5/15) |
+| EUR/USD | -7.63 | — | — | 0.0% | 0 | 0 | 4 | ⏳ en attente |
+| Sucre | +4.67 | — | — | — | 0 | 0 | 5 | ⏳ en attente |
+| USD/JPY | +1.36 | — | — | — | 0 | 0 | 7 | ⏳ en attente |
 
 ### 7 jours
 
 | Actif | Conviction moy. | Win rate | WR ≥ 0,5 % | WR tradable | Paris (réels) | Nouveaux paris (semaine) | Non notés | Statut |
 |---|---|---|---|---|---|---|---|---|
-| CAC 40 | -5.39 | 100.0% | 100.0% | 100.0% | 1 (régimes=1) | 3 | 1 | ⏳ trop peu (1/15) |
-| Cacao | +13.11 | 100.0% | 100.0% | 100.0% | 1 (régimes=1) | 4 | 0 | ⏳ trop peu (1/15) |
-| Café (Arabica) | +5.27 | 100.0% | 100.0% | 100.0% | 1 (régimes=1) | 3 | 1 | ⏳ trop peu (1/15) |
-| Nasdaq | -7.88 | 100.0% | 100.0% | 100.0% | 1 (régimes=1) | 3 | 0 | ⏳ trop peu (1/15) |
-| Argent | -8.28 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 1 | 2 | ⏳ trop peu (1/15) |
-| Coton | -2.84 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 4 | 0 | ⏳ trop peu (1/15) |
-| Or | -17.56 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 2 | 1 | ⏳ trop peu (1/15) |
-| Pétrole (Brent) | -7.04 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 4 | 0 | ⏳ trop peu (1/15) |
-| Blé | +2.18 | — | — | — | 0 | 2 | 0 | ⏳ en attente |
-| Cuivre | -6.99 | — | — | 0.0% | 0 | 0 | 3 | ⏳ en attente |
-| EUR/USD | -19.02 | — | — | — | 0 | 0 | 0 | ⏳ en attente |
-| S&P 500 | -4.16 | — | — | 0.0% | 0 | 1 | 3 | ⏳ en attente |
-| Sucre | +7.93 | — | — | — | 0 | 0 | 1 | ⏳ en attente |
-| USD/JPY | +8.34 | — | — | — | 0 | 0 | 3 | ⏳ en attente |
-| VIX | -0.40 | — | — | 0.0% | 0 | 0 | 3 | ⏳ en attente |
+| Cacao | +12.64 | 100.0% | 100.0% | 100.0% | 1 (régimes=1) | 5 | 0 | ⏳ trop peu (1/15) |
+| Café (Arabica) | +5.93 | 100.0% | 100.0% | 100.0% | 1 (régimes=1) | 5 | 0 | ⏳ trop peu (1/15) |
+| Argent | -6.08 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 4 | 1 | ⏳ trop peu (1/15) |
+| CAC 40 | -4.74 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 1 | 3 | ⏳ trop peu (1/15) |
+| Coton | -2.54 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 4 | 1 | ⏳ trop peu (1/15) |
+| Cuivre | -6.44 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 4 | 1 | ⏳ trop peu (1/15) |
+| Nasdaq | -6.84 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 2 | 3 | ⏳ trop peu (1/15) |
+| Or | -14.97 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 5 | 0 | ⏳ trop peu (1/15) |
+| Pétrole (Brent) | -6.43 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 5 | 0 | ⏳ trop peu (1/15) |
+| S&P 500 | -3.46 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 2 | 3 | ⏳ trop peu (1/15) |
+| Blé | +2.36 | — | — | — | 0 | 5 | 0 | ⏳ en attente |
+| EUR/USD | -17.50 | — | — | 0.0% | 0 | 0 | 1 | ⏳ en attente |
+| Sucre | +8.36 | — | — | — | 0 | 0 | 2 | ⏳ en attente |
+| USD/JPY | +7.35 | — | — | — | 0 | 0 | 4 | ⏳ en attente |
+| VIX | -0.40 | — | — | 0.0% | 0 | 0 | 4 | ⏳ en attente |
 
 ### 1 mois
 

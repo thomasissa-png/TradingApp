@@ -22,20 +22,20 @@
   "18h": {
     "CAC 40": {
       "call": "SHORT",
-      "fav_pct": 0.09,
-      "heure": "17h39",
-      "max_fav_pct": 0.09
+      "fav_pct": -0.15,
+      "heure": "18h15",
+      "max_fav_pct": 0.07
     },
     "Cacao": {
       "call": "LONG",
-      "fav_pct": -4.81,
-      "heure": "17h39",
+      "fav_pct": -7.04,
+      "heure": "18h15",
       "max_fav_pct": 0.01
     },
     "Café (Arabica)": {
       "call": "LONG",
-      "fav_pct": -5.04,
-      "heure": "17h39",
+      "fav_pct": -4.31,
+      "heure": "18h15",
       "max_fav_pct": 0.02
     }
   },

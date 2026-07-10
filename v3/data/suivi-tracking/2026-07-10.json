@@ -2,20 +2,20 @@
   "12h": {
     "CAC 40": {
       "call": "SHORT",
-      "fav_pct": -0.03,
-      "heure": "11h51",
+      "fav_pct": -0.06,
+      "heure": "12h15",
       "max_fav_pct": 0.05
     },
     "Cacao": {
       "call": "LONG",
-      "fav_pct": -2.33,
-      "heure": "11h51",
+      "fav_pct": -3.92,
+      "heure": "12h15",
       "max_fav_pct": 0.01
     },
     "Café (Arabica)": {
       "call": "LONG",
-      "fav_pct": -4.21,
-      "heure": "11h51",
+      "fav_pct": -5.32,
+      "heure": "12h15",
       "max_fav_pct": 0.02
     }
   },

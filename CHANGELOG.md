@@ -2,6 +2,19 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-07-11 — S11 : autopsie de la semaine 06-10/07 + 3 sondes shadow « tendance mûre » (GO fondateur)
+
+Audit intégral de la semaine (Top 3 : 3/12 en métrique turbo, direction 4/7 à l'échéance, 12 pertes évitées par les écartements ↯ en 3 jours) puis autopsie du sujet fondateur « plus c'est monté, plus ça corrige » : panel des 3 experts + données 23/06→10/07.
+
+### Verdicts du panel (v3/audit : synthèse en chat, données decision-log × measures-log, N=56)
+- L'intuition n'est PAS supportée en direction (pire segment = tendance moyenne, pas saturée ; échantillon saturé = un épisode café corrélé). Les vrais risques : **flips 1/6** (déclenchés PAR le mouvement extrême, donc à contretemps : café flip SHORT le 09/07 pile le +12,3 %, re-LONG le 10/07 pile le -2,9 %) et **asymétrie d'ampleur** (cacao 10/07 : conviction record +12.31, max favorable +0,01 %, max adverse **-9,28 %** : barrière de turbo = 100 % de la mise). Signal d'épuisement déjà en base (plus de news structurel fraîche, news auto-référentielles, ⌛, COT extrême). Angle mort structurel : le penchant 3j est plafonné à ±1, l'ampleur déjà parcourue est effacée.
+
+### 3 sondes SHADOW livrées (observabilité pure, zéro changement de signal, verdicts à N≥15)
+- **Confirmation post-flip** : `shadow_flip_j0` / `shadow_flip_conf` au decision-log (WR flips J0 vs confirmés).
+- **Catalyseur épuisé** : `shadow_cat_epuise` / `shadow_sens_fond` (3j saturé seul contre news+7j+20j : qui avait raison ; cas fondateurs café 09/07 et cacao 10/07 rejoués en tests).
+- **Taux de KO virtuel** : `ko_virtuel` / `pari_mur` au sortie-timing-log (-3 % touché avant +1 %, segmenté paris mûrs ⌛ vs frais, KO_VIRTUEL_PCT=3.0 à recalibrer sur preuve ; `pari_mur` = proxy deja_cote documenté). Ligne 🧨 au bilan du soir + 3 compteurs au bilan hebdo.
+- Suite complète : **2055 verts / 34 skips / 0 rouge**, v3/data intact.
+
 ## 2026-07-03 — S11 (fin) : audit de pertinence du bulletin + positions ouvertes + capteurs réellement branchés
 
 Audit de pertinence du bulletin 03/07 (jour du NFP) : « est-ce ce dont on a besoin ? ». 7 points validés fondateur, tous livrés, + les vraies causes racines des capteurs muets.

@@ -1464,6 +1464,45 @@ def load_veille(bulletins_dir: Path, today: datetime) -> Tuple[Optional[Path], D
     return veille_path, conclusions
 
 
+def load_avant_veille(bulletins_dir: Path, today: datetime) -> Tuple[Optional[Path], Dict[str, Dict[str, str]]]:
+    """Conclusions de l'AVANT-VEILLE (J-2) — même mécanique que load_veille
+    (Sonde 1 « confirmation post-flip », GO fondateur 11/07). On prend le bulletin
+    le plus récent dont la DATE est antérieure à celle de la veille : on exclut
+    tous les créneaux du jour ET de la veille (3 runs/jour partagent la date).
+    Best-effort : introuvable → {} (shadow_flip_conf non calculable → False)."""
+    if not bulletins_dir.exists():
+        return None, {}
+    today_utc = today.astimezone(timezone.utc) if today.tzinfo else today
+    today_prefix = f"bulletin-{today_utc:%Y-%m-%d}"
+    files = sorted(
+        [
+            p
+            for p in bulletins_dir.glob("bulletin-*.md")
+            if p.stem != today_prefix and not p.stem.startswith(today_prefix + "-")
+        ],
+        reverse=True,
+    )
+    if not files:
+        return None, {}
+    # Date de la veille = préfixe date (YYYY-MM-DD) du fichier le plus récent restant.
+    veille_date = files[0].stem[len("bulletin-"):len("bulletin-") + 10]
+    veille_prefix = f"bulletin-{veille_date}"
+    older = [
+        p
+        for p in files
+        if p.stem != veille_prefix and not p.stem.startswith(veille_prefix + "-")
+    ]
+    if not older:
+        return None, {}
+    av_path = older[0]
+    text = av_path.read_text(encoding="utf-8")
+    conclusions: Dict[str, Dict[str, str]] = {}
+    for m in VEILLE_LINE_RE.finditer(text):
+        actif = m.group("actif").strip().lower()
+        conclusions[actif] = {"24h": m.group("c24"), "7j": m.group("c7"), "1m": m.group("c1")}
+    return av_path, conclusions
+
+
 # ---------------------------------------------------------------------------
 # C7 — Surveillance & cohérence biais (publication & observabilité)
 # ---------------------------------------------------------------------------
@@ -6412,11 +6451,100 @@ def render_bulletin(
 DECISION_LOG_DIR = ROOT / "data" / "decision-log"
 
 
+# ---------------------------------------------------------------------------
+# SONDES SHADOW (GO fondateur 11/07, panel « tendance 3j mûre ») — TRAÇAGE PUR
+# au decision-log. AUCUN impact call / conclusion / note / Sélection. WIN RATE
+# ONLY. On MESURE, rien d'autre. Zéro invention (best-effort → False/None).
+# ---------------------------------------------------------------------------
+def compute_shadow_flip_fields(
+    current: Optional[str],
+    prev: Optional[str],
+    prev2: Optional[str],
+) -> Tuple[bool, bool]:
+    """Sonde 1 « confirmation post-flip ». Retourne (shadow_flip_j0, shadow_flip_conf).
+
+      - shadow_flip_j0  : ce record est un flip du jour (sens du jour ≠ veille,
+        les deux francs LONG/SHORT).
+      - shadow_flip_conf : ce record CONFIRME un flip d'hier (sens du jour ==
+        sens d'hier ≠ sens d'avant-hier ; les trois francs).
+    Sens non-franc (INSUFFISANT / vide / None / avant-veille introuvable) → False.
+    Les deux champs sont mutuellement exclusifs (j0 exige c≠p, conf exige c==p).
+    """
+    _FR = ("LONG", "SHORT")
+    c = current if current in _FR else None
+    p = prev if prev in _FR else None
+    p2 = prev2 if prev2 in _FR else None
+    flip_j0 = bool(c and p and c != p)
+    flip_conf = bool(c and p and p2 and c == p and p != p2)
+    return flip_j0, flip_conf
+
+
+def compute_shadow_cat_epuise(
+    r: "ActifResult", h: str = "24h",
+) -> Tuple[bool, Optional[str]]:
+    """Sonde 2 « catalyseur épuisé ». Retourne (shadow_cat_epuise, shadow_sens_fond).
+
+    Config détectée quand :
+      (a) le critère DOMINANT (max |contrib_pm1| sur h, non-gate/non-na) est un
+          `momentum_prix_3j_*` SATURÉ (|valeur_normalisee| >= 0.999) ;
+      (b) ce 3j est à CONTRE-SENS du trio de fond : le signe de la somme des
+          contrib_pm1 de (tendance 7j `momentum_prix_7j_*` + tendance 20j
+          `momentum_prix_20j_*` + synthèse news, net des critères source `ia*`/
+          `keyword`) est OPPOSÉ à la contribution du 3j.
+    sens_fond = "LONG"/"SHORT" (signe du trio de fond) quand la config est vraie,
+    None sinon. best-effort : toute anomalie → (False, None). Zéro impact score.
+    """
+    try:
+        dom: Optional[CritereResult] = None
+        dom_abs = -1.0
+        for c in r.criteres:
+            if c.is_gate or c.is_na:
+                continue
+            ctr = c.contributions.get(h)
+            if ctr is None:
+                continue
+            if abs(ctr) > dom_abs:
+                dom_abs = abs(ctr)
+                dom = c
+        if dom is None:
+            return False, None
+        cle_dom = getattr(dom, "cle_courante", "") or ""
+        if not cle_dom.startswith("momentum_prix_3j_"):
+            return False, None
+        vn = dom.valeur_norm
+        if vn is None or abs(vn) < 0.999:
+            return False, None
+        contrib_3j = dom.contributions.get(h) or 0.0
+        if contrib_3j == 0.0:
+            return False, None
+        fond = 0.0
+        for c in r.criteres:
+            if c.is_gate or c.is_na:
+                continue
+            cle = getattr(c, "cle_courante", "") or ""
+            src = getattr(c, "source_track", "") or ""
+            est_fond = (
+                cle.startswith("momentum_prix_7j_")
+                or cle.startswith("momentum_prix_20j_")
+                or src.startswith("ia") or src == "keyword"
+            )
+            if est_fond:
+                fond += c.contributions.get(h) or 0.0
+        if fond == 0.0:
+            return False, None
+        if contrib_3j * fond >= 0.0:
+            return False, None
+        return True, ("LONG" if fond > 0 else "SHORT")
+    except Exception:  # noqa: BLE001 — best-effort, jamais de crash
+        return False, None
+
+
 def build_decision_log_records(
     results: List[ActifResult],
     now: datetime,
     veille_conclusions: Optional[Dict[str, Dict[str, str]]] = None,
     shadow_capteurs: Optional[Dict[str, Dict[str, Optional[float]]]] = None,
+    avant_veille_conclusions: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> List[Dict[str, Any]]:
     """Construit la liste de lignes JSONL (une par cellule actif × horizon).
 
@@ -6466,6 +6594,20 @@ def build_decision_log_records(
         results, _selection_keys, now=now
     )
     shadow_capteurs = shadow_capteurs or {}
+    # SONDES SHADOW (GO fondateur 11/07) — avant-veille (J-2) pour la Sonde 1
+    # « confirmation post-flip ». veille normalisée ici aussi : {} reste falsy
+    # (bloc is_flip inchangé). Si l'avant-veille n'est PAS fournie par l'appelant
+    # (param None), on l'auto-charge en best-effort depuis BULLETINS_DIR pour que
+    # shadow_flip_conf soit calculable en prod SANS toucher run_bulletin. Un dict
+    # explicite (même vide) fourni par un test/appelant est respecté tel quel.
+    veille_conclusions = veille_conclusions or {}
+    if avant_veille_conclusions is None:
+        try:
+            _, avant_veille_conclusions = load_avant_veille(BULLETINS_DIR, now)
+        except Exception as e:  # noqa: BLE001 — best-effort, jamais bloquant
+            logger.warning("load_avant_veille KO (shadow_flip_conf best-effort) : %s", e)
+            avant_veille_conclusions = {}
+    avant_veille_conclusions = avant_veille_conclusions or {}
     records: List[Dict[str, Any]] = []
     bulletin_date = now.strftime("%Y-%m-%d")
     generated_at = now.isoformat()
@@ -6849,6 +6991,23 @@ def build_decision_log_records(
                 selection_extra["shadow_gap_overnight"] = cap.get(
                     "shadow_gap_overnight"
                 )
+                # --- SONDE 1 (SHADOW 11/07) — confirmation post-flip ------------
+                # Champs simples, posés sur CHAQUE cellule 24h (bool, défaut False)
+                # → l'analyse future filtre shadow_flip_j0==True vs
+                # shadow_flip_conf==True. Aucun impact call/note/Sélection.
+                _prev24 = (veille_conclusions.get(r.nom.lower()) or {}).get("24h")
+                _prev2_24 = (
+                    avant_veille_conclusions.get(r.nom.lower()) or {}
+                ).get("24h")
+                _sflip_j0, _sflip_conf = compute_shadow_flip_fields(
+                    r.conclusions.get("24h", ""), _prev24, _prev2_24,
+                )
+                selection_extra["shadow_flip_j0"] = _sflip_j0
+                selection_extra["shadow_flip_conf"] = _sflip_conf
+                # --- SONDE 2 (SHADOW 11/07) — catalyseur épuisé -----------------
+                _cat_epuise, _sens_fond = compute_shadow_cat_epuise(r, "24h")
+                selection_extra["shadow_cat_epuise"] = _cat_epuise
+                selection_extra["shadow_sens_fond"] = _sens_fond
                 # Chantier ③ — détecteur « choc d'offre » cacao en SHADOW (poids 0,
                 # L015). Tracé au decision-log, AUCUN impact score/conclusion (cf.
                 # compute_shadow_choc_offre_cacao + test-verrou conclusions). Calculé

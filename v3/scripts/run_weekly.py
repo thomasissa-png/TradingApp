@@ -1932,6 +1932,150 @@ def _cumul_selection_wr(
     return (wr1, n1, wr3, n3, len(entries))
 
 
+# ---------------------------------------------------------------------------
+# Lecture hebdo des 3 sondes SHADOW (panel 11/07 — GO fondateur 3 instruments)
+# ---------------------------------------------------------------------------
+# WIN RATE ONLY : des taux et des comptes, zéro euro, zéro signal changé. Chaque
+# sonde reste « en chauffe » (zéro conclusion) sous N=15 ; les champs shadow non
+# encore persistés → N=0 → « en attente » (zéro invention).
+SONDE_N_MIN = 15
+
+
+@dataclass
+class SondeConfirmationFlip:
+    """Sonde 1 — WR des flips J0 vs flips confirmés (shadow_flip_j0 / _conf)."""
+    n_flips_j0: int = 0
+    n_vrai_j0: int = 0
+    n_flips_conf: int = 0
+    n_vrai_conf: int = 0
+
+
+@dataclass
+class SondeCatalyseurEpuise:
+    """Sonde 2 — divergences live vs fond (shadow_cat_epuise / shadow_sens_fond)."""
+    n_divergence: int = 0     # cellules conclusives cat_epuise avec fond != call live
+    n_live_raison: int = 0    # le call live avait raison (outcome VRAI)
+    n_fond_raison: int = 0    # le sens de fond avait raison (outcome FAUSSE)
+
+
+@dataclass
+class SondeKoVirtuel:
+    """Sonde 3 — taux de paris KO-virtuels, segmenté paris ⌛ (mûrs) vs frais."""
+    n_mesurable: int = 0      # ko_virtuel non-None (série suffisante)
+    n_ko: int = 0
+    n_mur_mesurable: int = 0
+    n_mur_ko: int = 0
+    n_frais_mesurable: int = 0
+    n_frais_ko: int = 0
+
+
+def _sondes_flip_catalyseur(
+    now: datetime,
+    measures_log: Path = MEASURES_LOG,
+    decision_log_dir: Path = DECISION_LOG_DIR,
+) -> Tuple[SondeConfirmationFlip, SondeCatalyseurEpuise]:
+    """Sondes 1 & 2 en UNE passe sur le measures-log de la semaine ISO, joint au
+    decision-log (champs shadow d'émission). Ne compte que les cellules conclusives
+    (VRAI/FAUSSE), comme le WR global. Champ shadow absent → cellule non comptée
+    (zéro invention : les sondes 1 & 2 sont alimentées par un autre chantier)."""
+    from journaliste import iso_week_bounds, OUTCOME_VRAI, OUTCOME_FAUSSE  # noqa: PLC0415
+    from bilan_jour import load_conviction_records  # noqa: PLC0415
+
+    flip = SondeConfirmationFlip()
+    cat = SondeCatalyseurEpuise()
+    if not measures_log.exists():
+        return flip, cat
+    monday, sunday = iso_week_bounds(now)
+    conv_cache: Dict[date, Dict[Tuple[str, str], dict]] = {}
+    for line in measures_log.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(r, dict) or r.get("outcome") not in (OUTCOME_VRAI, OUTCOME_FAUSSE):
+            continue
+        try:
+            bdate = date.fromisoformat(str(r.get("bulletin_date")))
+        except (TypeError, ValueError):
+            continue
+        if not (monday <= bdate <= sunday):
+            continue
+        actif = str(r.get("actif"))
+        horizon = str(r.get("horizon"))
+        call = str(r.get("conclusion") or "").upper()
+        vrai = r.get("outcome") == OUTCOME_VRAI
+        if bdate not in conv_cache:
+            conv_cache[bdate] = load_conviction_records(bdate, decision_log_dir)
+        rec = conv_cache[bdate].get((actif, horizon)) or {}
+        # Sonde 1 — flips J0 (émis en flip) vs flips confirmés (confirmés au run suivant).
+        if rec.get("shadow_flip_j0") is True:
+            flip.n_flips_j0 += 1
+            flip.n_vrai_j0 += 1 if vrai else 0
+        if rec.get("shadow_flip_conf") is True:
+            flip.n_flips_conf += 1
+            flip.n_vrai_conf += 1 if vrai else 0
+        # Sonde 2 — catalyseur épuisé : le sens de FOND diverge du call LIVE.
+        sens_fond = str(rec.get("shadow_sens_fond") or "").upper()
+        if (
+            rec.get("shadow_cat_epuise") is True
+            and sens_fond in ("LONG", "SHORT")
+            and call in ("LONG", "SHORT")
+            and sens_fond != call
+        ):
+            cat.n_divergence += 1
+            if vrai:
+                cat.n_live_raison += 1   # live (le call) avait raison
+            else:
+                cat.n_fond_raison += 1   # fond (sens opposé) avait raison
+    return flip, cat
+
+
+def _sonde_ko_virtuel(
+    now: datetime, path: Optional[Path] = None,
+) -> SondeKoVirtuel:
+    """Sonde 3 — taux de paris KO-virtuels de la semaine ISO, segmenté ⌛ (mûrs) vs
+    frais, depuis sortie-timing-log (écrit par les bilans du jour). C'est LE chiffre
+    du risque « tendance mûre » demandé par le fondateur. ko_virtuel=None (série
+    insuffisante) → exclu du taux (zéro invention)."""
+    from journaliste import iso_week_bounds  # noqa: PLC0415
+    from bilan_jour import SORTIE_TIMING_LOG  # noqa: PLC0415
+
+    path = path or SORTIE_TIMING_LOG
+    ko = SondeKoVirtuel()
+    if not path.exists():
+        return ko
+    monday, sunday = iso_week_bounds(now)
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        try:
+            d = date.fromisoformat(str(r.get("date")))
+        except (TypeError, ValueError):
+            continue
+        if not (monday <= d <= sunday):
+            continue
+        kv = r.get("ko_virtuel")
+        if not isinstance(kv, bool):  # None / absent → série insuffisante, exclu
+            continue
+        ko.n_mesurable += 1
+        ko.n_ko += 1 if kv else 0
+        if bool(r.get("pari_mur")):
+            ko.n_mur_mesurable += 1
+            ko.n_mur_ko += 1 if kv else 0
+        else:
+            ko.n_frais_mesurable += 1
+            ko.n_frais_ko += 1 if kv else 0
+    return ko
+
+
 def _render_mesures_shadow(
     bilan: BilanSemaine, L: List[str], selection_wr_path: Optional[Path] = None,
 ) -> None:
@@ -2027,6 +2171,63 @@ def _render_mesures_shadow(
         L.append(ligne)
     else:
         L.append("- **(c) Écart Top 1 vs Top 3** : pas assez de paris jugés cette semaine.")
+
+    # --- 3 sondes du panel 11/07 (SHADOW) : des taux, zéro conclusion sous N=15 ---
+    flip, cat = _sondes_flip_catalyseur(bilan.now)
+    ko = _sonde_ko_virtuel(bilan.now)
+
+    # Sonde 1 — Confirmation post-flip (WR flips J0 vs flips confirmés).
+    if flip.n_flips_j0 == 0:
+        L.append(
+            "- **(d) Confirmation post-flip** : aucun flip tracé cette semaine "
+            "(sonde en attente de données)."
+        )
+    else:
+        conf = f"{flip.n_vrai_conf}/{flip.n_flips_conf}" if flip.n_flips_conf else "0/0"
+        chauffe = (
+            f" En chauffe (N={flip.n_flips_j0}/{SONDE_N_MIN} flips)."
+            if flip.n_flips_j0 < SONDE_N_MIN else ""
+        )
+        L.append(
+            f"- **(d) Confirmation post-flip** : flips J0 {flip.n_vrai_j0}/{flip.n_flips_j0} "
+            f"VRAI vs flips confirmés {conf} VRAI.{chauffe}"
+        )
+
+    # Sonde 2 — Catalyseur épuisé (divergences live vs fond + qui avait raison).
+    if cat.n_divergence == 0:
+        L.append(
+            "- **(e) Catalyseur épuisé** : aucune divergence live/fond conclusive cette "
+            "semaine (sonde en attente de données)."
+        )
+    else:
+        chauffe = (
+            f" En chauffe (N={cat.n_divergence}/{SONDE_N_MIN} divergences)."
+            if cat.n_divergence < SONDE_N_MIN else ""
+        )
+        L.append(
+            f"- **(e) Catalyseur épuisé** : {cat.n_divergence} divergence(s) conclusive(s) "
+            f"live vs fond — le call live avait raison {cat.n_live_raison}, le sens de fond "
+            f"{cat.n_fond_raison}.{chauffe}"
+        )
+
+    # Sonde 3 — KO virtuel (LE chiffre du risque « tendance mûre » demandé).
+    if ko.n_mesurable == 0:
+        L.append(
+            "- **(f) KO virtuel** : aucun pari mesurable cette semaine "
+            "(sortie-timing-log sans champ ko_virtuel exploitable) — sonde en attente."
+        )
+    else:
+        taux = ko.n_ko / ko.n_mesurable * 100.0
+        chauffe = (
+            f" En chauffe (N={ko.n_mesurable}/{SONDE_N_MIN})."
+            if ko.n_mesurable < SONDE_N_MIN else ""
+        )
+        L.append(
+            f"- **(f) KO virtuel** (risque « tendance mûre ») : {ko.n_ko}/{ko.n_mesurable} "
+            f"pari(s) ont touché -3 % avant +1 % ({taux:.0f}%) — segmenté ⌛ mûrs "
+            f"{ko.n_mur_ko}/{ko.n_mur_mesurable}, frais {ko.n_frais_ko}/{ko.n_frais_mesurable}."
+            f"{chauffe}"
+        )
     L.append("")
 
 

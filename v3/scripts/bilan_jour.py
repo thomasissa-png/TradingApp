@@ -886,6 +886,14 @@ class PerfTop3Ligne:
     # None → le garde-fou max-suspect retombe sur la cible turbo globale. Sert à
     # propager le marqueur ⚠️ « max à vérifier » jusqu'au bilan (section 1 / annexe).
     seuil_pct: Optional[float] = None
+    # Sonde 3 « KO virtuel » (panel 11/07) : le mouvement adverse a touché -3 %
+    # AVANT que le favorable n'atteigne +1 % (ordre temporel, série 1h — calculé par
+    # mesure_bilan.ko_virtuel_du_jour). None = série insuffisante (zéro invention).
+    ko_virtuel: Optional[bool] = None
+    # Le pari portait le drapeau ⌛ « déjà coté » à l'émission (news nature=deja_cote
+    # tracée au decision-log `p2_M5_nature_composition`). Segmente le taux KO virtuel
+    # (paris mûrs vs frais) au bilan hebdo. False si non tracé (dégradation propre).
+    pari_mur: bool = False
 
 
 def _verdict_sortie(
@@ -1026,9 +1034,16 @@ def compute_perf_top3(
         score_conv = None
         score_conv_signe = None
         cause_minoritaire = None
+        # Sonde 3 : le pari portait-il le drapeau ⌛ « déjà coté » à l'émission ?
+        # Trace persistée = une news nature=deja_cote dans p2_M5_nature_composition
+        # du record du jour (decision-log). Absent → False (zéro invention).
+        pari_mur = False
         if conviction_records is not None:
             from journaliste import drivers_du_call  # noqa: PLC0415
             rec = conviction_records.get((actif, "24h")) or {}
+            nat_comp = rec.get("p2_M5_nature_composition")
+            if isinstance(nat_comp, dict):
+                pari_mur = bool(nat_comp.get("deja_cote"))
             drivers = drivers_du_call(rec, call)
             if drivers:
                 raison_call = " + ".join(drivers)
@@ -1063,6 +1078,8 @@ def compute_perf_top3(
             score_conviction_signe=(round(score_conv_signe, 2) if score_conv_signe is not None else None),
             actions_suivi=(actions_map.get(actif) or None),
             seuil_pct=(float(m.seuil_pct) if isinstance(getattr(m, "seuil_pct", None), (int, float)) else None),
+            ko_virtuel=(getattr(m, "ko_virtuel", None)),
+            pari_mur=pari_mur,
         ))
     out.sort(key=lambda x: x.actif)
     return out
@@ -1919,6 +1936,11 @@ def persist_sortie_timing(
                 # pour que le bilan HEBDO lise la MÊME valeur (le measures-log ne le
                 # porte pas toujours). Source unique quotidien ↔ hebdo.
                 "max_gain_pct": p.max_gain_pct,
+                # Sonde 3 « KO virtuel » (panel 11/07) : True/False/None (adverse -3 %
+                # avant favorable +1 %) + drapeau ⌛ « déjà coté » à l'émission. Lus par
+                # le bilan HEBDO pour le taux KO virtuel segmenté (mûrs vs frais).
+                "ko_virtuel": p.ko_virtuel,
+                "pari_mur": p.pari_mur,
             }
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -1967,6 +1989,18 @@ def _render_intraday_table(bilan: "BilanJour") -> List[str]:
             f"{_fmt_fav_cell(p.max_gain_pct)} | {g} |"
         )
     L.append("")
+    # Sonde 3 « KO virtuel » (panel 11/07, SHADOW) : une ligne par pari dont le
+    # mouvement adverse a touché -3 % AVANT que le favorable n'atteigne +1 %
+    # (barrière turbo indicative). Observabilité pure, aucun signal changé.
+    ko_touches = [p for p in bilan.perf_top3 if p.ko_virtuel is True]
+    for p in ko_touches:
+        mur = " ⌛ (pari déjà coté)" if p.pari_mur else ""
+        L.append(
+            f"- 🧨 KO virtuel : le pari {p.actif} {p.call} a touché -3 % avant "
+            f"+1 %{mur}."
+        )
+    if ko_touches:
+        L.append("")
     return L
 
 

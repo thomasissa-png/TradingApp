@@ -140,6 +140,54 @@ def max_gain_du_jour(
     return round(max(gain, 0.0), 4)
 
 
+# ---------------------------------------------------------------------------
+# Sonde 3 « KO virtuel » (panel 11/07 — 3 instruments SHADOW, GO fondateur)
+# ---------------------------------------------------------------------------
+# WIN RATE ONLY : on ne mesure QUE l'ORDRE TEMPOREL de deux franchissements de
+# seuil (aucun euro, aucune barrière réelle posée, aucun signal changé).
+KO_VIRTUEL_PCT = 3.0  # seuil indicatif de barrière turbo, à recalibrer sur preuve
+KO_CIBLE_PCT = 1.0    # seuil FAVORABLE cible existant (+1 %)
+
+
+def ko_virtuel_du_jour(
+    bars: List[Tuple[datetime, float]],
+    reference: Optional[float],
+    call: str,
+    ko_pct: float = KO_VIRTUEL_PCT,
+    cible_pct: float = KO_CIBLE_PCT,
+) -> Optional[bool]:
+    """Sonde 3 — le mouvement ADVERSE a-t-il touché -ko_pct % AVANT que le
+    mouvement FAVORABLE n'atteigne +cible_pct % ?
+
+    Parcourt la série 1h du jour DANS L'ORDRE TEMPOREL (MÊME source unifiée que
+    `_excursions_intraday` / le max : `_bars_du_jour`, close 1h triés oldest→
+    newest — on n'ouvre PAS une nouvelle source). Pour chaque barre, `fav` =
+    variation signée dans le sens du call. Renvoie :
+    - True  si une barre adverse (`fav <= -ko_pct`) survient AVANT toute barre
+      favorable atteignant la cible (`fav >= cible_pct`) : c'est le KO virtuel ;
+    - False si la cible favorable est atteinte d'abord, ou si l'adverse ne touche
+      jamais -ko_pct sur la séance (pas de KO) ;
+    - None  si la série est insuffisante pour trancher (aucune barre exploitable,
+      référence ou call invalide) — zéro invention.
+    """
+    from run_suivi import call_sign  # noqa: PLC0415
+
+    sign = call_sign(call)
+    if sign is None or not reference or reference <= 0 or not bars:
+        return None
+    vu = False
+    for _dt, px in bars:
+        if not isinstance(px, (int, float)) or px <= 0:
+            continue
+        vu = True
+        fav = (px - reference) / reference * 100.0 * sign
+        if fav <= -ko_pct:
+            return True   # adverse -ko% touché en premier → KO virtuel
+        if fav >= cible_pct:
+            return False  # cible favorable +cible% atteinte d'abord → pas de KO
+    return False if vu else None
+
+
 def _day_high_low(
     ticker: str,
     date_j: date,
@@ -378,6 +426,10 @@ def measure_cellule_journee(
         # Zéro 3e logique. (_day_high_low / max_gain_du_jour conservées pour l'API mais
         # ne pilotent plus le win rate.)
         m.max_gain_pct = m.max_favorable_pct
+
+        # Sonde 3 « KO virtuel » : ordre temporel adverse -3 % vs favorable +1 %,
+        # sur la MÊME série 1h ordonnée (bars_h). None si série insuffisante.
+        m.ko_virtuel = ko_virtuel_du_jour(bars_h, reference, call)
 
     return m
 

@@ -16,20 +16,20 @@
   "18h": {
     "Blé": {
       "call": "LONG",
-      "fav_pct": -0.12,
-      "heure": "17h49",
+      "fav_pct": -0.17,
+      "heure": "18h15",
       "max_fav_pct": 8.23
     },
     "CAC 40": {
       "call": "SHORT",
-      "fav_pct": -0.14,
-      "heure": "17h49",
+      "fav_pct": -0.31,
+      "heure": "18h15",
       "max_fav_pct": 0.17
     },
     "Coton": {
       "call": "LONG",
       "fav_pct": 0.97,
-      "heure": "17h49",
+      "heure": "18h15",
       "max_fav_pct": 2.53
     }
   },

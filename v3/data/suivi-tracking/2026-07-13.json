@@ -2,14 +2,14 @@
   "12h": {
     "Blé": {
       "call": "LONG",
-      "fav_pct": 7.05,
-      "heure": "11h45",
+      "fav_pct": 0.01,
+      "heure": "12h15",
       "max_fav_pct": 8.23
     },
     "CAC 40": {
       "call": "SHORT",
       "fav_pct": -0.11,
-      "heure": "11h45",
+      "heure": "12h15",
       "max_fav_pct": 0.17
     }
   },

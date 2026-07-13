@@ -40,3 +40,6 @@
 {"date": "2026-07-10", "actif": "CAC 40", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.06, "pic_heure": "12h", "cloture_pct": -0.15, "max_gain_pct": 0.07}
 {"date": "2026-07-10", "actif": "Cacao", "call": "LONG", "categorie": "sans_objet", "pic_pct": -3.92, "pic_heure": "12h", "cloture_pct": -7.51, "max_gain_pct": 0.01}
 {"date": "2026-07-10", "actif": "Café (Arabica)", "call": "LONG", "categorie": "sans_objet", "pic_pct": -2.91, "pic_heure": "clôture", "cloture_pct": -2.91, "max_gain_pct": 0.02}
+{"date": "2026-07-13", "actif": "Blé", "call": "LONG", "categorie": "trop_tot", "pic_pct": 0.17, "pic_heure": "clôture", "cloture_pct": 0.17, "max_gain_pct": 8.23, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-07-13", "actif": "CAC 40", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.11, "pic_heure": "12h", "cloture_pct": -0.31, "max_gain_pct": 0.17, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-07-13", "actif": "Coton", "call": "LONG", "categorie": "trop_tard", "pic_pct": 0.97, "pic_heure": "18h", "cloture_pct": -0.5, "max_gain_pct": 1.54, "ko_virtuel": false, "pari_mur": false}

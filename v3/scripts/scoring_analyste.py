@@ -1433,6 +1433,20 @@ VEILLE_LINE_RE = re.compile(
     re.MULTILINE,
 )
 
+# [Fix 14/07] Le badge de flip `<span class="trend-flip"...>⇌</span>` (rendu S9)
+# est PRÉFIXÉ à la conclusion dans la Synthèse : la cellule ne commence alors
+# plus par LONG/SHORT et VEILLE_LINE_RE ratait TOUTE ligne d'actif ayant flippé
+# la veille (prouvé le 14/07 : 6/15 actifs parsés sur le bulletin du 13/07 →
+# is_flip aveugle le lendemain d'un flip, sonde « confirmation post-flip »
+# jamais vraie). On retire ce badge avant parsing ; les spans cell-reason,
+# APRÈS la conclusion, ne gênent pas le motif.
+_TREND_FLIP_SPAN_RE = re.compile(r'<span class="trend-flip"[^>]*>[^<]*</span>\s*')
+
+
+def _strip_trend_flip_spans(text: str) -> str:
+    """Neutralise les badges ⇌ pour que chaque cellule recommence par LONG/SHORT."""
+    return _TREND_FLIP_SPAN_RE.sub("", text)
+
 
 def load_veille(bulletins_dir: Path, today: datetime) -> Tuple[Optional[Path], Dict[str, Dict[str, str]]]:
     """Cherche le bulletin le plus récent avant `today`.
@@ -1456,7 +1470,7 @@ def load_veille(bulletins_dir: Path, today: datetime) -> Tuple[Optional[Path], D
     if not files:
         return None, {}
     veille_path = files[0]
-    text = veille_path.read_text(encoding="utf-8")
+    text = _strip_trend_flip_spans(veille_path.read_text(encoding="utf-8"))
     conclusions: Dict[str, Dict[str, str]] = {}
     for m in VEILLE_LINE_RE.finditer(text):
         actif = m.group("actif").strip().lower()
@@ -1495,7 +1509,7 @@ def load_avant_veille(bulletins_dir: Path, today: datetime) -> Tuple[Optional[Pa
     if not older:
         return None, {}
     av_path = older[0]
-    text = av_path.read_text(encoding="utf-8")
+    text = _strip_trend_flip_spans(av_path.read_text(encoding="utf-8"))
     conclusions: Dict[str, Dict[str, str]] = {}
     for m in VEILLE_LINE_RE.finditer(text):
         actif = m.group("actif").strip().lower()

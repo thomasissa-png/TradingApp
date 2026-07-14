@@ -1,0 +1,17 @@
+{
+  "12h": {
+    "Argent": {
+      "call": "SHORT",
+      "fav_pct": 0.03,
+      "heure": "12h15",
+      "max_fav_pct": 0.95
+    },
+    "Blé": {
+      "call": "LONG",
+      "fav_pct": -0.27,
+      "heure": "12h15",
+      "max_fav_pct": 0.16
+    }
+  },
+  "base": "emission"
+}

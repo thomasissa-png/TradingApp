@@ -1,12 +1,15 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 14 juillet 2026, 07h28 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 14 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| lun 13/07 | **Blé** | LONG | faible (+8.20) | 629.9 | +0.01% | -0.17% | +0.17% (en cours) | +8.23% ⚠️ | Oui | ✅ | Tensions en mer Noire et réduction de l'offre USDA provoquent une flambée des prix des céréales |
+| mar 14/07 | **Blé** | LONG | faible (+3.25) | 636.8 | -0.27% | +1.27% | +1.13% (en cours) | +1.32% | Oui | ✅ | Tensions en mer Noire et réduction de l'offre USDA font monter les prix des céréales |
+| mar 14/07 | **Argent** | SHORT | forte (-2.51) | 57.99 | +0.03% | -1.42% | -1.35% (en cours) | +0.95% | Oui | ❌ | L'Inde restreint les importations d'argent, créant des pénuries et faisant monter les primes à un plus haut de six mois |
+| mar 14/07 | Cacao | SHORT | faible (+1.39) | 5842 | +1.19% | — | -1.59% (en cours) | +4.74% | Non | ❌ | Côte d'Ivoire et Ghana cherchent à créer un cartel du cacao type OPEP |
+| lun 13/07 | **Blé** | LONG | faible (+8.20) | 629.9 | +0.01% | -0.17% | +0.17% (en cours) | +8.23% ⚠️ | Oui | ✅ | — |
 | lun 13/07 | VIX | LONG | forte (+3.10) | 20.57 | — | — | +1.99% (en cours) | — | Non | — | — |
 | lun 13/07 | Pétrole (Brent) | LONG | forte (+2.04) | 79.26 | -1.82% | — | +7.05% (en cours) | — | Non | ✅ | — |
 | lun 13/07 | Cuivre | SHORT | faible (-1.24) | 6.158 | -1.03% | — | -2.79% (en cours) | — | Non | ❌ | — |
@@ -46,7 +49,7 @@ _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Ca
 | mer 08/07 | Argent | LONG | forte (+6.04) | 60.45 | -3.77% | — | -4.07% | — | Non | ❌ | — |
 | mar 07/07 | **Sucre** | LONG | forte (+7.07) | 9.97 | — | +0.35% | -2.21% | +0.30% | Oui | ❌ | — |
 | mar 07/07 | **Café (Arabica)** | LONG | forte (+13.20) | 349.9 | -2.94% | -9.19% | -5.69% | +0.06% | Oui | ❌ | — |
-| mar 07/07 | **Cacao** | LONG | forte (+12.06) | 5696 | +0.20% | +0.85% | +2.56% | +2.93% | Oui | ✅ | Côte d'Ivoire et Ghana cherchent à créer un cartel du cacao type OPEP |
+| mar 07/07 | **Cacao** | LONG | forte (+12.06) | 5696 | +0.20% | +0.85% | +2.56% | +2.93% | Oui | ✅ | — |
 | mar 07/07 | Pétrole (Brent) | SHORT | faible (+0.14) | 72.67 | +0.23% | — | -16.76% | — | Non | ❌ | — |
 | mar 07/07 | Or | LONG | forte (+1.06) | 4128 | +0.27% | — | -2.55% | — | Non | ❌ | — |
 | mar 07/07 | Cuivre | LONG | faible (+0.09) | 6.14 | +0.72% | — | +3.08% | — | Non | ✅ | — |

@@ -13,5 +13,25 @@
       "max_fav_pct": 0.16
     }
   },
+  "18h": {
+    "Argent": {
+      "call": "SHORT",
+      "fav_pct": -2.24,
+      "heure": "17h01",
+      "max_fav_pct": 0.95
+    },
+    "Blé": {
+      "call": "LONG",
+      "fav_pct": 0.73,
+      "heure": "17h01",
+      "max_fav_pct": 0.76
+    },
+    "Coton": {
+      "call": "LONG",
+      "fav_pct": 0.6,
+      "heure": "17h01",
+      "max_fav_pct": 0.6
+    }
+  },
   "base": "emission"
 }

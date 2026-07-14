@@ -2,6 +2,12 @@
 
 > Historique des sessions de travail (le plus récent en haut). Détail technique : `git log` + `v3/audit/`.
 
+## 2026-07-14 — S11 (clôture) : sondes en production, bug du badge ⇌ corrigé, audit Argent
+
+- **Sondes shadow actives depuis le 13/07** (champs vérifiés au decision-log du 14/07). **🐛 Fix critique attrapé grâce au signalement fondateur (« la raison de l'Argent me choque »)** : le badge de flip `⇌` (rendu S9, ~20/06) préfixait la conclusion dans la Synthèse → le parseur de la veille ratait TOUTE ligne d'actif ayant flippé (6/15 actifs parsés le 13/07) : `is_flip` aveugle le lendemain d'un flip depuis 3 semaines (les stats « flips vs continuations » sous-comptaient les flips) et sonde « confirmation post-flip » jamais vraie. Fix : strip du span avant parsing, rejoué sur bulletins réels (15/15, Argent 14/07 correctement « flip confirmé »), tests-verrous.
+- **Audit Argent 14/07** : la raison « Mouvement de l'or (5 jours) » est FACTUELLE (or 4126→4022 en 5 séances, vérifié) ; le malaise fondateur pointe le vrai trou : pari 24h court-contre-fond (20j haussière, 1m LONG) le jour du CPI : exactement ce que les sondes chiffrent (aucune règle codée à chaud, doctrine mesurer avant d'agir).
+- **Capteurs revenus à la vie** : stocks blé USDA produit une vraie valeur (920M t, penchant -0.537) ; plus aucune mesure « suivi-interrompu » depuis le 10/07 (fix échéance sucre/USD-JPY effectif).
+
 ## 2026-07-11 — S11 : autopsie de la semaine 06-10/07 + 3 sondes shadow « tendance mûre » (GO fondateur)
 
 Audit intégral de la semaine (Top 3 : 3/12 en métrique turbo, direction 4/7 à l'échéance, 12 pertes évitées par les écartements ↯ en 3 jours) puis autopsie du sujet fondateur « plus c'est monté, plus ça corrige » : panel des 3 experts + données 23/06→10/07.

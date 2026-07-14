@@ -16,20 +16,20 @@
   "18h": {
     "Argent": {
       "call": "SHORT",
-      "fav_pct": -2.24,
-      "heure": "17h01",
+      "fav_pct": -1.42,
+      "heure": "18h15",
       "max_fav_pct": 0.95
     },
     "Blé": {
       "call": "LONG",
-      "fav_pct": 0.73,
-      "heure": "17h01",
-      "max_fav_pct": 0.76
+      "fav_pct": 1.27,
+      "heure": "18h15",
+      "max_fav_pct": 1.27
     },
     "Coton": {
       "call": "LONG",
       "fav_pct": 0.6,
-      "heure": "17h01",
+      "heure": "18h15",
       "max_fav_pct": 0.6
     }
   },

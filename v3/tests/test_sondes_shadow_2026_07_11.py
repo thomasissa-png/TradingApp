@@ -265,3 +265,37 @@ def test_invariance_conclusion_et_selection_inchangees():
     assert rb["is_flip"] == rv["is_flip"]  # is_flip vivant intact
     # Seule la sonde bouge : confirmation détectée dans la variante uniquement.
     assert rb["shadow_flip_conf"] is False and rv["shadow_flip_conf"] is True
+
+
+# ---------------------------------------------------------------------------
+# [Fix 14/07] Le badge de flip ⇌ (span trend-flip, rendu S9) préfixait la
+# conclusion dans la Synthèse → VEILLE_LINE_RE ratait toute ligne d'actif ayant
+# flippé la veille (prouvé en prod : 6/15 actifs parsés sur le bulletin du
+# 13/07, sonde « confirmation post-flip » jamais vraie, is_flip aveugle le
+# lendemain d'un flip). Test-verrou sur le cas réel Argent 14/07.
+# ---------------------------------------------------------------------------
+
+def test_veille_parse_ligne_avec_badge_flip(tmp_path):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    bulls = tmp_path / "bulls"
+    bulls.mkdir()
+    ligne_flippee = (
+        '| Argent | <span class="trend-flip" title="Tendance inversée vs la '
+        'veille">⇌</span> SHORT (-0.87) ⚑<br><span class="cell-reason">· taux '
+        "réels US élevés : l'or coûte à porter</span> | SHORT (-1.30) ⚑ | "
+        'SHORT (-2.10) |'
+    )
+    (bulls / "bulletin-2026-07-13-07h.md").write_text(
+        "## Synthèse des décisions\n\n| Actif | 24h | 7j | 1m |\n|---|---|---|---|\n"
+        + ligne_flippee + "\n", encoding="utf-8")
+    now = datetime(2026, 7, 14, 7, 23, tzinfo=ZoneInfo("Europe/Paris"))
+    _, veille = sa.load_veille(bulls, now)
+    assert veille.get("argent") == {"24h": "SHORT", "7j": "SHORT", "1m": "SHORT"}
+
+
+def test_flip_confirme_traverse_badge_flip():
+    # Argent : LONG vendredi -> SHORT lundi (badge ⇌ au bulletin de lundi) ->
+    # SHORT mardi = flip CONFIRMÉ, même si la ligne de la veille porte le badge.
+    j0, conf = sa.compute_shadow_flip_fields("SHORT", "SHORT", "LONG")
+    assert (j0, conf) == (False, True)

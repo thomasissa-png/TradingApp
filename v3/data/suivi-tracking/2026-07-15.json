@@ -16,21 +16,21 @@
   "18h": {
     "Blé": {
       "call": "LONG",
-      "fav_pct": 4.7,
-      "heure": "17h10",
-      "max_fav_pct": 4.7
+      "fav_pct": 5.24,
+      "heure": "18h15",
+      "max_fav_pct": 5.35
     },
     "Cacao": {
       "call": "SHORT",
-      "fav_pct": 0.08,
-      "heure": "17h10",
+      "fav_pct": -1.32,
+      "heure": "18h15",
       "max_fav_pct": 2.7
     },
     "Coton": {
       "call": "LONG",
-      "fav_pct": -1.26,
-      "heure": "17h10",
-      "max_fav_pct": 0.0
+      "fav_pct": 0.08,
+      "heure": "18h15",
+      "max_fav_pct": 0.08
     }
   },
   "base": "emission"

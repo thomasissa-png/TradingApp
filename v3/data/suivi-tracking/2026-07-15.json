@@ -1,0 +1,17 @@
+{
+  "12h": {
+    "Blé": {
+      "call": "LONG",
+      "fav_pct": 3.3,
+      "heure": "12h15",
+      "max_fav_pct": 3.32
+    },
+    "Cacao": {
+      "call": "SHORT",
+      "fav_pct": -0.5,
+      "heure": "12h15",
+      "max_fav_pct": 0.05
+    }
+  },
+  "base": "emission"
+}

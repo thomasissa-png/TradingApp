@@ -4,14 +4,14 @@
 
 > Le win rate qui compte : nos paris de conviction, jugés sur le **max gain du jour > 1 %** (cible turbo). **Top 1** = notre conviction n°1 ; **Top 3** = la Sélection complète. Cumulé sur tout l'historique mesuré.
 
-- **Top 1 (conviction n°1)** : 67% (10/15) · borne basse 42%
+- **Top 1 (conviction n°1)** : 62% (10/16) · borne basse 39%
 - **Top 3 (Sélection)** : 64% (25/39) · borne basse 48%
 
 ## Détail par cellule (mesure clôture)
 
 **0 / 45 cellules fiables** (15 paris requis/cellule). Tout est en chauffe — ces chiffres ne sont pas encore significatifs.
 
-- Généré : 15 juillet 2026, 07h29
+- Généré : 16 juillet 2026, 07h28
 - Journaliste version : v3.1.0
 - Win rate = taux de bonnes directions sur les paris indépendants (N_eff)
 - WR ≥ 0,5 % = win rate ne comptant que les calls justes ayant bougé d'au moins 0,5 % en notre faveur (mouvement exploitable ; quasi-plats écartés du numérateur, même dénominateur que le win rate — toujours ≤ Win rate)
@@ -19,47 +19,47 @@
 - Cible : ≥ 70% sur ≥ 15 paris (borne basse > 50 %)
 - Paris (réels) = N (régimes=Y) : Y = nombre de séries de calls identiques consécutifs (indicateur de lucidité — N élevé mais peu de régimes = peu de vrais paris indépendants). N'entre PAS dans les règles de décision.
 
-- Jours de bourse exclus (férié partiel, un marché ouvert) : **1** sur la fenêtre 2026-06-23 → 2026-07-15
+- Jours de bourse exclus (férié partiel, un marché ouvert) : **1** sur la fenêtre 2026-06-23 → 2026-07-16
 
 ### 24 heures
 
 | Actif | Win rate | WR ≥ 0,5 % | WR tradable | Paris (réels) | Non notés | Statut |
 |---|---|---|---|---|---|---|
-| Coton | 100.0% | 100.0% | 71.4% | 5 (régimes=1) | 2 | ⏳ trop peu (5/15) |
-| S&P 500 | 100.0% | 100.0% | 55.6% | 5 (régimes=1) | 4 | ⏳ trop peu (5/15) |
-| Blé | 83.3% | 83.3% | 83.3% | 6 (régimes=3) | 0 | ⏳ trop peu (6/15) |
-| Café (Arabica) | 70.0% | 70.0% | 70.0% | 10 (régimes=4) | 0 | ⏳ trop peu (10/15) |
-| Pétrole (Brent) | 66.7% | 66.7% | 60.0% | 9 (régimes=3) | 1 | ⏳ trop peu (9/15) |
-| VIX | 66.7% | 66.7% | 22.2% | 3 (régimes=2) | 7 | ⏳ trop peu (3/15) |
-| Cacao | 62.5% | 62.5% | 50.0% | 8 (régimes=1) | 2 | ⏳ trop peu (8/15) |
-| Cuivre | 55.6% | 55.6% | 50.0% | 9 (régimes=7) | 1 | ⏳ trop peu (9/15) |
-| CAC 40 | 50.0% | 50.0% | 20.0% | 4 (régimes=2) | 6 | ⏳ trop peu (4/15) |
-| Or | 22.2% | 22.2% | 20.0% | 9 (régimes=5) | 1 | ⏳ trop peu (9/15) |
-| Argent | 0.0% | 0.0% | 0.0% | 7 (régimes=2) | 3 | ⏳ trop peu (7/15) |
-| EUR/USD | 0.0% | 0.0% | 0.0% | 2 (régimes=1) | 5 | ⏳ trop peu (2/15) |
-| Nasdaq | 0.0% | 0.0% | 0.0% | 4 (régimes=2) | 5 | ⏳ trop peu (4/15) |
-| Sucre | 0.0% | 0.0% | 0.0% | 4 (régimes=2) | 4 | ⏳ trop peu (4/15) |
-| USD/JPY | 0.0% | 0.0% | 0.0% | 3 (régimes=2) | 7 | ⏳ trop peu (3/15) |
+| Coton | 100.0% | 100.0% | 75.0% | 6 (régimes=1) | 2 | ⏳ trop peu (6/15) |
+| S&P 500 | 100.0% | 85.7% | 70.0% | 7 (régimes=1) | 3 | ⏳ trop peu (7/15) |
+| Blé | 85.7% | 85.7% | 85.7% | 7 (régimes=3) | 0 | ⏳ trop peu (7/15) |
+| Café (Arabica) | 66.7% | 66.7% | 54.5% | 9 (régimes=4) | 2 | ⏳ trop peu (9/15) |
+| Cacao | 60.0% | 60.0% | 54.5% | 10 (régimes=2) | 1 | ⏳ trop peu (10/15) |
+| Cuivre | 60.0% | 60.0% | 54.5% | 10 (régimes=8) | 1 | ⏳ trop peu (10/15) |
+| Pétrole (Brent) | 60.0% | 60.0% | 54.5% | 10 (régimes=3) | 1 | ⏳ trop peu (10/15) |
+| Argent | 54.5% | 54.5% | 54.5% | 11 (régimes=5) | 0 | ⏳ trop peu (11/15) |
+| VIX | 50.0% | 50.0% | 30.0% | 6 (régimes=2) | 4 | ⏳ trop peu (6/15) |
+| Nasdaq | 33.3% | 33.3% | 20.0% | 6 (régimes=3) | 5 | ⏳ trop peu (6/15) |
+| CAC 40 | 28.6% | 28.6% | 18.2% | 7 (régimes=3) | 4 | ⏳ trop peu (7/15) |
+| EUR/USD | 28.6% | 0.0% | 25.0% | 7 (régimes=4) | 1 | ⏳ trop peu (7/15) |
+| Or | 22.2% | 22.2% | 18.2% | 9 (régimes=5) | 2 | ⏳ trop peu (9/15) |
+| Sucre | — | — | — | 0 | 9 | ⏳ en attente |
+| USD/JPY | — | — | — | 0 | 11 | ⏳ en attente |
 
 ### 7 jours
 
 | Actif | Win rate | WR ≥ 0,5 % | WR tradable | Paris (réels) | Non notés | Statut |
 |---|---|---|---|---|---|---|
 | Blé | 100.0% | 100.0% | 100.0% | 1 (régimes=1) | 0 | ⏳ trop peu (1/15) |
-| Cacao | 100.0% | 100.0% | 50.0% | 1 (régimes=1) | 2 | ⏳ trop peu (1/15) |
+| Cacao | 100.0% | 100.0% | 50.0% | 1 (régimes=1) | 3 | ⏳ trop peu (1/15) |
 | Café (Arabica) | 50.0% | 50.0% | 50.0% | 2 (régimes=1) | 1 | ⏳ trop peu (2/15) |
-| S&P 500 | 50.0% | 50.0% | 0.0% | 2 (régimes=2) | 4 | ⏳ trop peu (2/15) |
-| Argent | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 2 | ⏳ trop peu (1/15) |
-| CAC 40 | 0.0% | 0.0% | 50.0% | 1 (régimes=1) | 4 | ⏳ trop peu (1/15) |
-| Coton | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 2 | ⏳ trop peu (1/15) |
-| Cuivre | 0.0% | 0.0% | 0.0% | 2 (régimes=1) | 1 | ⏳ trop peu (2/15) |
-| Nasdaq | 0.0% | 0.0% | 0.0% | 2 (régimes=2) | 3 | ⏳ trop peu (2/15) |
-| Or | 0.0% | 0.0% | 0.0% | 2 (régimes=2) | 2 | ⏳ trop peu (2/15) |
+| S&P 500 | 50.0% | 50.0% | 50.0% | 2 (régimes=2) | 1 | ⏳ trop peu (2/15) |
+| Argent | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 3 | ⏳ trop peu (1/15) |
+| CAC 40 | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 6 | ⏳ trop peu (1/15) |
+| Coton | 0.0% | 0.0% | 0.0% | 1 (régimes=1) | 3 | ⏳ trop peu (1/15) |
+| Cuivre | 0.0% | 0.0% | 0.0% | 2 (régimes=1) | 0 | ⏳ trop peu (2/15) |
+| Nasdaq | 0.0% | 0.0% | 0.0% | 2 (régimes=2) | 5 | ⏳ trop peu (2/15) |
+| Or | 0.0% | 0.0% | 0.0% | 2 (régimes=2) | 3 | ⏳ trop peu (2/15) |
 | Pétrole (Brent) | 0.0% | 0.0% | 0.0% | 2 (régimes=1) | 0 | ⏳ trop peu (2/15) |
-| EUR/USD | — | — | 0.0% | 0 | 3 | ⏳ en attente |
-| Sucre | — | — | 0.0% | 0 | 4 | ⏳ en attente |
-| USD/JPY | — | — | 0.0% | 0 | 6 | ⏳ en attente |
-| VIX | — | — | 0.0% | 0 | 6 | ⏳ en attente |
+| EUR/USD | — | — | 0.0% | 0 | 4 | ⏳ en attente |
+| Sucre | — | — | — | 0 | 5 | ⏳ en attente |
+| USD/JPY | — | — | — | 0 | 7 | ⏳ en attente |
+| VIX | — | — | 0.0% | 0 | 7 | ⏳ en attente |
 
 ### 1 mois
 
@@ -83,5 +83,5 @@
 
 ### Flip vs continuation
 
-- Win rate sur retournements : **34.4%** (N=32)
-- Win rate sur continuations : **50.0%** (N=98)
+- Win rate sur retournements : **44.4%** (N=36)
+- Win rate sur continuations : **55.1%** (N=118)

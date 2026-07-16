@@ -1,17 +1,23 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 16 juillet 2026, 07h28 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 16 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| jeu 16/07 | VIX | LONG | forte (+4.20) | 20.27 | — | — | +1.73% (en cours) | +1.28% | Non | — | — |
+| jeu 16/07 | Or | LONG | forte (+1.05) | 4029 | -0.01% | — | -1.31% (en cours) | +0.80% | Non | ❌ | — |
+| jeu 16/07 | Cuivre | LONG | forte (+8.70) | 6.369 | +0.00% | — | -2.02% (en cours) | +0.02% | Non | ❌ | — |
+| jeu 16/07 | Café (Arabica) | LONG | faible (-2.74) | 326.7 | -1.87% | — | -3.92% (en cours) | +0.05% | Non | ❌ | — |
+| jeu 16/07 | Cacao | LONG | faible (+2.19) | 5885 | -2.37% | — | -7.50% (en cours) | +1.27% | Non | ❌ | — |
+| jeu 16/07 | Argent | SHORT | forte (-0.87) | 57.08 | +0.93% | — | +2.66% (en cours) | +2.68% | Non | ✅ | Craintes de hausse de taux font chuter l'argent sous 59, surpassant l'effet safe-haven |
 | mer 15/07 | **Coton** | LONG | forte (+3.40) | 2.513 | — | +0.08% | +1.35% (en cours) | +1.35% | Oui | ✅ | — |
 | mer 15/07 | **Cacao** | SHORT | faible (-3.03) | 5808 | -0.50% | -1.32% | -1.87% (en cours) | +2.70% | Oui | ❌ | — |
 | mer 15/07 | **Blé** | LONG | faible (+5.56) | 645.8 | +3.30% | +5.24% | +4.94% (en cours) | +5.21% ⚠️ | Oui | ✅ | Tensions en mer Noire et réduction de l'offre USDA provoquent une hausse des prix des céréales |
 | mer 15/07 | VIX | LONG | forte (+3.50) | 20.45 | — | — | -1.74% (en cours) | — | Non | — | — |
 | mer 15/07 | Pétrole (Brent) | LONG | forte (+8.47) | 85.48 | +0.05% | — | -1.03% (en cours) | — | Non | ❌ | — |
-| mer 15/07 | Argent | SHORT | forte (-0.90) | 58.32 | +0.13% | — | +2.12% (en cours) | — | Non | ✅ | Craintes de hausse de taux font chuter l'argent sous 59, surpassant l'effet safe-haven |
+| mer 15/07 | Argent | SHORT | forte (-0.90) | 58.32 | +0.13% | — | +2.12% (en cours) | — | Non | ✅ | — |
 | mar 14/07 | **Blé** | LONG | faible (+3.25) | 636.8 | -0.27% | +1.27% | +6.17% | +1.32% | Oui | ✅ | — |
 | mar 14/07 | **Argent** | SHORT | forte (-2.51) | 57.99 | +0.03% | -1.42% | +1.57% | +0.95% | Oui | ✅ | — |
 | mar 14/07 | VIX | LONG | forte (+3.47) | 20.63 | — | — | -2.62% | — | Non | — | — |

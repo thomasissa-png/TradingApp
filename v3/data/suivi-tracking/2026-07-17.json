@@ -13,5 +13,19 @@
       "max_fav_pct": -0.0
     }
   },
+  "18h": {
+    "Blé": {
+      "call": "LONG",
+      "fav_pct": 1.31,
+      "heure": "17h01",
+      "max_fav_pct": 1.65
+    },
+    "Cacao": {
+      "call": "SHORT",
+      "fav_pct": -3.18,
+      "heure": "17h01",
+      "max_fav_pct": -0.0
+    }
+  },
   "base": "emission"
 }

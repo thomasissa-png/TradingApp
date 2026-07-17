@@ -1,11 +1,16 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 17 juillet 2026, 07h28 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 17 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| ven 17/07 | **Cacao** | SHORT | faible (-6.50) | 5361 | -3.67% | -3.02% | -4.65% (en cours) | -0.00% | Oui | ❌ | Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP |
+| ven 17/07 | **Blé** | LONG | forte (+12.64) | 668.8 | +1.16% | +1.62% | +2.36% (en cours) | +2.35% | Oui | ✅ | Tensions en mer Noire et réduction de l'offre USDA provoquent une flambée des prix des céréales |
+| ven 17/07 | Pétrole (Brent) | LONG | forte (+3.86) | 84.95 | +2.07% | — | +3.46% (en cours) | +3.63% | Non | ✅ | — |
+| ven 17/07 | Café (Arabica) | SHORT | forte (-5.62) | 312.8 | -0.39% | — | -2.66% (en cours) | +0.06% | Non | ❌ | — |
+| ven 17/07 | Argent | SHORT | forte (-7.09) | 55.07 | +0.74% | — | -1.87% (en cours) | +0.17% | Non | ❌ | — |
 | jeu 16/07 | **Blé** | LONG | forte (+15.87) | 676.1 | +1.25% | -0.25% | -0.29% (en cours) | +2.91% | Oui | ❌ | — |
 | jeu 16/07 | VIX | LONG | forte (+4.20) | 20.27 | — | — | +1.63% (en cours) | — | Non | — | — |
 | jeu 16/07 | Or | LONG | forte (+1.05) | 4029 | -0.01% | — | -1.21% (en cours) | — | Non | ❌ | — |
@@ -15,7 +20,7 @@ _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Ca
 | jeu 16/07 | Argent | SHORT | forte (-0.87) | 57.08 | +0.93% | — | +3.52% (en cours) | — | Non | ✅ | Craintes de hausse de taux font chuter l'argent sous 59, surpassant l'effet safe-haven |
 | mer 15/07 | **Coton** | LONG | forte (+3.40) | 2.513 | — | +0.08% | -2.51% | +1.35% | Oui | ❌ | — |
 | mer 15/07 | **Cacao** | SHORT | faible (-3.03) | 5808 | -0.50% | -1.32% | +7.70% | +2.70% | Oui | ✅ | — |
-| mer 15/07 | **Blé** | LONG | faible (+5.56) | 645.8 | +3.30% | +5.24% | +3.57% | +5.21% ⚠️ | Oui | ✅ | Tensions en mer Noire et réduction de l'offre USDA provoquent une hausse des prix des céréales |
+| mer 15/07 | **Blé** | LONG | faible (+5.56) | 645.8 | +3.30% | +5.24% | +3.57% | +5.21% ⚠️ | Oui | ✅ | — |
 | mer 15/07 | Sucre | LONG | forte (+2.00) | 9.76 | — | — | -2.20% | — | Non | ❌ | — |
 | mer 15/07 | Or | SHORT | forte (-2.19) | 4026 | -0.13% | — | +1.14% | — | Non | ✅ | — |
 | mer 15/07 | Nasdaq | SHORT | forte (-0.91) | 716.1 | — | — | +1.40% | — | Non | ✅ | — |
@@ -89,7 +94,7 @@ _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Ca
 | ven 03/07 | Pétrole (Brent) | SHORT | faible (-5.09) | 72.52 | +0.63% | — | -17.14% | — | Non | ❌ | — |
 | ven 03/07 | Or | LONG | forte (+7.88) | 4175 | +0.37% | — | -4.66% | — | Non | ❌ | — |
 | ven 03/07 | Coton | LONG | faible (+0.23) | 2.403 | — | — | +1.96% | — | Non | ✅ | — |
-| ven 03/07 | Cacao | LONG | forte (+3.31) | 5036 | -0.02% | — | +6.45% | — | Non | ✅ | Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP |
+| ven 03/07 | Cacao | LONG | forte (+3.31) | 5036 | -0.02% | — | +6.45% | — | Non | ✅ | — |
 | ven 03/07 | CAC 40 | LONG | forte (+1.52) | 8475 | -0.00% | — | -1.14% | — | Non | ❌ | — |
 | jeu 02/07 | **Blé** | LONG | faible (+4.94) | 592.8 | +0.36% | -0.05% | +12.83% | +7.37% ⚠️ | Oui | ✅ | — |
 | jeu 02/07 | Pétrole (Brent) | SHORT | forte (-13.58) | 70.86 | +0.34% | — | -19.87% | — | Non | ❌ | — |

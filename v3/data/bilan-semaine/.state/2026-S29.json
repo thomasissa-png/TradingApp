@@ -1,0 +1,29 @@
+{
+  "iso": "2026-S29",
+  "candidates_faibles": [
+    [
+      "Argent",
+      "24h"
+    ],
+    [
+      "Cacao",
+      "24h"
+    ],
+    [
+      "Café (Arabica)",
+      "24h"
+    ],
+    [
+      "Cuivre",
+      "24h"
+    ],
+    [
+      "Nasdaq",
+      "24h"
+    ],
+    [
+      "Pétrole (Brent)",
+      "24h"
+    ]
+  ]
+}

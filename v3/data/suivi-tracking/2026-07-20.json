@@ -7,5 +7,13 @@
       "max_fav_pct": 0.76
     }
   },
+  "18h": {
+    "Pétrole (Brent)": {
+      "call": "LONG",
+      "fav_pct": -2.93,
+      "heure": "17h19",
+      "max_fav_pct": 0.76
+    }
+  },
   "base": "emission"
 }

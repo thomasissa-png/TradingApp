@@ -1,11 +1,16 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 20 juillet 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 20 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| lun 20/07 | **Pétrole (Brent)** | LONG | forte (+8.77) | 90.31 | -2.19% | -2.82% | -1.56% (en cours) | +0.76% | Oui | ❌ | — |
+| lun 20/07 | VIX | LONG | forte (+4.39) | 20.95 | — | — | +1.62% (en cours) | +0.48% | Non | — | — |
+| lun 20/07 | Cuivre | LONG | faible (+0.25) | 6.227 | +0.67% | — | +1.20% (en cours) | +1.29% | Non | ✅ | — |
+| lun 20/07 | Café (Arabica) | SHORT | faible (-2.12) | 320.3 | -0.41% | — | -1.04% (en cours) | +1.40% | Non | ❌ | — |
+| lun 20/07 | Blé | LONG | faible (+2.20) | 681.7 | +0.04% | — | -1.26% (en cours) | +0.88% | Non | ❌ | — |
 | ven 17/07 | **Cacao** | SHORT | faible (-6.50) | 5361 | -3.67% | -3.02% | -4.65% (en cours) | -0.00% | Oui | ❌ | Côte d'Ivoire et Ghana veulent créer un cartel du cacao type OPEP |
 | ven 17/07 | **Blé** | LONG | forte (+12.64) | 668.8 | +1.16% | +1.62% | +2.36% (en cours) | +2.35% | Oui | ✅ | Tensions en mer Noire et réduction de l'offre USDA provoquent une flambée des prix des céréales |
 | ven 17/07 | Pétrole (Brent) | LONG | forte (+3.86) | 84.95 | +2.07% | — | +6.31% (en cours) | — | Non | ✅ | — |

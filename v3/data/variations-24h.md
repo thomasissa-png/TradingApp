@@ -1,11 +1,15 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 21 juillet 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 21 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mar 21/07 | **Argent** | LONG | forte (+6.55) | 58.01 | +1.89% | +1.86% | +1.22% (en cours) | +1.91% | Oui | ✅ | — |
+| mar 21/07 | Pétrole (Brent) | LONG | forte (+7.94) | 88.72 | +1.48% | — | +3.06% (en cours) | +3.30% | Non | ✅ | — |
+| mar 21/07 | Cuivre | LONG | faible (+4.26) | 6.381 | +1.28% | — | +1.59% (en cours) | +2.00% | Non | ✅ | — |
+| mar 21/07 | Cacao | SHORT | faible (+1.67) | 5522 | +0.42% | — | -1.51% (en cours) | +0.38% | Non | ❌ | Super El Nino menace les récoltes de cacao, prévisions de hausse des prix d'ici fin d'année |
 | lun 20/07 | **Pétrole (Brent)** | LONG | forte (+8.77) | 90.31 | -2.19% | -2.82% | -1.56% (en cours) | +0.76% | Oui | ❌ | — |
 | lun 20/07 | VIX | LONG | forte (+4.39) | 20.95 | — | — | +1.48% (en cours) | — | Non | — | — |
 | lun 20/07 | Or | LONG | forte (+1.46) | 4013 | +0.34% | — | +1.03% (en cours) | — | Non | ✅ | Russia launches major ballistic missile attack on Ukrainian cities, causing casualties and damage |

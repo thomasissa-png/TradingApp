@@ -7,5 +7,25 @@
       "max_fav_pct": 0.02
     }
   },
+  "18h": {
+    "Coton": {
+      "call": "LONG",
+      "fav_pct": 0.54,
+      "heure": "17h13",
+      "max_fav_pct": 0.75
+    },
+    "Sucre": {
+      "call": "LONG",
+      "fav_pct": -1.22,
+      "heure": "17h13",
+      "max_fav_pct": 0.0
+    },
+    "USD/JPY": {
+      "call": "LONG",
+      "fav_pct": -0.05,
+      "heure": "17h13",
+      "max_fav_pct": 0.02
+    }
+  },
   "base": "emission"
 }

@@ -55,3 +55,6 @@
 {"date": "2026-07-17", "actif": "Cacao", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -3.02, "pic_heure": "18h", "cloture_pct": -4.65, "max_gain_pct": -0.0, "ko_virtuel": true, "pari_mur": false}
 {"date": "2026-07-20", "actif": "Pétrole (Brent)", "call": "LONG", "categorie": "sans_objet", "pic_pct": -1.56, "pic_heure": "clôture", "cloture_pct": -1.56, "max_gain_pct": 0.76, "ko_virtuel": true, "pari_mur": false}
 {"date": "2026-07-21", "actif": "Argent", "call": "LONG", "categorie": "trop_tard", "pic_pct": 1.89, "pic_heure": "12h", "cloture_pct": 1.22, "max_gain_pct": 1.91, "ko_virtuel": true, "pari_mur": false}
+{"date": "2026-07-22", "actif": "Coton", "call": "LONG", "categorie": "trop_tard", "pic_pct": 1.55, "pic_heure": "18h", "cloture_pct": 1.1, "max_gain_pct": 1.0, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-07-22", "actif": "Sucre", "call": "LONG", "categorie": "trop_tot", "pic_pct": 0.21, "pic_heure": "clôture", "cloture_pct": 0.21, "max_gain_pct": 1.24, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-07-22", "actif": "USD/JPY", "call": "LONG", "categorie": "sans_objet", "pic_pct": -0.01, "pic_heure": "clôture", "cloture_pct": -0.01, "max_gain_pct": 0.02, "ko_virtuel": false, "pari_mur": false}

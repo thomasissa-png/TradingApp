@@ -1,11 +1,16 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 22 juillet 2026, 07h30 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 22 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mer 22/07 | **Coton** | LONG | forte (+2.26) | 2.495 | — | +1.55% | +1.10% (en cours) | +1.00% | Oui | ✅ | Mousson faible réduit les semis de coton en Inde à un plus bas pluriannuel |
+| mer 22/07 | Pétrole (Brent) | LONG | forte (+7.19) | 92.38 | -8.15% | — | +1.31% (en cours) | +2.31% | Non | ✅ | — |
+| mer 22/07 | Café (Arabica) | LONG | faible (-0.97) | 322.1 | -0.27% | — | -1.22% (en cours) | +0.25% | Non | ❌ | — |
+| mer 22/07 | Cacao | LONG | forte (+2.69) | 5609 | -2.82% | — | -4.54% (en cours) | +0.00% | Non | ❌ | Hausse de l'offre de cacao en Côte d'Ivoire, chute des prix |
+| mer 22/07 | Blé | LONG | faible (+0.17) | 681.7 | +0.83% | — | +3.59% (en cours) | +3.65% | Non | ✅ | USDA prévoit une baisse de la production et des stocks mondiaux de céréales |
 | mar 21/07 | **Argent** | LONG | forte (+6.55) | 58.01 | +1.89% | +1.86% | +1.22% (en cours) | +1.91% | Oui | ✅ | — |
 | mar 21/07 | Pétrole (Brent) | LONG | forte (+7.94) | 88.72 | +1.48% | — | +4.12% (en cours) | — | Non | ✅ | — |
 | mar 21/07 | Or | LONG | forte (+3.13) | 4054 | -0.11% | — | +1.73% (en cours) | — | Non | ✅ | — |
@@ -62,7 +67,7 @@ _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Ca
 | lun 13/07 | Or | SHORT | forte (-1.78) | 4062 | -0.38% | — | -1.54% | — | Non | ❌ | — |
 | lun 13/07 | Cuivre | SHORT | faible (-1.24) | 6.158 | -1.03% | — | -5.23% | — | Non | ❌ | — |
 | lun 13/07 | Café (Arabica) | SHORT | faible (-2.42) | 334.4 | +1.59% | — | +3.67% | — | Non | ✅ | — |
-| lun 13/07 | Cacao | LONG | faible (+5.12) | 6067 | -6.78% | — | -7.54% | — | Non | ❌ | Hausse de l'offre de cacao en Côte d'Ivoire, chute des prix |
+| lun 13/07 | Cacao | LONG | faible (+5.12) | 6067 | -6.78% | — | -7.54% | — | Non | ❌ | — |
 | lun 13/07 | Argent | SHORT | forte (-0.87) | 58.23 | -1.15% | — | -2.24% | — | Non | ❌ | — |
 | ven 10/07 | **Café (Arabica)** | LONG | forte (+9.38) | 348 | -5.32% | -4.31% | -7.44% | +0.02% | Oui | ❌ | — |
 | ven 10/07 | **Cacao** | LONG | forte (+12.31) | 6457 | -3.92% | -7.04% | -13.13% | +0.01% | Oui | ❌ | — |

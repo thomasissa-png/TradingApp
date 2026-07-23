@@ -1,11 +1,19 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 23 juillet 2026, 07h27 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 23 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| jeu 23/07 | VIX | LONG | forte (+5.04) | 22.06 | — | — | -1.41% (en cours) | +0.95% | Non | — | — |
+| jeu 23/07 | Pétrole (Brent) | LONG | forte (+10.06) | 96.07 | -3.54% | — | -1.65% (en cours) | +0.75% | Non | ❌ | — |
+| jeu 23/07 | Or | LONG | forte (+7.46) | 4122 | -0.80% | — | -1.77% (en cours) | +0.27% | Non | ❌ | — |
+| jeu 23/07 | Cuivre | LONG | forte (+11.39) | 6.48 | -0.93% | — | -3.00% (en cours) | +0.21% | Non | ❌ | Croissance trimestrielle chinoise la plus faible depuis 2022, sous l'objectif annuel, alimentant les appels à des mesures de relance |
+| jeu 23/07 | Café (Arabica) | LONG | faible (-2.41) | 316.8 | -0.29% | — | -1.91% (en cours) | +0.44% | Non | ❌ | — |
+| jeu 23/07 | CAC 40 | LONG | forte (+0.61) | 8438 | -1.08% | — | -1.64% (en cours) | +0.00% | Non | ❌ | Nouveau tarif américain de 25% sur des exportations brésiliennes |
+| jeu 23/07 | Blé | LONG | forte (+12.38) | 703.6 | +0.43% | — | -1.24% (en cours) | +0.88% | Non | ❌ | — |
+| jeu 23/07 | Argent | LONG | forte (+11.05) | 59.62 | -1.42% | — | -3.34% (en cours) | +0.40% | Non | ❌ | — |
 | mer 22/07 | **Coton** | LONG | forte (+2.26) | 2.495 | — | +1.55% | +1.10% (en cours) | +1.00% | Oui | ✅ | Mousson faible réduit les semis de coton en Inde à un plus bas pluriannuel |
 | mer 22/07 | Pétrole (Brent) | LONG | forte (+7.19) | 92.38 | -8.15% | — | +3.99% (en cours) | — | Non | ✅ | — |
 | mer 22/07 | Café (Arabica) | LONG | faible (-0.97) | 322.1 | -0.27% | — | -1.64% (en cours) | — | Non | ❌ | — |

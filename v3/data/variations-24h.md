@@ -1,11 +1,15 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 24 juillet 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 24 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| ven 24/07 | **Argent** | LONG | forte (+2.38) | 57.46 | +1.75% | +2.36% | +1.15% (en cours) | +2.51% | Oui | ✅ | Nouvelles licences d'importation d'argent imposées en mai, chute des expéditions de 747 t à 29 t en juin |
+| ven 24/07 | Pétrole (Brent) | LONG | forte (+6.85) | 94.42 | -2.20% | — | -2.27% (en cours) | +0.10% | Non | ❌ | — |
+| ven 24/07 | Café (Arabica) | SHORT | forte (-4.82) | 309.4 | -1.14% | — | -1.55% (en cours) | -0.00% | Non | ❌ | — |
+| ven 24/07 | Blé | LONG | faible (+10.84) | 703.8 | -0.35% | — | -3.49% (en cours) | +0.26% | Non | ❌ | — |
 | jeu 23/07 | VIX | LONG | forte (+5.04) | 22.06 | — | — | -1.31% (en cours) | — | Non | — | — |
 | jeu 23/07 | Pétrole (Brent) | LONG | forte (+10.06) | 96.07 | -3.54% | — | -1.72% (en cours) | — | Non | ❌ | — |
 | jeu 23/07 | Or | LONG | forte (+7.46) | 4122 | -0.80% | — | -2.32% (en cours) | — | Non | ❌ | — |

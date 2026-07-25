@@ -1,0 +1,37 @@
+{
+  "iso": "2026-S30",
+  "candidates_faibles": [
+    [
+      "Argent",
+      "24h"
+    ],
+    [
+      "Cacao",
+      "24h"
+    ],
+    [
+      "Café (Arabica)",
+      "24h"
+    ],
+    [
+      "Cuivre",
+      "24h"
+    ],
+    [
+      "EUR/USD",
+      "24h"
+    ],
+    [
+      "Or",
+      "24h"
+    ],
+    [
+      "S&P 500",
+      "24h"
+    ],
+    [
+      "USD/JPY",
+      "24h"
+    ]
+  ]
+}

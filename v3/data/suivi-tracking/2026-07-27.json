@@ -7,5 +7,13 @@
       "max_fav_pct": 0.85
     }
   },
+  "18h": {
+    "Argent": {
+      "call": "LONG",
+      "fav_pct": -1.23,
+      "heure": "17h49",
+      "max_fav_pct": 0.85
+    }
+  },
   "base": "emission"
 }

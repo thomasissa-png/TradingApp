@@ -1,11 +1,18 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 27 juillet 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 27 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| lun 27/07 | **Argent** | LONG | forte (+5.26) | 59.27 | -0.24% | -0.89% | -1.23% (en cours) | +0.85% | Oui | ❌ | — |
+| lun 27/07 | VIX | LONG | faible (+0.29) | 21.64 | — | — | -1.22% (en cours) | +0.00% | Non | — | — |
+| lun 27/07 | Pétrole (Brent) | SHORT | forte (-5.78) | 88.29 | +2.43% | — | +3.20% (en cours) | +3.72% | Non | ✅ | — |
+| lun 27/07 | Coton | SHORT | forte (-2.50) | 2.482 | — | — | -1.07% (en cours) | +0.32% | Non | ❌ | — |
+| lun 27/07 | Café (Arabica) | SHORT | forte (-1.93) | 314.1 | -1.73% | — | -2.94% (en cours) | +0.00% | Non | ❌ | — |
+| lun 27/07 | Cacao | SHORT | forte (-1.00) | 5333 | +0.61% | — | +3.38% (en cours) | +3.98% | Non | ✅ | Hausse de l'offre de cacao en Côte d'Ivoire, chute des prix |
+| lun 27/07 | Blé | SHORT | faible (-0.44) | 677.5 | +1.12% | — | +2.87% (en cours) | +2.87% | Non | ✅ | — |
 | ven 24/07 | **Argent** | LONG | forte (+2.38) | 57.46 | +1.75% | +2.36% | +1.15% (en cours) | +2.51% | Oui | ✅ | Nouvelles licences d'importation d'argent imposées en mai, chute des expéditions de 747 t à 29 t en juin |
 | ven 24/07 | Pétrole (Brent) | LONG | forte (+6.85) | 94.42 | -2.20% | — | -6.49% (en cours) | — | Non | ❌ | — |
 | ven 24/07 | Or | SHORT | faible (-0.39) | 4026 | -0.69% | — | -1.54% (en cours) | — | Non | ❌ | World Gold Council survey: 45% of central banks plan to increase gold reserves |
@@ -22,7 +29,7 @@ _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Ca
 | mer 22/07 | Nasdaq | SHORT | faible (-6.57) | 708.7 | — | — | +3.45% | — | Non | ✅ | — |
 | mer 22/07 | Cuivre | LONG | faible (+7.01) | 6.48 | +0.16% | — | -2.70% | — | Non | ❌ | — |
 | mer 22/07 | Café (Arabica) | LONG | faible (-0.97) | 322.1 | -0.27% | — | -2.49% | — | Non | ❌ | — |
-| mer 22/07 | Cacao | LONG | forte (+2.69) | 5609 | -2.82% | — | -4.93% | — | Non | ❌ | Hausse de l'offre de cacao en Côte d'Ivoire, chute des prix |
+| mer 22/07 | Cacao | LONG | forte (+2.69) | 5609 | -2.82% | — | -4.93% | — | Non | ❌ | — |
 | mar 21/07 | **Argent** | LONG | forte (+6.55) | 58.01 | +1.89% | +1.86% | +2.18% | +1.91% | Oui | ✅ | — |
 | mar 21/07 | VIX | LONG | forte (+4.55) | 20.61 | — | — | +4.17% | — | Non | ✅ | — |
 | mar 21/07 | S&P 500 | LONG | forte (+2.78) | 747.3 | — | — | -1.13% | — | Non | ❌ | Trump impose 50% tariffs on Canada; Carney vows to intensify trade talks |

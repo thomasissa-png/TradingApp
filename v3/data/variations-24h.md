@@ -1,11 +1,13 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 28 juillet 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 28 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mar 28/07 | Pétrole (Brent) | SHORT | forte (-16.45) | 84.74 | +1.62% | — | +3.51% (en cours) | +4.12% | Non | ✅ | — |
+| mar 28/07 | Café (Arabica) | LONG | faible (+0.77) | 323.1 | +6.68% | — | +5.42% (en cours) | +6.66% ⚠️ | Non | ✅ | — |
 | lun 27/07 | **Argent** | LONG | forte (+5.26) | 59.27 | -0.24% | -0.89% | -1.23% (en cours) | +0.85% | Oui | ❌ | — |
 | lun 27/07 | VIX | LONG | faible (+0.29) | 21.64 | — | — | -1.20% (en cours) | — | Non | — | — |
 | lun 27/07 | Pétrole (Brent) | SHORT | forte (-5.78) | 88.29 | +2.43% | — | +4.02% (en cours) | — | Non | ✅ | — |

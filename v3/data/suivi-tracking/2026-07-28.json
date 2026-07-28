@@ -1,0 +1,11 @@
+{
+  "18h": {
+    "Coton": {
+      "call": "SHORT",
+      "fav_pct": 0.7,
+      "heure": "17h30",
+      "max_fav_pct": 1.06
+    }
+  },
+  "base": "emission"
+}

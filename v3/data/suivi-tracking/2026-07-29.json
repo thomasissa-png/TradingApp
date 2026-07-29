@@ -1,0 +1,17 @@
+{
+  "12h": {
+    "Cacao": {
+      "call": "SHORT",
+      "fav_pct": -0.46,
+      "heure": "12h15",
+      "max_fav_pct": 0.06
+    },
+    "Café (Arabica)": {
+      "call": "LONG",
+      "fav_pct": -0.98,
+      "heure": "12h15",
+      "max_fav_pct": 0.32
+    }
+  },
+  "base": "emission"
+}

@@ -1,0 +1,17 @@
+{
+  "12h": {
+    "Café (Arabica)": {
+      "call": "SHORT",
+      "fav_pct": -2.64,
+      "heure": "12h15",
+      "max_fav_pct": 0.04
+    },
+    "USD/JPY": {
+      "call": "SHORT",
+      "fav_pct": 0.29,
+      "heure": "12h15",
+      "max_fav_pct": 0.29
+    }
+  },
+  "base": "emission"
+}

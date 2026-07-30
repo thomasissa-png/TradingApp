@@ -13,5 +13,25 @@
       "max_fav_pct": 0.29
     }
   },
+  "18h": {
+    "Café (Arabica)": {
+      "call": "SHORT",
+      "fav_pct": -0.07,
+      "heure": "17h21",
+      "max_fav_pct": 0.04
+    },
+    "Coton": {
+      "call": "SHORT",
+      "fav_pct": -1.99,
+      "heure": "17h21",
+      "max_fav_pct": 0.0
+    },
+    "USD/JPY": {
+      "call": "SHORT",
+      "fav_pct": 2.47,
+      "heure": "17h21",
+      "max_fav_pct": 2.55
+    }
+  },
   "base": "emission"
 }

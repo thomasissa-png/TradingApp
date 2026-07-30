@@ -1,11 +1,17 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 30 juillet 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 30 juillet 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| jeu 30/07 | **USD/JPY** | SHORT | forte (-2.97) | 163.5 | +0.29% | +2.48% | +2.50% (en cours) | +2.72% | Oui | ✅ | — |
+| jeu 30/07 | VIX | LONG | forte (+5.14) | 21.8 | — | — | -3.30% (en cours) | +3.37% | Non | ❌ | — |
+| jeu 30/07 | Or | SHORT | faible (-0.29) | 4047 | -0.89% | — | -1.66% (en cours) | +0.34% | Non | ❌ | Les importations d'or de la Chine bondissent de 89% au premier semestre 2026, les prix ayant reculé |
+| jeu 30/07 | Cuivre | LONG | faible (+4.16) | 6.327 | +1.11% | — | +2.34% (en cours) | +2.34% | Non | ✅ | — |
+| jeu 30/07 | Cacao | LONG | faible (+2.53) | 5187 | +0.05% | — | -1.34% (en cours) | +0.00% | Non | ❌ | Cocoa prices slump due to abundant global supplies |
+| jeu 30/07 | Argent | LONG | faible (+0.06) | 57.29 | +1.37% | — | +3.42% (en cours) | +3.42% | Non | ✅ | — |
 | mer 29/07 | **Café (Arabica)** | LONG | faible (+5.02) | 339.5 | -0.98% | -3.09% | -3.77% (en cours) | +0.45% | Oui | ❌ | — |
 | mer 29/07 | VIX | LONG | forte (+5.37) | 22.05 | — | — | +2.18% (en cours) | — | Non | — | — |
 | mer 29/07 | Pétrole (Brent) | SHORT | forte (-5.24) | 84.49 | -0.81% | — | -3.36% (en cours) | — | Non | ❌ | — |

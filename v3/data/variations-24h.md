@@ -1,11 +1,18 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 31 juillet 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 31 juillet 2026, 22h16 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| ven 31/07 | **Café (Arabica)** | SHORT | forte (-4.30) | 323.1 | -0.27% | -2.06% | -2.58% (en cours) | +0.24% | Oui | ❌ | — |
+| ven 31/07 | **Argent** | LONG | forte (+5.55) | 58.63 | -1.07% | -2.04% | -1.45% (en cours) | +0.79% | Oui | ❌ | — |
+| ven 31/07 | VIX | LONG | forte (+4.29) | 21.26 | — | — | -3.57% (en cours) | +0.42% | Non | ❌ | — |
+| ven 31/07 | USD/JPY | SHORT | forte (-6.16) | 160.7 | +0.28% | — | +1.11% (en cours) | +1.40% | Non | ✅ | Intervention japonaise sur le marché des changes rapportée par les médias |
+| ven 31/07 | Pétrole (Brent) | SHORT | faible (+0.07) | 84.87 | -2.52% | — | -3.23% (en cours) | +0.21% | Non | ❌ | — |
+| ven 31/07 | Cacao | SHORT | faible (+1.31) | 5118 | -4.78% | — | -5.44% (en cours) | +0.01% | Non | ❌ | Crise du cacao au Ghana, prévisions amères pour la saison 2026/27 |
+| ven 31/07 | Blé | SHORT | faible (-3.15) | 657.3 | -0.16% | — | +2.96% (en cours) | +3.35% | Non | ✅ | — |
 | jeu 30/07 | **USD/JPY** | SHORT | forte (-2.97) | 163.5 | +0.29% | +2.48% | +2.50% (en cours) | +2.72% | Oui | ✅ | — |
 | jeu 30/07 | VIX | LONG | forte (+5.14) | 21.8 | — | — | -3.28% (en cours) | — | Non | ❌ | — |
 | jeu 30/07 | Pétrole (Brent) | SHORT | faible (+2.19) | 87.33 | -0.21% | — | +2.81% (en cours) | — | Non | ✅ | — |

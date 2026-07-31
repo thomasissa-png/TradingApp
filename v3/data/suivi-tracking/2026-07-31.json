@@ -16,14 +16,14 @@
   "18h": {
     "Argent": {
       "call": "LONG",
-      "fav_pct": -2.06,
-      "heure": "17h27",
+      "fav_pct": -2.04,
+      "heure": "18h15",
       "max_fav_pct": 0.79
     },
     "Café (Arabica)": {
       "call": "SHORT",
-      "fav_pct": -2.54,
-      "heure": "17h27",
+      "fav_pct": -2.06,
+      "heure": "18h15",
       "max_fav_pct": 0.24
     }
   },

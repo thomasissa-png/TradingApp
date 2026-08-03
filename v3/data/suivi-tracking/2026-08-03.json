@@ -2,14 +2,14 @@
   "12h": {
     "Argent": {
       "call": "LONG",
-      "fav_pct": 0.0,
-      "heure": "12h03",
+      "fav_pct": -0.03,
+      "heure": "12h15",
       "max_fav_pct": 0.28
     },
     "EUR/USD": {
       "call": "LONG",
       "fav_pct": -0.09,
-      "heure": "12h03",
+      "heure": "12h15",
       "max_fav_pct": 0.14
     }
   },

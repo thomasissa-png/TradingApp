@@ -1,6 +1,6 @@
 # Santé des critères
 
-_Cycle : 2026-08-03 05:23 UTC_
+_Cycle : 2026-08-04 05:23 UTC_
 
 **Synthèse** : 44 motifs de skip distincts, 73 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 
@@ -22,7 +22,6 @@ _Cycle : 2026-08-03 05:23 UTC_
 | 1 | composite_partial | `hf_positioning_flux_options` |
 | 1 | hors_fenetre | `eia_crude_surprise` |
 | 1 | hors_fenetre | `grindings_q` |
-| 1 | hors_fenetre | `nass_crop_progress` |
 | 1 | hors_fenetre | `usda_wasde_stocks_to_use` |
 | 1 | Source linéaire non programmatique | `breadth_cac_ma50` |
 | 1 | Source linéaire non programmatique | `brent_term_structure_m1m2` |
@@ -44,6 +43,7 @@ _Cycle : 2026-08-03 05:23 UTC_
 | 1 | Source z-score non programmatique | `egypte_gasc_tenders` |
 | 1 | Source z-score non programmatique | `inventaires_comex_silver` |
 | 1 | Source z-score non programmatique | `inventaires_lme_shfe_5j` |
+| 1 | Source z-score non programmatique | `nass_crop_progress` |
 | 1 | Source z-score non programmatique | `nass_crop_progress_cotton` |
 | 1 | Source z-score non programmatique | `spread_arabica_robusta` |
 | 1 | Source z-score non programmatique | `spread_ny_london` |
@@ -57,10 +57,10 @@ _La source réseau a échoué ce cycle ; pour éviter un n/a qui ferait chuter l
 
 | Critère | Âge (j ouvrés) | Cause de l'échec source |
 |---|---:|---|
-| ⚠️ `eia_crude_surprise` | 1 | hors_fenetre — eia_crude_surprise |
-| ⚠️ `meteo_bresil_canne_sucre` | 2 | source réseau indisponible |
-| ⚠️ `meteo_ci_ghana_precip_30j` | 1 | source réseau indisponible |
-| ⚠️ `meteo_inde_gujarat_coton` | 1 | source réseau indisponible |
+| ⚠️ `eia_crude_surprise` | 2 | hors_fenetre — eia_crude_surprise |
+| ⚠️ `meteo_bresil_canne_sucre` | 3 | source réseau indisponible |
+| ⚠️ `meteo_ci_ghana_precip_30j` | 2 | source réseau indisponible |
+| ⚠️ `meteo_inde_gujarat_coton` | 2 | source réseau indisponible |
 
 ## Provenance des prix (source réellement utilisée ce cycle)
 

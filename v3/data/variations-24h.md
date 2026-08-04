@@ -1,16 +1,22 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 4 août 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 4 août 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mar 04/08 | **Cacao** | LONG | forte (+9.53) | 5938 | -1.41% | +0.22% | +2.58% (en cours) | +2.58% | Oui | ✅ | Le 2e producteur mondial de cacao avertit d'une baisse de production de 16%, risque de hausse des prix du chocolat |
+| mar 04/08 | VIX | LONG | faible (+0.52) | 20.21 | — | — | +1.14% (en cours) | +0.35% | Non | — | — |
+| mar 04/08 | Pétrole (Brent) | SHORT | faible (-6.36) | 84.31 | -0.76% | — | +6.69% (en cours) | +6.69% ⚠️ | Non | ✅ | — |
+| mar 04/08 | Café (Arabica) | SHORT | faible (-6.07) | 319.5 | -2.10% | — | -1.10% (en cours) | +0.01% | Non | ❌ | — |
+| mar 04/08 | Blé | LONG | faible (+0.27) | 651.8 | +0.57% | — | -2.09% (en cours) | +0.69% | Non | ❌ | — |
+| mar 04/08 | Argent | LONG | forte (+4.00) | 58.94 | -0.69% | — | +1.11% (en cours) | +1.52% | Non | ✅ | — |
 | lun 03/08 | **Argent** | LONG | forte (+2.97) | 58.19 | -0.03% | -1.29% | -0.22% (en cours) | +0.28% | Oui | ✅ | — |
 | lun 03/08 | Pétrole (Brent) | SHORT | forte (-16.94) | 82.88 | -0.50% | — | -1.73% (en cours) | — | Non | ❌ | — |
 | lun 03/08 | Cuivre | LONG | forte (+2.90) | 6.516 | -0.42% | — | +1.12% (en cours) | — | Non | ✅ | — |
 | lun 03/08 | Café (Arabica) | SHORT | forte (-0.98) | 332.2 | +2.11% | — | +3.84% (en cours) | — | Non | ✅ | — |
-| lun 03/08 | Cacao | LONG | faible (+3.45) | 5399 | +2.93% | — | +9.98% (en cours) | — | Non | ✅ | Le 2e producteur mondial de cacao avertit d'une baisse de production de 16%, risque de hausse des prix du chocolat |
+| lun 03/08 | Cacao | LONG | faible (+3.45) | 5399 | +2.93% | — | +9.98% (en cours) | — | Non | ✅ | — |
 | lun 03/08 | CAC 40 | LONG | forte (+1.33) | 8510 | +1.27% | — | +1.22% (en cours) | — | Non | ✅ | — |
 | lun 03/08 | Blé | SHORT | faible (-2.33) | 636.5 | -0.62% | — | -2.41% (en cours) | — | Non | ❌ | Risques sur les exportations de la mer Noire, blé au plus haut depuis mai 2024 |
 | ven 31/07 | **Café (Arabica)** | SHORT | forte (-4.30) | 323.1 | -0.27% | -2.06% | +1.13% | +0.24% | Oui | ✅ | — |

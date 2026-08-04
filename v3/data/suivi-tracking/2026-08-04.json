@@ -16,20 +16,20 @@
   "18h": {
     "CAC 40": {
       "call": "LONG",
-      "fav_pct": 0.38,
-      "heure": "17h33",
-      "max_fav_pct": 0.41
+      "fav_pct": 0.61,
+      "heure": "18h15",
+      "max_fav_pct": 0.61
     },
     "Cacao": {
       "call": "LONG",
-      "fav_pct": -0.95,
-      "heure": "17h33",
+      "fav_pct": 0.22,
+      "heure": "18h15",
       "max_fav_pct": 1.98
     },
     "Sucre": {
       "call": "LONG",
       "fav_pct": 0.61,
-      "heure": "17h33",
+      "heure": "18h15",
       "max_fav_pct": 0.86
     }
   },

@@ -1,0 +1,17 @@
+{
+  "12h": {
+    "CAC 40": {
+      "call": "LONG",
+      "fav_pct": -0.03,
+      "heure": "12h15",
+      "max_fav_pct": 0.37
+    },
+    "Cacao": {
+      "call": "LONG",
+      "fav_pct": -1.41,
+      "heure": "12h15",
+      "max_fav_pct": 1.98
+    }
+  },
+  "base": "emission"
+}

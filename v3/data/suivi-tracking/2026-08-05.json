@@ -1,0 +1,17 @@
+{
+  "12h": {
+    "Argent": {
+      "call": "LONG",
+      "fav_pct": 0.55,
+      "heure": "12h15",
+      "max_fav_pct": 1.53
+    },
+    "Cacao": {
+      "call": "LONG",
+      "fav_pct": 4.16,
+      "heure": "12h15",
+      "max_fav_pct": 4.16
+    }
+  },
+  "base": "emission"
+}

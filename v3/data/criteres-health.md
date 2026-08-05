@@ -1,6 +1,6 @@
 # Santé des critères
 
-_Cycle : 2026-08-04 05:23 UTC_
+_Cycle : 2026-08-05 05:23 UTC_
 
 **Synthèse** : 44 motifs de skip distincts, 73 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 
@@ -57,10 +57,10 @@ _La source réseau a échoué ce cycle ; pour éviter un n/a qui ferait chuter l
 
 | Critère | Âge (j ouvrés) | Cause de l'échec source |
 |---|---:|---|
-| ⚠️ `eia_crude_surprise` | 2 | hors_fenetre — eia_crude_surprise |
-| ⚠️ `meteo_bresil_canne_sucre` | 3 | source réseau indisponible |
-| ⚠️ `meteo_ci_ghana_precip_30j` | 2 | source réseau indisponible |
-| ⚠️ `meteo_inde_gujarat_coton` | 2 | source réseau indisponible |
+| ⚠️ `eia_crude_surprise` | 3 | hors_fenetre — eia_crude_surprise |
+| ⚠️ `meteo_bresil_canne_sucre` | 4 | source réseau indisponible |
+| ⚠️ `meteo_ci_ghana_precip_30j` | 3 | source réseau indisponible |
+| ⚠️ `meteo_inde_gujarat_coton` | 3 | source réseau indisponible |
 
 ## Provenance des prix (source réellement utilisée ce cycle)
 

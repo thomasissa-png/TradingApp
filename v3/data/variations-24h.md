@@ -1,11 +1,17 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 5 août 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 5 août 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mer 05/08 | **Cacao** | LONG | forte (+9.32) | 5923 | +4.16% | -0.43% | -1.22% (en cours) | +4.36% | Oui | ❌ | — |
+| mer 05/08 | **Argent** | LONG | forte (+10.30) | 60.91 | +0.55% | +1.61% | +1.93% (en cours) | +2.34% | Oui | ✅ | — |
+| mer 05/08 | VIX | SHORT | faible (-0.01) | 20.09 | — | — | +1.57% (en cours) | +1.44% | Non | — | — |
+| mer 05/08 | Or | LONG | forte (+5.99) | 4139 | -0.54% | — | +2.66% (en cours) | +2.96% | Non | ✅ | Les États-Unis ont épuisé presque tous leurs missiles de précision longue portée pendant la guerre avec l'Iran, selon des sources |
+| mer 05/08 | Cuivre | LONG | forte (+13.08) | 6.62 | -0.05% | — | +1.45% (en cours) | +1.62% | Non | ✅ | Le cuivre proche de records, course US-Chine pour les métaux IA, stocks en chute |
+| mer 05/08 | Blé | SHORT | faible (-3.08) | 636.3 | -0.61% | — | -1.19% (en cours) | +0.17% | Non | ❌ | L'USDA prévoit une baisse de la production et des stocks mondiaux de céréales |
 | mar 04/08 | VIX | LONG | faible (+0.52) | 20.21 | — | — | +1.04% (en cours) | — | Non | — | — |
 | mar 04/08 | Pétrole (Brent) | SHORT | faible (-6.36) | 84.31 | -0.76% | — | +7.42% (en cours) | — | Non | ✅ | — |
 | mar 04/08 | Or | LONG | forte (+2.31) | 4063 | -0.37% | — | +1.86% (en cours) | — | Non | ✅ | — |

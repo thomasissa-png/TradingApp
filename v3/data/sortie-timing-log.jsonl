@@ -77,3 +77,6 @@
 {"date": "2026-08-04", "actif": "CAC 40", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 0.61, "pic_heure": "clôture", "cloture_pct": 0.61, "max_gain_pct": 0.61, "ko_virtuel": false, "pari_mur": false}
 {"date": "2026-08-04", "actif": "Cacao", "call": "LONG", "categorie": "trop_tot", "pic_pct": 2.58, "pic_heure": "clôture", "cloture_pct": 2.58, "max_gain_pct": 2.58, "ko_virtuel": false, "pari_mur": false}
 {"date": "2026-08-04", "actif": "Sucre", "call": "LONG", "categorie": "trop_tard", "pic_pct": 0.61, "pic_heure": "18h", "cloture_pct": -0.1, "max_gain_pct": 0.25, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-08-05", "actif": "Argent", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 1.93, "pic_heure": "clôture", "cloture_pct": 1.93, "max_gain_pct": 2.34, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-08-05", "actif": "Cacao", "call": "LONG", "categorie": "trop_tard", "pic_pct": 4.16, "pic_heure": "12h", "cloture_pct": -1.22, "max_gain_pct": 4.36, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-08-05", "actif": "Sucre", "call": "LONG", "categorie": "trop_tard", "pic_pct": 1.06, "pic_heure": "18h", "cloture_pct": 0.25, "max_gain_pct": 0.4, "ko_virtuel": false, "pari_mur": false}

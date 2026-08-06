@@ -13,5 +13,25 @@
       "max_fav_pct": 0.08
     }
   },
+  "18h": {
+    "Argent": {
+      "call": "LONG",
+      "fav_pct": -0.97,
+      "heure": "17h25",
+      "max_fav_pct": 1.23
+    },
+    "Sucre": {
+      "call": "LONG",
+      "fav_pct": 1.0,
+      "heure": "17h25",
+      "max_fav_pct": 1.0
+    },
+    "USD/JPY": {
+      "call": "LONG",
+      "fav_pct": 0.41,
+      "heure": "17h25",
+      "max_fav_pct": 0.42
+    }
+  },
   "base": "emission"
 }

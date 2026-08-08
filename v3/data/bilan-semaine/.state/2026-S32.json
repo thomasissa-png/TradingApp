@@ -1,0 +1,49 @@
+{
+  "iso": "2026-S32",
+  "candidates_faibles": [
+    [
+      "Blé",
+      "24h"
+    ],
+    [
+      "CAC 40",
+      "24h"
+    ],
+    [
+      "Cacao",
+      "24h"
+    ],
+    [
+      "Café (Arabica)",
+      "24h"
+    ],
+    [
+      "Coton",
+      "24h"
+    ],
+    [
+      "EUR/USD",
+      "24h"
+    ],
+    [
+      "Nasdaq",
+      "24h"
+    ],
+    [
+      "Or",
+      "24h"
+    ],
+    [
+      "Pétrole (Brent)",
+      "24h"
+    ],
+    [
+      "USD/JPY",
+      "24h"
+    ],
+    [
+      "VIX",
+      "24h"
+    ]
+  ]
+}

@@ -2,9 +2,9 @@
   "12h": {
     "USD/JPY": {
       "call": "LONG",
-      "fav_pct": 0.26,
-      "heure": "11h44",
-      "max_fav_pct": 0.26
+      "fav_pct": 0.32,
+      "heure": "12h15",
+      "max_fav_pct": 0.32
     }
   },
   "base": "emission"

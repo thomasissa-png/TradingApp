@@ -1,11 +1,16 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 10 août 2026, 07h32 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 10 août 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| lun 10/08 | Pétrole (Brent) | LONG | forte (+4.99) | 83.49 | +0.86% | — | +4.03% (en cours) | +4.03% | Non | ✅ | — |
+| lun 10/08 | Or | LONG | forte (+7.23) | 4334 | -0.17% | — | +1.30% (en cours) | +1.30% | Non | ✅ | — |
+| lun 10/08 | Cacao | SHORT | faible (+1.70) | 5784 | +1.55% | — | -2.11% (en cours) | +2.37% | Non | ❌ | El Niño et fortes pluies au Ghana créent un marché haussier pour le cacao |
+| lun 10/08 | Blé | LONG | faible (+1.12) | 652.1 | -0.41% | — | -1.95% (en cours) | +9.27% ⚠️ | Non | ❌ | — |
+| lun 10/08 | Argent | LONG | forte (+6.13) | 63.71 | -0.31% | — | +3.18% (en cours) | +3.18% | Non | ✅ | — |
 | ven 07/08 | **Sucre** | LONG | forte (+11.47) | 10.45 | — | +3.88% | +1.77% (en cours) | +1.87% | Oui | ✅ | Production de sucre du Brésil plus faible que prévu, prix du sucre en hausse |
 | ven 07/08 | **Café (Arabica)** | SHORT | forte (-12.61) | 306.2 | -0.15% | -3.87% | -2.41% (en cours) | +0.05% | Oui | ❌ | — |
 | ven 07/08 | **Argent** | LONG | forte (+10.98) | 62.31 | +3.31% | +1.96% | +1.94% (en cours) | +3.88% | Oui | ✅ | — |

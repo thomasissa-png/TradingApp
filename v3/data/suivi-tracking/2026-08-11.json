@@ -2,14 +2,14 @@
   "12h": {
     "Argent": {
       "call": "LONG",
-      "fav_pct": -0.34,
-      "heure": "11h38",
+      "fav_pct": -0.3,
+      "heure": "12h15",
       "max_fav_pct": 1.88
     },
     "Or": {
       "call": "LONG",
       "fav_pct": -0.44,
-      "heure": "11h38",
+      "heure": "12h15",
       "max_fav_pct": 0.86
     }
   },

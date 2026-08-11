@@ -1,11 +1,14 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 11 août 2026, 07h28 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 11 août 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mar 11/08 | Pétrole (Brent) | LONG | forte (+4.76) | 86.99 | +1.88% | — | +1.12% (en cours) | +2.04% | Non | ✅ | — |
+| mar 11/08 | Cacao | LONG | forte (+2.03) | 5824 | -1.21% | — | -5.10% (en cours) | +1.41% | Non | ❌ | — |
+| mar 11/08 | Blé | LONG | faible (+5.97) | 642.4 | +0.13% | — | -1.86% (en cours) | +0.46% | Non | ❌ | — |
 | lun 10/08 | Pétrole (Brent) | LONG | forte (+4.99) | 83.49 | +0.86% | — | +4.15% (en cours) | — | Non | ✅ | — |
 | lun 10/08 | Or | LONG | forte (+7.23) | 4334 | -0.17% | — | +1.35% (en cours) | — | Non | ✅ | — |
 | lun 10/08 | Blé | LONG | faible (+1.12) | 652.1 | -0.41% | — | -1.48% (en cours) | — | Non | ❌ | — |

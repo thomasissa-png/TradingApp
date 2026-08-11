@@ -13,5 +13,25 @@
       "max_fav_pct": 0.86
     }
   },
+  "18h": {
+    "Argent": {
+      "call": "LONG",
+      "fav_pct": -0.47,
+      "heure": "17h27",
+      "max_fav_pct": 1.88
+    },
+    "Or": {
+      "call": "LONG",
+      "fav_pct": -0.21,
+      "heure": "17h27",
+      "max_fav_pct": 0.86
+    },
+    "Sucre": {
+      "call": "LONG",
+      "fav_pct": 0.79,
+      "heure": "17h27",
+      "max_fav_pct": 0.89
+    }
+  },
   "base": "emission"
 }

@@ -17,19 +17,19 @@
     "Or": {
       "call": "LONG",
       "fav_pct": 0.65,
-      "heure": "17h27",
+      "heure": "18h15",
       "max_fav_pct": 0.91
     },
     "Sucre": {
       "call": "LONG",
-      "fav_pct": -0.09,
-      "heure": "17h27",
+      "fav_pct": -0.74,
+      "heure": "18h15",
       "max_fav_pct": 0.18
     },
     "USD/JPY": {
       "call": "LONG",
-      "fav_pct": -0.13,
-      "heure": "17h27",
+      "fav_pct": -0.09,
+      "heure": "18h15",
       "max_fav_pct": 0.0
     }
   },

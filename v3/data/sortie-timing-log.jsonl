@@ -92,3 +92,6 @@
 {"date": "2026-08-12", "actif": "Or", "call": "LONG", "categorie": "trop_tard", "pic_pct": 0.65, "pic_heure": "18h", "cloture_pct": 0.31, "max_gain_pct": 0.91, "ko_virtuel": false, "pari_mur": false}
 {"date": "2026-08-12", "actif": "Sucre", "call": "LONG", "categorie": "sans_objet", "pic_pct": -0.74, "pic_heure": "18h", "cloture_pct": -1.57, "max_gain_pct": 0.0, "ko_virtuel": false, "pari_mur": false}
 {"date": "2026-08-12", "actif": "USD/JPY", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 0.04, "pic_heure": "clôture", "cloture_pct": 0.04, "max_gain_pct": 0.05, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-08-13", "actif": "Blé", "call": "LONG", "categorie": "trop_tard", "pic_pct": 0.16, "pic_heure": "12h", "cloture_pct": -0.18, "max_gain_pct": 0.68, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-08-13", "actif": "Or", "call": "LONG", "categorie": "sans_objet", "pic_pct": -0.54, "pic_heure": "12h", "cloture_pct": -1.28, "max_gain_pct": 0.48, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-08-13", "actif": "USD/JPY", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 0.13, "pic_heure": "clôture", "cloture_pct": 0.13, "max_gain_pct": 0.13, "ko_virtuel": false, "pari_mur": false}

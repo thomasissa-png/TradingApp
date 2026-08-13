@@ -2,20 +2,20 @@
   "12h": {
     "Blé": {
       "call": "LONG",
-      "fav_pct": -0.12,
-      "heure": "11h22",
-      "max_fav_pct": 0.0
+      "fav_pct": 0.16,
+      "heure": "12h15",
+      "max_fav_pct": 0.19
     },
     "Or": {
       "call": "LONG",
-      "fav_pct": -0.57,
-      "heure": "11h22",
+      "fav_pct": -0.54,
+      "heure": "12h15",
       "max_fav_pct": 0.48
     },
     "USD/JPY": {
       "call": "LONG",
-      "fav_pct": 0.03,
-      "heure": "11h22",
+      "fav_pct": 0.01,
+      "heure": "12h15",
       "max_fav_pct": 0.07
     }
   },

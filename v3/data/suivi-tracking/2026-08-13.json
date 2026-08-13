@@ -19,5 +19,25 @@
       "max_fav_pct": 0.07
     }
   },
+  "18h": {
+    "Blé": {
+      "call": "LONG",
+      "fav_pct": -0.22,
+      "heure": "17h35",
+      "max_fav_pct": 0.68
+    },
+    "Or": {
+      "call": "LONG",
+      "fav_pct": -1.06,
+      "heure": "17h35",
+      "max_fav_pct": 0.48
+    },
+    "USD/JPY": {
+      "call": "LONG",
+      "fav_pct": 0.02,
+      "heure": "17h35",
+      "max_fav_pct": 0.07
+    }
+  },
   "base": "emission"
 }

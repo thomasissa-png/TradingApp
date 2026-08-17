@@ -13,5 +13,25 @@
       "max_fav_pct": 0.96
     }
   },
+  "18h": {
+    "CAC 40": {
+      "call": "SHORT",
+      "fav_pct": 0.66,
+      "heure": "17h56",
+      "max_fav_pct": 0.66
+    },
+    "Nasdaq": {
+      "call": "LONG",
+      "fav_pct": 0.35,
+      "heure": "17h56",
+      "max_fav_pct": 0.45
+    },
+    "Pétrole (Brent)": {
+      "call": "LONG",
+      "fav_pct": 0.7,
+      "heure": "17h56",
+      "max_fav_pct": 1.04
+    }
+  },
   "base": "emission"
 }

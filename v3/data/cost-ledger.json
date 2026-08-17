@@ -352,5 +352,11 @@
     "calls": 255,
     "tokens_in": 636424,
     "tokens_out": 25490
+  },
+  "2026-08-17": {
+    "cost_usd": 0.09628,
+    "calls": 255,
+    "tokens_in": 635704,
+    "tokens_out": 26006
   }
 }

@@ -98,3 +98,6 @@
 {"date": "2026-08-14", "actif": "Blé", "call": "LONG", "categorie": "trop_tard", "pic_pct": 2.32, "pic_heure": "18h", "cloture_pct": 2.03, "max_gain_pct": 2.27, "ko_virtuel": false, "pari_mur": false}
 {"date": "2026-08-14", "actif": "CAC 40", "call": "SHORT", "categorie": "bien_tenu", "pic_pct": 0.16, "pic_heure": "18h", "cloture_pct": 0.16, "max_gain_pct": 0.16, "ko_virtuel": false, "pari_mur": false}
 {"date": "2026-08-14", "actif": "USD/JPY", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 0.02, "pic_heure": "clôture", "cloture_pct": 0.02, "max_gain_pct": 0.09, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-08-17", "actif": "CAC 40", "call": "SHORT", "categorie": "bien_tenu", "pic_pct": 0.66, "pic_heure": "clôture", "cloture_pct": 0.66, "max_gain_pct": 0.66, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-08-17", "actif": "Nasdaq", "call": "LONG", "categorie": "trop_tard", "pic_pct": 0.23, "pic_heure": "18h", "cloture_pct": -0.43, "max_gain_pct": 0.17, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-08-17", "actif": "Pétrole (Brent)", "call": "LONG", "categorie": "bien_tenu", "pic_pct": 2.94, "pic_heure": "clôture", "cloture_pct": 2.94, "max_gain_pct": 3.11, "ko_virtuel": false, "pari_mur": false}

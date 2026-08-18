@@ -1,11 +1,18 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 18 août 2026, 07h33 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 18 août 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mar 18/08 | **Cacao** | LONG | forte (+6.83) | 6068 | -0.32% | -2.37% | -2.38% (en cours) | +0.17% | Oui | ❌ | — |
+| mar 18/08 | Sucre | LONG | forte (+4.74) | 11.01 | — | — | +1.36% (en cours) | +1.18% | Non | ✅ | — |
+| mar 18/08 | Or | LONG | forte (+3.65) | 4389 | -0.03% | — | -1.07% (en cours) | +1.00% | Non | ❌ | — |
+| mar 18/08 | Cuivre | SHORT | forte (-1.96) | 6.566 | +0.66% | — | +1.70% (en cours) | +1.70% | Non | ✅ | Activité manufacturière chinoise en contraction inattendue en juillet, demande faible et typhons |
+| mar 18/08 | Café (Arabica) | SHORT | faible (-0.42) | 317.9 | +0.25% | — | -4.30% (en cours) | +0.17% | Non | ❌ | — |
+| mar 18/08 | Blé | LONG | faible (+7.51) | 674 | +0.85% | — | -2.01% (en cours) | +0.85% | Non | ❌ | — |
+| mar 18/08 | Argent | LONG | forte (+2.26) | 64.8 | -0.24% | — | -1.99% (en cours) | +2.46% | Non | ❌ | — |
 | lun 17/08 | **Pétrole (Brent)** | LONG | faible (+8.04) | 87.08 | +0.96% | +0.70% | +2.94% (en cours) | +3.11% | Oui | ✅ | — |
 | lun 17/08 | Sucre | LONG | forte (+1.71) | 10.74 | — | — | +1.68% (en cours) | — | Non | ✅ | — |
 | lun 17/08 | Cuivre | LONG | forte (+3.59) | 6.714 | -0.50% | — | -2.21% (en cours) | — | Non | ❌ | — |
@@ -56,7 +63,7 @@ _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Ca
 | ven 07/08 | Pétrole (Brent) | LONG | forte (+4.22) | 82.52 | -2.06% | — | +9.11% | — | Non | ✅ | — |
 | ven 07/08 | Or | LONG | forte (+9.51) | 4266 | +0.53% | — | +2.86% | — | Non | ✅ | — |
 | ven 07/08 | Nasdaq | LONG | forte (+3.27) | 718.8 | — | — | +1.54% | — | Non | ✅ | — |
-| ven 07/08 | Cuivre | LONG | forte (+9.02) | 6.711 | -0.80% | — | -2.15% | — | Non | ❌ | Activité manufacturière chinoise en contraction inattendue en juillet, demande faible et typhons |
+| ven 07/08 | Cuivre | LONG | forte (+9.02) | 6.711 | -0.80% | — | -2.15% | — | Non | ❌ | — |
 | ven 07/08 | Coton | LONG | forte (+4.40) | 2.576 | — | — | +2.81% | — | Non | ✅ | — |
 | ven 07/08 | Cacao | SHORT | faible (+0.20) | 5778 | +1.99% | — | -5.01% | — | Non | ❌ | El Niño et fortes pluies au Ghana réduisent l'offre de cacao, créant un marché haussier |
 | ven 07/08 | CAC 40 | LONG | forte (+1.75) | 8700 | +0.33% | — | -1.38% | — | Non | ❌ | Vague de chaleur et sécheresse en Europe réduisent la production nucléaire et hydroélectrique, prix de l'électricité à 500 /MWh |

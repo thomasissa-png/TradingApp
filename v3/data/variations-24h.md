@@ -1,11 +1,17 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 19 août 2026, 07h28 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 19 août 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mer 19/08 | VIX | LONG | forte (+3.67) | 18.61 | — | — | -1.59% (en cours) | +1.45% | Non | — | — |
+| mer 19/08 | Or | SHORT | forte (-2.57) | 4342 | -0.59% | — | -3.80% (en cours) | +0.20% | Non | ❌ | — |
+| mer 19/08 | Coton | LONG | forte (+4.14) | 2.69 | — | — | +1.38% (en cours) | +1.41% | Non | ✅ | — |
+| mer 19/08 | Café (Arabica) | LONG | forte (+3.61) | 332.6 | -0.72% | — | -1.34% (en cours) | +0.80% | Non | ❌ | — |
+| mer 19/08 | Blé | LONG | faible (+4.89) | 667.2 | -0.30% | — | +1.82% (en cours) | +2.08% | Non | ✅ | Tensions en mer Noire et sécheresses régionales font monter les prix mondiaux du blé |
+| mer 19/08 | Argent | SHORT | forte (-3.80) | 62.77 | -0.96% | — | -5.70% (en cours) | +0.12% | Non | ❌ | — |
 | mar 18/08 | **Cacao** | LONG | forte (+6.83) | 6068 | -0.32% | -2.37% | -2.38% (en cours) | +0.17% | Oui | ❌ | — |
 | mar 18/08 | Sucre | LONG | forte (+4.74) | 11.01 | — | — | +1.45% (en cours) | — | Non | ✅ | — |
 | mar 18/08 | Or | LONG | forte (+3.65) | 4389 | -0.03% | — | -1.07% (en cours) | — | Non | ❌ | — |
@@ -55,7 +61,7 @@ _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Ca
 | mer 12/08 | Café (Arabica) | SHORT | faible (-2.64) | 315.9 | -0.77% | — | -5.30% | — | Non | ❌ | — |
 | mer 12/08 | Cacao | SHORT | faible (+0.86) | 5656 | -1.46% | — | -4.64% | — | Non | ❌ | — |
 | mer 12/08 | CAC 40 | SHORT | faible (-0.12) | 8715 | +0.15% | — | +2.36% | — | Non | ✅ | — |
-| mer 12/08 | Blé | LONG | faible (+4.59) | 639.8 | +1.43% | — | +4.29% | — | Non | ✅ | Tensions en mer Noire et sécheresses régionales font monter les prix mondiaux du blé |
+| mer 12/08 | Blé | LONG | faible (+4.59) | 639.8 | +1.43% | — | +4.29% | — | Non | ✅ | — |
 | mer 12/08 | Argent | LONG | forte (+5.62) | 65.1 | +1.69% | — | -3.58% | — | Non | ❌ | — |
 | mar 11/08 | **Sucre** | LONG | forte (+13.35) | 10.82 | — | +0.56% | +3.23% | +0.00% | Oui | ✅ | — |
 | mar 11/08 | **Or** | LONG | forte (+9.70) | 4393 | -0.44% | -0.30% | -1.16% | +0.86% | Oui | ❌ | — |

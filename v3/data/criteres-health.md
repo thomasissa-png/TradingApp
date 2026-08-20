@@ -1,8 +1,8 @@
 # Santé des critères
 
-_Cycle : 2026-08-19 05:23 UTC_
+_Cycle : 2026-08-20 05:23 UTC_
 
-**Synthèse** : 43 motifs de skip distincts, 72 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
+**Synthèse** : 42 motifs de skip distincts, 71 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 
 | Occurrences | Motif | Détail (cause exacte) |
 |---:|---|---|
@@ -20,7 +20,6 @@ _Cycle : 2026-08-19 05:23 UTC_
 | 1 | CBOE non câblé (Put/Call sans CSV public) | `vix_risk_usdjpy` |
 | 1 | composite_no_subsource | `demande_pv_mining_strikes` |
 | 1 | composite_partial | `hf_positioning_flux_options` |
-| 1 | hors_fenetre | `eia_crude_surprise` |
 | 1 | hors_fenetre | `grindings_q` |
 | 1 | hors_fenetre | `usda_wasde_stocks_to_use` |
 | 1 | Source linéaire non programmatique | `breadth_cac_ma50` |
@@ -56,9 +55,8 @@ _La source réseau a échoué ce cycle ; pour éviter un n/a qui ferait chuter l
 
 | Critère | Âge (j ouvrés) | Cause de l'échec source |
 |---|---:|---|
-| ⚠️ `eia_crude_surprise` | 3 | hors_fenetre — eia_crude_surprise |
-| ⚠️ `meteo_bresil_canne_sucre` | 1 | source réseau indisponible |
-| ⚠️ `meteo_ci_ghana_precip_30j` | 1 | source réseau indisponible |
+| ⚠️ `meteo_bresil_canne_sucre` | 2 | source réseau indisponible |
+| ⚠️ `meteo_ci_ghana_precip_30j` | 2 | source réseau indisponible |
 
 ## Provenance des prix (source réellement utilisée ce cycle)
 

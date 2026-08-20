@@ -1,11 +1,14 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 20 août 2026, 07h29 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 20 août 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| jeu 20/08 | **Sucre** | LONG | forte (+9.60) | 11.47 | — | -0.31% | -2.48% (en cours) | +0.00% | Oui | ❌ | — |
+| jeu 20/08 | **Argent** | LONG | forte (+5.11) | 67 | -0.09% | +1.69% | +1.75% (en cours) | +2.08% | Oui | ✅ | — |
+| jeu 20/08 | Pétrole (Brent) | LONG | forte (+4.85) | 90.06 | +1.66% | — | +2.01% (en cours) | +2.84% | Non | ✅ | — |
 | mer 19/08 | **Cacao** | LONG | faible (+4.62) | 5918 | +0.28% | +1.67% | +0.26% (en cours) | +2.47% | Oui | ✅ | Deux récoltes et El Nino menacent l'offre de cacao |
 | mer 19/08 | VIX | LONG | forte (+3.67) | 18.61 | — | — | -1.64% (en cours) | — | Non | — | — |
 | mer 19/08 | Or | SHORT | forte (-2.57) | 4342 | -0.59% | — | -3.28% (en cours) | — | Non | ❌ | — |

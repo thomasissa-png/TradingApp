@@ -22,21 +22,21 @@
   "18h": {
     "Argent": {
       "call": "LONG",
-      "fav_pct": 0.36,
-      "heure": "17h06",
+      "fav_pct": 0.85,
+      "heure": "18h15",
       "max_fav_pct": 1.36
     },
     "EUR/USD": {
       "call": "LONG",
-      "fav_pct": -0.14,
-      "heure": "17h06",
+      "fav_pct": -0.07,
+      "heure": "18h15",
       "max_fav_pct": 0.12
     },
     "Or": {
       "call": "LONG",
-      "fav_pct": 1.33,
-      "heure": "17h06",
-      "max_fav_pct": 1.42
+      "fav_pct": 1.82,
+      "heure": "18h15",
+      "max_fav_pct": 1.82
     }
   },
   "base": "emission"

@@ -1,11 +1,14 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 21 août 2026, 07h28 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 21 août 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| ven 21/08 | **Or** | LONG | forte (+9.68) | 4533 | +1.04% | +1.82% | +1.86% (en cours) | +2.10% | Oui | ✅ | Frappes russes massives sur Kiev, infrastructures critiques touchées, 17 morts |
+| ven 21/08 | Café (Arabica) | SHORT | faible (-0.96) | 329.3 | -0.42% | — | +1.30% (en cours) | +1.46% | Non | ✅ | — |
+| ven 21/08 | Cacao | LONG | faible (+4.79) | 6066 | -0.46% | — | -1.36% (en cours) | +0.00% | Non | ❌ | — |
 | jeu 20/08 | **Sucre** | LONG | forte (+9.60) | 11.47 | — | -0.31% | -2.48% (en cours) | +0.00% | Oui | ❌ | — |
 | jeu 20/08 | **Argent** | LONG | forte (+5.11) | 67 | -0.09% | +1.69% | +1.75% (en cours) | +2.08% | Oui | ✅ | — |
 | jeu 20/08 | Pétrole (Brent) | LONG | forte (+4.85) | 90.06 | +1.66% | — | +1.93% (en cours) | — | Non | ✅ | — |

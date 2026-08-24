@@ -2,14 +2,14 @@
   "12h": {
     "Or": {
       "call": "LONG",
-      "fav_pct": -0.13,
-      "heure": "11h01",
+      "fav_pct": 0.09,
+      "heure": "12h15",
       "max_fav_pct": 0.12
     },
     "Pétrole (Brent)": {
       "call": "LONG",
-      "fav_pct": -0.36,
-      "heure": "11h01",
+      "fav_pct": -0.33,
+      "heure": "12h15",
       "max_fav_pct": 0.57
     }
   },

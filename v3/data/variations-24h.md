@@ -1,11 +1,16 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 25 août 2026, 07h28 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 25 août 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mar 25/08 | **Coton** | LONG | forte (+4.00) | 2.706 | — | -0.65% | +1.07% (en cours) | +0.92% | Oui | ✅ | La ceinture cotonnière du nord de l'Inde se réduit de 23%, le Pendjab le plus touché |
+| mar 25/08 | Pétrole (Brent) | LONG | faible (+9.13) | 90.5 | -2.16% | — | -5.77% (en cours) | +0.53% | Non | ❌ | — |
+| mar 25/08 | Cuivre | SHORT | forte (-1.41) | 6.595 | -0.56% | — | -1.70% (en cours) | +0.29% | Non | ❌ | Le cuivre proche de records, course US-Chine pour les métaux IA, stocks en chute |
+| mar 25/08 | Café (Arabica) | LONG | faible (+3.32) | 341.7 | -1.18% | — | -1.99% (en cours) | +0.06% | Non | ❌ | — |
+| mar 25/08 | Cacao | LONG | forte (+2.53) | 5947 | -1.87% | — | -1.68% (en cours) | +0.01% | Non | ❌ | — |
 | lun 24/08 | Sucre | LONG | forte (+4.75) | 11.14 | — | — | +1.17% (en cours) | — | Non | — | — |
 | lun 24/08 | Café (Arabica) | SHORT | faible (-1.53) | 322.8 | -0.57% | — | -5.87% (en cours) | — | Non | ❌ | — |
 | lun 24/08 | Cacao | LONG | faible (+3.42) | 6036 | -1.50% | — | -1.48% (en cours) | — | Non | ❌ | — |
@@ -20,7 +25,7 @@ _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Ca
 | jeu 20/08 | VIX | LONG | forte (+1.68) | 18.46 | — | — | -1.14% | — | Non | — | — |
 | jeu 20/08 | Or | LONG | forte (+3.47) | 4485 | -0.04% | — | +3.58% | — | Non | ✅ | Frappes de missiles russes sur Kyiv et sa région, au moins 8 morts |
 | jeu 20/08 | Nasdaq | LONG | forte (+2.55) | 713.4 | — | — | -1.01% | — | Non | ❌ | — |
-| jeu 20/08 | Cuivre | SHORT | forte (-11.76) | 6.472 | +0.34% | — | -1.90% | — | Non | ❌ | Le cuivre proche de records, course US-Chine pour les métaux IA, stocks en chute |
+| jeu 20/08 | Cuivre | SHORT | forte (-11.76) | 6.472 | +0.34% | — | -1.90% | — | Non | ❌ | — |
 | jeu 20/08 | Café (Arabica) | LONG | faible (+1.71) | 328.1 | -1.15% | — | +4.14% | — | Non | ✅ | — |
 | jeu 20/08 | Cacao | LONG | faible (+3.32) | 6034 | -2.73% | — | -1.44% | — | Non | ❌ | — |
 | mer 19/08 | VIX | LONG | forte (+3.67) | 18.61 | — | — | -1.91% | — | Non | — | — |

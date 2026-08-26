@@ -1,11 +1,15 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 26 août 2026, 08h01 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 26 août 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mer 26/08 | Cuivre | LONG | forte (+8.93) | 6.759 | -0.82% | — | -2.41% (en cours) | +0.00% | Non | ❌ | Inflation australienne supérieure aux attentes en juillet, renforce les paris de hausse de taux RBA |
+| mer 26/08 | Café (Arabica) | LONG | faible (+1.92) | 335.7 | -1.59% | — | -4.32% (en cours) | +0.00% | Non | ❌ | — |
+| mer 26/08 | Blé | LONG | faible (+8.49) | 694.8 | +0.46% | — | +5.12% (en cours) | +16.58% ⚠️ | Non | ✅ | Tensions en mer Noire et sécheresses régionales font monter les prix mondiaux du blé |
+| mer 26/08 | Argent | LONG | forte (+1.99) | 69.2 | -0.67% | — | -1.59% (en cours) | +0.36% | Non | ❌ | — |
 | mar 25/08 | Pétrole (Brent) | LONG | faible (+9.13) | 90.5 | -2.16% | — | -5.07% (en cours) | — | Non | ❌ | — |
 | mar 25/08 | Cuivre | SHORT | forte (-1.41) | 6.595 | -0.56% | — | -2.48% (en cours) | — | Non | ❌ | Le cuivre proche de records, course US-Chine pour les métaux IA, stocks en chute |
 | mar 25/08 | Café (Arabica) | LONG | faible (+3.32) | 341.7 | -1.18% | — | -1.78% (en cours) | — | Non | ❌ | — |
@@ -24,7 +28,7 @@ _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Ca
 | ven 21/08 | Coton | LONG | forte (+6.82) | 2.767 | — | — | -1.30% | — | Non | ❌ | — |
 | ven 21/08 | Café (Arabica) | SHORT | faible (-0.96) | 329.3 | -0.42% | — | -1.94% | — | Non | ❌ | — |
 | ven 21/08 | Cacao | LONG | faible (+4.79) | 6066 | -0.46% | — | -3.93% | — | Non | ❌ | — |
-| ven 21/08 | Blé | LONG | faible (+10.31) | 685.7 | -0.45% | — | +1.32% | — | Non | ✅ | Tensions en mer Noire et sécheresses régionales font monter les prix mondiaux du blé |
+| ven 21/08 | Blé | LONG | faible (+10.31) | 685.7 | -0.45% | — | +1.32% | — | Non | ✅ | — |
 | jeu 20/08 | **Sucre** | LONG | forte (+9.60) | 11.47 | — | -0.31% | -3.14% | +0.00% | Oui | ❌ | — |
 | jeu 20/08 | **Coton** | LONG | forte (+6.28) | 2.773 | — | +1.14% | -1.51% | +0.00% | Oui | ❌ | — |
 | jeu 20/08 | **Argent** | LONG | forte (+5.11) | 67 | -0.09% | +1.69% | +3.29% | +2.08% | Oui | ✅ | — |

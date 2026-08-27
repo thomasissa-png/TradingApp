@@ -1,11 +1,15 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 27 août 2026, 07h28 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 27 août 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| jeu 27/08 | **CAC 40** | SHORT | forte (-5.40) | 8462 | +0.97% | +1.68% | +1.68% (en cours) | +1.68% | Oui | ✅ | — |
+| jeu 27/08 | Pétrole (Brent) | LONG | forte (+5.72) | 86.24 | +1.40% | — | +2.51% (en cours) | +2.79% | Non | ✅ | — |
+| jeu 27/08 | Café (Arabica) | SHORT | forte (-5.86) | 322.3 | +3.58% | — | +3.34% (en cours) | +4.20% | Non | ✅ | — |
+| jeu 27/08 | Cacao | LONG | forte (+1.99) | 5833 | +3.73% | — | +6.86% (en cours) | +7.11% ⚠️ | Non | ✅ | Deux récoltes et El Nino menacent l'offre de cacao |
 | mer 26/08 | Cuivre | LONG | forte (+8.93) | 6.759 | -0.82% | — | -2.31% (en cours) | — | Non | ❌ | Inflation australienne supérieure aux attentes en juillet, renforce les paris de hausse de taux RBA |
 | mer 26/08 | Café (Arabica) | LONG | faible (+1.92) | 335.7 | -1.59% | — | -3.98% (en cours) | — | Non | ❌ | — |
 | mer 26/08 | Blé | LONG | faible (+8.49) | 694.8 | +0.46% | — | +5.56% (en cours) | — | Non | ✅ | Tensions en mer Noire et sécheresses régionales font monter les prix mondiaux du blé |
@@ -62,7 +66,7 @@ _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Ca
 | lun 17/08 | Cuivre | LONG | forte (+3.59) | 6.714 | -0.50% | — | -1.66% | — | Non | ❌ | — |
 | lun 17/08 | Coton | LONG | forte (+2.61) | 2.651 | — | — | +3.66% | — | Non | ✅ | — |
 | lun 17/08 | Café (Arabica) | SHORT | forte (-2.07) | 314.4 | -2.11% | — | -2.51% | — | Non | ❌ | — |
-| lun 17/08 | Cacao | LONG | forte (+2.43) | 5774 | +1.87% | — | +1.01% | — | Non | ✅ | Deux récoltes et El Nino menacent l'offre de cacao |
+| lun 17/08 | Cacao | LONG | forte (+2.43) | 5774 | +1.87% | — | +1.01% | — | Non | ✅ | — |
 | lun 17/08 | Blé | LONG | faible (+7.32) | 674.2 | -0.51% | — | +8.79% | — | Non | ✅ | — |
 | lun 17/08 | Argent | LONG | forte (+2.29) | 65.76 | -0.42% | — | +5.07% | — | Non | ✅ | — |
 | ven 14/08 | **CAC 40** | SHORT | forte (-6.37) | 8651 | -0.05% | +0.16% | +2.18% | +0.16% | Oui | ✅ | — |

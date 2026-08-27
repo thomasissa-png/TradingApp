@@ -400,5 +400,11 @@
     "calls": 255,
     "tokens_in": 635667,
     "tokens_out": 26660
+  },
+  "2026-08-27": {
+    "cost_usd": 0.096481,
+    "calls": 255,
+    "tokens_in": 636084,
+    "tokens_out": 26531
   }
 }

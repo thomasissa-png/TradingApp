@@ -1,6 +1,6 @@
 # Calibration probabiliste — Reliability Diagram
 
-- Généré : 26 août 2026, 08h01
+- Généré : 27 août 2026, 07h28
 - Méthode : ECE (Expected Calibration Error) simple, 5 bins sur proba ∈ [0.5, 1.0]
 - proba = 0.5 + clip(|score| / 15.0, 0, 0.5)  [mapping déterministe — non calibré empiriquement]
 
@@ -11,22 +11,22 @@
 - **Sous-confiant** : proba_prédite < taux_observé
 - Seuil d'alerte ECE > 0.10 : recalibration du mapping score→proba recommandée
 
-- Observations conclusives totales : 1181
-- Proba prédite moyenne : 0.7925
-- Taux observé global : 0.4691
-- **ECE = 0.3234** ⚠️ RECALIBRER (> 0.10)
+- Observations conclusives totales : 1035
+- Proba prédite moyenne : 0.7959
+- Taux observé global : 0.4483
+- **ECE = 0.3477** ⚠️ RECALIBRER (> 0.10)
 
 ## Reliability Diagram (textuel)
 
 | Bin | Proba prédite (range) | N | Proba préd. moy. | Taux observé | Ecart | ECE contrib. |
 |---|---|---|---|---|---|---|
-| 1 | [0.50, 0.60] | 223 | 0.5465 | 0.4888 | +0.0577 | 0.0109 |
-| 2 | [0.60, 0.70] | 207 | 0.6479 | 0.4493 | +0.1986 | 0.0348 |
-| 3 | [0.70, 0.80] | 168 | 0.7468 | 0.4821 | +0.2647 | 0.0376 |
-| 4 | [0.80, 0.90] | 153 | 0.8453 | 0.4641 | +0.3812 | 0.0494 |
-| 5 | [0.90, 1.00] | 430 | 0.9888 | 0.4651 | +0.5237 | 0.1907 |
+| 1 | [0.50, 0.60] | 185 | 0.5465 | 0.4919 | +0.0546 | 0.0098 |
+| 2 | [0.60, 0.70] | 181 | 0.6472 | 0.4199 | +0.2273 | 0.0398 |
+| 3 | [0.70, 0.80] | 154 | 0.7471 | 0.4675 | +0.2796 | 0.0416 |
+| 4 | [0.80, 0.90] | 134 | 0.8461 | 0.4701 | +0.3760 | 0.0487 |
+| 5 | [0.90, 1.00] | 381 | 0.9898 | 0.4252 | +0.5646 | 0.2078 |
 
-**ECE total = 0.3234**
+**ECE total = 0.3477**
 
 ## Note méthodologique
 

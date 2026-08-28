@@ -1,16 +1,21 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 28 août 2026, 07h28 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 28 août 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| ven 28/08 | **Café (Arabica)** | SHORT | forte (-12.91) | 309.6 | -0.46% | -1.49% | -1.02% (en cours) | -0.00% | Oui | ❌ | — |
+| ven 28/08 | **Cacao** | LONG | forte (+7.06) | 6175 | +3.18% | +7.22% | +7.51% (en cours) | +7.51% ⚠️ | Oui | ✅ | Deux récoltes et El Nino menacent l'offre de cacao |
+| ven 28/08 | Or | SHORT | forte (-4.44) | 4583 | -0.57% | — | +2.70% (en cours) | +2.79% | Non | ✅ | — |
+| ven 28/08 | Blé | LONG | forte (+15.24) | 743.7 | -0.21% | — | +2.86% (en cours) | +3.68% | Non | ✅ | Problèmes d'exportation en mer Noire, le blé bondit |
+| ven 28/08 | Argent | SHORT | forte (-1.15) | 68.89 | -2.21% | — | +3.62% (en cours) | +3.81% | Non | ✅ | — |
 | jeu 27/08 | **CAC 40** | SHORT | forte (-5.40) | 8462 | +0.97% | +1.68% | +1.68% (en cours) | +1.68% | Oui | ✅ | — |
 | jeu 27/08 | Pétrole (Brent) | LONG | forte (+5.72) | 86.24 | +1.40% | — | +2.12% (en cours) | — | Non | ✅ | — |
 | jeu 27/08 | Café (Arabica) | SHORT | forte (-5.86) | 322.3 | +3.58% | — | +3.95% (en cours) | — | Non | ✅ | — |
-| jeu 27/08 | Cacao | LONG | forte (+1.99) | 5833 | +3.73% | — | +5.87% (en cours) | — | Non | ✅ | Deux récoltes et El Nino menacent l'offre de cacao |
-| jeu 27/08 | Blé | LONG | forte (+14.92) | 733.1 | -0.34% | — | +1.53% (en cours) | — | Non | ✅ | Problèmes d'exportation en mer Noire, le blé bondit |
+| jeu 27/08 | Cacao | LONG | forte (+1.99) | 5833 | +3.73% | — | +5.87% (en cours) | — | Non | ✅ | — |
+| jeu 27/08 | Blé | LONG | forte (+14.92) | 733.1 | -0.34% | — | +1.53% (en cours) | — | Non | ✅ | — |
 | mer 26/08 | **CAC 40** | SHORT | forte (-5.58) | 8439 | -0.44% | -0.27% | +1.41% | +0.00% | Oui | ✅ | Guerre bloque le gaz qatari depuis 6 mois, hausse des ventes US, chute des actions européennes |
 | mer 26/08 | VIX | LONG | forte (+3.99) | 17.84 | — | — | -2.49% | — | Non | — | — |
 | mer 26/08 | Sucre | LONG | forte (+2.46) | 11.32 | — | — | +1.33% | — | Non | ✅ | Prix du sucre en hausse de 36% en cinq semaines, choc d'offre |

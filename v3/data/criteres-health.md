@@ -1,6 +1,6 @@
 # Santé des critères
 
-_Cycle : 2026-08-28 04:28 UTC_
+_Cycle : 2026-08-28 05:22 UTC_
 
 **Synthèse** : 42 motifs de skip distincts, 71 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 
@@ -26,8 +26,8 @@ _Cycle : 2026-08-28 04:28 UTC_
 | 1 | Source linéaire non programmatique | `brent_term_structure_m1m2` |
 | 1 | Source linéaire non programmatique | `fedwatch_proba` |
 | 1 | Source linéaire non programmatique | `term_structure_m1_m3` |
-| 1 | Open-Meteo injoignable (climato) | `6.8,-5.3:net_error` |
 | 1 | Open-Meteo injoignable (récents) | `-21.2,-48.1:net_error` |
+| 1 | Open-Meteo injoignable (récents) | `6.8,-5.3:net_error` |
 | 1 | no_breadth_data | `breadth_cac_ma50` |
 | 1 | Twelve : série vide | `USDGHS=X` |
 | 1 | Twelve : série vide | `USDXOF=X` |

@@ -1,6 +1,6 @@
 # Performance A/B — ±1 (baseline) vs pondéré (secondaire)
 
-- Généré : 28 août 2026, 06h34
+- Généré : 28 août 2026, 07h28
 - Fenêtre KPI : 30 dernières conclusions terminées par cellule
 - Cible : 70% (Bourse.md)
 
@@ -29,20 +29,20 @@ pas dans le dénominateur pondéré (colonne N_pond < N_pm1 normal au démarrage
 | Coton | 24h | 29 | 69.0% | 0.2024 | 5 | 80.0% | 0.1813 |
 | Coton | 7j | 28 | 57.1% | 0.2868 | 2 | 50.0% | 0.3055 |
 | Coton | 1m | 14 | 0.0% | 0.5971 | 10 | 0.0% | 0.5913 |
-| Cuivre | 24h | 19 | 52.6% | 0.4227 | 10 | 30.0% | 0.6041 |
+| Cuivre | 24h | 20 | 50.0% | 0.4283 | 10 | 30.0% | 0.6041 |
 | Cuivre | 7j | 13 | 53.9% | 0.2371 | 6 | 66.7% | 0.3248 |
-| Cuivre | 1m | 9 | 0.0% | 0.9142 | 7 | 0.0% | 0.9791 |
-| EUR/USD | 24h | 26 | 73.1% | 0.2229 | 0 | — | — |
+| Cuivre | 1m | 10 | 0.0% | 0.8750 | 8 | 0.0% | 0.9406 |
+| EUR/USD | 24h | 27 | 70.4% | 0.2517 | 0 | — | — |
 | EUR/USD | 7j | 25 | 56.0% | 0.3299 | 0 | — | — |
-| EUR/USD | 1m | 15 | 0.0% | 0.9764 | 0 | — | — |
+| EUR/USD | 1m | 14 | 0.0% | 0.9747 | 0 | — | — |
 | Nasdaq | 24h | 21 | 4.8% | 0.7396 | 13 | 0.0% | 0.7237 |
 | Nasdaq | 7j | 16 | 0.0% | 0.8891 | 15 | 0.0% | 0.8549 |
 | Nasdaq | 1m | 3 | 0.0% | 1.0000 | 3 | 0.0% | 1.0000 |
 | Or | 24h | 30 | 60.0% | 0.2576 | 16 | 43.8% | 0.3367 |
 | Or | 7j | 29 | 58.6% | 0.2770 | 24 | 50.0% | 0.3585 |
 | Or | 1m | 16 | 0.0% | 0.9503 | 13 | 0.0% | 0.9516 |
-| Pétrole (Brent) | 24h | 24 | 29.2% | 0.6496 | 22 | 27.3% | 0.6196 |
-| Pétrole (Brent) | 7j | 20 | 35.0% | 0.5262 | 17 | 29.4% | 0.6105 |
+| Pétrole (Brent) | 24h | 25 | 32.0% | 0.6236 | 23 | 30.4% | 0.5946 |
+| Pétrole (Brent) | 7j | 18 | 38.9% | 0.4735 | 15 | 33.3% | 0.5585 |
 | Pétrole (Brent) | 1m | 8 | 12.5% | 0.8379 | 6 | 16.7% | 0.8127 |
 | S&P 500 | 24h | 21 | 85.7% | 0.1641 | 0 | — | — |
 | S&P 500 | 7j | 17 | 35.3% | 0.3563 | 0 | — | — |
@@ -50,7 +50,7 @@ pas dans le dénominateur pondéré (colonne N_pond < N_pm1 normal au démarrage
 | Sucre | 24h | 28 | 82.1% | 0.1269 | 18 | 83.3% | 0.1309 |
 | Sucre | 7j | 27 | 81.5% | 0.1029 | 15 | 86.7% | 0.0944 |
 | Sucre | 1m | 14 | 100.0% | 0.0428 | 8 | 100.0% | 0.0446 |
-| USD/JPY | 24h | 20 | 60.0% | 0.3271 | 10 | 70.0% | 0.2128 |
+| USD/JPY | 24h | 22 | 54.5% | 0.3444 | 11 | 63.6% | 0.2470 |
 | USD/JPY | 7j | 18 | 33.3% | 0.5295 | 5 | 60.0% | 0.3737 |
 | USD/JPY | 1m | 1 | 0.0% | 1.0000 | 0 | — | — |
 | VIX | 24h | 28 | 7.1% | 0.5063 | 14 | 0.0% | 0.4310 |
@@ -58,4 +58,4 @@ pas dans le dénominateur pondéré (colonne N_pond < N_pm1 normal au démarrage
 | VIX | 1m | 15 | 46.7% | 0.3127 | 4 | 75.0% | 0.2637 |
 
 ## Synthèse globale (cellules avec ≥1 mesure pondérée)
-- Delta taux moyen (pondéré − ±1) : **+2.16 pts** sur 34 cellules
+- Delta taux moyen (pondéré − ±1) : **+2.23 pts** sur 34 cellules

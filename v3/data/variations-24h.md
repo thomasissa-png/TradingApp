@@ -1,11 +1,14 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 31 août 2026, 07h28 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 31 août 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| lun 31/08 | VIX | LONG | forte (+3.27) | 17.64 | — | — | -1.84% (en cours) | +0.11% | Non | — | — |
+| lun 31/08 | Sucre | SHORT | faible (-0.16) | 11.2 | — | — | -1.16% (en cours) | +0.00% | Non | — | — |
+| lun 31/08 | Cacao | LONG | forte (+5.63) | 6650 | -0.05% | — | +1.75% (en cours) | +1.77% | Non | ✅ | Hausse des prix du cacao sur risques de récolte en Afrique de l'Ouest |
 | ven 28/08 | **Café (Arabica)** | SHORT | forte (-12.91) | 309.6 | -0.46% | -1.49% | -1.02% (en cours) | -0.00% | Oui | ❌ | — |
 | ven 28/08 | **Cacao** | LONG | forte (+7.06) | 6175 | +3.18% | +7.22% | +7.51% (en cours) | +7.51% ⚠️ | Oui | ✅ | Deux récoltes et El Nino menacent l'offre de cacao |
 | ven 28/08 | Pétrole (Brent) | LONG | faible (+8.00) | 88.06 | +0.03% | — | +1.46% (en cours) | — | Non | ✅ | — |

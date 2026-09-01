@@ -1,11 +1,20 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 1 septembre 2026, 07h27 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 1 septembre 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mar 01/09 | **Cacao** | LONG | forte (+7.02) | 6773 | -1.17% | -3.27% | -3.86% (en cours) | +0.14% | Oui | ❌ | — |
+| mar 01/09 | VIX | LONG | forte (+5.38) | 17.5 | — | — | +1.97% (en cours) | +2.03% | Non | — | — |
+| mar 01/09 | Sucre | LONG | forte (+3.32) | 11.42 | — | — | +1.27% (en cours) | +1.31% | Non | ✅ | Le sucre brut clôture août avec +21,5% sur El Nino |
+| mar 01/09 | Pétrole (Brent) | LONG | faible (+9.47) | 90.84 | +1.03% | — | +4.19% (en cours) | +4.19% | Non | ✅ | — |
+| mar 01/09 | Or | SHORT | forte (-4.14) | 4427 | +1.14% | — | +2.26% (en cours) | +2.29% | Non | ✅ | — |
+| mar 01/09 | Cuivre | SHORT | faible (-0.43) | 6.618 | +1.41% | — | +2.89% (en cours) | +2.89% | Non | ✅ | — |
+| mar 01/09 | Café (Arabica) | SHORT | faible (-3.27) | 311.4 | +0.97% | — | +1.01% (en cours) | +3.43% | Non | ✅ | — |
+| mar 01/09 | Blé | LONG | faible (+6.32) | 755.5 | +0.60% | — | +1.33% (en cours) | +1.78% | Non | ✅ | Problèmes d'exportation en mer Noire, hausse du blé |
+| mar 01/09 | Argent | SHORT | forte (-5.24) | 66.3 | +2.42% | — | +3.36% (en cours) | +3.36% | Non | ✅ | — |
 | lun 31/08 | VIX | LONG | forte (+3.27) | 17.64 | — | — | -1.87% (en cours) | — | Non | — | — |
 | lun 31/08 | Sucre | SHORT | faible (-0.16) | 11.2 | — | — | -1.12% (en cours) | — | Non | — | — |
 | lun 31/08 | Pétrole (Brent) | LONG | forte (+5.20) | 89.35 | +1.83% | — | +1.66% (en cours) | — | Non | ✅ | — |

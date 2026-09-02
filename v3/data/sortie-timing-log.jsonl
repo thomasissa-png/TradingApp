@@ -130,3 +130,6 @@
 {"date": "2026-09-01", "actif": "CAC 40", "call": "SHORT", "categorie": "trop_tard", "pic_pct": 0.49, "pic_heure": "12h", "cloture_pct": 0.39, "max_gain_pct": 0.65, "ko_virtuel": false, "pari_mur": false}
 {"date": "2026-09-01", "actif": "Cacao", "call": "LONG", "categorie": "sans_objet", "pic_pct": -1.17, "pic_heure": "12h", "cloture_pct": -3.86, "max_gain_pct": 0.14, "ko_virtuel": true, "pari_mur": false}
 {"date": "2026-09-01", "actif": "Coton", "call": "LONG", "categorie": "trop_tard", "pic_pct": 0.28, "pic_heure": "18h", "cloture_pct": -0.07, "max_gain_pct": 0.98, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-09-02", "actif": "Argent", "call": "SHORT", "categorie": "trop_tard", "pic_pct": 0.15, "pic_heure": "12h", "cloture_pct": -2.3, "max_gain_pct": 0.72, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-09-02", "actif": "Nasdaq", "call": "SHORT", "categorie": "sans_objet", "pic_pct": -0.02, "pic_heure": "clôture", "cloture_pct": -0.02, "max_gain_pct": 0.21, "ko_virtuel": false, "pari_mur": false}
+{"date": "2026-09-02", "actif": "Pétrole (Brent)", "call": "LONG", "categorie": "trop_tard", "pic_pct": 0.16, "pic_heure": "18h", "cloture_pct": -0.15, "max_gain_pct": 1.46, "ko_virtuel": false, "pari_mur": false}

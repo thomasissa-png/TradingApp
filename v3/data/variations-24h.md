@@ -1,11 +1,17 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 2 septembre 2026, 07h27 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 2 septembre 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| mer 02/09 | **Argent** | SHORT | forte (-9.53) | 63.86 | +0.15% | -1.92% | -2.30% (en cours) | +0.72% | Oui | ❌ | — |
+| mer 02/09 | VIX | LONG | forte (+5.38) | 17.47 | — | — | -1.09% (en cours) | +2.12% | Non | — | — |
+| mer 02/09 | Or | SHORT | forte (-9.12) | 4310 | +0.47% | — | -1.80% (en cours) | +0.44% | Non | ❌ | — |
+| mer 02/09 | Cuivre | SHORT | forte (-3.18) | 6.443 | +0.02% | — | -1.20% (en cours) | +0.34% | Non | ❌ | — |
+| mer 02/09 | Café (Arabica) | SHORT | forte (-2.77) | 309.4 | +1.71% | — | +3.91% (en cours) | +3.92% | Non | ✅ | — |
+| mer 02/09 | Cacao | LONG | forte (+4.95) | 6574 | -0.86% | — | -4.27% (en cours) | +0.00% | Non | ❌ | — |
 | mar 01/09 | **Cacao** | LONG | forte (+7.02) | 6773 | -1.17% | -3.27% | -3.86% (en cours) | +0.14% | Oui | ❌ | — |
 | mar 01/09 | VIX | LONG | forte (+5.38) | 17.5 | — | — | +1.80% (en cours) | — | Non | — | — |
 | mar 01/09 | Pétrole (Brent) | LONG | faible (+9.47) | 90.84 | +1.03% | — | +3.95% (en cours) | — | Non | ✅ | — |

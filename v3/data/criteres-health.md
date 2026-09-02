@@ -1,6 +1,6 @@
 # Santé des critères
 
-_Cycle : 2026-09-01 05:22 UTC_
+_Cycle : 2026-09-02 05:22 UTC_
 
 **Synthèse** : 43 motifs de skip distincts, 72 occurrence(s). Chaque ligne = un critère n/a et sa cause exacte (code HTTP / vide / unmapped / exception).
 
@@ -27,7 +27,7 @@ _Cycle : 2026-09-01 05:22 UTC_
 | 1 | Source linéaire non programmatique | `brent_term_structure_m1m2` |
 | 1 | Source linéaire non programmatique | `fedwatch_proba` |
 | 1 | Source linéaire non programmatique | `term_structure_m1_m3` |
-| 1 | Open-Meteo injoignable (récents) | `-19.9,-43.9:net_error` |
+| 1 | Open-Meteo injoignable (climato) | `6.8,-5.3:net_error` |
 | 1 | Open-Meteo injoignable (récents) | `-21.2,-48.1:net_error` |
 | 1 | no_breadth_data | `breadth_cac_ma50` |
 | 1 | Twelve : série vide | `USDGHS=X` |
@@ -56,9 +56,9 @@ _La source réseau a échoué ce cycle ; pour éviter un n/a qui ferait chuter l
 
 | Critère | Âge (j ouvrés) | Cause de l'échec source |
 |---|---:|---|
-| ⚠️ `eia_crude_surprise` | 2 | hors_fenetre — eia_crude_surprise |
-| ⚠️ `meteo_bresil_canne_sucre` | 1 | source réseau indisponible |
-| ⚠️ `meteo_bresil_minas_gerais` | 1 | source réseau indisponible |
+| ⚠️ `eia_crude_surprise` | 3 | hors_fenetre — eia_crude_surprise |
+| ⚠️ `meteo_bresil_canne_sucre` | 2 | source réseau indisponible |
+| ⚠️ `meteo_ci_ghana_precip_30j` | 1 | source réseau indisponible |
 
 ## Provenance des prix (source réellement utilisée ce cycle)
 

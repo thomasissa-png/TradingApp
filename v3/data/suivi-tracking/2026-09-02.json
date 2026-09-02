@@ -13,5 +13,25 @@
       "max_fav_pct": 1.46
     }
   },
+  "18h": {
+    "Argent": {
+      "call": "SHORT",
+      "fav_pct": -1.92,
+      "heure": "18h15",
+      "max_fav_pct": 0.72
+    },
+    "Nasdaq": {
+      "call": "SHORT",
+      "fav_pct": -0.19,
+      "heure": "18h15",
+      "max_fav_pct": 0.0
+    },
+    "Pétrole (Brent)": {
+      "call": "LONG",
+      "fav_pct": 0.16,
+      "heure": "18h15",
+      "max_fav_pct": 1.46
+    }
+  },
   "base": "emission"
 }

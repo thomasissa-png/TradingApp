@@ -1,6 +1,6 @@
 {
   "balance_commerciale_ez": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": 8574.2,
     "valeur_normalisee": 0.23448230141445794,
     "valeur_ponderee": 0.23448230141445794
@@ -10,130 +10,130 @@
     "valeur_normalisee": 0.0
   },
   "cftc_cot_coffee": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": 30746.0,
     "valeur_normalisee": -0.09318554391505972,
     "valeur_ponderee": -0.09318554391505972
   },
   "cftc_cot_copper_nets": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": 84321.0,
     "valeur_normalisee": 1.0,
     "valeur_ponderee": 1.0
   },
   "cftc_cot_cotton": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": 127183.0,
     "valeur_normalisee": 1.0,
     "valeur_ponderee": 1.0
   },
   "cftc_cot_crude_nets": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": 17068.0,
     "valeur_normalisee": -0.1877382283014539,
     "valeur_ponderee": -0.1877382283014539
   },
   "cftc_cot_eur_nets": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": -53872.0,
     "valeur_normalisee": -0.7461352509219135,
     "valeur_ponderee": -0.7461352509219135
   },
   "cftc_cot_jpy_nets": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": -62792.0,
     "valeur_normalisee": -0.11127193802612544,
     "valeur_ponderee": -0.11127193802612544
   },
   "cftc_cot_nets": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": 242212.0,
     "valeur_normalisee": 0.38662879828456004,
     "valeur_ponderee": 0.38662879828456004
   },
   "cftc_cot_silver": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": 23255.0,
     "valeur_normalisee": -0.2251627248122002,
     "valeur_ponderee": -0.2251627248122002
   },
   "cftc_cot_sugar": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": 180943.0,
     "valeur_normalisee": 0.4810257086697616,
     "valeur_ponderee": 0.4810257086697616
   },
   "cftc_cot_vix_nets": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": -78164.0,
     "valeur_normalisee": -0.5083978702949855,
     "valeur_ponderee": -0.5083978702949855
   },
   "cftc_cot_wheat": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": -11740.0,
     "valeur_normalisee": 0.4475969488007501,
     "valeur_ponderee": 0.4475969488007501
   },
   "cushing_stocks": {
-    "date": "2026-09-02",
-    "valeur": 22428.0,
-    "valeur_normalisee": -0.18311536903012807,
-    "valeur_ponderee": -0.18311536903012807
+    "date": "2026-09-03",
+    "valeur": 22508.0,
+    "valeur_normalisee": -0.17454930600863044,
+    "valeur_ponderee": -0.17454930600863044
   },
   "diff_taux_10y_us_jp": {
-    "date": "2026-09-02",
-    "valeur": 2.08,
-    "valeur_normalisee": 0.7654143210429925,
-    "valeur_ponderee": 0.7654143210429925
+    "date": "2026-09-03",
+    "valeur": 2.12,
+    "valeur_normalisee": 0.9146338084785869,
+    "valeur_ponderee": 0.9146338084785869
   },
   "diff_taux_2y_us_jp": {
-    "date": "2026-09-02",
-    "valeur": 1.67,
+    "date": "2026-09-03",
+    "valeur": 1.7199999999999998,
     "valeur_normalisee": 1.0,
     "valeur_ponderee": 1.0
   },
   "differentiel_taux_10y_us_bund": {
-    "date": "2026-09-02",
-    "valeur": 1.7799999999999998,
-    "valeur_normalisee": 0.7654143210429925,
-    "valeur_ponderee": 0.7654143210429925
+    "date": "2026-09-03",
+    "valeur": 1.8199999999999998,
+    "valeur_normalisee": 0.9146338084785869,
+    "valeur_ponderee": 0.9146338084785869
   },
   "differentiel_taux_2y_us_de": {
-    "date": "2026-09-02",
-    "valeur": 1.4839820686,
-    "valeur_normalisee": -0.3406024983719752,
-    "valeur_ponderee": -0.3406024983719752
+    "date": "2026-09-03",
+    "valeur": 1.5139987489999998,
+    "valeur_normalisee": -0.1443475530875251,
+    "valeur_ponderee": -0.1443475530875251
   },
   "dxy_trend_20j": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": 118.7479,
     "valeur_normalisee": -0.6371210138643244,
     "valeur_ponderee": -0.6371210138643244
   },
   "eia_crude_surprise": {
-    "date": "2026-08-28",
-    "valeur": 428910.0,
-    "valeur_normalisee": -0.010699044988311703,
-    "valeur_ponderee": -0.010699044988311703
+    "date": "2026-09-03",
+    "valeur": 424460.0,
+    "valeur_normalisee": -0.15122131563374014,
+    "valeur_ponderee": -0.15122131563374014
   },
   "hf_positioning_flux_options": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": -18386.0,
     "valeur_normalisee": -0.6253210381718236,
     "valeur_ponderee": -0.6253210381718236
   },
   "hy_credit_spread": {
-    "date": "2026-09-02",
-    "valeur": 2.63,
-    "valeur_normalisee": -0.8221077838019305,
-    "valeur_ponderee": -0.8221077838019305
+    "date": "2026-09-03",
+    "valeur": 2.65,
+    "valeur_normalisee": -0.6266664534415554,
+    "valeur_ponderee": -0.6266664534415554
   },
   "meteo_australie_dryland": {
-    "date": "2026-09-02",
-    "valeur": -0.12032963474154652,
-    "valeur_normalisee": -0.06016481737077326,
-    "valeur_ponderee": -0.06016481737077326
+    "date": "2026-09-03",
+    "valeur": -0.1196642712298603,
+    "valeur_normalisee": -0.05983213561493015,
+    "valeur_ponderee": -0.05983213561493015
   },
   "meteo_bresil_canne_sucre": {
     "date": "2026-08-31",
@@ -142,10 +142,10 @@
     "valeur_ponderee": 0.1982509713841458
   },
   "meteo_bresil_minas_gerais": {
-    "date": "2026-09-02",
-    "valeur": -0.37735130636418523,
-    "valeur_normalisee": 0.18867565318209262,
-    "valeur_ponderee": 0.18867565318209262
+    "date": "2026-09-03",
+    "valeur": -0.3522415049937205,
+    "valeur_normalisee": 0.17612075249686024,
+    "valeur_ponderee": 0.17612075249686024
   },
   "meteo_ci_ghana_precip_30j": {
     "date": "2026-09-01",
@@ -154,39 +154,39 @@
     "valeur_ponderee": 0.021839278854589375
   },
   "meteo_inde_gujarat_coton": {
-    "date": "2026-09-02",
-    "valeur": 0.7771922606486436,
-    "valeur_normalisee": 0.3885961303243218,
-    "valeur_ponderee": 0.3885961303243218
+    "date": "2026-09-03",
+    "valeur": 0.7628981928596452,
+    "valeur_normalisee": 0.3814490964298226,
+    "valeur_ponderee": 0.3814490964298226
   },
   "meteo_texas_cotton_precip": {
-    "date": "2026-09-02",
-    "valeur": -0.021579419517781754,
-    "valeur_normalisee": 0.010789709758890877,
-    "valeur_ponderee": 0.010789709758890877
+    "date": "2026-09-03",
+    "valeur": -0.022010208326135892,
+    "valeur_normalisee": 0.011005104163067946,
+    "valeur_ponderee": 0.011005104163067946
   },
   "meteo_vietnam_robusta": {
-    "date": "2026-09-02",
-    "valeur": 0.5560159732195755,
-    "valeur_normalisee": 0.27800798660978776,
-    "valeur_ponderee": 0.27800798660978776
+    "date": "2026-09-03",
+    "valeur": 0.5747030396634675,
+    "valeur_normalisee": 0.28735151983173374,
+    "valeur_ponderee": 0.28735151983173374
   },
   "noaa_drought_midwest_plains": {
-    "date": "2026-09-02",
-    "valeur": 0.03169059374965744,
-    "valeur_normalisee": 0.01584529687482872,
-    "valeur_ponderee": 0.01584529687482872
+    "date": "2026-09-03",
+    "valeur": 0.03099184185982057,
+    "valeur_normalisee": 0.015495920929910286,
+    "valeur_ponderee": 0.015495920929910286
   },
   "shiller_cape_fwd_pe": {
-    "date": "2026-09-02",
-    "valeur": 41.74,
+    "date": "2026-09-03",
+    "valeur": 41.93,
     "valeur_normalisee": 1.0,
     "valeur_ponderee": 1.0
   },
   "taux_10y_us_reels_tips": {
-    "date": "2026-09-02",
+    "date": "2026-09-03",
     "valeur": 2.44,
-    "valeur_normalisee": 0.6084455110176539,
-    "valeur_ponderee": 0.6084455110176539
+    "valeur_normalisee": 0.5897585193966001,
+    "valeur_ponderee": 0.5897585193966001
   }
 }

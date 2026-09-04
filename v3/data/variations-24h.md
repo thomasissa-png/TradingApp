@@ -1,11 +1,13 @@
 # Mouvements de marché 24h de nos actifs (plus de 1 %)
 
-_Généré : 4 septembre 2026, 07h28 (Europe/Paris) · du plus récent au plus ancien._
+_Généré : 4 septembre 2026, 22h15 (Europe/Paris) · du plus récent au plus ancien._
 
 _Tous les mouvements 24h de nos actifs dépassant 1 % (en valeur absolue). « Call » = notre direction (LONG / SHORT). « Conviction » = niveau (forte / faible) et note signée du jour, même source que le Suivi et le Bilan. « Prix d'entrée » = cours à l'émission 7h. « % 12h / 18h / clôture » = avancée du call en séance (`+` va dans le sens du call, `-` contre nous), mêmes relevés que le Bilan du jour. Le mouvement de clôture des jours passés est FIGÉ (résultat réel de ce jour, jamais recalculé au prix courant) ; un jour encore ouvert est noté « en cours ». « Max du jour » = meilleur gain favorable atteint (même source datée que le Bilan). « Joué » = l'actif était dans le top 3 du jour. « Résultat » = verdict de la cellule 24h (✅ juste, ❌ faux, ⚪ non conclusif). « — » = point non relevé ou non mesuré (zéro invention : les jours sans relevé restent vides)._
 
 | Jour | Actif | Call | Conviction | Prix d'entrée | % 12h | % 18h | % clôture | Max du jour | Joué | Résultat | Raison du mouvement |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| ven 04/09 | VIX | LONG | forte (+5.38) | 16.8 | — | — | +1.25% (en cours) | +1.37% | Non | — | — |
+| ven 04/09 | Blé | SHORT | forte (-1.25) | 727.5 | -0.61% | — | +1.58% (en cours) | +2.16% | Non | ✅ | — |
 | jeu 03/09 | VIX | LONG | forte (+5.38) | 17.19 | — | — | -1.40% (en cours) | — | Non | — | — |
 | jeu 03/09 | Or | SHORT | forte (-3.97) | 4425 | +0.09% | — | -1.03% (en cours) | — | Non | ❌ | — |
 | jeu 03/09 | Cuivre | SHORT | forte (-5.26) | 6.489 | -0.24% | — | -1.31% (en cours) | — | Non | ❌ | — |
